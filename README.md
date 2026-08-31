@@ -5,10 +5,20 @@ graphics course. The player sneaks through the train's carriages, evading
 guards, using a time-manipulation ability (slow/freeze/rewind/"time ghost")
 to get past obstacles across three levels.
 
-This repo currently holds the **Alpha infrastructure scaffold** only: Three.js
-wired up, rendering a placeholder lit cube, in a project shape that survives
-deployment to the department's static LAMP server. No gameplay, levels, AI,
-or real assets have been implemented yet — see [Roadmap](#roadmap) below.
+This repo currently holds the **Alpha preliminary implementation**: a
+greyboxed slice of Level 1 (the boarding station) with a walkable placeholder
+player, a third-person camera, and the train's parent-child hierarchy — built
+on top of the Three.js/Vite scaffold. Everything visual is primitive geometry
+(boxes, cylinders, a capsule) with flat-colour materials; no modelled assets,
+stealth logic, or the time system exist yet. See [Roadmap](#roadmap) below
+for exactly what's implemented versus what's still to come.
+
+## Controls
+
+- **WASD** — move (camera-relative: forward is always away from the camera)
+- **Shift** — run
+- **Click the canvas, then move the mouse** — orbit the third-person camera
+  around the player (uses the Pointer Lock API)
 
 ## Tech stack
 
@@ -16,8 +26,8 @@ or real assets have been implemented yet — see [Roadmap](#roadmap) below.
 |---|---|---|
 | Graphics library | [three](https://threejs.org/) | Required by the brief |
 | Build tool | [Vite](https://vite.dev/) | Bundles to a plain static `dist/` folder, deployable as-is to the LAMP server |
-| Language | Plain JavaScript (ES modules) | Keeps the scaffold simple; revisit for TypeScript later if wanted |
-| Dev-only camera controls | `three/examples/jsm/controls/OrbitControls.js` | Lets us confirm the scene renders from any angle before a real camera exists — not part of the shipped game |
+| Language | Plain JavaScript (ES modules) | Keeps the code simple; revisit for TypeScript later if wanted |
+| Dev-only camera controls | `three/examples/jsm/controls/OrbitControls.js` | Kept in the repo for debugging other scenes; not used by the active scene now that the real third-person camera exists |
 
 ## Project structure
 
@@ -27,15 +37,27 @@ vite.config.js         base: './' so built asset URLs stay relative
 src/
   main.js               composition root — wires everything together
   core/                 generic Three.js plumbing, nothing game-specific
-    renderer.js           WebGLRenderer, capped pixel ratio, resize handling
+    renderer.js           WebGLRenderer, capped pixel ratio, shadow map, resize
     scene.js               Scene with a visible (non-black) background
     camera.js               PerspectiveCamera, resize handling
     clock.js                 delta-time wrapper (THREE.Timer-backed)
     loop.js                   requestAnimationFrame loop + update callbacks
-    lights.js                  ambient + directional light
+    lights.js                  flat ambient + directional test lighting
+                                (superseded by environment/station-blockout.js
+                                for the active scene; kept for other scenes)
+  entities/
+    train.js              Train group + named carriage-N child groups
+    player.js               Placeholder capsule + camera-relative movement
+  environment/
+    station-blockout.js   Level 1 greybox: floor, structural placeholders,
+                           static guard/camera placeholders, warm lighting
+  input/
+    keyboard-state.js     WASD/shift held-state tracking
+  cameras/
+    third-person-camera.js  Follows + orbits the player (mouse look)
   dev/
-    dev-controls.js       TEMPORARY OrbitControls, isolated so it's easy to
-                           delete once the real third-person camera exists
+    dev-controls.js       TEMPORARY OrbitControls — not wired into the
+                           active scene, kept for debugging other scenes
 public/                 static assets copied as-is at build time (empty for now)
 ```
 
@@ -50,8 +72,9 @@ npm install
 npm run dev
 ```
 
-Opens a dev server with a lit, rotating placeholder cube and orbit controls
-(orbit controls are temporary dev scaffolding — see `src/dev/dev-controls.js`).
+Opens a dev server showing the Level 1 station greybox: walk the placeholder
+player around with WASD, click the canvas and move the mouse to orbit the
+third-person camera, and note the train visible alongside the platform.
 
 ## Building for production
 
@@ -91,30 +114,35 @@ top level of the archive, not nested).
 
 ## Roadmap
 
-### Next up: Alpha preliminary implementation
+### Done
 
-With the Three.js scaffold confirmed working end-to-end (including a LAMP
-deploy), the next step is the actual Alpha "preliminary implementation" —
-something concrete to walk the mentor through. The natural starting point is
-the train/carriage hierarchical parent-child structure (train → carriages →
-props), since everything else (levels, camera, AI) hangs off that structure.
+- Three.js/Vite scaffold: renderer, scene, camera, clock, render loop
+- `Train` hierarchy: a parent group with named `carriage-0`..`carriage-4`
+  children (passenger → security → cargo → mechanical → vault), correctly
+  spaced with coupling gaps — moving/rotating `train` moves every carriage
+  with it, and each carriage can move independently of its siblings
+- Level 1 station greybox: platform, structural placeholders (wall, pillars,
+  platform edge), static non-functional guard/camera placeholders, warm
+  station lighting with shadows
+- Placeholder player (capsule) with WASD movement, frame-rate-independent
+  via delta time, bounded to the platform
+- Third-person camera: smoothed follow + mouse-look orbit via Pointer Lock
 
-### Deliberately not started yet
+### Next up (not part of this task): Level 1 proper, for graded Beta
 
-None of the following exist yet, even as stubs — they're real implementation
-work for after Alpha:
-
-- The three levels: their layouts and objectives
-- Stealth/guard AI, guard vision cones, suspicion system
+- Guard patrol AI, camera/guard detection cones, suspicion/alarm system
+- Real (even if simple) modelled/textured assets replacing the primitives
+  above — train exterior, station architecture, character model
 - The time-manipulation system (slow / freeze / rewind / time ghost)
-- The actual train, carriages, and real game models/assets
-- Physics, shaders, HUD, menus, checkpoints, credits screen
+
+### Still out of scope beyond that
+
+- Levels 2 and 3 in any form
+- Physics beyond basic ground/wall blocking
+- HUD, menus, checkpoints, restart system, credits screen
+- Custom shaders (Chrono Field, security lasers — concept only for now)
 
 ### Things to revisit once real implementation starts
 
 - Whether to move from plain JS to TypeScript
-- Replacing `src/dev/dev-controls.js` (OrbitControls) with the real
-  third-person camera system
-- Adding `levels/`, `entities/`, `systems/` folders once there's real code
-  to put in them — intentionally not created ahead of time so the repo
-  doesn't carry stale placeholder folders
+- Adding `levels/`, `systems/` folders once there's real code to put in them
