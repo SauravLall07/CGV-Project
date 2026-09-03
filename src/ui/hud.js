@@ -63,6 +63,63 @@ export function createHud() {
     transition: 'opacity 160ms ease-out'
   })
 
+  // Top-Right Suspicion / Alert Meter
+  const suspicionContainer = document.createElement('div')
+  Object.assign(suspicionContainer.style, {
+    position: 'absolute',
+    top: '18px',
+    right: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: '4px',
+    padding: '8px 14px',
+    background: 'rgba(15, 23, 42, 0.85)',
+    border: '1px solid rgba(245, 158, 11, 0.3)',
+    borderRadius: '6px',
+    backdropFilter: 'blur(6px)',
+    opacity: '0',
+    transform: 'translateY(-10px)',
+    transition: 'opacity 200ms ease, transform 200ms ease'
+  })
+
+  const suspicionLabelRow = document.createElement('div')
+  Object.assign(suspicionLabelRow.style, {
+    display: 'flex',
+    justifyContent: 'space-between',
+    width: '140px',
+    fontSize: '11px',
+    fontWeight: '700',
+    letterSpacing: '0.8px',
+    color: '#f59e0b'
+  })
+
+  const suspicionLabel = document.createElement('span')
+  suspicionLabel.textContent = 'SUSPICION'
+  const suspicionPct = document.createElement('span')
+  suspicionPct.textContent = '0%'
+  suspicionLabelRow.append(suspicionLabel, suspicionPct)
+
+  const suspicionTrack = document.createElement('div')
+  Object.assign(suspicionTrack.style, {
+    width: '140px',
+    height: '6px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: '3px',
+    overflow: 'hidden'
+  })
+
+  const suspicionFill = document.createElement('div')
+  Object.assign(suspicionFill.style, {
+    height: '100%',
+    width: '0%',
+    background: 'linear-gradient(90deg, #f59e0b, #ef4444)',
+    boxShadow: '0 0 8px rgba(245, 158, 11, 0.8)',
+    transition: 'width 80ms ease-out'
+  })
+  suspicionTrack.appendChild(suspicionFill)
+  suspicionContainer.append(suspicionLabelRow, suspicionTrack)
+
   // Bottom-Center Chrono Core Deck
   const timeDeck = document.createElement('div')
   Object.assign(timeDeck.style, {
@@ -176,7 +233,7 @@ export function createHud() {
   })
 
   timeDeck.append(energyRow, abilitySlots)
-  root.append(objective, toast, timeDeck)
+  root.append(objective, toast, suspicionContainer, timeDeck)
   document.body.appendChild(root)
 
   let toastTimer = null
@@ -192,6 +249,32 @@ export function createHud() {
     clearTimeout(toastTimer)
     if (duration > 0) {
       toastTimer = setTimeout(() => { toast.style.opacity = '0' }, duration)
+    }
+  }
+
+  function setSuspicion(value) {
+    const clamped = Math.max(0, Math.min(100, Math.round(value)))
+    suspicionFill.style.width = `${clamped}%`
+    suspicionPct.textContent = `${clamped}%`
+
+    if (clamped > 0) {
+      suspicionContainer.style.opacity = '1'
+      suspicionContainer.style.transform = 'translateY(0)'
+
+      if (clamped > 60) {
+        suspicionLabelRow.style.color = '#ef4444'
+        suspicionContainer.style.borderColor = 'rgba(239, 68, 68, 0.6)'
+        suspicionFill.style.background = 'linear-gradient(90deg, #f97316, #ef4444)'
+        suspicionFill.style.boxShadow = '0 0 10px rgba(239, 68, 68, 0.9)'
+      } else {
+        suspicionLabelRow.style.color = '#f59e0b'
+        suspicionContainer.style.borderColor = 'rgba(245, 158, 11, 0.3)'
+        suspicionFill.style.background = 'linear-gradient(90deg, #f59e0b, #ef4444)'
+        suspicionFill.style.boxShadow = '0 0 8px rgba(245, 158, 11, 0.8)'
+      }
+    } else {
+      suspicionContainer.style.opacity = '0'
+      suspicionContainer.style.transform = 'translateY(-10px)'
     }
   }
 
@@ -266,5 +349,5 @@ export function createHud() {
     root.remove()
   }
 
-  return { root, setObjective, showToast, updateTimeState, setVisible, dispose }
+  return { root, setObjective, showToast, setSuspicion, updateTimeState, setVisible, dispose }
 }

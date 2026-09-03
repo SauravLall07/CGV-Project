@@ -193,6 +193,13 @@ top level of the archive, not nested).
   - Player is a proportioned figure (coat, cap, boots) with a walk cycle —
     limb swing, torso bob, and a lean into a run
   - ACES filmic tone mapping and soft shadow maps
+- **Phase 2 stealth & infiltration systems** (`src/systems/stealth.js`, `src/levels/boarding.js`):
+  - Deterministic guard patrol AI (`Patrol → Investigate → Alert`) with waypoint cycles and walk animations
+  - Dynamic 3D vision cones with obstacle line-of-sight raycasting / occlusion checks
+  - Sweeping wall-mounted security cameras with ground projection cones
+  - Security laser grids and interactive terminal bypass switches
+  - Shared Suspicion/Alert meter with color transitions and checkpoint fail-state
+  - Cinematic boarding & train departure sequence
 - **Phase 3 time-manipulation core engine** (`src/systems/time-system.js`):
   - Slow (`1` / `Q`): per-object 0.2x time scale
   - Freeze (`2` / `F`): per-object 0.0x time scale
@@ -201,11 +208,11 @@ top level of the archive, not nested).
   - Chrono Core energy meter & ability HUD deck with temporal vignette (`src/ui/hud.js`)
   - Interactive puzzles in Level 2 (`moving-heist.js`) & unstable debris in Level 3 (`timewreck.js`)
 
-### Next up: Level 1 proper (Phase 2), for graded Beta
+### Next up: Custom Shaders (Phase 5) & Physics / Carriage Traversal (Phases 3 & 4), for graded Beta
 
-- Guard patrol AI, camera/guard detection cones, suspicion/alarm system
 - Custom GLSL Shaders (Chrono Field temporal distortion & Security Laser scanlines)
-- Real modelled/textured assets replacing primitives where appropriate
+- Connect multi-carriage train traversal in Level 2 with roof traversal & wind hazards
+- Level 3 Timewreck survival set pieces (Fast-time crushing carriage, time-loop room, collapsing bridge sprint)
 
 ### Still out of scope beyond that
 

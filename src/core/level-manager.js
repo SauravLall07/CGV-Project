@@ -28,7 +28,7 @@ export function createLevelManager({
   let currentState = null
   let pendingToken = 0
 
-  const ctx = { scene, interaction, assets, hud, timeSystem, player, advance }
+  const ctx = { scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance }
 
   function teardown() {
     if (timeSystem) timeSystem.setMode('NORMAL')

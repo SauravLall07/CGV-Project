@@ -552,7 +552,7 @@ function createBoardingControl() {
   return control
 }
 
-export function createStationBlockout() {
+export function createStationBlockout({ includePlaceholders = false } = {}) {
   const group = new THREE.Group()
   group.name = 'station'
 
@@ -566,9 +566,12 @@ export function createStationBlockout() {
   group.add(createPlatformSign())
   group.add(createStationClock())
   group.add(createLuggage())
-  group.add(createGuardPlaceholder())
-  group.add(createCameraPlaceholder(-8))
-  group.add(createCameraPlaceholder(12))
+
+  if (includePlaceholders) {
+    group.add(createGuardPlaceholder())
+    group.add(createCameraPlaceholder(-8))
+    group.add(createCameraPlaceholder(12))
+  }
 
   const benchMaterials = {
     timber: woodMaterial({ repeat: [2, 1], light: 0x8a5c33, dark: 0x452a16 }),
