@@ -69,8 +69,44 @@ function createEmergencyBrake() {
   return brake
 }
 
-export function createTimewreckLevel({ scene, interaction, advance }) {
+export function createTimewreckLevel({ scene, interaction, timeSystem, advance }) {
   const { group, update: updateInterior } = createCarriageInterior({ length: LENGTH, damaged: true })
+
+  // Suspended tumbling debris cluster in unstable time zone
+  const debrisGroup = new THREE.Group()
+  debrisGroup.position.set(0, 1.3, -HALF + 13)
+  const shardMat = new THREE.MeshStandardMaterial({
+    color: 0x475569,
+    emissive: 0xef4444,
+    emissiveIntensity: 0.8,
+    roughness: 0.5,
+    metalness: 0.4
+  })
+
+  for (let i = 0; i < 6; i++) {
+    const shard = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18 + (i % 3) * 0.08, 0), shardMat)
+    shard.position.set((Math.random() - 0.5) * 1.1, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 1.5)
+    shard.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0)
+    debrisGroup.add(shard)
+  }
+  group.add(debrisGroup)
+
+  let debrisTime = 0
+  const unregisterDebris = timeSystem ? timeSystem.register(debrisGroup, {
+    onUpdate(scaledDelta) {
+      debrisTime += scaledDelta * 2.5
+      debrisGroup.rotation.y = debrisTime * 0.5
+      debrisGroup.rotation.x = Math.sin(debrisTime) * 0.3
+    },
+    getSnapshot() {
+      return { t: debrisTime }
+    },
+    restoreSnapshot(snap) {
+      debrisTime = snap.t
+      debrisGroup.rotation.y = debrisTime * 0.5
+      debrisGroup.rotation.x = Math.sin(debrisTime) * 0.3
+    }
+  }) : () => {}
 
   const brake = createEmergencyBrake()
   brake.position.set(0, 0, HALF - 2)
@@ -107,6 +143,7 @@ export function createTimewreckLevel({ scene, interaction, advance }) {
 
     dispose() {
       unregister()
+      unregisterDebris()
       scene.remove(group)
       disposeObject(group)
     }

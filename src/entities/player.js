@@ -21,6 +21,7 @@ const RUN_LEAN = 0.13
 
 export function createPlayer() {
   const { group, body, leftArm, rightArm, leftLeg, rightLeg } = createHumanoid(PLAYER_PALETTE)
+  group.name = 'player'
   group.position.set(0, 0, -8)
 
   let stridePhase = 0

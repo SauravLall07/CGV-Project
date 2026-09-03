@@ -193,15 +193,19 @@ top level of the archive, not nested).
   - Player is a proportioned figure (coat, cap, boots) with a walk cycle —
     limb swing, torso bob, and a lean into a run
   - ACES filmic tone mapping and soft shadow maps
-  - Repeated furniture (seats, wheels, sleepers, vents, debris) goes through
-    `InstancedMesh` to keep the draw-call count down
+- **Phase 3 time-manipulation core engine** (`src/systems/time-system.js`):
+  - Slow (`1` / `Q`): per-object 0.2x time scale
+  - Freeze (`2` / `F`): per-object 0.0x time scale
+  - Rewind (`3` / `C`): 6-second circular transform buffer replay
+  - Time Ghost (`4` / `G`): holographic avatar (`src/entities/time-ghost.js`) that replays player trajectory and triggers pressure plates
+  - Chrono Core energy meter & ability HUD deck with temporal vignette (`src/ui/hud.js`)
+  - Interactive puzzles in Level 2 (`moving-heist.js`) & unstable debris in Level 3 (`timewreck.js`)
 
 ### Next up: Level 1 proper (Phase 2), for graded Beta
 
 - Guard patrol AI, camera/guard detection cones, suspicion/alarm system
-- Real (even if simple) modelled/textured assets replacing the primitives
-  above — train exterior, station architecture, character model
-- The time-manipulation system (slow / freeze / rewind / time ghost) — Phase 3
+- Custom GLSL Shaders (Chrono Field temporal distortion & Security Laser scanlines)
+- Real modelled/textured assets replacing primitives where appropriate
 
 ### Still out of scope beyond that
 
