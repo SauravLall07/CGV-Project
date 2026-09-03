@@ -3,43 +3,75 @@ import { createScene } from './core/scene.js'
 import { createCamera } from './core/camera.js'
 import { createClock } from './core/clock.js'
 import { createLoop } from './core/loop.js'
-import { createStationBlockout, createStationLighting } from './environment/station-blockout.js'
-import { createTrain } from './entities/train.js'
+import { createAssetLoader } from './core/assets.js'
+import { createLevelManager } from './core/level-manager.js'
 import { createPlayer } from './entities/player.js'
 import { createKeyboardState } from './input/keyboard-state.js'
 import { createThirdPersonCamera } from './cameras/third-person-camera.js'
+import { createInteractionSystem } from './systems/interaction.js'
+import { createRespawnSystem } from './systems/respawn.js'
+import { createHud } from './ui/hud.js'
+import { createLoadingScreen } from './ui/loading-screen.js'
+import { createBoardingLevel } from './levels/boarding.js'
+import { createMovingHeistLevel } from './levels/moving-heist.js'
+import { createTimewreckLevel } from './levels/timewreck.js'
+import { createCompleteLevel } from './levels/complete.js'
 
-// Composition root for the Alpha preliminary implementation: a greyboxed
-// slice of Level 1 (the boarding station) with a walkable placeholder
-// player and a third-person camera. Keep this file short and readable — it
-// wires things together, it isn't where logic lives.
+// Composition root. Everything persistent (renderer, camera, loop, input,
+// HUD, asset loader, interaction/respawn systems) is created here once; the
+// per-level content is owned by the level manager, which builds and disposes
+// one level module at a time. Keep this file wiring-only.
 
 const canvas = document.querySelector('#app')
 
-// renderer/camera each wire their own resize() to window's resize event
 const { renderer } = createRenderer(canvas)
 const scene = createScene()
 const { camera } = createCamera()
 const clock = createClock()
 
-const { group: station, bounds } = createStationBlockout()
-scene.add(station)
-for (const light of createStationLighting()) {
-  scene.add(light)
-}
+const assets = createAssetLoader()
+const hud = createHud()
+const loadingScreen = createLoadingScreen(assets)
 
-const { train } = createTrain()
-scene.add(train)
-
+// The player persists across levels; the level manager repositions it to
+// each level's checkpoint on load.
 const player = createPlayer()
 scene.add(player.mesh)
 
 const keyboard = createKeyboardState()
 const thirdPersonCamera = createThirdPersonCamera(camera, renderer.domElement)
+const interaction = createInteractionSystem({ camera })
+const respawn = createRespawnSystem({ player, hud, camera: thirdPersonCamera })
+
+const levelManager = createLevelManager({
+  scene,
+  interaction,
+  assets,
+  hud,
+  player,
+  camera: thirdPersonCamera,
+  respawn,
+  loadingScreen,
+  levels: [
+    { state: 'Boarding', create: createBoardingLevel },
+    { state: 'MovingHeist', create: createMovingHeistLevel },
+    { state: 'Timewreck', create: createTimewreckLevel },
+    { state: 'Complete', create: createCompleteLevel }
+  ]
+})
+
+levelManager.enter('Boarding')
 
 const loop = createLoop({ renderer, scene, camera, clock })
 loop.add((delta) => {
-  player.update(delta, { keyboard: keyboard.state, cameraYaw: thirdPersonCamera.getYaw(), bounds })
-  thirdPersonCamera.update(delta, player.mesh)
+  levelManager.update(delta)
+  player.update(delta, {
+    keyboard: keyboard.state,
+    cameraYaw: thirdPersonCamera.getYaw(),
+    bounds: levelManager.bounds
+  })
+  thirdPersonCamera.update(delta, player.mesh, scene)
+  interaction.update(player.mesh, thirdPersonCamera.getYaw())
+  respawn.update()
 })
 loop.start()
