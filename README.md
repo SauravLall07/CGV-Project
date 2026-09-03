@@ -5,13 +5,19 @@ graphics course. The player sneaks through the train's carriages, evading
 guards, using a time-manipulation ability (slow/freeze/rewind/"time ghost")
 to get past obstacles across three levels.
 
-This repo currently holds the **Alpha preliminary implementation**: a
-greyboxed slice of Level 1 (the boarding station) with a walkable placeholder
-player, a third-person camera, and the train's parent-child hierarchy — built
-on top of the Three.js/Vite scaffold. Everything visual is primitive geometry
-(boxes, cylinders, a capsule) with flat-colour materials; no modelled assets,
-stealth logic, or the time system exist yet. See [Roadmap](#roadmap) below
-for exactly what's implemented versus what's still to come.
+This repo holds the Alpha blockout plus **Phase 1 core systems**: a greyboxed
+slice of Level 1 (the boarding station), a walkable blocky humanoid player, a
+third-person camera, the train's parent-child hierarchy, and the shared
+plumbing the rest of the game builds on — an interaction system, a
+state-machine level manager (with dispose-based teardown and
+restart-without-refresh), a checkpoint/respawn system, an asset-loading
+pipeline with a progress-bar loading screen, and a HUD scaffold. Levels 2 and
+3 exist only as gameplay stubs, though they are now set inside a dressed
+carriage interior rather than a grey box. Every asset is still built from
+Three.js primitives and procedurally generated textures — nothing is modelled
+or downloaded — and no stealth logic or time system exists yet. See
+[Roadmap](#roadmap) below for exactly what's implemented versus what's still
+to come.
 
 ## Controls
 
@@ -19,6 +25,9 @@ for exactly what's implemented versus what's still to come.
 - **Shift** — run
 - **Click the canvas, then move the mouse** — orbit the third-person camera
   around the player (uses the Pointer Lock API)
+- **E** — interact with whatever you're facing (a prompt appears when in range)
+- **R** — restart the current level (no page refresh); on the completion
+  screen, restarts the whole run. Temporary until Phase 8's pause menu.
 
 ## Tech stack
 
@@ -43,14 +52,36 @@ src/
     clock.js                 delta-time wrapper (THREE.Timer-backed)
     loop.js                   requestAnimationFrame loop + update callbacks
     lights.js                  flat ambient + directional test lighting
-                                (superseded by environment/station-blockout.js
-                                for the active scene; kept for other scenes)
+                                (superseded per-level; kept for other scenes)
+    assets.js                 LoadingManager + GLTFLoader (+ lazy Draco),
+                                progress-callback fan-out
+    dispose.js                recursive geometry/material/texture/light cleanup
+    level-manager.js          state machine over the level sequence: build,
+                                dispose-based teardown, restart, advance
+  levels/                level content, one module each, built by level-manager
+    boarding.js           Level 1 — station concourse + train + boarding control
+    moving-heist.js       Level 2 — carriage interior + Chrono Core; gameplay
+                           still a STUB for Phase 3
+    timewreck.js          Level 3 — the same interior re-dressed as wreckage +
+                           emergency brake; STUB for Phase 4
+    complete.js           terminal state — completion message only
+  systems/               cross-level gameplay systems
+    interaction.js        raycast-from-player, contextual prompt, register()/E
+    respawn.js            one active checkpoint + generic fail() → respawn
+  ui/                    DOM overlays (Phase 8 restyles/merges these)
+    hud.js                objective line + transient toast
+    loading-screen.js     progress bar driven by assets.js
   entities/
-    train.js              Train group + named carriage-N child groups
-    player.js               Placeholder capsule + camera-relative movement
+    train.js              Train group + named carriage-N child groups +
+                           locomotive; exports the track height constants
+    player.js               Movement + walk cycle over a humanoid figure
+    humanoid.js             Shared figure builder (player and guards)
   environment/
-    station-blockout.js   Level 1 greybox: floor, structural placeholders,
-                           static guard/camera placeholders, warm lighting
+    station-blockout.js   Level 1 station: concourse, track bed, rear wall,
+                           columns, train shed, props, placeholders, lighting
+    carriage-interior.js  Reusable carriage interior; `damaged: true` re-dresses
+                           the same geometry as Level 3's wreckage
+    textures.js           Procedural canvas textures + derived normal maps
   input/
     keyboard-state.js     WASD/shift held-state tracking
   cameras/
@@ -58,12 +89,12 @@ src/
   dev/
     dev-controls.js       TEMPORARY OrbitControls — not wired into the
                            active scene, kept for debugging other scenes
-public/                 static assets copied as-is at build time (empty for now)
 ```
 
 `core/` only ever holds generic Three.js infrastructure — no gameplay code
-belongs there. `dev/` is kept separate so it's obvious what's scaffolding
-versus what ships.
+belongs there. `systems/` is game logic reused across levels; `levels/` is
+per-level content the manager builds and tears down one at a time. `dev/` is
+kept separate so it's obvious what's scaffolding versus what ships.
 
 ## Running locally
 
@@ -72,9 +103,10 @@ npm install
 npm run dev
 ```
 
-Opens a dev server showing the Level 1 station greybox: walk the placeholder
-player around with WASD, click the canvas and move the mouse to orbit the
-third-person camera, and note the train visible alongside the platform.
+Opens a dev server on the Level 1 station greybox: walk the player around with
+WASD, click the canvas and move the mouse to orbit the camera, walk up to the
+green boarding control and press **E** to transition into the Level 2 stub,
+and press **R** at any point to restart the current level without a refresh.
 
 ## Building for production
 
@@ -124,25 +156,61 @@ top level of the archive, not nested).
 - Level 1 station greybox: platform, structural placeholders (wall, pillars,
   platform edge), static non-functional guard/camera placeholders, warm
   station lighting with shadows
-- Placeholder player (capsule) with WASD movement, frame-rate-independent
-  via delta time, bounded to the platform
+- Placeholder player (blocky humanoid) with WASD movement, frame-rate-
+  independent via delta time, bounded per level
 - Third-person camera: smoothed follow + mouse-look orbit via Pointer Lock
+- **Phase 1 core systems** — the shared foundation for all three levels:
+  - Interaction system: one raycast per frame from the player along the
+    camera yaw against a `register()`-ed set, a contextual prompt, E to fire
+    the callback
+  - Level manager: explicit `Boarding → MovingHeist → Timewreck → Complete`
+    state machine; each transition disposes the old level's
+    geometry/materials/textures and builds the next; `advance()` on level
+    completion, `restart()` with no page refresh
+  - Checkpoint / respawn: one active checkpoint per level, generic `fail()`
+    that returns the player to it (fall-out-of-bounds wired; guard/hazard
+    hooks land in Phases 2 and 4)
+  - Asset pipeline: shared `LoadingManager` + `GLTFLoader` (Draco lazy), and
+    a loading screen with a real `onProgress`-driven progress bar
+  - HUD scaffold: objective line + transient toast (full HUD is Phase 8)
+- Levels 2 and 3 exist as gameplay **stubs** — own lighting, checkpoint and
+  one interactable each, enough to exercise the state machine
+- **Art pass** (pulls Phase 7 material work forward so the game stops reading
+  as greybox):
+  - Procedural texture library: wood, marble, carpet, brushed metal, plaster,
+    lit-window strips and signage, all generated into `<canvas>` at runtime
+    with **normal maps derived from each colour map** — no downloaded or
+    modelled assets anywhere, and every map is power-of-two
+  - Station: marble concourse, coping and safety line, track bed with ballast,
+    sleepers and rails, panelled rear wall with lit arched windows, cast-iron
+    columns, train shed with lattice trusses and skylights, pendant gas lamps,
+    benches, departure board, clock, porter's trolley
+  - Train: locomotive (boiler, cab, chimney, plough, driving wheels, headlamp)
+    plus five carriages with barrel roofs, brass trim, per-type liveries,
+    textured window strips, doors, bogies and gangways
+  - Carriage interior: panelled walls, brass-framed windows onto a passing
+    night, seat bays with tables and lamps, luggage racks, coved ceiling
+  - Player is a proportioned figure (coat, cap, boots) with a walk cycle —
+    limb swing, torso bob, and a lean into a run
+  - ACES filmic tone mapping and soft shadow maps
+  - Repeated furniture (seats, wheels, sleepers, vents, debris) goes through
+    `InstancedMesh` to keep the draw-call count down
 
-### Next up (not part of this task): Level 1 proper, for graded Beta
+### Next up: Level 1 proper (Phase 2), for graded Beta
 
 - Guard patrol AI, camera/guard detection cones, suspicion/alarm system
 - Real (even if simple) modelled/textured assets replacing the primitives
   above — train exterior, station architecture, character model
-- The time-manipulation system (slow / freeze / rewind / time ghost)
+- The time-manipulation system (slow / freeze / rewind / time ghost) — Phase 3
 
 ### Still out of scope beyond that
 
-- Levels 2 and 3 in any form
+- Levels 2 and 3 in any real form (only stubs exist)
 - Physics beyond basic ground/wall blocking
-- HUD, menus, checkpoints, restart system, credits screen
+- Menus, credits screen, audio, the full styled HUD
 - Custom shaders (Chrono Field, security lasers — concept only for now)
 
 ### Things to revisit once real implementation starts
 
 - Whether to move from plain JS to TypeScript
-- Adding `levels/`, `systems/` folders once there's real code to put in them
+- The temporary `R`-to-restart key, once Phase 8's pause menu exists
