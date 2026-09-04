@@ -79,13 +79,98 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     initialWaypoint: 0
   })
 
-  stealth.addCamera({
-    position: new THREE.Vector3(-34.0, 4.6, -21.95),
-    baseAngle: Math.PI,
-    sweepRange: Math.PI / 3.4,
-    sweepSpeed: 0.65,
-    range: 8.5
+  const approachLaserGrid = stealth.addLaserGrid({
+    position: new THREE.Vector3(
+      APPROACH_GATE_X[1],
+      0,
+      -23.025
+    ),
+    width: 2.1,
+    height: 2.2,
+    beamCount: 4,
+    rotationY: Math.PI / 2
   })
+
+  // -------------------------------------------------------------
+  // West Wing Laser Terminal
+  // Mounted on the north wall before Gate 2.
+  // -------------------------------------------------------------
+  const approachTerminal = new THREE.Group()
+  approachTerminal.name = 'west-wing-security-terminal'
+  approachTerminal.position.set(-32.0, 1.2, -22.0)
+
+  // Rotate the existing terminal design so its screen faces into
+  // the east-west corridor.
+  approachTerminal.rotation.y = Math.PI / 2
+
+  const approachTermBox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.35, 0.55, 0.22),
+    new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.4,
+      metalness: 0.8
+    })
+  )
+
+  approachTerminal.add(approachTermBox)
+
+  const approachTermScreenMat = new THREE.MeshStandardMaterial({
+    color: 0xef4444,
+    emissive: 0xdc2626,
+    emissiveIntensity: 2.5,
+    roughness: 0.2
+  })
+
+  const approachTermScreen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.04, 0.28, 0.16),
+    approachTermScreenMat
+  )
+
+  approachTermScreen.position.set(0.18, 0.05, 0)
+  approachTerminal.add(approachTermScreen)
+
+  const approachTermLight = new THREE.PointLight(
+    0xef4444,
+    3,
+    3
+  )
+
+  approachTermLight.position.set(0.3, 0.05, 0)
+  approachTerminal.add(approachTermLight)
+
+  station.add(approachTerminal)
+
+  let isApproachGridDisabled = false
+
+  const unregisterApproachTerminal = interaction.register(
+    approachTerminal,
+    {
+      prompt: 'Deactivate West Wing Laser Grid',
+
+      onInteract: () => {
+        if (isApproachGridDisabled) return
+
+        isApproachGridDisabled = true
+
+        approachLaserGrid.setActive(false)
+
+        approachTermScreenMat.color.setHex(0x10b981)
+        approachTermScreenMat.emissive.setHex(0x059669)
+        approachTermLight.color.setHex(0x10b981)
+
+        interaction.flashPrompt(
+          'West Wing Security Grid Deactivated!'
+        )
+
+        if (hud) {
+          hud.showToast(
+            'Laser grid offline — Gate 2 is clear',
+            2200
+          )
+        }
+      }
+    }
+  )
 
   // Wing Zone C — Security Hall (medium-hard)
   stealth.addGuard({
@@ -98,13 +183,6 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     initialWaypoint: 1
   })
 
-  stealth.addCamera({
-    position: new THREE.Vector3(-23.5, 4.6, -27.05),
-    baseAngle: 0,
-    sweepRange: Math.PI / 3.2,
-    sweepSpeed: 0.8,
-    range: 8.5
-  })
 
   // Wing Zone D — Final Approach (hard)
   stealth.addGuard({
@@ -293,8 +371,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
 
   const approachZoneNames = [
     'Infiltrate the west gallery — use luggage and benches as cover',
-    'Baggage passage — weave through the first security doorway',
-    'Security hall — watch the sweeping camera',
+    'Baggage passage — find a way through the security laser',
+    'Security hall — stay behind cover and avoid the patrol',
     'Final approach — reach the station junction'
   ]
   let approachZoneIndex = -1
@@ -372,6 +450,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     },
 
     dispose() {
+      unregisterApproachTerminal()
       unregisterTerminal()
       unregisterBoarding()
       stealth.dispose()

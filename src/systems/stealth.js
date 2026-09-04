@@ -163,45 +163,88 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
   // -----------------------------------------------------------------
   // Laser Security Grid Factory
   // -----------------------------------------------------------------
-  function addLaserGrid({ position, width = 2.4, height = 2.2, beamCount = 4 }) {
+  function addLaserGrid({
+    position,
+    width = 2.4,
+    height = 2.2,
+    beamCount = 4,
+    rotationY = 0
+  }) {
     const gridGroup = new THREE.Group()
     gridGroup.name = 'laser-grid'
     gridGroup.position.copy(position)
+    gridGroup.rotation.y = rotationY
 
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 })
-    const postLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15, height, 0.15), frameMat)
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      metalness: 0.9,
+      roughness: 0.2
+    })
+
+    const postLeft = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, height, 0.15),
+      frameMat
+    )
     postLeft.position.set(-width / 2, height / 2, 0)
-    const postRight = new THREE.Mesh(new THREE.BoxGeometry(0.15, height, 0.15), frameMat)
+
+    const postRight = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, height, 0.15),
+      frameMat
+    )
     postRight.position.set(width / 2, height / 2, 0)
+
     gridGroup.add(postLeft, postRight)
 
     const laserMat = createSecurityLaserMaterial({ beamCount })
 
     const beams = []
     const spacing = height / (beamCount + 1)
+
     for (let i = 1; i <= beamCount; i++) {
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, width, 16), laserMat)
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.018, 0.018, width, 16),
+        laserMat
+      )
+
       beam.rotation.z = Math.PI / 2
       beam.position.set(0, i * spacing, 0)
+
       gridGroup.add(beam)
       beams.push(beam)
     }
+
+    // If the laser has been rotated by 90 degrees, its width now runs
+    // along Z instead of X, so its collision box must rotate as well.
+    const sideways = Math.abs(Math.sin(rotationY)) > 0.5
+
+    const bounds = sideways
+      ? {
+          minX: position.x - 0.35,
+          maxX: position.x + 0.35,
+          minZ: position.z - width / 2 - 0.2,
+          maxZ: position.z + width / 2 + 0.2,
+          minY: position.y,
+          maxY: position.y + height
+        }
+      : {
+          minX: position.x - width / 2 - 0.2,
+          maxX: position.x + width / 2 + 0.2,
+          minZ: position.z - 0.35,
+          maxZ: position.z + 0.35,
+          minY: position.y,
+          maxY: position.y + height
+        }
 
     const grid = {
       gridGroup,
       beams,
       laserMat,
       active: true,
-      bounds: {
-        minX: position.x - width / 2 - 0.2,
-        maxX: position.x + width / 2 + 0.2,
-        minZ: position.z - 0.35,
-        maxZ: position.z + 0.35,
-        minY: position.y,
-        maxY: position.y + height
-      },
+      bounds,
+
       setActive(isActive) {
         grid.active = isActive
+
         if (laserMat.customUniforms) {
           laserMat.customUniforms.uState.value = isActive ? 0 : 1
         }
@@ -210,6 +253,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
     laserGrids.push(grid)
     scene.add(gridGroup)
+
     return grid
   }
 
