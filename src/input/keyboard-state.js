@@ -1,28 +1,41 @@
-// Tracks WASD + shift held state into a plain object other modules can
-// read, and exposes an onKeyPress listener for single-press action triggers
-// like time abilities and interactions.
+// Tracks held movement/action state into a plain object other modules can read,
+// and exposes an onKeyPress listener for single-press action triggers.
 const KEY_MAP = {
   KeyW: 'forward',
   KeyS: 'back',
   KeyA: 'left',
   KeyD: 'right',
+
   ShiftLeft: 'run',
-  ShiftRight: 'run'
+  ShiftRight: 'run',
+
+  Space: 'jump',
+  KeyX: 'duck'
 }
 
 export function createKeyboardState() {
-  const state = { forward: false, back: false, left: false, right: false, run: false }
+  const state = {
+    forward: false,
+    back: false,
+    left: false,
+    right: false,
+    run: false,
+    jump: false,
+    duck: false
+  }
+
   const listeners = new Map()
 
   function onKeyPress(code, callback) {
     if (!listeners.has(code)) listeners.set(code, new Set())
     listeners.get(code).add(callback)
+
     return () => {
       const set = listeners.get(code)
-      if (set) {
-        set.delete(callback)
-        if (set.size === 0) listeners.delete(code)
-      }
+      if (!set) return
+
+      set.delete(callback)
+      if (set.size === 0) listeners.delete(code)
     }
   }
 
@@ -30,8 +43,11 @@ export function createKeyboardState() {
     const key = KEY_MAP[event.code]
     if (key) state[key] = true
 
+    // Prevent browser page scrolling while Space is used to jump.
+    if (event.code === 'Space') event.preventDefault()
+
     if (!event.repeat && listeners.has(event.code)) {
-      listeners.get(event.code).forEach((cb) => cb(event))
+      listeners.get(event.code).forEach((callback) => callback(event))
     }
   }
 
@@ -51,4 +67,3 @@ export function createKeyboardState() {
 
   return { state, onKeyPress, dispose }
 }
-
