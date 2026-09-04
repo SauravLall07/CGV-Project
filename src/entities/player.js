@@ -115,7 +115,7 @@ function createArticulatedLeg(oldLeg, name) {
     centre.copy(oldLeg.position)
   }
 
-  const legLength = Math.max(size.y, 1.2)
+  const legLength = size.y
   const width = Math.max(Math.min(size.x, size.z), 0.28)
   const radius = THREE.MathUtils.clamp(width * 0.38, 0.11, legLength * 0.12)
   const footHeight = Math.min(radius * 0.9, legLength * 0.1)
