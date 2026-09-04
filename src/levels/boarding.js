@@ -39,16 +39,18 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     player,
     respawn,
     hud,
-    collidables
+    collidables,
+    obstacles: wallColliders
   })
 
-    // -------------------------------------------------------------
-  // Zone 1 — The Approach (easy): a single slow patrol, no cameras.
+  // -------------------------------------------------------------
+  // Zone 1 — The Approach (easy): a single slow patrol along the east
+  // aisle, leading toward the east-side doorway into Zone 2.
   // -------------------------------------------------------------
   stealth.addGuard({
     waypoints: [
-      new THREE.Vector3(1.6, 0, -18),
-      new THREE.Vector3(1.6, 0, -10.6)
+      new THREE.Vector3(1.6, 0, -21),
+      new THREE.Vector3(1.6, 0, -14.6)
     ],
     speed: 1.3,
     waitTime: 2.6,
@@ -56,17 +58,17 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   })
 
   // -------------------------------------------------------------
-  // Zone 2 — The Colonnade (medium): two crossing patrols plus a camera
-  // watching the aisle. The terminal that disables Zone 3's laser gate
-  // lives here, so the player has to clear this zone properly to unlock
-  // the checkpoint ahead rather than just detouring around it.
+  // Zone 2 — The Colonnade (medium): the doorway out (into Zone 3) sits
+  // on the WEST wall, so the player has to cross the full width of this
+  // room past two crossing patrols and a camera. The terminal that
+  // disables Zone 3's laser gate lives here too.
   // -------------------------------------------------------------
   stealth.addGuard({
     waypoints: [
-      new THREE.Vector3(-2.8, 0, -9.5),
-      new THREE.Vector3(-2.8, 0, 2),
-      new THREE.Vector3(-0.6, 0, 2),
-      new THREE.Vector3(-0.6, 0, -9.5)
+      new THREE.Vector3(-2.8, 0, -13),
+      new THREE.Vector3(-2.8, 0, 3),
+      new THREE.Vector3(-0.6, 0, 3),
+      new THREE.Vector3(-0.6, 0, -13)
     ],
     speed: 1.6,
     waitTime: 1.8,
@@ -93,14 +95,14 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
 
   // -------------------------------------------------------------
   // Zone 3 — The Checkpoint (hard): a guard, a camera, and the laser
-  // grid itself sits right in the doorway from Zone 2 — the toughest
-  // combination yet, and it can only be cleared by having disabled the
-  // grid from the Zone 2 terminal first.
+  // grid sits right in the west-side doorway from Zone 2 — the toughest
+  // combination yet, only passable once the Zone 2 terminal has
+  // disabled it.
   // -------------------------------------------------------------
   stealth.addGuard({
     waypoints: [
-      new THREE.Vector3(2.4, 0, 4),
-      new THREE.Vector3(-1.0, 0, 10)
+      new THREE.Vector3(2.4, 0, 8),
+      new THREE.Vector3(-1.0, 0, 16)
     ],
     speed: 1.7,
     waitTime: 2.0,
@@ -108,7 +110,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   })
 
   stealth.addCamera({
-    position: new THREE.Vector3(-4.7, 4.6, 8),
+    position: new THREE.Vector3(-4.7, 4.6, 12),
     baseAngle: -0.2,
     sweepRange: Math.PI / 3.2,
     sweepSpeed: 0.65,
@@ -117,13 +119,13 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
 
   // -------------------------------------------------------------
   // Zone 4 — The Boarding Platform (hardest): a short, tight final
-  // stretch — a fast guard and a narrow, quick-sweeping camera leave
-  // little room to wait out a gap.
+  // stretch through the east-side doorway — a fast guard and a narrow,
+  // quick-sweeping camera leave little room to wait out a gap.
   // -------------------------------------------------------------
   stealth.addGuard({
     waypoints: [
-      new THREE.Vector3(3.0, 0, 14),
-      new THREE.Vector3(0.5, 0, 18)
+      new THREE.Vector3(3.0, 0, 22),
+      new THREE.Vector3(0.5, 0, 26)
     ],
     speed: 1.8,
     waitTime: 1.4,
@@ -131,7 +133,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   })
 
   stealth.addCamera({
-    position: new THREE.Vector3(-4.7, 4.6, 16),
+    position: new THREE.Vector3(-4.7, 4.6, 24),
     baseAngle: 0,
     sweepRange: Math.PI / 4.5,
     sweepSpeed: 0.9,
@@ -139,10 +141,11 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   })
 
   // -------------------------------------------------------------
-  // Laser Security Grid — embedded in the Zone 2 → Zone 3 doorway.
+  // Laser Security Grid — embedded in the Zone 2 → Zone 3 doorway
+  // (west side, x ≈ -2.8), matching that gate's door position.
   // -------------------------------------------------------------
   const laserGrid = stealth.addLaserGrid({
-    position: new THREE.Vector3(2.0, 0, 3),
+    position: new THREE.Vector3(-2.8, 0, 4),
     width: 2.4,
     height: 2.2,
     beamCount: 4
@@ -206,13 +209,27 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     }
   })
 
+  const zoneNames = [
+    'Slip past the guard in the approach',
+    'Clear the colonnade — find the terminal, then head west',
+    'Bypass the checkpoint laser and camera, then head east',
+    'Sprint the last stretch to the train'
+  ]
+  let zoneIndex = 0
+
   return {
     objective: 'Bypass guards & security grid to board the Chrono Express',
-    checkpoint: { position: new THREE.Vector3(2.2, 0, -13), yaw: 0 },
+    checkpoint: { position: new THREE.Vector3(1.6, 0, -25), yaw: 0 },
     bounds,
-
+    obstacles: wallColliders,
     update(delta) {
       outdoorEnv.update(delta)
+
+      const crossed = GATE_Z.filter((g) => player.mesh.position.z > g).length
+      if (crossed !== zoneIndex) {
+        zoneIndex = crossed
+        if (hud) hud.showToast(zoneNames[zoneIndex], 2200)
+      }
 
       if (isBoardingCinematic) {
         cinematicTimer += delta

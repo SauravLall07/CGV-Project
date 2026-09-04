@@ -20,18 +20,21 @@ import {
 // train's floor lines up with the platform and its wheels sit in the trench.
 
 export const PLATFORM_WIDTH = 10
-export const PLATFORM_LENGTH = 40
+export const PLATFORM_LENGTH = 56
 
 const HALF_WIDTH = PLATFORM_WIDTH / 2
 const HALF_LENGTH = PLATFORM_LENGTH / 2
 const ROOF_Y = 6
 const WALL_X = -HALF_WIDTH
 const PILLAR_X = 4.6
-const PILLAR_Z = [-16, -8, 0, 8, 16]
+const PILLAR_Z = [-24, -16, -8, 0, 8, 16, 24]
 
-export const GATE_Z = [-10, 3, 13]
-const DOOR_X_MIN = 0.8
-const DOOR_X_MAX = 3.2
+const GATE_DOORS = [
+  { z: -14, doorMin: 1.0, doorMax: 3.4 },   // Approach → Colonnade: opens east
+  { z: 4, doorMin: -4.0, doorMax: -1.6 },   // Colonnade → Checkpoint: opens west
+  { z: 20, doorMin: 0.6, doorMax: 3.0 }     // Checkpoint → Boarding: opens east
+]
+export const GATE_Z = GATE_DOORS.map((g) => g.z)
 const DOOR_HEIGHT = 2.6
 
 // Axis-aligned bounds the player is clamped to. Inset from the platform edge
@@ -168,7 +171,7 @@ function createRearWall() {
   archGeometry.rotateZ(Math.PI / 2)
   const frameGeometry = new THREE.BoxGeometry(0.05, 2.6, 1.7)
 
-  for (let z = -15; z <= 15; z += 6) {
+  for (let z = -HALF_LENGTH + 5; z <= HALF_LENGTH - 5; z += 6) {
     const frame = new THREE.Mesh(frameGeometry, frameMaterial)
     frame.position.set(WALL_X + 0.02, 3.4, z)
     group.add(frame)
@@ -232,14 +235,14 @@ function createPillars() {
   return group
 }
 
-function createGateWall(z, name, wallMat, frameMat) {
+function createGateWall({ z, doorMin, doorMax }, name, wallMat, frameMat) {
   const gate = new THREE.Group()
   gate.name = name
 
-  const leftWidth = DOOR_X_MIN - WALL_X
+  const leftWidth = doorMin - WALL_X
   const leftCenterX = WALL_X + leftWidth / 2
-  const rightWidth = HALF_WIDTH - DOOR_X_MAX
-  const rightCenterX = DOOR_X_MAX + rightWidth / 2
+  const rightWidth = HALF_WIDTH - doorMax
+  const rightCenterX = doorMax + rightWidth / 2
 
   const leftFlank = new THREE.Mesh(new THREE.BoxGeometry(leftWidth, ROOF_Y, 0.3), wallMat)
   leftFlank.position.set(leftCenterX, ROOF_Y / 2, z)
@@ -256,32 +259,35 @@ function createGateWall(z, name, wallMat, frameMat) {
   // Lintel closes the gap above door height, so the opening reads as a
   // doorway rather than a hole straight through to the shed roof.
   const lintel = new THREE.Mesh(
-    new THREE.BoxGeometry(DOOR_X_MAX - DOOR_X_MIN, ROOF_Y - DOOR_HEIGHT, 0.3),
+    new THREE.BoxGeometry(doorMax - doorMin, ROOF_Y - DOOR_HEIGHT, 0.3),
     wallMat
   )
-  lintel.position.set((DOOR_X_MIN + DOOR_X_MAX) / 2, DOOR_HEIGHT + (ROOF_Y - DOOR_HEIGHT) / 2, z)
+  lintel.position.set((doorMin + doorMax) / 2, DOOR_HEIGHT + (ROOF_Y - DOOR_HEIGHT) / 2, z)
   lintel.castShadow = true
   gate.add(lintel)
 
   // Brass door-frame trim, echoing the pillar collars elsewhere on the set.
   const jambGeometry = new THREE.BoxGeometry(0.12, DOOR_HEIGHT, 0.34)
-  for (const x of [DOOR_X_MIN, DOOR_X_MAX]) {
+  for (const x of [doorMin, doorMax]) {
     const jamb = new THREE.Mesh(jambGeometry, frameMat)
     jamb.position.set(x, DOOR_HEIGHT / 2, z)
     gate.add(jamb)
   }
   const header = new THREE.Mesh(
-    new THREE.BoxGeometry(DOOR_X_MAX - DOOR_X_MIN + 0.24, 0.12, 0.34),
+    new THREE.BoxGeometry(doorMax - doorMin + 0.24, 0.12, 0.34),
     frameMat
   )
-  header.position.set((DOOR_X_MIN + DOOR_X_MAX) / 2, DOOR_HEIGHT, z)
+  header.position.set((doorMin + doorMax) / 2, DOOR_HEIGHT, z)
   gate.add(header)
 
   // AABB colliders for the two solid flanks only — the door gap stays open.
-  // Player movement resolves against these (see player.js).
+  // Both the player (player.js) and guards (stealth.js) resolve against
+  // these, so nobody can walk through the wall; the same mesh list also
+  // feeds the guard/camera line-of-sight raycasts, so nobody can *see*
+  // through it either.
   const colliders = [
-    { minX: WALL_X, maxX: DOOR_X_MIN, minZ: z - 0.2, maxZ: z + 0.2 },
-    { minX: DOOR_X_MAX, maxX: HALF_WIDTH, minZ: z - 0.2, maxZ: z + 0.2 }
+    { minX: WALL_X, maxX: doorMin, minZ: z - 0.2, maxZ: z + 0.2 },
+    { minX: doorMax, maxX: HALF_WIDTH, minZ: z - 0.2, maxZ: z + 0.2 }
   ]
 
   return { gate, colliders }
@@ -296,8 +302,8 @@ function createPartitionWalls() {
   const frameMat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.32, metalness: 0.9 })
   const names = ['approach-gate', 'colonnade-gate', 'checkpoint-gate']
 
-  GATE_Z.forEach((z, i) => {
-    const { gate, colliders: gateColliders } = createGateWall(z, names[i], wallMat, frameMat)
+  GATE_DOORS.forEach((door, i) => {
+    const { gate, colliders: gateColliders } = createGateWall(door, names[i], wallMat, frameMat)
     group.add(gate)
     colliders.push(...gateColliders)
   })
@@ -340,7 +346,7 @@ function createTrainShed() {
   const chordGeometry = new THREE.BoxGeometry(PLATFORM_WIDTH + 2, 0.16, 0.2)
   const webGeometry = new THREE.BoxGeometry(0.9, 0.09, 0.12)
 
-  for (let z = -18; z <= 18; z += 4) {
+  for (let z = -HALF_LENGTH + 2; z <= HALF_LENGTH - 2; z += 4) {
     const chord = new THREE.Mesh(chordGeometry, trussMaterial)
     chord.position.set(-0.3, ROOF_Y - 0.45, z)
     chord.castShadow = true
@@ -373,7 +379,7 @@ function createPendantLamps() {
   const shadeGeometry = new THREE.ConeGeometry(0.45, 0.38, 14, 1, true)
   const bulbGeometry = new THREE.SphereGeometry(0.13, 10, 8)
 
-  for (const z of [-14, -7, 0, 7, 14]) {
+  for (const z of [-21, -14, -7, 0, 7, 14, 21]) {
     const rod = new THREE.Mesh(rodGeometry, brass)
     rod.position.set(0.4, ROOF_Y - 0.75, z)
     group.add(rod)
@@ -626,7 +632,7 @@ function createBoardingControl() {
   glow.position.set(0, 1.3, 0.35)
   control.add(glow)
 
-  control.position.set(4, 0, 16)
+  control.position.set(4, 0, 25)
   return control
 }
 
@@ -734,11 +740,11 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
   // A red carpet runner leading to the boarding point — luxury cue, and it
   // quietly signposts where the player is meant to go.
   const runner = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.6, 34),
-    carpetMaterial({ repeat: [1, 18], base: 0x5e1f28, accent: 0x9a7238 })
+    new THREE.PlaneGeometry(1.6, 16),
+    carpetMaterial({ repeat: [1, 9], base: 0x5e1f28, accent: 0x9a7238 })
   )
   runner.rotation.x = -Math.PI / 2
-  runner.position.set(2.2, 0.015, 1)
+  runner.position.set(2.2, 0.015, -20)
   runner.receiveShadow = true
   group.add(runner)
 
@@ -757,10 +763,10 @@ export function createStationLighting() {
   sunlight.position.set(16, 8, -10)
   sunlight.castShadow = true
   sunlight.shadow.mapSize.set(2048, 2048)
-  sunlight.shadow.camera.left = -26
-  sunlight.shadow.camera.right = 26
-  sunlight.shadow.camera.top = 26
-  sunlight.shadow.camera.bottom = -26
+  sunlight.shadow.camera.left = -34
+  sunlight.shadow.camera.right = 34
+  sunlight.shadow.camera.top = 34
+  sunlight.shadow.camera.bottom = -34
   sunlight.shadow.camera.near = 1
   sunlight.shadow.camera.far = 70
   sunlight.shadow.bias = -0.0008

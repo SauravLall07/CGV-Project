@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import { disposeObject } from '../core/dispose.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
+import { resolveBoxCollision } from '../core/collision.js'
 
 // Level 1 Stealth & Infiltration System:
 // - Deterministic guard patrol AI (Patrol -> Investigate -> Alert)
@@ -14,8 +15,7 @@ const STRIDE_AMPLITUDE = 0.65
 const STRIDE_FREQUENCY = 2.4
 const BOB_HEIGHT = 0.03
 
-export function createStealthSystem({ scene, player, respawn, hud, collidables = [] }) {
-  let suspicion = 0
+export function createStealthSystem({ scene, player, respawn, hud, collidables = [], obstacles = [] }) {  let suspicion = 0
   const maxSuspicion = 100
   const suspicionRiseRate = 45 // percent per second in line of sight
   const suspicionDecayRate = 22 // percent per second in shadow/cover
@@ -252,6 +252,9 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     return true
   }
 
+  const camEyePos = new THREE.Vector3()
+  const camToPlayer = new THREE.Vector3()
+
   function checkCameraDetection(cam, playerPos) {
     if (!playerPos) return false
     const camPos = cam.camGroup.position
@@ -268,8 +271,25 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
     const toPlayerHoriz = new THREE.Vector3(dx, 0, dz).normalize()
     const dot = camDir.dot(toPlayerHoriz)
+    if (dot <= 0.72) return false // outside the camera beam cone
 
-    return dot > 0.72 // within camera beam cone
+    // Line-of-sight raycast — a partition wall or pillar between the camera
+    // and the player blocks detection, same as it does for guards. Cameras
+    // had no occlusion check before this; angle + distance alone let them
+    // see straight through walls.
+    camEyePos.copy(camPos)
+    camToPlayer.set(playerPos.x, camPos.y, playerPos.z).sub(camEyePos)
+    const losDist = camToPlayer.length()
+    camToPlayer.normalize()
+
+    raycaster.set(camEyePos, camToPlayer)
+    raycaster.far = losDist
+    const hits = raycaster.intersectObjects(collidables, true)
+    for (const hit of hits) {
+      if (hit.distance < losDist - 0.3) return false
+    }
+
+    return true
   }
 
   function checkLaserCollision(playerPos) {
@@ -356,6 +376,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
             const step = guard.speed * delta
             guard.group.position.x += Math.sin(guard.facing) * step
             guard.group.position.z += Math.cos(guard.facing) * step
+            resolveBoxCollision(guard.group.position, obstacles)
             guard.stridePhase += step * STRIDE_FREQUENCY
           }
         }

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createHumanoid, PLAYER_PALETTE } from './humanoid.js'
+import { resolveBoxCollision } from '../core/collision.js'
 
 // The player: a humanoid figure (see entities/humanoid.js) that holds its own
 // position/rotation and moves each frame from keyboard input. Movement is
@@ -95,24 +96,7 @@ export function createPlayer() {
     // outer bounds clamp. Axis-separated resolution: shove out along
     // whichever penetration is smallest so sliding along a wall face works
     // instead of snapping to a corner.
-    if (obstacles) {
-      for (const box of obstacles) {
-        if (
-          group.position.x > box.minX && group.position.x < box.maxX &&
-          group.position.z > box.minZ && group.position.z < box.maxZ
-        ) {
-          const penLeft = group.position.x - box.minX
-          const penRight = box.maxX - group.position.x
-          const penNear = group.position.z - box.minZ
-          const penFar = box.maxZ - group.position.z
-          const minPen = Math.min(penLeft, penRight, penNear, penFar)
-          if (minPen === penLeft) group.position.x = box.minX
-          else if (minPen === penRight) group.position.x = box.maxX
-          else if (minPen === penNear) group.position.z = box.minZ
-          else group.position.z = box.maxZ
-        }
-      }
-    }
+    if (obstacles) resolveBoxCollision(group.position, obstacles)
 
     if (bounds) {
       group.position.x = THREE.MathUtils.clamp(group.position.x, bounds.minX, bounds.maxX)
