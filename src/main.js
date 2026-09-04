@@ -1,4 +1,4 @@
-import { createRenderer } from './core/renderer.js'
+import { createRenderer, generateEnvironmentMap } from './core/renderer.js'
 import { createScene } from './core/scene.js'
 import { createCamera } from './core/camera.js'
 import { createClock } from './core/clock.js'
@@ -25,10 +25,14 @@ import { createCompleteLevel } from './levels/complete.js'
 
 const canvas = document.querySelector('#app')
 
-const { renderer } = createRenderer(canvas)
+const { renderer, initPostProcessing } = createRenderer(canvas)
 const scene = createScene()
 const { camera } = createCamera()
 const clock = createClock()
+
+const composer = initPostProcessing(scene, camera)
+const envMap = generateEnvironmentMap(renderer)
+scene.environment = envMap
 
 const assets = createAssetLoader()
 const hud = createHud()
@@ -78,7 +82,7 @@ const levelManager = createLevelManager({
 
 levelManager.enter('Boarding')
 
-const loop = createLoop({ renderer, scene, camera, clock })
+const loop = createLoop({ renderer, composer, scene, camera, clock })
 loop.add((delta) => {
   timeSystem.update(delta)
   levelManager.update(delta)

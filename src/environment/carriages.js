@@ -4,7 +4,8 @@ import {
   metalMaterial,
   nightViewMaterial,
   plasterMaterial,
-  woodMaterial
+  woodMaterial,
+  brassMaterial
 } from './textures.js'
 
 // The train's interior playspace: the five carriages the concept doc calls for
@@ -53,15 +54,16 @@ const skew = (n) => (Math.sin(n * 12.9898) * 43758.5453) % 1
 
 function makeShared(damaged) {
   return {
-    steel: metalMaterial({ repeat: [3, 2], base: damaged ? 0x565b62 : 0x6b7078, roughness: damaged ? 0.7 : 0.5, metalness: 0.85 }),
-    darkSteel: new THREE.MeshStandardMaterial({ color: damaged ? 0x1b1d22 : 0x23262c, roughness: 0.65, metalness: 0.6 }),
-    brass: new THREE.MeshStandardMaterial({ color: damaged ? 0x6d5628 : 0xb08d3f, roughness: damaged ? 0.62 : 0.3, metalness: 0.9 }),
-    rivet: new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 0.5, metalness: 0.7 }),
+    steel: metalMaterial({ repeat: [3, 2], base: damaged ? 0x565b62 : 0x6b7078, roughness: damaged ? 0.7 : 0.45, metalness: 0.88 }),
+    darkSteel: metalMaterial({ repeat: [2, 2], base: damaged ? 0x1b1d22 : 0x23262c, roughness: 0.6, metalness: 0.75 }),
+    brass: brassMaterial({ repeat: [1, 1], base: damaged ? 0x6d5628 : 0xb08d3f, roughness: damaged ? 0.6 : 0.25 }),
+    rivet: metalMaterial({ repeat: [1, 1], base: 0x3a3d44, roughness: 0.4, metalness: 0.85 }),
     warmGlass: new THREE.MeshStandardMaterial({
       color: damaged ? 0x40201c : 0xffe0ac,
       emissive: damaged ? 0xa02418 : 0xffce8a,
-      emissiveIntensity: damaged ? 1.5 : 1.3,
-      roughness: 0.25
+      emissiveIntensity: damaged ? 1.6 : 1.4,
+      roughness: 0.18,
+      metalness: 0.1
     })
   }
 }

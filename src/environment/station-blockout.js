@@ -7,7 +7,9 @@ import {
   metalMaterial,
   plasterMaterial,
   signMaterial,
-  woodMaterial
+  woodMaterial,
+  concreteMaterial,
+  brassMaterial
 } from './textures.js'
 
 // Level 1's station: a covered platform with a marble concourse, cast-iron
@@ -71,7 +73,7 @@ function createConcourse() {
   // Coping stone and the tactile safety strip that runs along the edge.
   const coping = new THREE.Mesh(
     new THREE.BoxGeometry(0.45, 0.1, PLATFORM_LENGTH),
-    new THREE.MeshStandardMaterial({ color: 0xb9b09c, roughness: 0.72 })
+    concreteMaterial({ repeat: [1, 20], base: 0xb9b09c, roughness: 0.75 })
   )
   coping.position.set(HALF_WIDTH - 0.22, 0.05, 0)
   coping.receiveShadow = true
@@ -145,7 +147,7 @@ function createRearWall() {
 
   const wood = woodMaterial({ repeat: [1, 16], light: 0x7c5330, dark: 0x3d2615 })
   const plaster = plasterMaterial({ repeat: [2, 14], base: 0x8e8172 })
-  const brass = new THREE.MeshStandardMaterial({ color: 0xa9832f, roughness: 0.35, metalness: 0.85 })
+  const brass = brassMaterial({ repeat: [1, 16], base: 0xa9832f, roughness: 0.28 })
 
   // Build the rear wall as two solid runs with a real opening where the new
   // west-east corridor enters the existing platform. The old implementation

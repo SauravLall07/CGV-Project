@@ -4,7 +4,8 @@ import {
   metalMaterial,
   nightViewMaterial,
   plasterMaterial,
-  woodMaterial
+  woodMaterial,
+  brassMaterial
 } from './textures.js'
 
 // The inside of a carriage: panelled walls, a carpeted aisle between seat
@@ -49,10 +50,10 @@ export function createCarriageInterior({ length = 26, damaged = false } = {}) {
     repeat: [Math.round(length / 4), 1],
     base: damaged ? 0x51473f : 0xbfae94
   })
-  const brass = new THREE.MeshStandardMaterial({
-    color: damaged ? 0x6d5628 : 0xb08d3f,
-    roughness: damaged ? 0.62 : 0.28,
-    metalness: 0.9
+  const brass = brassMaterial({
+    repeat: [1, 1],
+    base: damaged ? 0x6d5628 : 0xb08d3f,
+    roughness: damaged ? 0.62 : 0.28
   })
   const upholstery = new THREE.MeshStandardMaterial({
     color: damaged ? 0x2f2a30 : 0x4a5c74,

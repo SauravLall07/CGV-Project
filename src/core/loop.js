@@ -1,6 +1,6 @@
 // Owns the requestAnimationFrame loop. Registered callbacks are called each
-// frame as update(delta), then the scene is rendered.
-export function createLoop({ renderer, scene, camera, clock }) {
+// frame as update(delta), then the scene is rendered (via EffectComposer if active).
+export function createLoop({ renderer, composer, scene, camera, clock }) {
   const updateCallbacks = []
 
   function add(callback) {
@@ -12,7 +12,11 @@ export function createLoop({ renderer, scene, camera, clock }) {
     for (const update of updateCallbacks) {
       update(delta)
     }
-    renderer.render(scene, camera)
+    if (composer && composer.passes && composer.passes.length > 0) {
+      composer.render()
+    } else {
+      renderer.render(scene, camera)
+    }
     requestAnimationFrame(tick)
   }
 

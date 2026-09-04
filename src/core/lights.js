@@ -1,13 +1,29 @@
 import * as THREE from 'three'
 
-// Minimal lighting so the scene isn't pitch black. Not the "warm station
-// lighting" or level-specific atmosphere from the concept doc — that's real
-// implementation work for later.
+// Physically based global lighting setup with soft shadows and balanced color temperature
 export function createLights() {
-  const ambient = new THREE.AmbientLight(0xffffff, 0.4)
+  // Hemisphere light: warm sky tint, cool ground bounce
+  const hemi = new THREE.HemisphereLight(0xffe6cc, 0x1f2430, 0.45)
 
-  const directional = new THREE.DirectionalLight(0xffffff, 1)
-  directional.position.set(5, 10, 7)
+  // Primary key light (Sun / Moon / Overhead Rig) with high-res soft shadow mapping
+  const directional = new THREE.DirectionalLight(0xfff0dd, 1.8)
+  directional.position.set(12, 28, 15)
+  directional.castShadow = true
 
-  return [ambient, directional]
+  directional.shadow.mapSize.width = 2048
+  directional.shadow.mapSize.height = 2048
+  directional.shadow.camera.near = 0.5
+  directional.shadow.camera.far = 80
+
+  const d = 35
+  directional.shadow.camera.left = -d
+  directional.shadow.camera.right = d
+  directional.shadow.camera.top = d
+  directional.shadow.camera.bottom = -d
+
+  // Prevent shadow acne & peter-panning
+  directional.shadow.bias = -0.0002
+  directional.shadow.normalBias = 0.02
+
+  return [hemi, directional]
 }
