@@ -206,10 +206,10 @@ function createRearWall() {
   const glassMaterial = new THREE.MeshStandardMaterial({
     color: 0x9fb4d8,
     emissive: 0xbcd0f0,
-    emissiveIntensity: 1.5,
-    roughness: 0.2
+    emissiveIntensity: 0.8,
+    roughness: 0.35
   })
-  const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.7, metalness: 0.3 })
+  const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.7, metalness: 0.05 })
   const paneGeometry = new THREE.BoxGeometry(0.08, 2.4, 1.5)
   const archGeometry = new THREE.CylinderGeometry(0.75, 0.75, 0.08, 16, 1, false, 0, Math.PI)
   archGeometry.rotateZ(Math.PI / 2)
@@ -378,7 +378,7 @@ function createApproachCorridor() {
     bulb.position.set(x, ROOF_Y - 1.62, APPROACH_CENTER_Z)
     group.add(bulb)
 
-    const lamp = new THREE.PointLight(0xffc98a, 18, 11, 2)
+    const lamp = new THREE.PointLight(0xffc98a, 8, 11, 2)
     lamp.position.set(x, ROOF_Y - 1.7, APPROACH_CENTER_Z)
     group.add(lamp)
   }
@@ -647,7 +647,7 @@ function createPendantLamps() {
 
     // Accent only — the platform's base exposure comes from the directional
     // and hemisphere lights, and none of these cast shadows.
-    const lamp = new THREE.PointLight(0xffc98a, 22, 13, 2)
+    const lamp = new THREE.PointLight(0xffc98a, 10, 13, 2)
     lamp.position.set(0.4, ROOF_Y - 1.7, z)
     group.add(lamp)
   }
@@ -1026,7 +1026,7 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
 // unit-stable); the pendant lamps inside the blockout add warm accents.
 export function createStationLighting() {
   // Low evening sun raking in under the shed from the open track side.
-  const sunlight = new THREE.DirectionalLight(0xffb173, 2.4)
+  const sunlight = new THREE.DirectionalLight(0xffb173, 1.2)
   sunlight.position.set(16, 8, -10)
   sunlight.castShadow = true
   sunlight.shadow.mapSize.set(2048, 2048)
@@ -1039,8 +1039,8 @@ export function createStationLighting() {
   sunlight.shadow.bias = -0.0008
   sunlight.shadow.normalBias = 0.02
 
-  const sky = new THREE.HemisphereLight(0x5e6f96, 0x2e241a, 0.85)
-  const fill = new THREE.AmbientLight(0x3b3346, 0.35)
+  const sky = new THREE.HemisphereLight(0x5e6f96, 0x2e241a, 0.55)
+  const fill = new THREE.AmbientLight(0x3b3346, 0.25)
 
   // -------------------------------------------------------------
   // Exterior Mountain Floodlights & Architectural Spotlights
@@ -1049,7 +1049,7 @@ export function createStationLighting() {
   const spotTargets = []
 
   // Floodlight 1 — Left mountain sector
-  const spotLeft = new THREE.SpotLight(0xffb86c, 48.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
+  const spotLeft = new THREE.SpotLight(0xffb86c, 24.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
   spotLeft.position.set(-5.0, 6.2, -12.0)
   const targetLeft = new THREE.Object3D()
   targetLeft.position.set(-65.0, 18.0, -25.0)
@@ -1058,7 +1058,7 @@ export function createStationLighting() {
   spotTargets.push(targetLeft)
 
   // Floodlight 2 — Center mountain peak (Primary shadow caster)
-  const spotCenter = new THREE.SpotLight(0xffc480, 62.0, 165.0, Math.PI / 2.6, 0.8, 1.4)
+  const spotCenter = new THREE.SpotLight(0xffc480, 30.0, 165.0, Math.PI / 2.6, 0.8, 1.4)
   spotCenter.position.set(-5.0, 6.4, 0.0)
   const targetCenter = new THREE.Object3D()
   targetCenter.position.set(-75.0, 24.0, 0.0)
@@ -1072,7 +1072,7 @@ export function createStationLighting() {
   spotTargets.push(targetCenter)
 
   // Floodlight 3 — Right mountain sector
-  const spotRight = new THREE.SpotLight(0xffb86c, 48.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
+  const spotRight = new THREE.SpotLight(0xffb86c, 24.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
   spotRight.position.set(-5.0, 6.2, 12.0)
   const targetRight = new THREE.Object3D()
   targetRight.position.set(-65.0, 18.0, 25.0)
@@ -1083,7 +1083,7 @@ export function createStationLighting() {
   // Wall sconce accent pointlights on outer rear wall
   const sconceLights = []
   for (const z of [-12, -4, 4, 12]) {
-    const sconceLight = new THREE.PointLight(0xffb86c, 14.0, 12.0, 2.0)
+    const sconceLight = new THREE.PointLight(0xffb86c, 7.0, 12.0, 2.0)
     sconceLight.position.set(-5.5, 3.8, z)
     sconceLights.push(sconceLight)
   }

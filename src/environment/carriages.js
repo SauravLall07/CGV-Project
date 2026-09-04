@@ -276,7 +276,7 @@ function dressPassenger(g, half, shared, damaged, fx) {
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(damaged ? 0xff5a3c : 0xffcf96, damaged ? 15 : 22, damaged ? 9 : 12, 2)
+    const l = new THREE.PointLight(damaged ? 0xff5a3c : 0xffcf96, damaged ? 8 : 10, damaged ? 9 : 12, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, damaged)
   }
@@ -329,7 +329,7 @@ function dressSecurity(g, half, shared, damaged, fx) {
     )
     cage.position.set(0, CARRIAGE_CEILING_Y - 0.07, z)
     g.add(cage)
-    const l = new THREE.PointLight(damaged ? 0xff5030 : 0x9fd0ff, damaged ? 12 : 14, damaged ? 8 : 10, 2)
+    const l = new THREE.PointLight(damaged ? 0xff5030 : 0x9fd0ff, damaged ? 6 : 7, damaged ? 8 : 10, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, damaged)
   }
@@ -383,7 +383,7 @@ function dressCargo(g, half, shared, damaged, fx) {
   work.position.set(0, CARRIAGE_CEILING_Y - 0.09, 0)
   g.add(work)
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(damaged ? 0xff6438 : 0xffb264, damaged ? 13 : 16, damaged ? 8 : 11, 2)
+    const l = new THREE.PointLight(damaged ? 0xff6438 : 0xffb264, damaged ? 7 : 8, damaged ? 8 : 11, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, l, damaged)
   }
@@ -417,20 +417,20 @@ function dressMechanical(g, half, shared, damaged, fx) {
     g.add(spoke)
   }
 
-  const boilerLight = new THREE.PointLight(damaged ? 0xff4a1e : 0xff7a3c, damaged ? 22 : 18, 12, 2)
+  const boilerLight = new THREE.PointLight(damaged ? 0xff4a1e : 0xff7a3c, damaged ? 11 : 9, 12, 2)
   boilerLight.position.set(0, 1.4, half - 4)
   addLight(g, fx, boilerLight, damaged)
 
   const grate = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 0.7, 0.1),
     new THREE.MeshStandardMaterial({
-      color: 0x2a1508, emissive: 0xff5a1e, emissiveIntensity: damaged ? 3.4 : 2.6, roughness: 0.7
+      color: 0x2a1508, emissive: 0xff5a1e, emissiveIntensity: damaged ? 2.0 : 1.5, roughness: 0.7
     })
   )
   grate.position.set(0, 0.6, half - 0.3)
   g.add(grate)
 
-  const ceil = new THREE.PointLight(damaged ? 0xff6030 : 0xffb066, 12, 10, 2)
+  const ceil = new THREE.PointLight(damaged ? 0xff6030 : 0xffb066, 6, 10, 2)
   ceil.position.set(0, CARRIAGE_CEILING_Y - 0.3, -half * 0.4)
   addLight(g, fx, ceil, damaged)
 
@@ -503,7 +503,7 @@ function dressVault(g, half, shared, damaged, fx) {
   )
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
-  const l = new THREE.PointLight(damaged ? 0xff5030 : 0x7cc4ff, damaged ? 13 : 16, damaged ? 9 : 12, 2)
+  const l = new THREE.PointLight(damaged ? 0xff5030 : 0x7cc4ff, damaged ? 7 : 8, damaged ? 9 : 12, 2)
   l.position.set(0, CARRIAGE_CEILING_Y - 0.3, 0)
   addLight(g, fx, l, damaged)
 
@@ -564,7 +564,7 @@ function buildLocomotiveCab(shared, fx) {
   )
   firebox.position.set(0, 0.42, -half + 0.72)
   group.add(firebox)
-  const fireLight = new THREE.PointLight(0xff6a24, 26, 9, 2)
+  const fireLight = new THREE.PointLight(0xff6a24, 12, 9, 2)
   fireLight.position.set(0, 0.6, -half + 1.1)
   addLight(group, fx, fireLight, true)
 

@@ -72,12 +72,12 @@ export function createHumanoid(palette = PLAYER_PALETTE) {
   const body = new THREE.Group()
   group.add(body)
 
-  const coatMaterial = new THREE.MeshStandardMaterial({ color: palette.coat, roughness: 0.72, metalness: 0.05 })
-  const trouserMaterial = new THREE.MeshStandardMaterial({ color: palette.trousers, roughness: 0.82, metalness: 0.02 })
-  const leatherMaterial = new THREE.MeshStandardMaterial({ color: palette.leather, roughness: 0.38, metalness: 0.15 })
-  const skinMaterial = new THREE.MeshPhysicalMaterial({ color: palette.skin, roughness: 0.65, metalness: 0, clearcoat: 0.1, clearcoatRoughness: 0.8 })
-  const hatMaterial = new THREE.MeshStandardMaterial({ color: palette.hat, roughness: 0.68, metalness: 0.05 })
-  const accentMaterial = new THREE.MeshStandardMaterial({ color: palette.accent, roughness: 0.5, metalness: 0.4 })
+  const coatMaterial = new THREE.MeshStandardMaterial({ color: palette.coat, roughness: 0.72, metalness: 0.0, envMapIntensity: 0.2 })
+  const trouserMaterial = new THREE.MeshStandardMaterial({ color: palette.trousers, roughness: 0.82, metalness: 0.0, envMapIntensity: 0.1 })
+  const leatherMaterial = new THREE.MeshStandardMaterial({ color: palette.leather, roughness: 0.45, metalness: 0.0, envMapIntensity: 0.3 })
+  const skinMaterial = new THREE.MeshPhysicalMaterial({ color: palette.skin, roughness: 0.7, metalness: 0, clearcoat: 0.05, clearcoatRoughness: 0.9, envMapIntensity: 0.1 })
+  const hatMaterial = new THREE.MeshStandardMaterial({ color: palette.hat, roughness: 0.68, metalness: 0.0, envMapIntensity: 0.2 })
+  const accentMaterial = new THREE.MeshStandardMaterial({ color: palette.accent, roughness: 0.55, metalness: 0.15, envMapIntensity: 0.3 })
 
   // Torso: an elliptical tapered cylinder — wider at the shoulders, squashed
   // front-to-back so it doesn't read as a barrel.

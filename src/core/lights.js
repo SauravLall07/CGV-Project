@@ -3,10 +3,10 @@ import * as THREE from 'three'
 // Physically based global lighting setup with soft shadows and balanced color temperature
 export function createLights() {
   // Hemisphere light: warm sky tint, cool ground bounce
-  const hemi = new THREE.HemisphereLight(0xffe6cc, 0x1f2430, 0.45)
+  const hemi = new THREE.HemisphereLight(0xffe6cc, 0x1f2430, 0.35)
 
   // Primary key light (Sun / Moon / Overhead Rig) with high-res soft shadow mapping
-  const directional = new THREE.DirectionalLight(0xfff0dd, 1.8)
+  const directional = new THREE.DirectionalLight(0xfff0dd, 1.0)
   directional.position.set(12, 28, 15)
   directional.castShadow = true
 

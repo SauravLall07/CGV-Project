@@ -243,7 +243,7 @@ export function createOutdoorEnvironment(options = {}) {
   const decMesh = new THREE.InstancedMesh(decGeo, vegMaterial, Math.floor(treeCount * 0.4))
   const bushMesh = new THREE.InstancedMesh(bushGeo, vegMaterial, bushCount)
   
-  const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x484440, roughness: 0.8, metalness: 0.2 })
+  const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x484440, roughness: 0.8, metalness: 0.0, envMapIntensity: 0.2 })
   disposables.push(rockMaterial)
   const rockMesh = new THREE.InstancedMesh(rockGeo, rockMaterial, rockCount)
 
@@ -354,8 +354,8 @@ export function createOutdoorEnvironment(options = {}) {
   const tracksideGroup = new THREE.Group()
   tracksideGroup.name = 'trackside-infrastructure'
 
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3d2717, roughness: 0.9 })
-  const metalMat = new THREE.MeshStandardMaterial({ color: 0x22262a, metalness: 0.8, roughness: 0.4 })
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3d2717, roughness: 0.9, metalness: 0.0, envMapIntensity: 0.2 })
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x22262a, metalness: 0.8, roughness: 0.4, envMapIntensity: 0.5 })
   const wireMat = new THREE.LineBasicMaterial({ color: 0x111115 })
   disposables.push(woodMat, metalMat, wireMat)
 

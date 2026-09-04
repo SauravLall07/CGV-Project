@@ -440,71 +440,75 @@ function signCanvas(text, background, foreground, width, height) {
 export function woodMaterial({ repeat = [1, 1], seed = 11, light = 0x8a5a33, dark = 0x4a2c17, roughness = 0.58 } = {}) {
   const key = `wood:${seed}:${light}:${dark}`
   const colour = cachedCanvas(key, () => woodCanvas(512, seed, light, dark))
-  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.8))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.2))
   const rough = cachedCanvas(`${key}:r`, () => roughnessFromCanvas(colour, Math.max(0.2, roughness - 0.2), Math.min(0.9, roughness + 0.2), seed))
 
   return new THREE.MeshStandardMaterial({
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
-    normalScale: new THREE.Vector2(0.8, 0.8),
+    normalScale: new THREE.Vector2(0.5, 0.5),
     roughnessMap: toTexture(rough, repeat, { srgb: false }),
     roughness,
-    metalness: 0.03
+    metalness: 0.0,
+    envMapIntensity: 0.3
   })
 }
 
 export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab97, vein = 0x6d6255, grout = 0x4a4238, tiles = 4 } = {}) {
   const key = `marble:${seed}:${base}:${vein}:${tiles}`
   const colour = cachedCanvas(key, () => marbleTileCanvas(512, seed, base, vein, grout, tiles))
-  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 2.5))
-  const rough = cachedCanvas(`${key}:r`, () => roughnessFromCanvas(colour, 0.15, 0.45, seed))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.4))
+  const rough = cachedCanvas(`${key}:r`, () => roughnessFromCanvas(colour, 0.3, 0.6, seed))
 
   return new THREE.MeshStandardMaterial({
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
-    normalScale: new THREE.Vector2(1.2, 1.2),
+    normalScale: new THREE.Vector2(0.5, 0.5),
     roughnessMap: toTexture(rough, repeat, { srgb: false }),
-    roughness: 0.28,
-    metalness: 0.05
+    roughness: 0.55,
+    metalness: 0.0,
+    envMapIntensity: 0.4
   })
 }
 
 export function carpetMaterial({ repeat = [1, 1], seed = 37, base = 0x5c2230, accent = 0x8d5a34 } = {}) {
   const key = `carpet:${seed}:${base}:${accent}`
   const colour = cachedCanvas(key, () => carpetCanvas(512, seed, base, accent))
-  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 3.2))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.8))
   const rough = cachedCanvas(`${key}:r`, () => roughnessFromCanvas(colour, 0.82, 0.98, seed))
 
   return new THREE.MeshStandardMaterial({
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
-    normalScale: new THREE.Vector2(1.5, 1.5),
+    normalScale: new THREE.Vector2(0.6, 0.6),
     roughnessMap: toTexture(rough, repeat, { srgb: false }),
     roughness: 0.92,
-    metalness: 0
+    metalness: 0,
+    envMapIntensity: 0.1
   })
 }
 
 export function metalMaterial({ repeat = [1, 1], seed = 53, base = 0x8c8f96, roughness = 0.38, metalness = 0.88 } = {}) {
   const key = `metal:${seed}:${base}`
   const colour = cachedCanvas(key, () => brushedMetalCanvas(512, seed, base))
-  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.4))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.0))
   const rough = cachedCanvas(`${key}:r`, () => roughnessFromCanvas(colour, Math.max(0.1, roughness - 0.15), Math.min(0.8, roughness + 0.15), seed))
 
   return new THREE.MeshStandardMaterial({
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
-    normalScale: new THREE.Vector2(0.9, 0.9),
+    normalScale: new THREE.Vector2(0.5, 0.5),
     roughnessMap: toTexture(rough, repeat, { srgb: false }),
     roughness,
-    metalness
+    metalness,
+    envMapIntensity: 0.6
   })
 }
 
 export function plasterMaterial({ repeat = [1, 1], seed = 71, base = 0xa79c8a, roughness = 0.8 } = {}) {
   const key = `plaster:${seed}:${base}`
   const colour = cachedCanvas(key, () => plasterCanvas(512, seed, base))
-  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.8))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.2))
   const rough = cachedCanvas(`${key}:r`, () => roughnessFromCanvas(colour, 0.65, 0.9, seed))
 
   return new THREE.MeshStandardMaterial({
@@ -512,14 +516,15 @@ export function plasterMaterial({ repeat = [1, 1], seed = 71, base = 0xa79c8a, r
     normalMap: toTexture(normal, repeat, { srgb: false }),
     roughnessMap: toTexture(rough, repeat, { srgb: false }),
     roughness,
-    metalness: 0.02
+    metalness: 0.0,
+    envMapIntensity: 0.2
   })
 }
 
 export function concreteMaterial({ repeat = [1, 1], seed = 83, base = 0x4a4742, roughness = 0.85 } = {}) {
   const key = `concrete:${seed}:${base}`
   const colour = cachedCanvas(key, () => concreteCanvas(512, seed, base))
-  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 2.2))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.2))
   const rough = cachedCanvas(`${key}:r`, () => roughnessFromCanvas(colour, 0.7, 0.95, seed))
 
   return new THREE.MeshStandardMaterial({
@@ -527,7 +532,8 @@ export function concreteMaterial({ repeat = [1, 1], seed = 83, base = 0x4a4742, 
     normalMap: toTexture(normal, repeat, { srgb: false }),
     roughnessMap: toTexture(rough, repeat, { srgb: false }),
     roughness,
-    metalness: 0.05
+    metalness: 0.0,
+    envMapIntensity: 0.2
   })
 }
 
@@ -544,8 +550,9 @@ export function litWindowMaterial({ repeat = [1, 1], paneCount = 6, glass = 0xff
     emissiveMap: toTexture(canvas, repeat),
     emissive: 0xffffff,
     emissiveIntensity,
-    roughness: 0.22,
-    metalness: 0.1
+    roughness: 0.35,
+    metalness: 0.0,
+    envMapIntensity: 0.2
   })
 }
 
@@ -557,8 +564,9 @@ export function nightViewMaterial({ repeat = [1, 1], seed = 91, emissiveIntensit
     emissiveMap: toTexture(canvas, repeat),
     emissive: 0xffffff,
     emissiveIntensity,
-    roughness: 0.12,
-    metalness: 0
+    roughness: 0.3,
+    metalness: 0,
+    envMapIntensity: 0.1
   })
 }
 
@@ -572,6 +580,7 @@ export function signMaterial({ text = 'PLATFORM 1', background = 0x14110d, foreg
     emissive: 0xffffff,
     emissiveIntensity,
     roughness: 0.45,
-    metalness: 0.25
+    metalness: 0.0,
+    envMapIntensity: 0.2
   })
 }

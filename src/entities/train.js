@@ -104,7 +104,7 @@ function addDoor(carriage, shared, lowerMaterial) {
 
   const glass = new THREE.Mesh(
     new THREE.BoxGeometry(0.06, 0.62, 0.62),
-    new THREE.MeshStandardMaterial({ color: 0xffe0ac, emissive: 0xffd08a, emissiveIntensity: 1.4, roughness: 0.25 })
+    new THREE.MeshStandardMaterial({ color: 0xffe0ac, emissive: 0xffd08a, emissiveIntensity: 0.8, roughness: 0.35 })
   )
   glass.position.set(-BODY_HALF_WIDTH - 0.05, FLOOR_Y + 1.32, 0)
   carriage.add(glass)
@@ -126,8 +126,8 @@ function createCarriage(index, config, shared) {
   carriage.name = `carriage-${index}`
   carriage.userData.type = config.type
 
-  const lowerMaterial = new THREE.MeshStandardMaterial({ color: config.lower, roughness: 0.44, metalness: 0.35 })
-  const upperMaterial = new THREE.MeshStandardMaterial({ color: config.upper, roughness: 0.5, metalness: 0.2 })
+  const lowerMaterial = new THREE.MeshStandardMaterial({ color: config.lower, roughness: 0.55, metalness: 0.15 })
+  const upperMaterial = new THREE.MeshStandardMaterial({ color: config.upper, roughness: 0.6, metalness: 0.05 })
 
   const chassis = new THREE.Mesh(shared.chassis, shared.darkSteel)
   chassis.position.y = FLOOR_Y - 0.15
@@ -240,7 +240,7 @@ function createLocomotive(shared) {
   const loco = new THREE.Group()
   loco.name = 'locomotive'
 
-  const green = new THREE.MeshStandardMaterial({ color: 0x1f4436, roughness: 0.4, metalness: 0.45 })
+  const green = new THREE.MeshStandardMaterial({ color: 0x1f4436, roughness: 0.55, metalness: 0.2 })
 
   const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.4, 8), shared.darkSteel)
   chassis.position.y = 0.8
@@ -298,8 +298,8 @@ function createLocomotive(shared) {
   const cabGlass = new THREE.MeshStandardMaterial({
     color: 0xffce8a,
     emissive: 0xffb765,
-    emissiveIntensity: 1.5,
-    roughness: 0.25
+    emissiveIntensity: 0.8,
+    roughness: 0.35
   })
   for (const side of [-1, 1]) {
     const glass = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.85, 1.2), cabGlass)
@@ -319,7 +319,7 @@ function createLocomotive(shared) {
 
   const bufferBeam = new THREE.Mesh(
     new THREE.BoxGeometry(3, 0.5, 0.25),
-    new THREE.MeshStandardMaterial({ color: 0x8a2420, roughness: 0.6, metalness: 0.3 })
+    new THREE.MeshStandardMaterial({ color: 0x8a2420, roughness: 0.65, metalness: 0.15 })
   )
   bufferBeam.position.set(0, 1.05, -4.3)
   loco.add(bufferBeam)
@@ -333,12 +333,12 @@ function createLocomotive(shared) {
 
   const lens = new THREE.Mesh(
     new THREE.SphereGeometry(0.19, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0xfff6dc, emissive: 0xffeec0, emissiveIntensity: 4 })
+    new THREE.MeshStandardMaterial({ color: 0xfff6dc, emissive: 0xffeec0, emissiveIntensity: 2.5 })
   )
   lens.position.set(0, 3.05, -4.28)
   loco.add(lens)
 
-  const beam = new THREE.PointLight(0xffe6b0, 18, 22, 2)
+  const beam = new THREE.PointLight(0xffe6b0, 8, 22, 2)
   beam.position.set(0, 3.05, -4.6)
   loco.add(beam)
 

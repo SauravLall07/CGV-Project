@@ -22,7 +22,7 @@ export function createRenderer(canvas) {
   // Color Space & ACES Filmic Tone Mapping
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.25
+  renderer.toneMappingExposure = 0.95
 
   let composer = null
 
@@ -35,9 +35,9 @@ export function createRenderer(canvas) {
     // Subtle bloom for light sources, lit windows, lasers & time abilities
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.35, // strength (subtle glow, not blinding)
+      0.2,  // strength (subtle glow, not blinding)
       0.4,  // radius
-      0.85  // threshold (only bright highlights glow)
+      0.92  // threshold (only truly emissive surfaces glow)
     )
     composer.addPass(bloomPass)
 
@@ -100,7 +100,7 @@ export function generateEnvironmentMap(renderer, skyColor = 0x3d4b6e, groundColo
   const mesh = new THREE.Mesh(geometry, material)
   envScene.add(mesh)
 
-  const sunLight = new THREE.DirectionalLight(0xffd8b0, 2.5)
+  const sunLight = new THREE.DirectionalLight(0xffd8b0, 0.8)
   sunLight.position.set(25, 45, -30)
   envScene.add(sunLight)
 

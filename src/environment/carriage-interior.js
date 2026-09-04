@@ -224,7 +224,7 @@ export function createCarriageInterior({ length = 26, damaged = false } = {}) {
     new THREE.MeshStandardMaterial({
       color: damaged ? 0x5a1712 : 0xfff2d6,
       emissive: damaged ? 0xcc2a18 : 0xffe0ae,
-      emissiveIntensity: damaged ? 2 : 2.4
+      emissiveIntensity: damaged ? 1.2 : 1.4
     })
   )
   ceilingStrip.position.y = CEILING_Y - 0.06
@@ -236,7 +236,7 @@ export function createCarriageInterior({ length = 26, damaged = false } = {}) {
     const z = -halfLength + (length / (lightCount + 1)) * (i + 1)
     const light = new THREE.PointLight(
       damaged ? 0xff5a3c : 0xffcf96,
-      damaged ? 16 : 26,
+      damaged ? 8 : 12,
       damaged ? 9 : 13,
       2
     )
@@ -248,13 +248,13 @@ export function createCarriageInterior({ length = 26, damaged = false } = {}) {
   // Base exposure. The point lights above are warm pools along the aisle;
   // these two stop the ends of the carriage and the bulkheads from falling
   // to black between them.
-  const ambient = new THREE.AmbientLight(damaged ? 0x4a2620 : 0x6b6355, damaged ? 0.7 : 1.05)
+  const ambient = new THREE.AmbientLight(damaged ? 0x4a2620 : 0x6b6355, damaged ? 0.4 : 0.6)
   group.add(ambient)
 
   const fill = new THREE.HemisphereLight(
     damaged ? 0x7a3428 : 0x8a7f6c,
     damaged ? 0x2a1210 : 0x3a3128,
-    damaged ? 0.4 : 0.6
+    damaged ? 0.25 : 0.4
   )
   group.add(fill)
 
