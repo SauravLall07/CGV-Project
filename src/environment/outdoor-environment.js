@@ -14,6 +14,15 @@ import { disposeObject } from '../core/dispose.js'
  * - Motion support (stationary for station level, dynamic scrolling for moving heist levels)
  * - Automatic quality tiers (HIGH, MEDIUM, LOW)
  */
+// The playable envelope the scenery has to stay clear of: the station concourse
+// (x -5..5), the carriage interiors (x ~ 0) and the track (x = 7). Terrain stays
+// flat inside CORRIDOR_FLAT_HALF_WIDTH of the centre, and nothing is planted
+// closer than CORRIDOR_CLEAR_X, so no hill or tree can intrude on the station or
+// sweep through a carriage.
+const CORRIDOR_CENTER_X = 1.0
+const CORRIDOR_FLAT_HALF_WIDTH = 20.0
+const CORRIDOR_CLEAR_X = 24.0
+
 export function createOutdoorEnvironment(options = {}) {
   const mode = options.mode || 'station' // 'station' | 'moving'
   const speed = options.speed || 35.0 // Speed for moving train mode
@@ -77,9 +86,13 @@ export function createOutdoorEnvironment(options = {}) {
 
   // Trigonometric procedural height calculation
   function getTerrainHeight(x, z) {
-    // Keep a flat railway corridor around Track X = 7.0
-    const distFromTrack = Math.abs(x - 7.0)
-    const corridorFactor = THREE.MathUtils.smoothstep(distFromTrack, 8.0, 35.0)
+    // Keep a flat corridor around the whole PLAYABLE envelope, not just the
+    // track. The station spans x -5..5 with its rear wall at x = -5, and the
+    // carriage interiors sit at x ~ 0, so a corridor centred on the track
+    // (x = 7) with an 8 m half-width put a 13 m hillside — and the trees
+    // planted on it — directly behind the station wall and above its roofline.
+    const distFromCorridor = Math.abs(x - CORRIDOR_CENTER_X)
+    const corridorFactor = THREE.MathUtils.smoothstep(distFromCorridor, CORRIDOR_FLAT_HALF_WIDTH, 62.0)
 
     // Layered sine/cosine height noise
     const hill1 = Math.sin(x * 0.015 + z * 0.012) * 18.0
@@ -217,10 +230,10 @@ export function createOutdoorEnvironment(options = {}) {
   const rangeX = 320, rangeZ = 360
 
   for (let i = 0; i < treeCount * 2; i++) {
-    // Generate pseudo-random coords avoiding railway corridor (|x - 7| < 12)
+    // Push every trunk clear of the playable corridor, measured from the
+    // corridor centre rather than from x = 0.
     let rx = (Math.random() - 0.5) * rangeX * 2
-    if (rx > 0) rx += 14
-    else rx -= 14
+    rx += rx > 0 ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
 
     const rz = (Math.random() - 0.5) * rangeZ * 2
     const ry = getTerrainHeight(rx, rz)
@@ -245,8 +258,7 @@ export function createOutdoorEnvironment(options = {}) {
   // Populate Bushes
   for (let i = 0; i < bushCount; i++) {
     let rx = (Math.random() - 0.5) * rangeX * 1.5
-    if (rx > 0) rx += 10
-    else rx -= 10
+    rx += rx > 0 ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
 
     const rz = (Math.random() - 0.5) * rangeZ * 1.8
     const ry = getTerrainHeight(rx, rz)
@@ -262,8 +274,7 @@ export function createOutdoorEnvironment(options = {}) {
   // Populate Rocks
   for (let i = 0; i < rockCount; i++) {
     let rx = (Math.random() - 0.5) * rangeX * 1.8
-    if (rx > 0) rx += 9
-    else rx -= 9
+    rx += rx > 0 ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
 
     const rz = (Math.random() - 0.5) * rangeZ * 1.8
     const ry = getTerrainHeight(rx, rz)
@@ -275,6 +286,17 @@ export function createOutdoorEnvironment(options = {}) {
     dummy.updateMatrix()
     rockMesh.setMatrixAt(rockIdx++, dummy.matrix)
   }
+
+  // Draw only the instances that actually got a matrix. The scatter loops
+  // `continue` past rejected positions, so these meshes are always allocated
+  // for more instances than get placed — and every unwritten instance keeps the
+  // identity matrix, which draws it at the world origin. Left unset, the
+  // leftovers pile into one black blob in the middle of the station and, in the
+  // moving levels, slide straight through the carriage interiors.
+  pineMesh.count = pineIdx
+  decMesh.count = decIdx
+  bushMesh.count = bushIdx
+  rockMesh.count = rockIdx
 
   pineMesh.instanceMatrix.needsUpdate = true
   decMesh.instanceMatrix.needsUpdate = true
@@ -333,6 +355,11 @@ export function createOutdoorEnvironment(options = {}) {
     poleIdx++
   }
 
+  // Same identity-matrix trap: the z loop can run a different number of times
+  // than poleCount estimated, in either direction.
+  polesInst.count = Math.min(poleIdx, poleCount)
+  crossarmInst.count = Math.min(poleIdx, poleCount)
+
   polesInst.instanceMatrix.needsUpdate = true
   crossarmInst.instanceMatrix.needsUpdate = true
   polesInst.castShadow = true
@@ -386,6 +413,9 @@ export function createOutdoorEnvironment(options = {}) {
       fenceRailsMesh.setMatrixAt(rIdx++, dummy.matrix)
     }
   }
+  fencePostsMesh.count = fIdx
+  fenceRailsMesh.count = rIdx
+
   fencePostsMesh.instanceMatrix.needsUpdate = true
   fenceRailsMesh.instanceMatrix.needsUpdate = true
   tracksideGroup.add(fencePostsMesh, fenceRailsMesh)

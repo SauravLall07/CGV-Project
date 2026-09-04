@@ -87,7 +87,10 @@ function wallMaterialFor(key, length, damaged) {
 }
 
 // Two side panels and a lintel around a centred doorway, plus a brass surround.
-function addBulkhead(group, z, shared) {
+// `sealed` fills the doorway in with a solid plate — used at the two ends of
+// the train, where an open doorway would otherwise look straight out of the
+// train at the scrolling outdoor scenery.
+function addBulkhead(group, z, shared, sealed = false) {
   const sideW = (WALL_X * 2 - DOOR_W) / 2
   for (const s of [-1, 1]) {
     const panel = new THREE.Mesh(
@@ -108,9 +111,15 @@ function addBulkhead(group, z, shared) {
   const surround = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W + 0.12, DOOR_H + 0.06, 0.05), shared.brass)
   surround.position.set(0, DOOR_H / 2, z)
   group.add(surround)
+
+  if (sealed) {
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W, DOOR_H, 0.1), shared.darkSteel)
+    plate.position.set(0, DOOR_H / 2, z)
+    group.add(plate)
+  }
 }
 
-function buildShell(key, length, shared, damaged) {
+function buildShell(key, length, shared, damaged, seals = {}) {
   const g = new THREE.Group()
   g.name = `carriage-${key}`
   g.userData.type = key
@@ -149,8 +158,8 @@ function buildShell(key, length, shared, damaged) {
   ceiling.position.y = CARRIAGE_CEILING_Y
   g.add(ceiling)
 
-  addBulkhead(g, -half, shared)
-  addBulkhead(g, half, shared)
+  addBulkhead(g, -half, shared, Boolean(seals.min))
+  addBulkhead(g, half, shared, Boolean(seals.max))
 
   return { group: g, half }
 }
@@ -519,16 +528,9 @@ function dressVault(g, half, shared, damaged, fx) {
 // --- Locomotive cab (Level 3's escape target) ------------------------------
 
 function buildLocomotiveCab(shared, fx) {
-  const { group, half } = buildShell('cab', CAB_LENGTH, shared, true)
+  // The front bulkhead is sealed — this is the head of the train.
+  const { group, half } = buildShell('cab', CAB_LENGTH, shared, true, { min: true })
   group.name = 'locomotive-cab'
-
-  // Seal the front bulkhead's doorway — this is the head of the train.
-  const seal = new THREE.Mesh(
-    new THREE.BoxGeometry(DOOR_W, DOOR_H, 0.1),
-    metalMaterial({ repeat: [1, 1], base: 0x33383f, roughness: 0.6, metalness: 0.8 })
-  )
-  seal.position.set(0, DOOR_H / 2, -half + 0.08)
-  group.add(seal)
 
   // Backhead: the driver's control face, pressed against the front bulkhead.
   const backhead = new THREE.Mesh(
@@ -701,8 +703,14 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   const spans = {}
   const parts = {}
 
-  LAYOUT.forEach((cfg) => {
-    const { group, half } = buildShell(cfg.key, cfg.length, shared, damaged)
+  LAYOUT.forEach((cfg, index) => {
+    const seals = {
+      // Head of the train: sealed in Level 2, joined to the locomotive cab in
+      // Level 3. Tail of the train is always the end of the world.
+      min: index === 0 && !damaged,
+      max: index === LAYOUT.length - 1
+    }
+    const { group, half } = buildShell(cfg.key, cfg.length, shared, damaged, seals)
     const center = cursor + half
     group.position.z = center
     root.add(group)
