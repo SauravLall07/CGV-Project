@@ -11,12 +11,13 @@ third-person camera, the train's parent-child hierarchy, and the shared
 plumbing the rest of the game builds on — an interaction system, a
 state-machine level manager (with dispose-based teardown and
 restart-without-refresh), a checkpoint/respawn system, an asset-loading
-pipeline with a progress-bar loading screen, and a HUD scaffold. Level 1
-(stealth infiltration) and Level 2 (five-carriage time-manipulation traversal)
-are functionally complete; Level 3 is still a gameplay stub. Every asset is
-built from Three.js primitives and procedurally generated textures — nothing is
-modelled or downloaded. See [Roadmap](#roadmap) below for exactly what's
-implemented versus what's still to come.
+pipeline with a progress-bar loading screen, and a HUD scaffold. All three
+levels are now playable start to finish — Level 1 stealth infiltration, Level 2
+five-carriage time-manipulation traversal, and Level 3's escape run back down
+the wrecked train. Every asset is built from Three.js primitives and
+procedurally generated textures — nothing is modelled or downloaded. See
+[Roadmap](#roadmap) below for exactly what's implemented versus what's still to
+come.
 
 ## Controls
 
@@ -61,8 +62,9 @@ src/
     boarding.js           Level 1 — station concourse + train + boarding control
     moving-heist.js       Level 2 — five-carriage traversal, one time ability per
                            car, roof-crossing set piece, vault break-in
-    timewreck.js          Level 3 — the carriage interior re-dressed as wreckage
-                           + emergency brake; STUB for Phase 4
+    timewreck.js          Level 3 — the escape run back down the wrecked train:
+                           fast-time, time-loop, frozen and breaking carriages,
+                           then the Core-depletion sprint to the brake
     complete.js           terminal state — completion message only
   systems/               cross-level gameplay systems
     interaction.js        raycast-from-player, contextual prompt, register()/E
@@ -80,9 +82,13 @@ src/
                            columns, train shed, props, placeholders, lighting
     carriage-interior.js  Reusable carriage interior; `damaged: true` re-dresses
                            the same geometry as Level 3's wreckage
-    carriages.js          Level 2's five distinct carriage interiors (passenger →
+    carriages.js          The five distinct carriage interiors (passenger →
                            security → cargo → mechanical → vault) as one
-                           hierarchy, plus the walkable roof catwalk
+                           hierarchy, plus Level 2's roof catwalk;
+                           `damaged: true` re-dresses them as Level 3's wreck
+                           and adds the locomotive cab
+    particles.js          Single-draw-call THREE.Points fields (embers, sparks)
+                           with zero per-frame allocation
     textures.js           Procedural canvas textures + derived normal maps
   input/
     keyboard-state.js     WASD/shift held-state tracking
@@ -220,17 +226,36 @@ top level of the archive, not nested).
   - Vault break-in: freeze the spinning lock ring, breach the cage, take the
     Chrono Core — which fires the destabilisation cinematic into Level 3
   - Per-section player bounds, rolling corridor checkpoints, contextual hints
+- **Phase 4 Level 3 — "The Timewreck"** (`src/levels/timewreck.js`):
+  - Built by re-dressing Phase 3's carriage builders with `damaged: true`
+    (scorched materials, flickering red emergency lighting, floor debris, torn
+    ceilings, sparking cables) rather than modelling new carriages — the
+    concept doc's stated scope strategy
+  - **Fast-time carriage** — runaway pistons where Slow is mandatory, not optional
+  - **Time-loop carriage** — a bulkhead stuck in an open → close → girder-fall →
+    rewind cycle, with a wall indicator so the loop is learnable
+  - **Frozen carriage** — the floor is gone; Freeze locks the suspended
+    wreckage into a solid walkway to cross on
+  - **Breaking train** — carriages yaw, roll and drop away independently of
+    their siblings, thrown debris streaks past, and the floor behind closes off
+  - **Final sequence** — scripted Chrono Core depletion locks every ability but
+    Freeze, then a timed sprint with a temporal wave catching up from behind
+    (Freeze holds it off), to the emergency brake and a stop-on-the-bridge beat
+  - Ember/spark particle fields, and ability lock-out plumbed through the time
+    system into the HUD (`setAbilityAvailability`)
 
-### Next up: Physics (Phase 6) & Level 3 (Phase 4), for graded Beta
+### Next up: Physics (Phase 6) & Effects/Polish (Phases 7–8), for graded Beta
 
-- Level 3 Timewreck survival set pieces (Fast-time crushing carriage, time-loop room, collapsing bridge sprint)
 - Lightweight physics library for loose cargo crates and timewreck debris
+  (the Level 3 debris integrator is already isolated to one callback)
+- Skybox, material pass, deliberate shadow strategy (Phase 7)
+- Menus, audio, credits screen, full HUD, performance pass (Phase 8)
 
 ### Still out of scope beyond that
 
-- Level 3 in any real form (only a stub exists)
-- Physics beyond basic ground/wall blocking
+- Physics beyond basic ground/wall blocking (debris is scripted ballistics)
 - Menus, credits screen, audio, the full styled HUD
+- Skybox and the wider material/shadow pass
 
 ### Things to revisit once real implementation starts
 

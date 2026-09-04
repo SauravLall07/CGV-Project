@@ -112,10 +112,18 @@ export function createThirdPersonCamera(camera, domElement) {
     hasSnapped = false
   }
 
+  // Point the camera (and therefore "forward" for movement, which is
+  // camera-relative) along a level's spawn yaw. Level 3 runs back down the
+  // train towards the locomotive, so without this the player would spawn
+  // facing the way they came.
+  function setYaw(value) {
+    if (typeof value === 'number') yaw = value
+  }
+
   function dispose() {
     domElement.removeEventListener('click', onClick)
     document.removeEventListener('mousemove', onMouseMove)
   }
 
-  return { update, snap, dispose, getYaw: () => yaw }
+  return { update, snap, setYaw, dispose, getYaw: () => yaw }
 }

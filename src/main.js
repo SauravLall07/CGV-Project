@@ -98,7 +98,8 @@ loop.add((delta) => {
     energy: timeSystem.getEnergy(),
     maxEnergy: timeSystem.getMaxEnergy(),
     ghostCooldown: timeSystem.getGhostCooldown(),
-    hasGhost: timeSystem.getGhost().isPlaying()
+    hasGhost: timeSystem.getGhost().isPlaying(),
+    available: timeSystem.getAbilityAvailability()
   })
 })
 loop.start()
