@@ -41,11 +41,15 @@ export function createTimeSystem({ scene, player, hud }) {
   let snapshotTimer = 0
   let rewindPlaybackTime = 0
   let ghostCooldown = 0
+  let levelMultiplier = 1.0 // 1.0 for Level 2 (controlled), 1.8 for Level 3 (unstable timewreck)
 
   // Shader uniforms exposed for custom materials
   const uniforms = {
+    uTime: { value: 0.0 },
     uTimeScale: { value: 1.0 },
     uTimeMode: { value: 0 }, // 0: normal, 1: slow, 2: freeze, 3: rewind
+    uMode: { value: 0 },
+    uIntensity: { value: 0.0 },
     uTimeDistortionIntensity: { value: 0.0 }
   }
 
@@ -68,6 +72,11 @@ export function createTimeSystem({ scene, player, hud }) {
       if (entry.options.onRewind) entry.options.onRewind(mode === TIME_MODES.REWIND)
     })
 
+    updateUniforms()
+  }
+
+  function setLevelMultiplier(mult) {
+    levelMultiplier = mult || 1.0
     updateUniforms()
   }
 
@@ -118,17 +127,17 @@ export function createTimeSystem({ scene, player, hud }) {
       case TIME_MODES.SLOW:
         scale = 0.2
         modeInt = 1
-        distortion = 0.5
+        distortion = 0.5 * levelMultiplier
         break
       case TIME_MODES.FREEZE:
         scale = 0.0
         modeInt = 2
-        distortion = 0.8
+        distortion = 0.8 * levelMultiplier
         break
       case TIME_MODES.REWIND:
         scale = -1.5
         modeInt = 3
-        distortion = 1.0
+        distortion = 1.0 * levelMultiplier
         break
       default:
         scale = 1.0
@@ -138,6 +147,8 @@ export function createTimeSystem({ scene, player, hud }) {
 
     uniforms.uTimeScale.value = scale
     uniforms.uTimeMode.value = modeInt
+    uniforms.uMode.value = modeInt
+    uniforms.uIntensity.value = distortion
     uniforms.uTimeDistortionIntensity.value = distortion
   }
 
@@ -156,6 +167,8 @@ export function createTimeSystem({ scene, player, hud }) {
   }
 
   function update(delta, now = performance.now() / 1000) {
+    uniforms.uTime.value += delta
+
     if (ghostCooldown > 0) {
       ghostCooldown = Math.max(0, ghostCooldown - delta)
     }
@@ -272,6 +285,7 @@ export function createTimeSystem({ scene, player, hud }) {
   return {
     register,
     setMode,
+    setLevelMultiplier,
     triggerSlow: () => setMode(TIME_MODES.SLOW),
     triggerFreeze: () => setMode(TIME_MODES.FREEZE),
     triggerRewind: () => setMode(TIME_MODES.REWIND),

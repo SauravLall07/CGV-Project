@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createCarriageInterior } from '../environment/carriage-interior.js'
 import { disposeObject } from '../core/dispose.js'
+import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
 // Level 2 — "The Moving Heist". Demonstrates the complete time-manipulation
 // engine: Slow, Freeze, Rewind, and Time Ghost across interactive puzzle
@@ -30,24 +31,23 @@ function createChronoCore() {
   cradle.position.y = 0.98
   core.add(cradle)
 
-  const orb = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.24, 1),
-    new THREE.MeshStandardMaterial({
-      color: 0x5ce6ff,
-      emissive: 0x2ab8e0,
-      emissiveIntensity: 3.2,
-      roughness: 0.15,
-      metalness: 0.3
-    })
-  )
+  const orbMat = createChronoFieldMaterial({
+    baseColor: 0x0284c7,
+    glowColor: 0x38bdf8,
+    opacity: 0.9
+  })
+  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.24, 2), orbMat)
   orb.position.y = 1.2
   orb.name = 'chrono-core-orb'
   core.add(orb)
 
-  const halo = new THREE.Mesh(
-    new THREE.TorusGeometry(0.4, 0.018, 8, 32),
-    new THREE.MeshStandardMaterial({ color: 0x8ef0ff, emissive: 0x4fd8f5, emissiveIntensity: 2.4 })
-  )
+  const haloMat = createChronoFieldMaterial({
+    baseColor: 0x38bdf8,
+    glowColor: 0xa5f3fc,
+    opacity: 0.85,
+    doubleSided: true
+  })
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.018, 8, 32), haloMat)
   halo.rotation.x = Math.PI / 2.4
   halo.position.y = 1.2
   halo.name = 'chrono-core-halo'
@@ -61,6 +61,9 @@ function createChronoCore() {
 }
 
 export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, player, advance }) {
+  if (timeSystem?.setLevelMultiplier) {
+    timeSystem.setLevelMultiplier(1.0)
+  }
   const { group, update: updateInterior } = createCarriageInterior({ length: LENGTH })
 
   // -------------------------------------------------------------

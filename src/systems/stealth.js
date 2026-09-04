@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import { disposeObject } from '../core/dispose.js'
+import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 
 // Level 1 Stealth & Infiltration System:
 // - Deterministic guard patrol AI (Patrol -> Investigate -> Alert)
@@ -170,17 +171,12 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     postRight.position.set(width / 2, height / 2, 0)
     gridGroup.add(postLeft, postRight)
 
-    const laserMat = new THREE.MeshStandardMaterial({
-      color: 0xef4444,
-      emissive: 0xff0033,
-      emissiveIntensity: 3.5,
-      roughness: 0.1
-    })
+    const laserMat = createSecurityLaserMaterial({ beamCount })
 
     const beams = []
     const spacing = height / (beamCount + 1)
     for (let i = 1; i <= beamCount; i++) {
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, width, 8), laserMat)
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, width, 16), laserMat)
       beam.rotation.z = Math.PI / 2
       beam.position.set(0, i * spacing, 0)
       gridGroup.add(beam)
@@ -202,13 +198,8 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       },
       setActive(isActive) {
         grid.active = isActive
-        beams.forEach((b) => { b.visible = isActive })
-        if (!isActive) {
-          laserMat.color.setHex(0x10b981)
-          laserMat.emissive.setHex(0x059669)
-        } else {
-          laserMat.color.setHex(0xef4444)
-          laserMat.emissive.setHex(0xff0033)
+        if (laserMat.customUniforms) {
+          laserMat.customUniforms.uState.value = isActive ? 0 : 1
         }
       }
     }
@@ -396,7 +387,18 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       }
     })
 
-    // 3. Laser Grid Collision
+    // 3. Laser Grid Update & Collision
+    laserGrids.forEach((grid) => {
+      if (grid.laserMat?.customUniforms) {
+        grid.laserMat.customUniforms.uTime.value += delta
+        if (grid.active) {
+          grid.laserMat.customUniforms.uState.value = suspicion > 50 ? 2 : 0
+        } else {
+          grid.laserMat.customUniforms.uState.value = 1
+        }
+      }
+    })
+
     if (checkLaserCollision(playerPos)) {
       suspicion = 100
       isDetectedThisFrame = true
