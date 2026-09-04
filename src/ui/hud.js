@@ -278,7 +278,7 @@ export function createHud() {
     }
   }
 
-  function updateTimeState({ mode, energy, maxEnergy, ghostCooldown, hasGhost }) {
+  function updateTimeState({ mode, energy, maxEnergy, ghostCooldown, hasGhost, available }) {
     // Update energy bar
     const pct = Math.max(0, Math.min(100, (energy / maxEnergy) * 100))
     energyBarFill.style.width = `${pct}%`
@@ -294,6 +294,20 @@ export function createHud() {
 
     // Update ability active states
     slotElements.forEach(({ slot, ab }, id) => {
+      // Locked out entirely (Level 3's Chrono Core depletion) — greyed and
+      // visibly dead, so "only Freeze remains" reads without a text prompt.
+      if (available && available[id] === false) {
+        slot.style.opacity = '0.25'
+        slot.style.filter = 'grayscale(1)'
+        slot.style.background = 'rgba(255, 255, 255, 0.02)'
+        slot.style.borderColor = 'rgba(255, 255, 255, 0.06)'
+        slot.style.boxShadow = 'none'
+        slot.style.transform = 'scale(1.0)'
+        return
+      }
+      slot.style.filter = 'none'
+      slot.style.opacity = '1'
+
       const isActive = mode === id
       if (id === 'GHOST') {
         if (hasGhost) {

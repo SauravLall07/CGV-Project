@@ -46,6 +46,9 @@ export function createLevelManager({
     const checkpoint = current.checkpoint ?? DEFAULT_CHECKPOINT
     respawn.setCheckpoint(checkpoint.position, checkpoint.yaw)
     player.setPose(checkpoint.position, checkpoint.yaw)
+    // Movement is camera-relative, so the spawn yaw has to reach the camera or
+    // "forward" would still mean whatever the previous level was facing.
+    if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
     camera.snap()
     hud.setObjective(current.objective ?? '')
   }
