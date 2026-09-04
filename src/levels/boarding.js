@@ -1,5 +1,13 @@
 import * as THREE from 'three'
-import { createStationBlockout, createStationLighting, bounds, GATE_Z } from '../environment/station-blockout.js'
+import {
+  createStationBlockout,
+  createStationLighting,
+  bounds,
+  GATE_Z,
+  APPROACH_GATE_X,
+  APPROACH_SPAWN,
+  JUNCTION_CHECKPOINT
+} from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createStealthSystem } from '../systems/stealth.js'
@@ -41,6 +49,80 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     hud,
     collidables,
     obstacles: wallColliders
+  })
+
+  // -------------------------------------------------------------
+  // New west-side infiltration wing — four extra stealth zones before the
+  // original level. These guards/cameras use the exact same stealth system as
+  // the existing platform section; only their positions and patrol routes are new.
+  // -------------------------------------------------------------
+
+  // Wing Zone A — Entry Gallery
+  stealth.addGuard({
+    waypoints: [
+      new THREE.Vector3(-47.0, 0, -24.2),
+      new THREE.Vector3(-41.5, 0, -24.2)
+    ],
+    speed: 1.25,
+    waitTime: 2.6,
+    initialWaypoint: 0
+  })
+
+  // Wing Zone B — Baggage Passage (medium)
+  stealth.addGuard({
+    waypoints: [
+      new THREE.Vector3(-37.0, 0, -23.0),
+      new THREE.Vector3(-31.0, 0, -26.0)
+    ],
+    speed: 1.45,
+    waitTime: 2.0,
+    initialWaypoint: 0
+  })
+
+  stealth.addCamera({
+    position: new THREE.Vector3(-34.0, 4.6, -21.95),
+    baseAngle: Math.PI,
+    sweepRange: Math.PI / 3.4,
+    sweepSpeed: 0.65,
+    range: 8.5
+  })
+
+  // Wing Zone C — Security Hall (medium-hard)
+  stealth.addGuard({
+    waypoints: [
+      new THREE.Vector3(-27.0, 0, -26.0),
+      new THREE.Vector3(-20.0, 0, -23.0)
+    ],
+    speed: 1.55,
+    waitTime: 1.7,
+    initialWaypoint: 1
+  })
+
+  stealth.addCamera({
+    position: new THREE.Vector3(-23.5, 4.6, -27.05),
+    baseAngle: 0,
+    sweepRange: Math.PI / 3.2,
+    sweepSpeed: 0.8,
+    range: 8.5
+  })
+
+  // Wing Zone D — Final Approach (hard)
+  stealth.addGuard({
+    waypoints: [
+      new THREE.Vector3(-16.0, 0, -23.0),
+      new THREE.Vector3(-8.0, 0, -26.0)
+    ],
+    speed: 1.7,
+    waitTime: 1.5,
+    initialWaypoint: 0
+  })
+
+  stealth.addCamera({
+    position: new THREE.Vector3(-10.5, 4.6, -21.95),
+    baseAngle: Math.PI,
+    sweepRange: Math.PI / 3.6,
+    sweepSpeed: 0.9,
+    range: 8.0
   })
 
   // -------------------------------------------------------------
@@ -209,6 +291,14 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     }
   })
 
+  const approachZoneNames = [
+    'Infiltrate the west gallery — use luggage and benches as cover',
+    'Baggage passage — weave through the first security doorway',
+    'Security hall — watch the sweeping camera',
+    'Final approach — reach the station junction'
+  ]
+  let approachZoneIndex = -1
+
   const zoneNames = [
     'Slip past the guard in the approach',
     'Clear the colonnade — find the terminal, then head west',
@@ -217,18 +307,53 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   ]
   let zoneIndex = 0
 
+  // The level manager needs an initial respawn position before any checkpoint
+  // has been reached. Once the player reaches the old spawn/junction, this is
+  // replaced by the level's one real checkpoint.
+  const junctionCheckpointPos = new THREE.Vector3(
+    JUNCTION_CHECKPOINT.x,
+    0,
+    JUNCTION_CHECKPOINT.z
+  )
+  let junctionCheckpointActive = false
+
   return {
     objective: 'Bypass guards & security grid to board the Chrono Express',
-    checkpoint: { position: new THREE.Vector3(1.6, 0, -25), yaw: 0 },
+    checkpoint: {
+      position: new THREE.Vector3(APPROACH_SPAWN.x, 0, APPROACH_SPAWN.z),
+      yaw: Math.PI / 2 // face east along the new corridor
+    },
     bounds,
     obstacles: wallColliders,
     update(delta) {
       outdoorEnv.update(delta)
 
-      const crossed = GATE_Z.filter((g) => player.mesh.position.z > g).length
-      if (crossed !== zoneIndex) {
-        zoneIndex = crossed
-        if (hud) hud.showToast(zoneNames[zoneIndex], 2200)
+      // Before the junction checkpoint, zone progression is measured along X
+      // because the new wing runs west -> east.
+      if (!junctionCheckpointActive) {
+        const crossedApproach = APPROACH_GATE_X.filter((g) => player.mesh.position.x > g).length
+        if (crossedApproach !== approachZoneIndex) {
+          approachZoneIndex = crossedApproach
+          if (hud) hud.showToast(approachZoneNames[approachZoneIndex], 2200)
+        }
+
+        // Activate the one gameplay checkpoint at the old spawn/junction.
+        const checkpointDistance = Math.hypot(
+          player.mesh.position.x - JUNCTION_CHECKPOINT.x,
+          player.mesh.position.z - JUNCTION_CHECKPOINT.z
+        )
+        if (checkpointDistance < 1.4) {
+          junctionCheckpointActive = true
+          respawn.setCheckpoint(junctionCheckpointPos, 0)
+          if (hud) hud.showToast('Checkpoint reached — station concourse infiltrated', 2400)
+        }
+      } else {
+        // From here onward the original four-zone level behaves exactly as before.
+        const crossed = GATE_Z.filter((g) => player.mesh.position.z > g).length
+        if (crossed !== zoneIndex) {
+          zoneIndex = crossed
+          if (hud) hud.showToast(zoneNames[zoneIndex], 2200)
+        }
       }
 
       if (isBoardingCinematic) {
