@@ -397,14 +397,70 @@ export function createOutdoorEnvironment(options = {}) {
   // -------------------------------------------------------------
   let elapsed = 0
   let scrollerZ = 0
+  let currentSpotLights = options.stationSpotLights || []
+
+  function applySpotLights(spotLights) {
+    currentSpotLights = spotLights || []
+    if (!currentSpotLights.length) return
+
+    const count = Math.min(3, currentSpotLights.length)
+    const posArr = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+    const dirArr = [new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, -1, 0)]
+    const colArr = [new THREE.Color(0x000000), new THREE.Color(0x000000), new THREE.Color(0x000000)]
+    const paramsArr = [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]
+
+    const tempTargetPos = new THREE.Vector3()
+
+    for (let i = 0; i < count; i++) {
+      const light = currentSpotLights[i]
+      if (!light) continue
+
+      light.getWorldPosition(posArr[i])
+
+      if (light.target) {
+        light.target.getWorldPosition(tempTargetPos)
+        dirArr[i].subVectors(tempTargetPos, posArr[i]).normalize()
+      } else {
+        dirArr[i].set(0, -1, 0).applyQuaternion(light.quaternion).normalize()
+      }
+
+      colArr[i].copy(light.color)
+
+      const intensity = light.intensity
+      const cutoffCos = Math.cos(light.angle)
+      const penumbraCos = Math.cos(light.angle * (1.0 - light.penumbra))
+      const maxDist = light.distance || 150.0
+
+      paramsArr[i].set(intensity, cutoffCos, penumbraCos, maxDist)
+    }
+
+    [terrainMaterial, vegMaterial].forEach(mat => {
+      if (mat && mat.customUniforms) {
+        mat.customUniforms.uStationSpotLightCount.value = count
+        mat.customUniforms.uStationSpotLightPos.value = posArr
+        mat.customUniforms.uStationSpotLightDir.value = dirArr
+        mat.customUniforms.uStationSpotLightColor.value = colArr
+        mat.customUniforms.uStationSpotLightParams.value = paramsArr
+      }
+    })
+  }
+
+  if (options.stationSpotLights) {
+    applySpotLights(options.stationSpotLights)
+  }
 
   return {
     group,
     skyDome,
     terrainMesh,
+    setStationSpotLights: applySpotLights,
 
     update(delta) {
       elapsed += delta
+
+      if (currentSpotLights.length > 0) {
+        applySpotLights(currentSpotLights)
+      }
 
       // Update shader time uniforms
       if (skyMaterial.customUniforms) skyMaterial.customUniforms.uTime.value = elapsed

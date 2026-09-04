@@ -9,6 +9,11 @@ import * as THREE from 'three'
  * - Distance fog integration
  */
 export function createVegetationShaderMaterial(options = {}) {
+  const defaultLightPos = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+  const defaultLightDir = [new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, -1, 0)]
+  const defaultLightCol = [new THREE.Color(0x000000), new THREE.Color(0x000000), new THREE.Color(0x000000)]
+  const defaultLightParams = [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]
+
   const uniforms = {
     uTime: { value: 0.0 },
     uWindSpeed: { value: options.windSpeed ?? 1.8 },
@@ -20,7 +25,13 @@ export function createVegetationShaderMaterial(options = {}) {
     uHighlightColor: { value: new THREE.Color(options.highlightColor || 0x4a6b32) },
     uFogColor: { value: new THREE.Color(options.fogColor || 0x241d24) },
     uFogNear: { value: options.fogNear ?? 30.0 },
-    uFogFar: { value: options.fogFar ?? 250.0 }
+    uFogFar: { value: options.fogFar ?? 250.0 },
+
+    uStationSpotLightCount: { value: 0 },
+    uStationSpotLightPos: { value: defaultLightPos },
+    uStationSpotLightDir: { value: defaultLightDir },
+    uStationSpotLightColor: { value: defaultLightCol },
+    uStationSpotLightParams: { value: defaultLightParams }
   }
 
   const vertexShader = /* glsl */ `
@@ -82,6 +93,12 @@ export function createVegetationShaderMaterial(options = {}) {
     uniform float uFogNear;
     uniform float uFogFar;
 
+    uniform int uStationSpotLightCount;
+    uniform vec3 uStationSpotLightPos[3];
+    uniform vec3 uStationSpotLightDir[3];
+    uniform vec3 uStationSpotLightColor[3];
+    uniform vec4 uStationSpotLightParams[3]; // x: intensity, y: cutoffCos, z: penumbraCos, w: distance
+
     void main() {
       vec3 normal = normalize(vNormal);
 
@@ -98,7 +115,37 @@ export function createVegetationShaderMaterial(options = {}) {
       vec3 diffuse = (NdotL + backLight) * uSunColor * 1.1;
       vec3 ambient = uSkyColor * skyDiff * 0.6;
 
-      vec3 litColor = baseColor * (diffuse + ambient);
+      // Station Exterior Spotlight Illumination
+      vec3 stationLightContrib = vec3(0.0);
+      for (int i = 0; i < 3; i++) {
+        if (i >= uStationSpotLightCount) break;
+        vec3 pos = uStationSpotLightPos[i];
+        vec3 dir = normalize(uStationSpotLightDir[i]);
+        vec3 col = uStationSpotLightColor[i];
+        float intensity = uStationSpotLightParams[i].x;
+        float cutoffCos = uStationSpotLightParams[i].y;
+        float penumbraCos = uStationSpotLightParams[i].z;
+        float maxDist = uStationSpotLightParams[i].w;
+
+        vec3 toLight = vWorldPosition - pos;
+        float dist = length(toLight);
+        if (dist > maxDist || maxDist <= 0.0) continue;
+
+        vec3 lDir = -normalize(toLight);
+        float cosAngle = dot(lDir, -dir);
+
+        if (cosAngle > cutoffCos) {
+          float spotFactor = smoothstep(cutoffCos, penumbraCos, cosAngle);
+          float distRatio = dist / maxDist;
+          float distFactor = clamp(1.0 - distRatio * distRatio, 0.0, 1.0);
+          distFactor = distFactor * distFactor;
+
+          float spotNdotL = max(0.0, dot(normal, lDir));
+          stationLightContrib += col * (intensity * spotNdotL * spotFactor * distFactor);
+        }
+      }
+
+      vec3 litColor = baseColor * (diffuse + ambient + stationLightContrib);
 
       // Distance fog calculation
       float fogFactor = smoothstep(uFogNear, uFogFar, vViewDistance);

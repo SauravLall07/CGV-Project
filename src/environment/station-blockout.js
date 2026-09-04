@@ -552,6 +552,75 @@ function createBoardingControl() {
   return control
 }
 
+function createExteriorLightFixtures() {
+  const group = new THREE.Group()
+  group.name = 'exterior-light-fixtures'
+
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.4, metalness: 0.8 })
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.9 })
+  const bulbMat = new THREE.MeshStandardMaterial({
+    color: 0xfff0cc,
+    emissive: 0xffb86c,
+    emissiveIntensity: 4.5,
+    roughness: 0.1
+  })
+
+  // 1. Roof Exterior Floodlight Fixtures (3 mounted along rear eave X = -5.0, Y = 6.2, facing -X towards mountains)
+  for (const z of [-12, 0, 12]) {
+    const fixture = new THREE.Group()
+    fixture.position.set(-5.0, 6.2, z)
+
+    // Base bracket attached to roof eave
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), metalMat)
+    base.position.set(0.15, 0, 0)
+    base.castShadow = true
+    fixture.add(base)
+
+    // Swivel arm
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 8), brassMat)
+    arm.rotation.z = Math.PI / 4
+    arm.position.set(-0.1, 0, 0)
+    fixture.add(arm)
+
+    // Floodlight housing cone angled towards negative X (towards mountain)
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.25, 0.55, 12), metalMat)
+    housing.rotation.z = -Math.PI / 3.2
+    housing.position.set(-0.35, 0.1, 0)
+    housing.castShadow = true
+    fixture.add(housing)
+
+    // Emissive Lens Face
+    const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.06, 12), bulbMat)
+    lens.rotation.z = -Math.PI / 3.2
+    lens.position.set(-0.55, 0.22, 0)
+    fixture.add(lens)
+
+    group.add(fixture)
+  }
+
+  // 2. Wall Sconces on Outer Face of Rear Wall (X = -5.2, Y = 3.8, Z = -12, -4, 4, 12)
+  for (const z of [-12, -4, 4, 12]) {
+    const sconce = new THREE.Group()
+    sconce.position.set(-5.2, 3.8, z)
+
+    const wallPlate = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 0.25), brassMat)
+    sconce.add(wallPlate)
+
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.35, 8), brassMat)
+    neck.rotation.z = -Math.PI / 2
+    neck.position.set(-0.18, 0, 0)
+    sconce.add(neck)
+
+    const glassGlobe = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), bulbMat)
+    glassGlobe.position.set(-0.32, 0, 0)
+    sconce.add(glassGlobe)
+
+    group.add(sconce)
+  }
+
+  return group
+}
+
 export function createStationBlockout({ includePlaceholders = false } = {}) {
   const group = new THREE.Group()
   group.name = 'station'
@@ -566,6 +635,7 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
   group.add(createPlatformSign())
   group.add(createStationClock())
   group.add(createLuggage())
+  group.add(createExteriorLightFixtures())
 
   if (includePlaceholders) {
     group.add(createGuardPlaceholder())
@@ -619,5 +689,54 @@ export function createStationLighting() {
   const sky = new THREE.HemisphereLight(0x5e6f96, 0x2e241a, 0.85)
   const fill = new THREE.AmbientLight(0x3b3346, 0.35)
 
-  return [sunlight, sky, fill]
+  // -------------------------------------------------------------
+  // Exterior Mountain Floodlights & Architectural Spotlights
+  // -------------------------------------------------------------
+  const spotLights = []
+  const spotTargets = []
+
+  // Floodlight 1 — Left mountain sector
+  const spotLeft = new THREE.SpotLight(0xffb86c, 48.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
+  spotLeft.position.set(-5.0, 6.2, -12.0)
+  const targetLeft = new THREE.Object3D()
+  targetLeft.position.set(-65.0, 18.0, -25.0)
+  spotLeft.target = targetLeft
+  spotLights.push(spotLeft)
+  spotTargets.push(targetLeft)
+
+  // Floodlight 2 — Center mountain peak (Primary shadow caster)
+  const spotCenter = new THREE.SpotLight(0xffc480, 62.0, 165.0, Math.PI / 2.6, 0.8, 1.4)
+  spotCenter.position.set(-5.0, 6.4, 0.0)
+  const targetCenter = new THREE.Object3D()
+  targetCenter.position.set(-75.0, 24.0, 0.0)
+  spotCenter.target = targetCenter
+  spotCenter.castShadow = true
+  spotCenter.shadow.mapSize.set(1024, 1024)
+  spotCenter.shadow.camera.near = 2.0
+  spotCenter.shadow.camera.far = 170.0
+  spotCenter.shadow.bias = -0.0005
+  spotLights.push(spotCenter)
+  spotTargets.push(targetCenter)
+
+  // Floodlight 3 — Right mountain sector
+  const spotRight = new THREE.SpotLight(0xffb86c, 48.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
+  spotRight.position.set(-5.0, 6.2, 12.0)
+  const targetRight = new THREE.Object3D()
+  targetRight.position.set(-65.0, 18.0, 25.0)
+  spotRight.target = targetRight
+  spotLights.push(spotRight)
+  spotTargets.push(targetRight)
+
+  // Wall sconce accent pointlights on outer rear wall
+  const sconceLights = []
+  for (const z of [-12, -4, 4, 12]) {
+    const sconceLight = new THREE.PointLight(0xffb86c, 14.0, 12.0, 2.0)
+    sconceLight.position.set(-5.5, 3.8, z)
+    sconceLights.push(sconceLight)
+  }
+
+  const allLights = [sunlight, sky, fill, ...spotLights, ...spotTargets, ...sconceLights]
+  allLights.spotLights = spotLights
+
+  return allLights
 }

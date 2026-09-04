@@ -16,7 +16,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   const { group: station, boardingControl } = createStationBlockout({ includePlaceholders: false })
   const { train } = createTrain()
   const lights = createStationLighting()
-  const outdoorEnv = createOutdoorEnvironment({ mode: 'station' })
+  const outdoorEnv = createOutdoorEnvironment({ mode: 'station', stationSpotLights: lights.spotLights })
 
   scene.add(outdoorEnv.group, station, train, ...lights)
 
