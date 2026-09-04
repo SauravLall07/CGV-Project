@@ -123,6 +123,9 @@ export function createLevelManager({
     getState: () => currentState,
     get bounds() {
       return current && current.bounds ? current.bounds : null
+    },
+    get obstacles() {
+      return current && current.obstacles ? current.obstacles : null
     }
   }
 }
