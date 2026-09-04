@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y } from '../environment/carriages.js'
+import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
 // Level 2 — "The Moving Heist". Carriage-by-carriage traversal of the five
@@ -90,10 +91,10 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.0)
 
   const env = createCarriageEnvironment()
+  const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 38.0 })
   const { root, spans, roof } = env
-  scene.add(root)
-  scene.background = new THREE.Color(0x090b12)
-  scene.fog = new THREE.Fog(0x090b12, 12, 52)
+  scene.add(outdoorEnv.group, root)
+  scene.fog = new THREE.Fog(0x241d24, 30, 250)
 
   const unregisters = [] // interaction + time-system unregister callbacks
   const bounds = { ...env.interiorBounds } // mutated on section transitions
@@ -419,6 +420,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     bounds,
 
     update(delta) {
+      outdoorEnv.update(delta)
       env.update(delta)
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
@@ -536,7 +538,8 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
     dispose() {
       unregisters.forEach((fn) => fn())
-      scene.remove(root)
+      outdoorEnv.dispose()
+      scene.remove(outdoorEnv.group, root)
       disposeObject(root)
     }
   }

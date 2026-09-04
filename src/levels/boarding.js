@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createStationBlockout, createStationLighting, bounds } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
+import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { disposeObject } from '../core/dispose.js'
 
@@ -15,12 +16,12 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   const { group: station, boardingControl } = createStationBlockout({ includePlaceholders: false })
   const { train } = createTrain()
   const lights = createStationLighting()
+  const outdoorEnv = createOutdoorEnvironment({ mode: 'station', stationSpotLights: lights.spotLights })
 
-  scene.add(station, train, ...lights)
+  scene.add(outdoorEnv.group, station, train, ...lights)
 
-  // Dusk outside the shed with warm platform depth
-  scene.background = new THREE.Color(0x1d1a26)
-  scene.fog = new THREE.Fog(0x241d24, 22, 78)
+  // Dusk atmosphere with depth fog
+  scene.fog = new THREE.Fog(0x241d24, 30, 250)
 
   // Collect solid obstacles for line-of-sight raycasts
   const collidables = []
@@ -167,6 +168,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     bounds,
 
     update(delta) {
+      outdoorEnv.update(delta)
+
       if (isBoardingCinematic) {
         cinematicTimer += delta
         // Move train smoothly forward along the tracks
@@ -186,7 +189,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
       unregisterTerminal()
       unregisterBoarding()
       stealth.dispose()
-      scene.remove(station, train, ...lights)
+      outdoorEnv.dispose()
+      scene.remove(outdoorEnv.group, station, train, ...lights)
       disposeObject(station)
       disposeObject(train)
       lights.forEach(disposeObject)

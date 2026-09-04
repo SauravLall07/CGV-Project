@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { createCarriageInterior } from '../environment/carriage-interior.js'
+import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y } from '../environment/carriages.js'
 import { createParticleField } from '../environment/particles.js'
@@ -116,6 +118,8 @@ export function createTimewreckLevel({
     if (message) hud.showToast(message, 1900)
     return true
   }
+  const { group, update: updateInterior } = createCarriageInterior({ length: LENGTH, damaged: true })
+  const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 45.0, stormy: true })
 
   // Hints fire on a DESCENDING z, since the escape runs the other way.
   const hintsShown = new Set()
@@ -376,6 +380,9 @@ export function createTimewreckLevel({
   const brake = createEmergencyBrake()
   addProp(brake, spans.cab.center - 1.5)
 
+  scene.add(outdoorEnv.group, group)
+  scene.fog = new THREE.Fog(0x1a0708, 10, 120)
+
   unregisters.push(interaction.register(brake, {
     prompt: 'Pull the emergency brake',
     onInteract: () => {
@@ -413,9 +420,11 @@ export function createTimewreckLevel({
     bounds,
 
     update(delta) {
-      env.update(delta)
-      embers.update(delta)
-      sparks.update(delta)
+      outdoorEnv.update(delta)
+      updateInterior(delta)
+      if (env) env.update(delta)
+      if (embers) embers.update(delta)
+      if (sparks) sparks.update(delta)
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
 
@@ -571,8 +580,15 @@ export function createTimewreckLevel({
       // scripted depletion.
       if (timeSystem?.setAbilityAvailability) timeSystem.setAbilityAvailability({})
       unregisters.forEach((fn) => fn())
-      scene.remove(root)
-      disposeObject(root)
+      if (typeof unregisterDebris === 'function') unregisterDebris()
+      if (outdoorEnv?.dispose) outdoorEnv.dispose()
+      if (typeof root !== 'undefined') {
+        scene.remove(root)
+        disposeObject(root)
+      } else {
+        scene.remove(outdoorEnv.group, group)
+        disposeObject(group)
+      }
     }
   }
 }
