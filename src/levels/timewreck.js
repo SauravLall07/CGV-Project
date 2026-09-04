@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createCarriageInterior } from '../environment/carriage-interior.js'
+import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
@@ -71,6 +72,7 @@ export function createTimewreckLevel({ scene, interaction, timeSystem, advance }
     timeSystem.setLevelMultiplier(1.8) // Unstable Level 3 distortion boost
   }
   const { group, update: updateInterior } = createCarriageInterior({ length: LENGTH, damaged: true })
+  const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 45.0, stormy: true })
 
   // Suspended tumbling debris cluster in unstable time zone
   const debrisGroup = new THREE.Group()
@@ -111,9 +113,8 @@ export function createTimewreckLevel({ scene, interaction, timeSystem, advance }
   brake.position.set(0, 0, HALF - 2)
   group.add(brake)
 
-  scene.add(group)
-  scene.background = new THREE.Color(0x140708)
-  scene.fog = new THREE.Fog(0x1a0708, 5, 26)
+  scene.add(outdoorEnv.group, group)
+  scene.fog = new THREE.Fog(0x1a0708, 10, 120)
 
   const unregister = interaction.register(brake, {
     prompt: 'Pull the emergency brake',
@@ -132,6 +133,7 @@ export function createTimewreckLevel({ scene, interaction, timeSystem, advance }
     bounds: { minX: -0.58, maxX: 0.58, minZ: -HALF + 1.2, maxZ: HALF - 3.4 },
 
     update(delta) {
+      outdoorEnv.update(delta)
       updateInterior(delta)
       elapsed += delta
       // The whole carriage lurches — the train is coming apart.
@@ -143,7 +145,8 @@ export function createTimewreckLevel({ scene, interaction, timeSystem, advance }
     dispose() {
       unregister()
       unregisterDebris()
-      scene.remove(group)
+      outdoorEnv.dispose()
+      scene.remove(outdoorEnv.group, group)
       disposeObject(group)
     }
   }
