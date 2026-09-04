@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import { disposeObject } from '../core/dispose.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
+import { resolveBoxCollision } from '../core/collision.js'
 
 // Level 1 Stealth & Infiltration System:
 // - Deterministic guard patrol AI (Patrol -> Investigate -> Alert)
@@ -13,9 +14,9 @@ import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 const STRIDE_AMPLITUDE = 0.65
 const STRIDE_FREQUENCY = 2.4
 const BOB_HEIGHT = 0.03
+const GUARD_VISION_DISTANCE = 7.5
 
-export function createStealthSystem({ scene, player, respawn, hud, collidables = [] }) {
-  let suspicion = 0
+export function createStealthSystem({ scene, player, respawn, hud, collidables = [], obstacles = [] }) {  let suspicion = 0
   const maxSuspicion = 100
   const suspicionRiseRate = 45 // percent per second in line of sight
   const suspicionDecayRate = 22 // percent per second in shadow/cover
@@ -55,7 +56,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     const { group, body, leftArm, rightArm, leftLeg, rightLeg } = createHumanoid(GUARD_PALETTE)
     group.name = 'guard'
 
-    const { mesh: visionCone, coneMat } = createVisionConeMesh(7.5, Math.PI / 3.2)
+    const { mesh: visionCone, coneMat } = createVisionConeMesh(GUARD_VISION_DISTANCE, Math.PI / 3.2)
     visionCone.position.set(0, 1.55, 0)
     group.add(visionCone)
 
@@ -78,6 +79,8 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       leftLeg,
       rightLeg,
       coneMat,
+      visionCone,
+      coneDistance: GUARD_VISION_DISTANCE,
       statusBeacon,
       waypoints,
       targetIdx: (initialWaypoint + 1) % waypoints.length,
@@ -144,6 +147,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       pivot,
       ledMat,
       coneMat,
+      coneMesh,
       baseAngle,
       sweepRange,
       sweepSpeed,
@@ -159,45 +163,88 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
   // -----------------------------------------------------------------
   // Laser Security Grid Factory
   // -----------------------------------------------------------------
-  function addLaserGrid({ position, width = 2.4, height = 2.2, beamCount = 4 }) {
+  function addLaserGrid({
+    position,
+    width = 2.4,
+    height = 2.2,
+    beamCount = 4,
+    rotationY = 0
+  }) {
     const gridGroup = new THREE.Group()
     gridGroup.name = 'laser-grid'
     gridGroup.position.copy(position)
+    gridGroup.rotation.y = rotationY
 
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 })
-    const postLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15, height, 0.15), frameMat)
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      metalness: 0.9,
+      roughness: 0.2
+    })
+
+    const postLeft = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, height, 0.15),
+      frameMat
+    )
     postLeft.position.set(-width / 2, height / 2, 0)
-    const postRight = new THREE.Mesh(new THREE.BoxGeometry(0.15, height, 0.15), frameMat)
+
+    const postRight = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, height, 0.15),
+      frameMat
+    )
     postRight.position.set(width / 2, height / 2, 0)
+
     gridGroup.add(postLeft, postRight)
 
     const laserMat = createSecurityLaserMaterial({ beamCount })
 
     const beams = []
     const spacing = height / (beamCount + 1)
+
     for (let i = 1; i <= beamCount; i++) {
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, width, 16), laserMat)
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.018, 0.018, width, 16),
+        laserMat
+      )
+
       beam.rotation.z = Math.PI / 2
       beam.position.set(0, i * spacing, 0)
+
       gridGroup.add(beam)
       beams.push(beam)
     }
+
+    // If the laser has been rotated by 90 degrees, its width now runs
+    // along Z instead of X, so its collision box must rotate as well.
+    const sideways = Math.abs(Math.sin(rotationY)) > 0.5
+
+    const bounds = sideways
+      ? {
+          minX: position.x - 0.35,
+          maxX: position.x + 0.35,
+          minZ: position.z - width / 2 - 0.2,
+          maxZ: position.z + width / 2 + 0.2,
+          minY: position.y,
+          maxY: position.y + height
+        }
+      : {
+          minX: position.x - width / 2 - 0.2,
+          maxX: position.x + width / 2 + 0.2,
+          minZ: position.z - 0.35,
+          maxZ: position.z + 0.35,
+          minY: position.y,
+          maxY: position.y + height
+        }
 
     const grid = {
       gridGroup,
       beams,
       laserMat,
       active: true,
-      bounds: {
-        minX: position.x - width / 2 - 0.2,
-        maxX: position.x + width / 2 + 0.2,
-        minZ: position.z - 0.35,
-        maxZ: position.z + 0.35,
-        minY: position.y,
-        maxY: position.y + height
-      },
+      bounds,
+
       setActive(isActive) {
         grid.active = isActive
+
         if (laserMat.customUniforms) {
           laserMat.customUniforms.uState.value = isActive ? 0 : 1
         }
@@ -206,6 +253,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
     laserGrids.push(grid)
     scene.add(gridGroup)
+
     return grid
   }
 
@@ -215,6 +263,8 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
   const playerEyePos = new THREE.Vector3()
   const guardEyePos = new THREE.Vector3()
   const toPlayer = new THREE.Vector3()
+  const coneDir = new THREE.Vector3()
+  const coneEye = new THREE.Vector3()
 
   function checkGuardDetection(guard, playerPos, delta) {
     if (!playerPos) return false
@@ -252,6 +302,9 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     return true
   }
 
+  const camEyePos = new THREE.Vector3()
+  const camToPlayer = new THREE.Vector3()
+
   function checkCameraDetection(cam, playerPos) {
     if (!playerPos) return false
     const camPos = cam.camGroup.position
@@ -268,8 +321,25 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
     const toPlayerHoriz = new THREE.Vector3(dx, 0, dz).normalize()
     const dot = camDir.dot(toPlayerHoriz)
+    if (dot <= 0.72) return false // outside the camera beam cone
 
-    return dot > 0.72 // within camera beam cone
+    // Line-of-sight raycast — a partition wall or pillar between the camera
+    // and the player blocks detection, same as it does for guards. Cameras
+    // had no occlusion check before this; angle + distance alone let them
+    // see straight through walls.
+    camEyePos.copy(camPos)
+    camToPlayer.set(playerPos.x, camPos.y, playerPos.z).sub(camEyePos)
+    const losDist = camToPlayer.length()
+    camToPlayer.normalize()
+
+    raycaster.set(camEyePos, camToPlayer)
+    raycaster.far = losDist
+    const hits = raycaster.intersectObjects(collidables, true)
+    for (const hit of hits) {
+      if (hit.distance < losDist - 0.3) return false
+    }
+
+    return true
   }
 
   function checkLaserCollision(playerPos) {
@@ -356,10 +426,22 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
             const step = guard.speed * delta
             guard.group.position.x += Math.sin(guard.facing) * step
             guard.group.position.z += Math.cos(guard.facing) * step
+            resolveBoxCollision(guard.group.position, obstacles)
             guard.stridePhase += step * STRIDE_FREQUENCY
           }
         }
       }
+
+      // Limb swing animation
+      coneDir.set(Math.sin(guard.facing), 0, Math.cos(guard.facing))
+      coneEye.set(guard.group.position.x, guard.group.position.y + 1.55, guard.group.position.z)
+      raycaster.set(coneEye, coneDir)
+      raycaster.far = guard.coneDistance
+      let coneHitDist = guard.coneDistance
+      for (const hit of raycaster.intersectObjects(collidables, true)) {
+        if (hit.distance < coneHitDist) coneHitDist = hit.distance
+      }
+      guard.visionCone.scale.setScalar(THREE.MathUtils.clamp(coneHitDist / guard.coneDistance, 0.05, 1))
 
       // Limb swing animation
       const swing = Math.sin(guard.stridePhase) * STRIDE_AMPLITUDE
@@ -375,6 +457,18 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       cam.elapsed += delta
       const angle = cam.baseAngle + Math.sin(cam.elapsed * cam.sweepSpeed) * cam.sweepRange
       cam.pivot.rotation.y = angle
+
+      // Same wall clipping as the guard cones — stop the beam mesh at the
+      // nearest obstruction along the current sweep direction.
+      coneDir.set(Math.sin(angle), 0, Math.cos(angle))
+      coneEye.copy(cam.camGroup.position)
+      raycaster.set(coneEye, coneDir)
+      raycaster.far = cam.range
+      let camConeHitDist = cam.range
+      for (const hit of raycaster.intersectObjects(collidables, true)) {
+        if (hit.distance < camConeHitDist) camConeHitDist = hit.distance
+      }
+      cam.coneMesh.scale.setScalar(THREE.MathUtils.clamp(camConeHitDist / cam.range, 0.05, 1))
 
       const isSeeing = checkCameraDetection(cam, playerPos)
       if (isSeeing) {

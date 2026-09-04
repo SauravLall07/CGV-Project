@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createHumanoid, PLAYER_PALETTE } from './humanoid.js'
+import { resolveBoxCollision } from '../core/collision.js'
 
 // The player: a humanoid figure (see entities/humanoid.js) that holds its own
 // position/rotation and moves each frame from keyboard input. Movement is
@@ -38,7 +39,7 @@ export function createPlayer() {
     body.rotation.x = 0
   }
 
-  function update(delta, { keyboard, cameraYaw, bounds }) {
+    function update(delta, { keyboard, cameraYaw, bounds, obstacles }) {
     const sin = Math.sin(cameraYaw)
     const cos = Math.cos(cameraYaw)
 
@@ -90,6 +91,12 @@ export function createPlayer() {
     body.position.y = Math.abs(Math.sin(stridePhase)) * BOB_HEIGHT
     const leanTarget = running ? RUN_LEAN : 0
     body.rotation.x += (leanTarget - body.rotation.x) * Math.min(1, delta * 6)
+
+        // Push out of any solid obstacle (partition walls, etc.) before the
+    // outer bounds clamp. Axis-separated resolution: shove out along
+    // whichever penetration is smallest so sliding along a wall face works
+    // instead of snapping to a corner.
+    if (obstacles) resolveBoxCollision(group.position, obstacles)
 
     if (bounds) {
       group.position.x = THREE.MathUtils.clamp(group.position.x, bounds.minX, bounds.maxX)

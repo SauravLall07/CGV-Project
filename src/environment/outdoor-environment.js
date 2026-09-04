@@ -23,6 +23,19 @@ const CORRIDOR_CENTER_X = 1.0
 const CORRIDOR_FLAT_HALF_WIDTH = 20.0
 const CORRIDOR_CLEAR_X = 24.0
 
+const WEST_WING_CLEAR_MIN_X = -66.0
+const WEST_WING_CLEAR_MAX_X = 8.0
+const WEST_WING_CLEAR_CENTER_Z = -24.5
+const WEST_WING_CLEAR_HALF_Z = 12.0
+
+function isInsideWestWingClearance(x, z) {
+  return (
+    x >= WEST_WING_CLEAR_MIN_X &&
+    x <= WEST_WING_CLEAR_MAX_X &&
+    Math.abs(z - WEST_WING_CLEAR_CENTER_Z) <= WEST_WING_CLEAR_HALF_Z
+  )
+}
+
 export function createOutdoorEnvironment(options = {}) {
   const mode = options.mode || 'station' // 'station' | 'moving'
   const speed = options.speed || 35.0 // Speed for moving train mode
@@ -86,23 +99,39 @@ export function createOutdoorEnvironment(options = {}) {
 
   // Trigonometric procedural height calculation
   function getTerrainHeight(x, z) {
-    // Keep a flat corridor around the whole PLAYABLE envelope, not just the
-    // track. The station spans x -5..5 with its rear wall at x = -5, and the
-    // carriage interiors sit at x ~ 0, so a corridor centred on the track
-    // (x = 7) with an 8 m half-width put a 13 m hillside — and the trees
-    // planted on it — directly behind the station wall and above its roofline.
-    const distFromCorridor = Math.abs(x - CORRIDOR_CENTER_X)
-    const corridorFactor = THREE.MathUtils.smoothstep(distFromCorridor, CORRIDOR_FLAT_HALF_WIDTH, 62.0)
+    // Keep the new west infiltration wing completely clear of procedural terrain.
+    // -2.5 matches the flat ground level already produced by the normal station
+    // corridor calculation.
+    if (isInsideWestWingClearance(x, z)) {
+      return -2.5
+    }
 
-    // Layered sine/cosine height noise
+    // Keep a flat corridor around the original station/train envelope.
+    const distFromCorridor = Math.abs(x - CORRIDOR_CENTER_X)
+    const corridorFactor = THREE.MathUtils.smoothstep(
+      distFromCorridor,
+      CORRIDOR_FLAT_HALF_WIDTH,
+      62.0
+    )
+
     const hill1 = Math.sin(x * 0.015 + z * 0.012) * 18.0
     const hill2 = Math.cos(x * 0.035 - z * 0.025) * 8.0
-    const ridge = Math.sin((x + 100) * 0.008) * Math.cos(z * 0.008) * 45.0
-    
-    // Far distant mountain peak boost
-    const mountainBoost = Math.pow(Math.max(0.0, (Math.abs(x) - 80.0) / 120.0), 1.8) * 65.0
+    const ridge =
+      Math.sin((x + 100) * 0.008) *
+      Math.cos(z * 0.008) *
+      45.0
 
-    return (hill1 + hill2 + ridge) * corridorFactor + mountainBoost - 2.5
+    const mountainBoost =
+      Math.pow(
+        Math.max(0.0, (Math.abs(x) - 80.0) / 120.0),
+        1.8
+      ) * 65.0
+
+    return (
+      (hill1 + hill2 + ridge) * corridorFactor +
+      mountainBoost -
+      2.5
+    )
   }
 
   // Build Terrain Mesh
@@ -230,12 +259,16 @@ export function createOutdoorEnvironment(options = {}) {
   const rangeX = 320, rangeZ = 360
 
   for (let i = 0; i < treeCount * 2; i++) {
-    // Push every trunk clear of the playable corridor, measured from the
-    // corridor centre rather than from x = 0.
     let rx = (Math.random() - 0.5) * rangeX * 2
-    rx += rx > 0 ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
+    rx += rx > 0
+      ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
+      : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
 
     const rz = (Math.random() - 0.5) * rangeZ * 2
+
+    // Never place vegetation inside or immediately around the new station wing.
+    if (isInsideWestWingClearance(rx, rz)) continue
+
     const ry = getTerrainHeight(rx, rz)
 
     // Skip if below ground level or too high up rocky peaks
@@ -258,9 +291,14 @@ export function createOutdoorEnvironment(options = {}) {
   // Populate Bushes
   for (let i = 0; i < bushCount; i++) {
     let rx = (Math.random() - 0.5) * rangeX * 1.5
-    rx += rx > 0 ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
+    rx += rx > 0
+      ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
+      : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
 
     const rz = (Math.random() - 0.5) * rangeZ * 1.8
+
+    if (isInsideWestWingClearance(rx, rz)) continue
+
     const ry = getTerrainHeight(rx, rz)
 
     const scale = 0.6 + Math.random() * 0.8
@@ -274,9 +312,14 @@ export function createOutdoorEnvironment(options = {}) {
   // Populate Rocks
   for (let i = 0; i < rockCount; i++) {
     let rx = (Math.random() - 0.5) * rangeX * 1.8
-    rx += rx > 0 ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
+    rx += rx > 0
+      ? CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
+      : -CORRIDOR_CLEAR_X + CORRIDOR_CENTER_X
 
     const rz = (Math.random() - 0.5) * rangeZ * 1.8
+
+    if (isInsideWestWingClearance(rx, rz)) continue
+
     const ry = getTerrainHeight(rx, rz)
 
     const scale = 0.8 + Math.random() * 1.4

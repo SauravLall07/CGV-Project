@@ -86,7 +86,8 @@ loop.add((delta) => {
   player.update(delta, {
     keyboard: keyboard.state,
     cameraYaw: thirdPersonCamera.getYaw(),
-    bounds: levelManager.bounds
+    bounds: levelManager.bounds,
+    obstacles: levelManager.obstacles
   })
 
   thirdPersonCamera.update(delta, player.mesh, scene)
