@@ -1,13 +1,10 @@
 import * as THREE from 'three'
 import { createCarriageInterior } from '../environment/carriage-interior.js'
 import { disposeObject } from '../core/dispose.js'
+import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
-// Level 3 — "The Timewreck". Still a STUB for Phase 4 in gameplay terms (no
-// frozen / fast-time / time-loop carriages yet), but it demonstrates the
-// concept doc's stated scope strategy for real: the SAME carriage-interior
-// module as Level 2, re-dressed with `damaged: true` — emergency lighting,
-// wreckage, torn ceiling panels and sparks — rather than a second set of
-// modelled carriages.
+// Level 3 — "The Timewreck". Demonstrates unstable environment where time
+// distortion intensity scales up (1.8x multiplier).
 
 const LENGTH = 26
 const HALF = LENGTH / 2
@@ -70,17 +67,19 @@ function createEmergencyBrake() {
 }
 
 export function createTimewreckLevel({ scene, interaction, timeSystem, advance }) {
+  if (timeSystem?.setLevelMultiplier) {
+    timeSystem.setLevelMultiplier(1.8) // Unstable Level 3 distortion boost
+  }
   const { group, update: updateInterior } = createCarriageInterior({ length: LENGTH, damaged: true })
 
   // Suspended tumbling debris cluster in unstable time zone
   const debrisGroup = new THREE.Group()
   debrisGroup.position.set(0, 1.3, -HALF + 13)
-  const shardMat = new THREE.MeshStandardMaterial({
-    color: 0x475569,
-    emissive: 0xef4444,
-    emissiveIntensity: 0.8,
-    roughness: 0.5,
-    metalness: 0.4
+
+  const shardMat = createChronoFieldMaterial({
+    baseColor: 0xef4444,
+    glowColor: 0xa855f7,
+    opacity: 0.88
   })
 
   for (let i = 0; i < 6; i++) {
