@@ -26,10 +26,16 @@ const GHOST_BUFFER_SECONDS = 5.0
 const SNAPSHOT_INTERVAL = 0.05 // 20 snapshots per second
 const MAX_SNAPSHOT_HISTORY = 6.0 // max rewind buffer seconds
 
+// Which abilities the player currently has. Level 3's scripted Chrono Core
+// depletion locks everything but Freeze, which is why this lives here rather
+// than in a level: the key bindings in main.js and the HUD both read it.
+const ALL_ABILITIES = { SLOW: true, FREEZE: true, REWIND: true, GHOST: true }
+
 export function createTimeSystem({ scene, player, hud }) {
   let mode = TIME_MODES.NORMAL
   let energy = MAX_ENERGY
   let ghost = createTimeGhost()
+  let availability = { ...ALL_ABILITIES }
   scene.add(ghost.mesh)
 
   // Rolling history of player transforms for Time Ghost
@@ -58,6 +64,10 @@ export function createTimeSystem({ scene, player, hud }) {
       // Toggle off back to normal
       mode = TIME_MODES.NORMAL
     } else {
+      if (newMode !== TIME_MODES.NORMAL && !availability[newMode]) {
+        if (hud) hud.showToast('That chrono ability is offline', 1200)
+        return
+      }
       if (newMode !== TIME_MODES.NORMAL && energy < 10) {
         if (hud) hud.showToast('Chrono Core energy depleted!', 1200)
         return
@@ -80,9 +90,26 @@ export function createTimeSystem({ scene, player, hud }) {
     updateUniforms()
   }
 
+  // Pass a partial map, e.g. { SLOW: false, REWIND: false, GHOST: false }.
+  // Anything omitted is re-enabled, so `setAbilityAvailability({})` restores
+  // the full kit — which is what level teardown does.
+  function setAbilityAvailability(map = {}) {
+    availability = { ...ALL_ABILITIES, ...map }
+    // If the ability currently running just went offline, drop to normal time.
+    if (mode !== TIME_MODES.NORMAL && !availability[mode]) setMode(TIME_MODES.NORMAL)
+  }
+
+  function getAbilityAvailability() {
+    return { ...availability }
+  }
+
   function triggerGhost() {
     if (ghost.isPlaying()) {
       ghost.stop()
+      return
+    }
+    if (!availability.GHOST) {
+      if (hud) hud.showToast('Time Ghost is offline', 1200)
       return
     }
     if (ghostCooldown > 0) {
@@ -273,6 +300,7 @@ export function createTimeSystem({ scene, player, hud }) {
   }
 
   function dispose() {
+    availability = { ...ALL_ABILITIES }
     setMode(TIME_MODES.NORMAL)
     registered.clear()
     playerHistory.length = 0
@@ -286,6 +314,8 @@ export function createTimeSystem({ scene, player, hud }) {
     register,
     setMode,
     setLevelMultiplier,
+    setAbilityAvailability,
+    getAbilityAvailability,
     triggerSlow: () => setMode(TIME_MODES.SLOW),
     triggerFreeze: () => setMode(TIME_MODES.FREEZE),
     triggerRewind: () => setMode(TIME_MODES.REWIND),
