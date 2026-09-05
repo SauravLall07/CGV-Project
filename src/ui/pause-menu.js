@@ -27,7 +27,8 @@ const LEVEL_NAMES = {
 
 // The actions worth surfacing on the pause screen itself, in this order.
 const QUICK_REFERENCE = [
-  'forward', 'run', 'jump', 'duck', 'interact', 'slow', 'freeze', 'rewind', 'ghost'
+  'forward', 'run', 'jump', 'duck', 'interact', 'toggleView',
+  'slow', 'freeze', 'rewind', 'ghost'
 ]
 
 function formatClock(seconds) {

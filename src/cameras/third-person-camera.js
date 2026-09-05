@@ -182,7 +182,11 @@ export function createThirdPersonCamera(camera, domElement) {
     onLockLost,
     requestLock,
     dispose,
+    // Yaw and pitch are read by the first-person camera, which has no mouse
+    // input of its own — this module stays the one owner of pointer lock and
+    // look angles in both views, so switching never changes where you face.
     getYaw: () => yaw,
+    getPitch: () => pitch,
     get isEnabled() { return enabled }
   }
 }

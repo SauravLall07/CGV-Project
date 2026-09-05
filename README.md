@@ -32,6 +32,8 @@ or the pause menu); these are the defaults.
 - **Click the canvas, then move the mouse** — orbit the third-person camera
   around the player (uses the Pointer Lock API)
 - **E** — interact with whatever you're facing (a prompt appears when in range)
+- **V** — switch between third-person and first-person view (look direction is
+  carried across, so the switch never turns you)
 - **1/Q**, **2/F**, **3/C**, **4/G** — Slow, Freeze, Rewind, Time Ghost
 - **R** — restart the current level (no page refresh); on the completion
   screen, restarts the whole run
@@ -50,7 +52,7 @@ survives a reload.
 |---|---|
 | Display | Brightness (tone-mapping exposure), field of view, render resolution scale, shadows on/off, soft vs hard shadows, FPS counter |
 | Gameplay | Mouse sensitivity, invert vertical look, third-person camera distance |
-| Controls | Two rebindable slots per action — movement, run, jump, crouch, interact, the four time abilities and restart — with conflict handling that unbinds the key from whatever held it |
+| Controls | Two rebindable slots per action — movement, run, jump, crouch, interact, view switch, the four time abilities and restart — with conflict handling that unbinds the key from whatever held it |
 
 ## Tech stack
 
@@ -128,7 +130,13 @@ src/
     keyboard-state.js     key codes to game actions, held-state + press
                            listeners, driven by the rebindable key map
   cameras/
-    third-person-camera.js  Follows + orbits the player (mouse look)
+    player-view.js          Owns both cameras and the active view mode; the
+                             rest of the game talks to this, not to either
+                             camera directly
+    third-person-camera.js  Follows + orbits the player (mouse look); sole
+                             owner of pointer lock and the look angles
+    first-person-camera.js  Eye-height camera driven by those same angles,
+                             with a crouch-height blend
   dev/
     dev-controls.js       TEMPORARY OrbitControls — not wired into the
                            active scene, kept for debugging other scenes

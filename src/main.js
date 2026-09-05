@@ -7,7 +7,7 @@ import { createAssetLoader } from './core/assets.js'
 import { createLevelManager } from './core/level-manager.js'
 import { createPlayer } from './entities/player.js'
 import { createKeyboardState } from './input/keyboard-state.js'
-import { createThirdPersonCamera } from './cameras/third-person-camera.js'
+import { createPlayerView } from './cameras/player-view.js'
 import { createInteractionSystem } from './systems/interaction.js'
 import { createRespawnSystem } from './systems/respawn.js'
 import { createTimeSystem } from './systems/time-system.js'
@@ -44,9 +44,14 @@ const player = createPlayer()
 scene.add(player.mesh)
 
 const keyboard = createKeyboardState()
-const thirdPersonCamera = createThirdPersonCamera(camera, renderer.domElement)
+const playerView = createPlayerView({
+  camera,
+  domElement: renderer.domElement,
+  player,
+  hud
+})
 const interaction = createInteractionSystem({ camera, input: keyboard })
-const respawn = createRespawnSystem({ player, hud, camera: thirdPersonCamera })
+const respawn = createRespawnSystem({ player, hud, camera: playerView })
 const timeSystem = createTimeSystem({ scene, player, hud })
 
 // Time abilities. The key codes live in core/settings.js and are rebindable
@@ -56,6 +61,9 @@ keyboard.onAction('freeze', () => timeSystem.triggerFreeze())
 keyboard.onAction('rewind', () => timeSystem.triggerRewind())
 keyboard.onAction('ghost', () => timeSystem.triggerGhost())
 keyboard.onAction('restart', () => { if (gameStarted) levelManager.restart() })
+
+// First-person / third-person toggle (V by default, rebindable like the rest).
+keyboard.onAction('toggleView', () => playerView.toggle())
 
 // Checkpoint resets are one of the run stats the pause menu reports.
 let resetCount = 0
@@ -67,7 +75,7 @@ const levelManager = createLevelManager({
   assets,
   hud,
   player,
-  camera: thirdPersonCamera,
+  camera: playerView,
   respawn,
   timeSystem,
   loadingScreen,
@@ -97,7 +105,7 @@ let titleBackdrop = null // the silently-built station behind the title screen
 // gameplay input is silenced so a stray Q on the title screen cannot fire a
 // time ability behind the overlay.
 hud.setVisible(false)
-thirdPersonCamera.setEnabled(false)
+playerView.setEnabled(false)
 keyboard.setEnabled(false)
 
 // Build the first level silently (no loading-screen flash) so the
@@ -106,7 +114,7 @@ keyboard.setEnabled(false)
 function buildTitleBackdrop() {
   const ctx = {
     scene, interaction, assets, hud, timeSystem,
-    player, camera: thirdPersonCamera, respawn,
+    player, camera: playerView, respawn,
     advance: () => levelManager.advance()
   }
   // Nothing is interactable behind the title screen, and the player is parked
@@ -158,7 +166,7 @@ function setPaused(value) {
 
   keyboard.setEnabled(!value)
   interaction.setEnabled(!value)
-  thirdPersonCamera.setEnabled(!value)
+  playerView.setEnabled(!value)
 
   if (value) {
     pauseMenu.open()
@@ -166,14 +174,14 @@ function setPaused(value) {
     // Re-grab the mouse straight away; if the browser refuses (it rate-limits
     // a re-lock right after an Escape-driven exit) clicking the canvas still
     // works, which is what the camera's own click handler is for.
-    thirdPersonCamera.requestLock()
+    playerView.requestLock()
   }
 }
 
 // Losing the pointer lock is the only reliable signal that the player pressed
 // Escape while the mouse was captured — browsers consume that keydown — so it
 // doubles as a pause trigger.
-thirdPersonCamera.onLockLost(() => {
+playerView.onLockLost(() => {
   if (gameStarted && !paused && !settingsMenu.isOpen) setPaused(true)
 })
 
@@ -189,8 +197,9 @@ function startGame() {
   gameStarted = true
   elapsed = 0
   resetCount = 0
+  playerView.reset() // every run opens in third person
   hud.setVisible(true)
-  thirdPersonCamera.setEnabled(true)
+  playerView.setEnabled(true)
   keyboard.setEnabled(true)
   levelManager.enter('Boarding')
 }
@@ -206,7 +215,10 @@ function quitToTitle() {
 
   levelManager.unload()
   keyboard.setEnabled(false)
-  thirdPersonCamera.setEnabled(false)
+  playerView.setEnabled(false)
+  // Quitting mid-run from first person left the player figure hidden; the
+  // title screen's cinematic shot needs it back.
+  playerView.reset()
   hud.setVisible(false)
   hud.setSuspicion(0)
   hud.setObjective('')
@@ -253,13 +265,15 @@ loop.add((delta) => {
 
   player.update(delta, {
     keyboard: keyboard.state,
-    cameraYaw: thirdPersonCamera.getYaw(),
+    cameraYaw: playerView.getYaw(),
     bounds: levelManager.bounds,
     obstacles: levelManager.obstacles
   })
 
-  thirdPersonCamera.update(delta, player.mesh, scene)
-  interaction.update(player.mesh, thirdPersonCamera.getYaw())
+  playerView.update(delta, player.mesh, scene, {
+    crouching: Boolean(keyboard.state.duck)
+  })
+  interaction.update(player.mesh, playerView.getYaw())
   respawn.update()
 
   hud.updateTimeState({
