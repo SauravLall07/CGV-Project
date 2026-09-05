@@ -125,5 +125,13 @@ export function createThirdPersonCamera(camera, domElement) {
     document.removeEventListener('mousemove', onMouseMove)
   }
 
-  return { update, snap, setYaw, dispose, getYaw: () => yaw }
+  return {
+    update,
+    snap,
+    setYaw,
+    dispose,
+
+    getYaw: () => yaw,
+    getPitch: () => pitch
+  }
 }

@@ -8,6 +8,7 @@ import { createLevelManager } from './core/level-manager.js'
 import { createPlayer } from './entities/player.js'
 import { createKeyboardState } from './input/keyboard-state.js'
 import { createThirdPersonCamera } from './cameras/third-person-camera.js'
+import { createFirstPersonCamera } from './cameras/first-person-camera.js'
 import { createInteractionSystem } from './systems/interaction.js'
 import { createRespawnSystem } from './systems/respawn.js'
 import { createTimeSystem } from './systems/time-system.js'
@@ -41,7 +42,47 @@ const player = createPlayer()
 scene.add(player.mesh)
 
 const keyboard = createKeyboardState()
-const thirdPersonCamera = createThirdPersonCamera(camera, renderer.domElement)
+
+const thirdPersonCamera =
+  createThirdPersonCamera(
+    camera,
+    renderer.domElement
+  )
+
+const firstPersonCamera = createFirstPersonCamera(camera)
+let cameraMode = 'third'
+keyboard.onKeyPress('KeyV', () => {
+  cameraMode =
+    cameraMode === 'third'
+      ? 'first'
+      : 'third'
+
+  if (cameraMode === 'first') {
+    // Don't render the third-person body while the camera
+    // is located inside the character's head.
+    player.mesh.visible = false
+
+    firstPersonCamera.snap(
+      Boolean(keyboard.state.duck)
+    )
+
+    hud.showToast(
+      'FIRST-PERSON VIEW',
+      900
+    )
+  } else {
+    player.mesh.visible = true
+
+    // Reset third-person follow smoothing so returning to
+    // third person doesn't slide the camera across the scene.
+    thirdPersonCamera.snap()
+
+    hud.showToast(
+      'THIRD-PERSON VIEW',
+      900
+    )
+  }
+})
 const interaction = createInteractionSystem({ camera })
 const respawn = createRespawnSystem({ player, hud, camera: thirdPersonCamera })
 const timeSystem = createTimeSystem({ scene, player, hud })
@@ -149,17 +190,33 @@ loop.add((delta) => {
     obstacles: levelManager.obstacles
   })
 
-  thirdPersonCamera.update(delta, player.mesh, scene)
-  interaction.update(player.mesh, thirdPersonCamera.getYaw())
-  respawn.update()
+  if (cameraMode === 'first') {
+    firstPersonCamera.update(
+      delta,
+      player.mesh,
+      {
+        yaw: thirdPersonCamera.getYaw(),
+        pitch: thirdPersonCamera.getPitch(),
+        crouching: Boolean(keyboard.state.duck)
+      }
+    )
+  } else {
+    thirdPersonCamera.update(
+      delta,
+      player.mesh,
+      scene
+    )
+  }
+    interaction.update(player.mesh, thirdPersonCamera.getYaw())
+    respawn.update()
 
-  hud.updateTimeState({
-    mode: timeSystem.getMode(),
-    energy: timeSystem.getEnergy(),
-    maxEnergy: timeSystem.getMaxEnergy(),
-    ghostCooldown: timeSystem.getGhostCooldown(),
-    hasGhost: timeSystem.getGhost().isPlaying(),
-    available: timeSystem.getAbilityAvailability()
+    hud.updateTimeState({
+      mode: timeSystem.getMode(),
+      energy: timeSystem.getEnergy(),
+      maxEnergy: timeSystem.getMaxEnergy(),
+      ghostCooldown: timeSystem.getGhostCooldown(),
+      hasGhost: timeSystem.getGhost().isPlaying(),
+      available: timeSystem.getAbilityAvailability()
+    })
   })
-})
 loop.start()
