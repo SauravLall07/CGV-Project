@@ -27,6 +27,8 @@ or the pause menu); these are the defaults.
 - **WASD** / **arrow keys** — move (camera-relative: forward is always away
   from the camera)
 - **Shift** — run
+- **Space** — jump
+- **X** / **Ctrl** — crouch (hold)
 - **Click the canvas, then move the mouse** — orbit the third-person camera
   around the player (uses the Pointer Lock API)
 - **E** — interact with whatever you're facing (a prompt appears when in range)
@@ -48,7 +50,7 @@ survives a reload.
 |---|---|
 | Display | Brightness (tone-mapping exposure), field of view, render resolution scale, shadows on/off, soft vs hard shadows, FPS counter |
 | Gameplay | Mouse sensitivity, invert vertical look, third-person camera distance |
-| Controls | Two rebindable slots per action — movement, run, interact, the four time abilities and restart — with conflict handling that unbinds the key from whatever held it |
+| Controls | Two rebindable slots per action — movement, run, jump, crouch, interact, the four time abilities and restart — with conflict handling that unbinds the key from whatever held it |
 
 ## Tech stack
 

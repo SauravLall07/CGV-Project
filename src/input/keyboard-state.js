@@ -15,6 +15,15 @@ import { ACTIONS, settings } from '../core/settings.js'
 
 const HELD_ACTIONS = ACTIONS.filter((a) => a.held).map((a) => a.id)
 
+// Keys the browser acts on itself — Space and the arrows scroll the page, Tab
+// moves focus off the canvas. When one of them is actually bound to something
+// (Space is Jump by default, the arrows are movement) the game has to claim it,
+// or holding Jump also scrolls the document behind the canvas.
+const SCROLL_KEYS = new Set([
+  'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'PageUp', 'PageDown', 'Home', 'End', 'Tab'
+])
+
 export function createKeyboardState() {
   const state = {}
   for (const action of HELD_ACTIONS) state[action] = false
@@ -63,6 +72,8 @@ export function createKeyboardState() {
     if (!enabled) return
     const action = codeToAction.get(event.code)
     if (!action) return
+
+    if (SCROLL_KEYS.has(event.code)) event.preventDefault()
 
     if (action in state) state[action] = true
 

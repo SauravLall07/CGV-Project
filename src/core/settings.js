@@ -131,6 +131,11 @@ export const ACTIONS = [
   { id: 'left', label: 'Move Left', group: 'Movement', held: true },
   { id: 'right', label: 'Move Right', group: 'Movement', held: true },
   { id: 'run', label: 'Run', group: 'Movement', held: true },
+  // Jump and crouch are held rather than press actions: the player reads
+  // `jump` as a held flag and edge-detects the press itself, and `duck` is a
+  // hold-to-crouch.
+  { id: 'jump', label: 'Jump', group: 'Movement', held: true },
+  { id: 'duck', label: 'Crouch', group: 'Movement', held: true },
   { id: 'interact', label: 'Interact', group: 'Actions' },
   { id: 'slow', label: 'Slow Time', group: 'Time Abilities' },
   { id: 'freeze', label: 'Freeze Time', group: 'Time Abilities' },
@@ -145,6 +150,8 @@ export const DEFAULT_BINDINGS = {
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'],
+  jump: ['Space', null],
+  duck: ['KeyX', 'ControlLeft'],
   interact: ['KeyE', null],
   slow: ['Digit1', 'KeyQ'],
   freeze: ['Digit2', 'KeyF'],
