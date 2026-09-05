@@ -86,11 +86,22 @@ export function createLevelManager({
 
   function restart() {
     if (!currentState) return
-    // Mid-run, R restarts the current level. On the terminal state it starts
-    // the whole sequence over (both without a page refresh — Phase 8's pause
-    // / end menus will front proper buttons for this).
+    // Restarts the current level. On the terminal state it starts the whole
+    // sequence over instead — both without a page refresh, which is what the
+    // pause menu's RESTART LEVEL button and the restart key both call.
     const isLast = sequence.indexOf(currentState) === sequence.length - 1
     enter(isLast ? sequence[0] : currentState)
+  }
+
+  // Tear the current level down without building another. Quitting to the
+  // title screen needs the level gone but the manager alive, so this is
+  // teardown() plus dropping the state — a later enter() starts clean.
+  function unload() {
+    pendingToken += 1 // cancel any build still waiting on its deferred frames
+    teardown()
+    currentState = null
+    loadingScreen.hide()
+    interaction.setEnabled(false)
   }
 
   function advance() {
@@ -102,21 +113,14 @@ export function createLevelManager({
     if (current && current.update) current.update(delta)
   }
 
-  // Debug affordance until Phase 8's pause menu owns restart. It works
-  // without a refresh precisely because enter() = teardown + rebuild.
-  function onKeyDown(event) {
-    if (event.code === 'KeyR' && !event.repeat) restart()
-  }
-  window.addEventListener('keydown', onKeyDown)
-
   function dispose() {
-    window.removeEventListener('keydown', onKeyDown)
     teardown()
   }
 
   return {
     enter,
     restart,
+    unload,
     advance,
     update,
     dispose,

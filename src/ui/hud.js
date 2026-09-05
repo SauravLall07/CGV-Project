@@ -1,5 +1,11 @@
 // HUD with Objective, Toasts, and Chrono Core Time-Manipulation Deck.
 // Features energy meter, ability activation highlights, and temporal vignette.
+//
+// The ability slots label themselves from the live key bindings rather than
+// hard-coded strings, so rebinding Freeze in the settings screen re-labels the
+// deck. The optional FPS counter is driven from the same settings store.
+
+import { bindingLabel, settings } from '../core/settings.js'
 
 export function createHud() {
   const root = document.createElement('div')
@@ -188,10 +194,10 @@ export function createHud() {
   })
 
   const abilities = [
-    { id: 'SLOW', name: 'Slow', key: '1/Q', color: '#38bdf8' },
-    { id: 'FREEZE', name: 'Freeze', key: '2/F', color: '#60a5fa' },
-    { id: 'REWIND', name: 'Rewind', key: '3/C', color: '#a855f7' },
-    { id: 'GHOST', name: 'Ghost', key: '4/G', color: '#2dd4bf' }
+    { id: 'SLOW', name: 'Slow', action: 'slow', color: '#38bdf8' },
+    { id: 'FREEZE', name: 'Freeze', action: 'freeze', color: '#60a5fa' },
+    { id: 'REWIND', name: 'Rewind', action: 'rewind', color: '#a855f7' },
+    { id: 'GHOST', name: 'Ghost', action: 'ghost', color: '#2dd4bf' }
   ]
 
   const slotElements = new Map()
@@ -212,7 +218,7 @@ export function createHud() {
     })
 
     const keyElem = document.createElement('span')
-    keyElem.textContent = ab.key
+    keyElem.textContent = bindingLabel(settings.getBinding(ab.action))
     Object.assign(keyElem.style, {
       fontSize: '10px',
       color: '#94a3b8',
@@ -233,14 +239,68 @@ export function createHud() {
   })
 
   timeDeck.append(energyRow, abilitySlots)
-  root.append(objective, toast, suspicionContainer, timeDeck)
+
+  // Optional FPS counter (Settings → Display → Performance Counter). Top-left
+  // is the one corner nothing else on the HUD claims.
+  const stats = document.createElement('div')
+  Object.assign(stats.style, {
+    position: 'absolute',
+    top: '18px',
+    left: '20px',
+    padding: '4px 9px',
+    background: 'rgba(9, 13, 22, 0.7)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontVariantNumeric: 'tabular-nums',
+    letterSpacing: '0.06em',
+    color: '#94a3b8',
+    display: 'none'
+  })
+  stats.textContent = '-- FPS'
+
+  root.append(objective, toast, suspicionContainer, timeDeck, stats)
   document.body.appendChild(root)
 
+  // Re-label the ability slots when the player rebinds a time ability.
+  function refreshBindings() {
+    slotElements.forEach(({ keyElem, ab }) => {
+      keyElem.textContent = bindingLabel(settings.getBinding(ab.action))
+    })
+  }
+
+  const unsubscribeSettings = settings.subscribe((values, changed) => {
+    if (changed === 'bindings' || changed === 'all') refreshBindings()
+    if (changed === 'showStats' || changed === 'options' || changed === 'all') {
+      stats.style.display = values.showStats ? 'block' : 'none'
+    }
+  })
+  stats.style.display = settings.get('showStats') ? 'block' : 'none'
+
+  // Rolling average over a short window: a per-frame readout is unreadable
+  // noise, and this is meant to be glanced at while playing.
+  let statsAccum = 0
+  let statsFrames = 0
+
+  function updateStats(delta) {
+    if (!settings.get('showStats')) return
+    statsAccum += delta
+    statsFrames += 1
+    if (statsAccum < 0.5) return
+    const fps = Math.round(statsFrames / statsAccum)
+    stats.textContent = `${fps} FPS`
+    statsAccum = 0
+    statsFrames = 0
+  }
+
   let toastTimer = null
+  let objectiveText = ''
+  let suspicionValue = 0
 
   function setObjective(text) {
-    objective.textContent = text ?? ''
-    objective.style.opacity = text ? '1' : '0'
+    objectiveText = text ?? ''
+    objective.textContent = objectiveText
+    objective.style.opacity = objectiveText ? '1' : '0'
   }
 
   function showToast(text, duration = 2000) {
@@ -254,6 +314,7 @@ export function createHud() {
 
   function setSuspicion(value) {
     const clamped = Math.max(0, Math.min(100, Math.round(value)))
+    suspicionValue = clamped
     suspicionFill.style.width = `${clamped}%`
     suspicionPct.textContent = `${clamped}%`
 
@@ -360,8 +421,22 @@ export function createHud() {
 
   function dispose() {
     clearTimeout(toastTimer)
+    unsubscribeSettings()
     root.remove()
   }
 
-  return { root, setObjective, showToast, setSuspicion, updateTimeState, setVisible, dispose }
+  // The pause menu reads these back for its run-status column rather than
+  // main.js having to mirror the same values a second time.
+  return {
+    root,
+    setObjective,
+    showToast,
+    setSuspicion,
+    updateTimeState,
+    updateStats,
+    setVisible,
+    dispose,
+    getObjective: () => objectiveText,
+    getSuspicion: () => suspicionValue
+  }
 }

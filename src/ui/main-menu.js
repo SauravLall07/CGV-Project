@@ -7,6 +7,13 @@
 //
 // Flow: loading screen → main menu → NEW GAME → menu fades → third-person
 // camera lerps to the player → gameplay begins.
+//
+// SETTINGS opens the same panel the pause menu uses (ui/settings-menu.js), so
+// brightness, look sensitivity and key bindings can all be set before the run
+// starts. While that panel is open it swallows key presses, which is why
+// Enter-to-start cannot fire underneath it.
+
+import { createButton } from './ui-theme.js'
 
 const TITLE = 'CHRONO EXPRESS'
 const SUBTITLE = 'THE LAST HEIST'
@@ -19,7 +26,7 @@ const DRIFT_X = 0.35
 const DRIFT_Y = 0.12
 const DRIFT_SPEED = 0.07
 
-export function createMainMenu({ camera, renderer }) {
+export function createMainMenu({ camera, renderer, settingsMenu }) {
   // ---------------------------------------------------------------
   // DOM overlay
   // ---------------------------------------------------------------
@@ -150,7 +157,7 @@ export function createMainMenu({ camera, renderer }) {
   titleBlock.append(preTitle, title, subtitle)
 
   // ---------------------------------------------------------------
-  // NEW GAME button
+  // Menu buttons
   // ---------------------------------------------------------------
   const buttonWrap = document.createElement('div')
   Object.assign(buttonWrap.style, {
@@ -164,59 +171,19 @@ export function createMainMenu({ camera, renderer }) {
     transition: 'opacity 700ms ease 650ms, transform 700ms ease 650ms'
   })
 
-  const newGameBtn = document.createElement('button')
-  newGameBtn.textContent = 'NEW GAME'
-  newGameBtn.setAttribute('tabindex', '0')
-  Object.assign(newGameBtn.style, {
-    padding: 'clamp(12px, 2vh, 18px) clamp(32px, 7vw, 64px)',
-    fontSize: 'clamp(14px, 2vw, 20px)',
-    fontWeight: '700',
-    letterSpacing: '0.22em',
-    color: '#f0e6cf',
-    background: 'rgba(176, 141, 63, 0.10)',
-    border: '1px solid rgba(176, 141, 63, 0.40)',
-    borderRadius: '2px',
-    cursor: 'pointer',
-    transition: 'all 220ms ease',
-    textTransform: 'uppercase',
-    fontFamily: 'inherit',
-    outline: 'none',
-    position: 'relative',
-    overflow: 'hidden',
-    backdropFilter: 'blur(6px)',
-    WebkitBackdropFilter: 'blur(6px)'
-  })
+  const newGameBtn = createButton('New Game', { variant: 'primary', size: 'large' })
 
-  // Hover / focus / active visual states
-  function applyButtonState(state) {
-    switch (state) {
-      case 'hover':
-        newGameBtn.style.background = 'rgba(176, 141, 63, 0.22)'
-        newGameBtn.style.borderColor = 'rgba(176, 141, 63, 0.72)'
-        newGameBtn.style.boxShadow = '0 0 24px rgba(176, 141, 63, 0.18), inset 0 0 14px rgba(176, 141, 63, 0.06)'
-        newGameBtn.style.transform = 'scale(1.04)'
-        newGameBtn.style.color = '#fff5e0'
-        break
-      case 'active':
-        newGameBtn.style.background = 'rgba(176, 141, 63, 0.32)'
-        newGameBtn.style.borderColor = 'rgba(176, 141, 63, 0.88)'
-        newGameBtn.style.transform = 'scale(0.97)'
-        break
-      default:
-        newGameBtn.style.background = 'rgba(176, 141, 63, 0.10)'
-        newGameBtn.style.borderColor = 'rgba(176, 141, 63, 0.40)'
-        newGameBtn.style.boxShadow = 'none'
-        newGameBtn.style.transform = 'scale(1)'
-        newGameBtn.style.color = '#f0e6cf'
+  // SETTINGS sits under NEW GAME as the quieter second option; it opens the
+  // shared panel and hands focus back here when it closes.
+  const settingsBtn = createButton('Settings', {
+    variant: 'ghost',
+    onClick: () => {
+      if (!settingsMenu) return
+      settingsMenu.open(() => {
+        if (isVisible) newGameBtn.focus()
+      })
     }
-  }
-
-  newGameBtn.addEventListener('mouseenter', () => applyButtonState('hover'))
-  newGameBtn.addEventListener('mouseleave', () => applyButtonState('default'))
-  newGameBtn.addEventListener('mousedown', () => applyButtonState('active'))
-  newGameBtn.addEventListener('mouseup', () => applyButtonState('hover'))
-  newGameBtn.addEventListener('focus', () => applyButtonState('hover'))
-  newGameBtn.addEventListener('blur', () => applyButtonState('default'))
+  })
 
   // Keyboard hint
   const hint = document.createElement('div')
@@ -228,7 +195,7 @@ export function createMainMenu({ camera, renderer }) {
     fontWeight: '400'
   })
 
-  buttonWrap.append(newGameBtn, hint)
+  buttonWrap.append(newGameBtn, settingsBtn, hint)
 
   // ---------------------------------------------------------------
   // Version / credit line (bottom)
@@ -261,10 +228,8 @@ export function createMainMenu({ camera, renderer }) {
   // ---------------------------------------------------------------
   function handleStart() {
     if (!isVisible || isTransitioning) return
+    if (settingsMenu && settingsMenu.isOpen) return
     isTransitioning = true
-
-    // Button pulse feedback
-    applyButtonState('active')
 
     // Fade menu out after a brief beat
     setTimeout(() => {
@@ -279,6 +244,7 @@ export function createMainMenu({ camera, renderer }) {
 
   function onKeyDown(event) {
     if (!isVisible || isTransitioning) return
+    if (settingsMenu && settingsMenu.isOpen) return
     if (event.code === 'Enter' || event.code === 'Space') {
       event.preventDefault()
       handleStart()
@@ -291,6 +257,9 @@ export function createMainMenu({ camera, renderer }) {
   // ---------------------------------------------------------------
   function show() {
     isVisible = true
+    // Reset the start latch: the menu is shown again when the player quits a
+    // run from the pause menu, and a stuck latch would make NEW GAME dead.
+    isTransitioning = false
     menuElapsed = 0
     root.style.display = 'flex'
     root.style.pointerEvents = 'auto'
