@@ -18,7 +18,8 @@ import {
 } from '../core/settings.js'
 import {
   THEME, createButton, createHeading, createSectionLabel,
-  createSliderRow, createToggleRow, createKeyCap, createOverlayRoot
+  createSliderRow, createToggleRow, createKeyCap, createOverlayRoot,
+  applyScrollbarTheme
 } from './ui-theme.js'
 
 const TABS = [
@@ -133,6 +134,7 @@ export function createSettingsMenu() {
     flex: '1 1 auto',
     minHeight: '0'
   })
+  applyScrollbarTheme(body)
 
   // Footer
   const footer = document.createElement('div')

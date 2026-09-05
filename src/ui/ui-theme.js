@@ -10,6 +10,75 @@
 // the rest of the UI layer: no CSS file has to be shipped or scoped, and each
 // overlay stays a single self-contained module.
 
+// ---------------------------------------------------------------
+// Injected stylesheet
+// ---------------------------------------------------------------
+// The overlays are built with inline styles, but scrollbars live on
+// pseudo-elements that inline styles cannot reach — so the one thing that has
+// to be a real stylesheet is the scrollbar skin. Without it the panels get the
+// browser's default light scrollbar, which is the one bright rectangle on an
+// otherwise black-and-brass screen.
+//
+// Both syntaxes are set on purpose: `scrollbar-color` is the standard (Firefox,
+// and Chrome 121+) but only takes a thumb and track colour, while the WebKit
+// pseudo-elements give the inset thumb and let the stepper arrows be removed.
+
+const STYLE_ID = 'chrono-menu-styles'
+
+const MENU_CSS = `
+.cx-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(176, 141, 63, 0.55) rgba(0, 0, 0, 0.3);
+}
+.cx-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.cx-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-left: 1px solid rgba(176, 141, 63, 0.14);
+}
+.cx-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(176, 141, 63, 0.7), rgba(176, 141, 63, 0.42));
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 6px;
+}
+.cx-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(214, 178, 92, 0.9), rgba(176, 141, 63, 0.65));
+  background-clip: padding-box;
+}
+.cx-scroll::-webkit-scrollbar-thumb:active {
+  background: rgba(214, 178, 92, 0.95);
+  background-clip: padding-box;
+}
+/* Stepper arrows: the default pair reads as two light blocks pinned to the
+   ends of the track, which no other control on these panels has. */
+.cx-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.cx-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+`
+
+function ensureMenuStyles() {
+  if (document.getElementById(STYLE_ID)) return
+  const style = document.createElement('style')
+  style.id = STYLE_ID
+  style.textContent = MENU_CSS
+  document.head.appendChild(style)
+}
+
+// Give a scrolling element the themed scrollbar.
+export function applyScrollbarTheme(element) {
+  ensureMenuStyles()
+  element.classList.add('cx-scroll')
+  return element
+}
+
 export const THEME = {
   brass: '#b08d3f',
   brassSoft: 'rgba(176, 141, 63, 0.4)',
@@ -363,7 +432,11 @@ export function createOverlayRoot(id, zIndex) {
     transition: 'opacity 220ms ease',
     userSelect: 'none',
     fontFamily: THEME.sans,
-    color: THEME.parchment
+    color: THEME.parchment,
+    // Tells the browser to render native widgets (slider tracks, and the
+    // scrollbar wherever the skin below is unsupported) in their dark form.
+    colorScheme: 'dark'
   })
+  ensureMenuStyles()
   return root
 }

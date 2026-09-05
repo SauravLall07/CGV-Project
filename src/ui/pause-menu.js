@@ -14,7 +14,7 @@
 import { ACTIONS, bindingLabel, codeLabel, settings } from '../core/settings.js'
 import {
   THEME, createButton, createHeading, createSectionLabel,
-  createKeyCap, createOverlayRoot
+  createKeyCap, createOverlayRoot, applyScrollbarTheme
 } from './ui-theme.js'
 
 // Level-manager states rendered as something a player would recognise.
@@ -100,6 +100,7 @@ export function createPauseMenu({
     flex: '1 1 auto',
     minHeight: '0'
   })
+  applyScrollbarTheme(body)
 
   const statusColumn = document.createElement('div')
   const controlsColumn = document.createElement('div')
