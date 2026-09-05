@@ -13,6 +13,7 @@ import { createRespawnSystem } from './systems/respawn.js'
 import { createTimeSystem } from './systems/time-system.js'
 import { createHud } from './ui/hud.js'
 import { createLoadingScreen } from './ui/loading-screen.js'
+import { createMainMenu } from './ui/main-menu.js'
 import { createBoardingLevel } from './levels/boarding.js'
 import { createMovingHeistLevel } from './levels/moving-heist.js'
 import { createTimewreckLevel } from './levels/timewreck.js'
@@ -76,10 +77,68 @@ const levelManager = createLevelManager({
   ]
 })
 
-levelManager.enter('Boarding')
+// ---------------------------------------------------------------
+// Main Menu
+// ---------------------------------------------------------------
+// The station scene is built behind the loading screen so the menu
+// has a live 3D backdrop. The menu then owns the camera until the
+// player clicks NEW GAME, at which point the third-person camera
+// takes over and gameplay begins.
+
+let gameStarted = false
+hud.setVisible(false)
+
+// Build the first level silently (no loading-screen flash) so the
+// station geometry, lighting and outdoor environment render behind
+// the menu overlay.
+const silentBuild = () => {
+  const ctx = {
+    scene, interaction, assets, hud, timeSystem,
+    player, camera: thirdPersonCamera, respawn,
+    advance: () => levelManager.advance()
+  }
+  return createBoardingLevel(ctx)
+}
+
+const menu = createMainMenu({ camera, renderer })
+
+// Defer by two animation frames: the first paints the loading screen,
+// the second runs the synchronous station build. This matches the
+// pattern used by levelManager.enter() — see core/level-manager.js.
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  const silentLevel = silentBuild()
+
+  // One more frame so the station has rendered behind the loading
+  // overlay before it fades away to reveal the menu.
+  requestAnimationFrame(() => {
+    loadingScreen.setProgress(1)
+    loadingScreen.hide()
+    menu.show()
+  })
+
+  // ---------------------------------------------------------------
+  // Menu → Gameplay transition
+  // ---------------------------------------------------------------
+  menu.onStart(() => {
+    // Clean up the silently-built level; the level manager will
+    // rebuild Boarding through its normal enter() pipeline, which
+    // sets up interaction, checkpoints, HUD objective, etc.
+    silentLevel.dispose()
+
+    gameStarted = true
+    hud.setVisible(true)
+    levelManager.enter('Boarding')
+  })
+}))
 
 const loop = createLoop({ renderer, scene, camera, clock })
 loop.add((delta) => {
+  // While the menu is visible, drift the camera and skip gameplay.
+  if (!gameStarted) {
+    menu.updateCinematicCamera(delta)
+    return
+  }
+
   timeSystem.update(delta)
   levelManager.update(delta)
 
