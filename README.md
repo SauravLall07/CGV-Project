@@ -21,13 +21,38 @@ come.
 
 ## Controls
 
-- **WASD** — move (camera-relative: forward is always away from the camera)
+Every key below is rebindable in **Settings → Controls** (from the title screen
+or the pause menu); these are the defaults.
+
+- **WASD** / **arrow keys** — move (camera-relative: forward is always away
+  from the camera)
 - **Shift** — run
+- **Space** — jump
+- **X** / **Ctrl** — crouch (hold)
 - **Click the canvas, then move the mouse** — orbit the third-person camera
   around the player (uses the Pointer Lock API)
 - **E** — interact with whatever you're facing (a prompt appears when in range)
+- **V** — switch between third-person and first-person view (look direction is
+  carried across, so the switch never turns you)
+- **1/Q**, **2/F**, **3/C**, **4/G** — Slow, Freeze, Rewind, Time Ghost
 - **R** — restart the current level (no page refresh); on the completion
-  screen, restarts the whole run. Temporary until Phase 8's pause menu.
+  screen, restarts the whole run
+- **Esc** — pause. The pause menu shows the current level, objective, run
+  clock, Chrono power, suspicion and checkpoint resets, and fronts Resume,
+  Restart Level, Settings and Quit to Title. Not rebindable, since it is also
+  what backs out of every menu.
+
+## Settings
+
+Reachable from **SETTINGS** on the title screen and from the pause menu — the
+same panel either way. Everything is written straight to `localStorage`, so it
+survives a reload.
+
+| Tab | What it holds |
+|---|---|
+| Display | Brightness (tone-mapping exposure), field of view, render resolution scale, shadows on/off, soft vs hard shadows, FPS counter |
+| Gameplay | Mouse sensitivity, invert vertical look, third-person camera distance |
+| Controls | Two rebindable slots per action — movement, run, jump, crouch, interact, view switch, the four time abilities and restart — with conflict handling that unbinds the key from whatever held it |
 
 ## Tech stack
 
@@ -55,6 +80,8 @@ src/
                                 (superseded per-level; kept for other scenes)
     assets.js                 LoadingManager + GLTFLoader (+ lazy Draco),
                                 progress-callback fan-out
+    settings.js               persisted display/gameplay options + the
+                                rebindable key map, with change subscriptions
     dispose.js                recursive geometry/material/texture/light cleanup
     level-manager.js          state machine over the level sequence: build,
                                 dispose-based teardown, restart, advance
@@ -69,9 +96,18 @@ src/
   systems/               cross-level gameplay systems
     interaction.js        raycast-from-player, contextual prompt, register()/E
     respawn.js            one active checkpoint + generic fail() → respawn
-  ui/                    DOM overlays (Phase 8 restyles/merges these)
-    hud.js                objective line + transient toast
+  ui/                    DOM overlays
+    hud.js                objective line, toast, suspicion meter, Chrono deck
+                           (ability slots label themselves from the bindings)
     loading-screen.js     progress bar driven by assets.js
+    main-menu.js          title screen over a live cinematic shot of the
+                           station; NEW GAME + SETTINGS
+    pause-menu.js         Esc overlay: run status, control reference, resume /
+                           restart / settings / quit to title
+    settings-menu.js      display, gameplay and key-rebinding panel, shared by
+                           the title screen and the pause menu
+    ui-theme.js           shared menu styling and widgets (buttons, sliders,
+                           toggles, key caps) used by the three overlays
   entities/
     train.js              Train group + named carriage-N child groups +
                            locomotive; exports the track height constants
@@ -91,9 +127,16 @@ src/
                            with zero per-frame allocation
     textures.js           Procedural canvas textures + derived normal maps
   input/
-    keyboard-state.js     WASD/shift held-state tracking
+    keyboard-state.js     key codes to game actions, held-state + press
+                           listeners, driven by the rebindable key map
   cameras/
-    third-person-camera.js  Follows + orbits the player (mouse look)
+    player-view.js          Owns both cameras and the active view mode; the
+                             rest of the game talks to this, not to either
+                             camera directly
+    third-person-camera.js  Follows + orbits the player (mouse look); sole
+                             owner of pointer lock and the look angles
+    first-person-camera.js  Eye-height camera driven by those same angles,
+                             with a crouch-height blend
   dev/
     dev-controls.js       TEMPORARY OrbitControls — not wired into the
                            active scene, kept for debugging other scenes
@@ -181,6 +224,9 @@ top level of the archive, not nested).
   - Asset pipeline: shared `LoadingManager` + `GLTFLoader` (Draco lazy), and
     a loading screen with a real `onProgress`-driven progress bar
   - HUD scaffold: objective line + transient toast (full HUD is Phase 8)
+  - Menus: title screen, pause menu (Esc) with live run status, and a shared
+    settings screen covering display, camera/gameplay and key rebinding,
+    persisted to `localStorage`
 - Levels 2 and 3 exist as gameplay **stubs** — own lighting, checkpoint and
   one interactable each, enough to exercise the state machine
 - **Art pass** (pulls Phase 7 material work forward so the game stops reading
@@ -249,15 +295,17 @@ top level of the archive, not nested).
 - Lightweight physics library for loose cargo crates and timewreck debris
   (the Level 3 debris integrator is already isolated to one callback)
 - Skybox, material pass, deliberate shadow strategy (Phase 7)
-- Menus, audio, credits screen, full HUD, performance pass (Phase 8)
+- Audio, credits screen, full HUD, performance pass (Phase 8) — the menus and
+  settings screen from that phase are in
 
 ### Still out of scope beyond that
 
 - Physics beyond basic ground/wall blocking (debris is scripted ballistics)
-- Menus, credits screen, audio, the full styled HUD
+- Credits screen, audio, the full styled HUD
 - Skybox and the wider material/shadow pass
 
 ### Things to revisit once real implementation starts
 
 - Whether to move from plain JS to TypeScript
-- The temporary `R`-to-restart key, once Phase 8's pause menu exists
+- Audio settings (a volume tab is worth adding the moment there is sound to
+  mix)
