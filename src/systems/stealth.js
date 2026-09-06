@@ -2,10 +2,17 @@ import * as THREE from 'three'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import { disposeObject } from '../core/dispose.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
-import { resolveBoxCollision } from '../core/collision.js'
+import { resolveBoxCollision, resolveCircleCollision } from '../core/collision.js'
 
 // Level 1 Stealth & Infiltration System:
-// - Deterministic guard patrol AI (Patrol -> Investigate -> Alert)
+// - Deterministic guard patrol AI, two states only:
+//     PATROL — walk waypoints, pause and scan left/right on a schedule.
+//              Sighting the player from range does NOT interrupt this — it
+//              only raises suspicion (scaled by the player's gait).
+//     ALERT  — proximity-only hard lock (GUARD_LOCK_ON_DISTANCE), ignores
+//              facing, breaks the routine and tracks the player directly.
+//              Give it a few seconds of searching (GUARD_LOSE_LOCK_GRACE)
+//              before it concedes and resumes the route.
 // - Dynamic vision cones with obstacle line-of-sight occlusion
 // - Sweeping security cameras with ground projection cones
 // - Laser security grids and interactive disable terminals
@@ -15,6 +22,35 @@ const STRIDE_AMPLITUDE = 0.65
 const STRIDE_FREQUENCY = 2.4
 const BOB_HEIGHT = 0.03
 const GUARD_VISION_DISTANCE = 7.5
+const GUARD_PATROL_TURN_SMOOTHING = 8
+const GUARD_ALERT_TURN_SMOOTHING = 6
+const GUARD_BODY_RADIUS = 0.4
+const PLAYER_BODY_RADIUS = 0.32
+const GUARD_BUMP_RADIUS = GUARD_BODY_RADIUS + PLAYER_BODY_RADIUS
+const PLAYER_STAND_DETECTION_HEIGHT = 1.2
+const PLAYER_CROUCH_DETECTION_HEIGHT = 0.72
+
+// Proximity at which a guard abandons its patrol routine entirely and hard-
+// locks onto the player, regardless of which way it's currently facing —
+// this is the only thing that breaks the routine now. Ordinary sightings
+// from range only feed the suspicion meter (see movementSuspicionMultiplier
+// and the ALERT-vs-PATROL split in update()).
+const GUARD_LOCK_ON_DISTANCE = 1.6
+// Seconds a locked-on guard keeps searching after losing proximity before
+// conceding and resuming its route.
+const GUARD_LOSE_LOCK_GRACE = 2.2
+// How far a waiting guard sweeps its head left/right while scanning, and how
+// fast — this is the visible "turn on the spot" beat of the routine.
+const GUARD_PATROL_SCAN_AMPLITUDE = Math.PI / 3.4
+const GUARD_PATROL_SCAN_SPEED = 1.6
+const GUARD_PATROL_TURN_TOLERANCE = THREE.MathUtils.degToRad(4)
+
+// Suspicion-rise multipliers by the player's current gait. Only affects how
+// fast suspicion climbs while seen — crouching doesn't shrink a guard's
+// vision cone, it just makes being in it much less damning.
+const CROUCH_SUSPICION_MULT = 0.35
+const RUN_SUSPICION_MULT = 1.6
+const JUMP_SUSPICION_MULT = 2.0
 
 export function createStealthSystem({ scene, player, respawn, hud, collidables = [], obstacles = [] }) {  let suspicion = 0
   const maxSuspicion = 100
@@ -87,8 +123,9 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       speed,
       waitTime,
       waitTimer: 0,
-      state: 'PATROL', // 'PATROL', 'INVESTIGATE', 'ALERT'
+      state: 'PATROL', // 'PATROL' (routine) or 'ALERT' (proximity lock-on)
       facing: 0,
+      scanBase: 0, // heading the guard sweeps around while waiting at a waypoint
       stridePhase: 0,
       lookAroundTimer: 0
     }
@@ -263,38 +300,106 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
   const playerEyePos = new THREE.Vector3()
   const guardEyePos = new THREE.Vector3()
   const toPlayer = new THREE.Vector3()
+  const flatToPlayer = new THREE.Vector3()
+
+  function playerDetectionHeight() {
+    return player?.isCrouching?.()
+      ? PLAYER_CROUCH_DETECTION_HEIGHT
+      : PLAYER_STAND_DETECTION_HEIGHT
+  }
   const coneDir = new THREE.Vector3()
   const coneEye = new THREE.Vector3()
 
-  function checkGuardDetection(guard, playerPos, delta) {
+  function checkGuardDetection(guard, playerPos) {
     if (!playerPos) return false
 
-    guardEyePos.set(guard.group.position.x, guard.group.position.y + 1.55, guard.group.position.z)
-    playerEyePos.set(playerPos.x, playerPos.y + 1.2, playerPos.z)
+    // Guard eyes
+    guardEyePos.set(
+      guard.group.position.x,
+      guard.group.position.y + 1.55,
+      guard.group.position.z
+    )
+
+    // Important:
+    // crouching changes the point the guard is trying to see.
+    playerEyePos.set(
+      playerPos.x,
+      playerPos.y + playerDetectionHeight(),
+      playerPos.z
+    )
 
     toPlayer.subVectors(playerEyePos, guardEyePos)
+
     const dist = toPlayer.length()
-    const maxDist = guard.state === 'ALERT' ? 10.0 : 7.5
+    const maxDist =
+      guard.state === 'ALERT'
+        ? 10.0
+        : GUARD_VISION_DISTANCE
 
-    if (dist > maxDist || dist < 0.1) return false
+    if (dist > maxDist || dist < 0.1) {
+      return false
+    }
 
+    // -----------------------------------------------------------
+    // FIELD OF VIEW
+    // -----------------------------------------------------------
+    // Use horizontal direction for the FOV calculation.
+    //
+    // Otherwise lowering the crouching target point also changes
+    // the guard's FOV, which isn't what we want.
+    flatToPlayer.set(
+      toPlayer.x,
+      0,
+      toPlayer.z
+    )
+
+    if (flatToPlayer.lengthSq() < 1e-6) {
+      return false
+    }
+
+    flatToPlayer.normalize()
+
+    const facingDir = new THREE.Vector3(
+      Math.sin(guard.facing),
+      0,
+      Math.cos(guard.facing)
+    )
+
+    const dot = facingDir.dot(flatToPlayer)
+
+    const fovThreshold =
+      guard.state === 'ALERT'
+        ? 0.3
+        : 0.52
+
+    if (dot < fovThreshold) {
+      return false
+    }
+
+    // -----------------------------------------------------------
+    // LINE OF SIGHT
+    // -----------------------------------------------------------
+
+    // This ray now points toward the crouched body's height.
+    // A bench/luggage item between the guard and this point
+    // therefore blocks vision.
     toPlayer.normalize()
 
-    // Facing vector of the guard
-    const facingDir = new THREE.Vector3(Math.sin(guard.facing), 0, Math.cos(guard.facing))
-    const dot = facingDir.dot(toPlayer)
-    const fovThreshold = guard.state === 'ALERT' ? 0.3 : 0.52 // ~60-70 deg FOV
+    raycaster.set(
+      guardEyePos,
+      toPlayer
+    )
 
-    if (dot < fovThreshold) return false
-
-    // Line of sight raycast check against collidables / obstacles
-    raycaster.set(guardEyePos, toPlayer)
     raycaster.far = dist
-    const hits = raycaster.intersectObjects(collidables, true)
+
+    const hits =
+      raycaster.intersectObjects(
+        collidables,
+        true
+      )
 
     for (const hit of hits) {
       if (hit.distance < dist - 0.3) {
-        // Obstructed by a pillar, crate or wall
         return false
       }
     }
@@ -342,6 +447,88 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     return true
   }
 
+  // Distance-only "can't miss you" check — deliberately ignores the guard's
+  // facing (unlike checkGuardDetection), so a guard can't be snuck past just
+  // by staying behind its shoulder while standing right next to it. A wall
+  // between the two still blocks it.
+  function checkGuardLockOn(guard, playerPos) {
+    if (!playerPos) return false
+
+    // Use ground-plane distance for "way too close".
+    const horizontalDist = Math.hypot(
+      playerPos.x - guard.group.position.x,
+      playerPos.z - guard.group.position.z
+    )
+
+    if (
+      horizontalDist >
+      GUARD_LOCK_ON_DISTANCE
+    ) {
+      return false
+    }
+
+    guardEyePos.set(
+      guard.group.position.x,
+      guard.group.position.y + 1.55,
+      guard.group.position.z
+    )
+
+    playerEyePos.set(
+      playerPos.x,
+      playerPos.y + playerDetectionHeight(),
+      playerPos.z
+    )
+
+    toPlayer.subVectors(
+      playerEyePos,
+      guardEyePos
+    )
+
+    const dist = toPlayer.length()
+
+    if (dist < 0.01) {
+      return true
+    }
+
+    // Close-range awareness still respects physical cover.
+    //
+    // So:
+    // crouched behind luggage = hidden
+    // come around the luggage at 1.5m = guard locks on
+    toPlayer.normalize()
+
+    raycaster.set(
+      guardEyePos,
+      toPlayer
+    )
+
+    raycaster.far = dist
+
+    const hits =
+      raycaster.intersectObjects(
+        collidables,
+        true
+      )
+
+    for (const hit of hits) {
+      if (hit.distance < dist - 0.3) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  // How much faster suspicion should climb while the player is seen, based
+  // on how loud/visible their current gait is.
+  function movementSuspicionMultiplier() {
+    if (!player) return 1
+    if (player.isAirborne && player.isAirborne()) return JUMP_SUSPICION_MULT
+    if (player.isCrouching && player.isCrouching()) return CROUCH_SUSPICION_MULT
+    if (player.isRunning && player.isRunning()) return RUN_SUSPICION_MULT
+    return 1
+  }
+
   function checkLaserCollision(playerPos) {
     if (!playerPos) return false
     for (const grid of laserGrids) {
@@ -361,36 +548,62 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
   // -----------------------------------------------------------------
   // System Update
   // -----------------------------------------------------------------
+  // Higher number wins when more than one detector fires in the same frame
+  // (a guard bump or a tripped laser is a harder, more certain catch than a
+  // guard merely spotting you from a distance, so those take priority).
+  const REASON_PRIORITY = { 'guard-bump': 4, laser: 4, camera: 2, 'guard-sight': 1 }
+
   function update(delta) {
     const playerPos = player?.mesh?.position
     let isDetectedThisFrame = false
+    let detectionReason = null
+
+    function reportDetection(reason) {
+      isDetectedThisFrame = true
+      if (!detectionReason || REASON_PRIORITY[reason] >= REASON_PRIORITY[detectionReason]) {
+        detectionReason = reason
+      }
+    }
 
     // 1. Update Guards
     guards.forEach((guard) => {
-      const isSeeingPlayer = checkGuardDetection(guard, playerPos, delta)
+      const isSeeingPlayer = checkGuardDetection(guard, playerPos)
+      const isLockedRange = checkGuardLockOn(guard, playerPos)
 
-      if (isSeeingPlayer) {
-        isDetectedThisFrame = true
-        guard.state = suspicion > 60 ? 'ALERT' : 'INVESTIGATE'
+      // Any sighting feeds suspicion, near or far — but only genuine close
+      // proximity breaks the routine below.
+      if (isSeeingPlayer || isLockedRange) reportDetection('guard-sight')
+
+      if (isLockedRange) {
+        guard.state = 'ALERT'
+        guard.lookAroundTimer = 0
         // Turn towards player smoothly
         const dx = playerPos.x - guard.group.position.x
         const dz = playerPos.z - guard.group.position.z
         const targetAngle = Math.atan2(dx, dz)
         guard.facing += (targetAngle - guard.facing) * Math.min(1, delta * 6.0)
         guard.group.rotation.y = guard.facing
-      } else if (guard.state !== 'PATROL') {
+      } else if (guard.state === 'ALERT') {
+        // Lost proximity — keep searching for a few seconds before giving up
+        // and resuming the route, rather than resetting the instant the
+        // player takes one step back.
         guard.lookAroundTimer += delta
-        if (guard.lookAroundTimer > 2.0) {
+        guard.facing += Math.sin(guard.lookAroundTimer * 3) * 0.02
+        guard.group.rotation.y = guard.facing
+        if (guard.lookAroundTimer > GUARD_LOSE_LOCK_GRACE) {
           guard.state = 'PATROL'
           guard.lookAroundTimer = 0
         }
       }
 
-      // Guard visual cues according to state
+      // Guard visual cues. This is purely cosmetic feedback for the player —
+      // orange means "a guard has line of sight on you and suspicion is
+      // rising", independent of guard.state, which only the proximity lock
+      // (red) actually changes.
       if (guard.state === 'ALERT') {
         guard.coneMat.color.setHex(0xef4444)
         guard.statusBeacon.material.color.setHex(0xef4444)
-      } else if (guard.state === 'INVESTIGATE') {
+      } else if (isSeeingPlayer) {
         guard.coneMat.color.setHex(0xf97316)
         guard.statusBeacon.material.color.setHex(0xf97316)
       } else {
@@ -399,37 +612,100 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       }
 
       // Patrol movement along waypoints
+      // Strict, readable patrol routine:
+      // WALK -> STOP/SCAN -> TURN ON SPOT -> WALK -> repeat.
       if (guard.state === 'PATROL' && guard.waypoints.length > 1) {
         if (guard.waitTimer > 0) {
-          guard.waitTimer -= delta
-          // Idle look around
-          guard.facing += Math.sin(guard.waitTimer * 2) * 0.01
+          // ---------------------------------------------------------
+          // STOP + SCAN
+          // ---------------------------------------------------------
+          guard.waitTimer = Math.max(0, guard.waitTimer - delta)
+
+          const elapsed = guard.waitTime - guard.waitTimer
+
+          guard.facing =
+            guard.scanBase +
+            Math.sin(elapsed * GUARD_PATROL_SCAN_SPEED) *
+              GUARD_PATROL_SCAN_AMPLITUDE
+
           guard.group.rotation.y = guard.facing
-          guard.stridePhase *= 0.8
+
+          // Ease walk animation back to standing.
+          guard.stridePhase *= Math.max(0, 1 - delta * 10)
         } else {
           const target = guard.waypoints[guard.targetIdx]
+
           const gx = target.x - guard.group.position.x
           const gz = target.z - guard.group.position.z
           const distToTarget = Math.hypot(gx, gz)
 
-          if (distToTarget < 0.25) {
-            guard.targetIdx = (guard.targetIdx + 1) % guard.waypoints.length
+          if (distToTarget < 0.08) {
+            // -------------------------------------------------------
+            // ARRIVED
+            // -------------------------------------------------------
+
+            // Snap exactly to the waypoint so every patrol loop
+            // follows exactly the same route.
+            guard.group.position.copy(target)
+
+            guard.targetIdx =
+              (guard.targetIdx + 1) % guard.waypoints.length
+
             guard.waitTimer = guard.waitTime
+            guard.scanBase = guard.facing
+            guard.stridePhase = 0
           } else {
+            // -------------------------------------------------------
+            // TURN TOWARD NEXT WAYPOINT
+            // -------------------------------------------------------
             const moveAngle = Math.atan2(gx, gz)
+
             let diff = moveAngle - guard.facing
+
             while (diff > Math.PI) diff -= Math.PI * 2
             while (diff < -Math.PI) diff += Math.PI * 2
-            guard.facing += diff * Math.min(1, delta * 8.0)
+
+            guard.facing +=
+              diff *
+              Math.min(
+                1,
+                delta * GUARD_PATROL_TURN_SMOOTHING
+              )
+
             guard.group.rotation.y = guard.facing
 
-            const step = guard.speed * delta
-            guard.group.position.x += Math.sin(guard.facing) * step
-            guard.group.position.z += Math.cos(guard.facing) * step
-            resolveBoxCollision(guard.group.position, obstacles)
-            guard.stridePhase += step * STRIDE_FREQUENCY
+            // -------------------------------------------------------
+            // WALK
+            // -------------------------------------------------------
+            // Don't start walking until the guard has mostly finished
+            // turning. This makes the routine readable to the player.
+            if (Math.abs(diff) <= GUARD_PATROL_TURN_TOLERANCE) {
+              const step = Math.min(
+                guard.speed * delta,
+                distToTarget
+              )
+
+              guard.group.position.x +=
+                (gx / distToTarget) * step
+
+              guard.group.position.z +=
+                (gz / distToTarget) * step
+
+              resolveBoxCollision(
+                guard.group.position,
+                obstacles
+              )
+
+              guard.stridePhase +=
+                step * STRIDE_FREQUENCY
+            } else {
+              guard.stridePhase *=
+                Math.max(0, 1 - delta * 10)
+            }
           }
         }
+      } else {
+        guard.stridePhase *= Math.max(0, 1 - delta * 10)
       }
 
       // Limb swing animation
@@ -452,6 +728,21 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       guard.body.position.y = Math.abs(Math.sin(guard.stridePhase)) * BOB_HEIGHT
     })
 
+    if (playerPos) {
+      const guardCircles = guards.map((guard) => ({
+        x: guard.group.position.x,
+        z: guard.group.position.z,
+        radius: GUARD_BUMP_RADIUS,
+        onCollide: () => {
+          guard.state = 'ALERT'
+          suspicion = maxSuspicion
+          reportDetection('guard-bump')
+          if (hud) hud.showToast('Bumped into a guard!', 1200)
+        }
+      }))
+      resolveCircleCollision(playerPos, guardCircles)
+    }
+
     // 2. Update Cameras
     cameras.forEach((cam) => {
       cam.elapsed += delta
@@ -472,7 +763,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
       const isSeeing = checkCameraDetection(cam, playerPos)
       if (isSeeing) {
-        isDetectedThisFrame = true
+        reportDetection('camera')
         cam.ledMat.color.setHex(0xef4444)
         cam.coneMat.color.setHex(0xef4444)
       } else {
@@ -495,13 +786,13 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
     if (checkLaserCollision(playerPos)) {
       suspicion = 100
-      isDetectedThisFrame = true
+      reportDetection('laser')
       if (hud) hud.showToast('Laser grid tripped! Security alerted!', 1500)
     }
 
     // 4. Update Suspicion Meter
     if (isDetectedThisFrame) {
-      suspicion = Math.min(maxSuspicion, suspicion + suspicionRiseRate * delta)
+      suspicion = Math.min(maxSuspicion, suspicion + suspicionRiseRate * delta * movementSuspicionMultiplier())
     } else {
       suspicion = Math.max(0, suspicion - suspicionDecayRate * delta)
     }
@@ -513,7 +804,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
         g.state = 'PATROL'
         g.waitTimer = 1.0
       })
-      if (respawn) respawn.fail('Detected by security!')
+      if (respawn) respawn.fail(detectionReason ?? 'caught')
     }
 
     // Sync with HUD

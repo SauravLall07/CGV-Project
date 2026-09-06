@@ -21,3 +21,24 @@ export function resolveBoxCollision(position, obstacles) {
     }
   }
 }
+
+export function resolveCircleCollision(position, circles) {
+  if (!circles) return
+  for (const circle of circles) {
+    const dx = position.x - circle.x
+    const dz = position.z - circle.z
+    const distSq = dx * dx + dz * dz
+    if (distSq >= circle.radius * circle.radius) continue
+
+    const dist = Math.sqrt(distSq)
+    if (dist > 1e-4) {
+      const overlap = circle.radius - dist
+      position.x += (dx / dist) * overlap
+      position.z += (dz / dist) * overlap
+    } else {
+      position.x += circle.radius
+    }
+
+    if (circle.onCollide) circle.onCollide()
+  }
+}

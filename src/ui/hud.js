@@ -126,6 +126,65 @@ export function createHud() {
   suspicionTrack.appendChild(suspicionFill)
   suspicionContainer.append(suspicionLabelRow, suspicionTrack)
 
+  // Full-screen "caught" overlay — distinct from the small toast above:
+  // covers the whole viewport so the freeze in respawn.js reads as a clear
+  // beat rather than a message easy to miss mid-chase.
+  const caughtScreen = document.createElement('div')
+  Object.assign(caughtScreen.style, {
+    position: 'absolute',
+    inset: '0',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
+    background: 'rgba(10, 5, 8, 0.55)',
+    backdropFilter: 'blur(3px)',
+    opacity: '0',
+    pointerEvents: 'none',
+    transition: 'opacity 200ms ease-out'
+  })
+
+  const caughtTitle = document.createElement('div')
+  Object.assign(caughtTitle.style, {
+    fontSize: '42px',
+    fontWeight: '800',
+    letterSpacing: '2px',
+    color: '#ef4444',
+    textShadow: '0 2px 12px rgba(0, 0, 0, 0.9)'
+  })
+
+  const caughtMessage = document.createElement('div')
+  Object.assign(caughtMessage.style, {
+    fontSize: '15px',
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.85)',
+    textShadow: '0 1px 6px rgba(0, 0, 0, 0.8)'
+  })
+
+  caughtScreen.append(caughtTitle, caughtMessage)
+  root.appendChild(caughtScreen)
+
+  const CAUGHT_MESSAGES = {
+    'guard-sight': { title: 'SPOTTED!', message: 'A guard spotted you!' },
+    'guard-bump': { title: 'CAUGHT!', message: 'You walked straight into a guard!' },
+    'camera': { title: 'DETECTED!', message: 'A security camera caught you on film!' },
+    'laser': { title: 'ALARM TRIPPED!', message: 'You walked into a laser gate!' },
+    'fell': { title: 'FELL!', message: 'You fell off the train!' },
+    'caught': { title: 'CAUGHT!', message: 'Security caught you!' }
+  }
+
+  function showCaughtScreen(reason) {
+    const entry = CAUGHT_MESSAGES[reason] ?? CAUGHT_MESSAGES.caught
+    caughtTitle.textContent = entry.title
+    caughtMessage.textContent = entry.message
+    caughtScreen.style.opacity = '1'
+  }
+
+  function hideCaughtScreen() {
+    caughtScreen.style.opacity = '0'
+  }
+
   // Bottom-Center Chrono Core Deck
   const timeDeck = document.createElement('div')
   Object.assign(timeDeck.style, {
@@ -436,6 +495,8 @@ export function createHud() {
     updateStats,
     setVisible,
     dispose,
+    showCaughtScreen,
+    hideCaughtScreen,
     getObjective: () => objectiveText,
     getSuspicion: () => suspicionValue
   }
