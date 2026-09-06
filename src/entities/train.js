@@ -393,11 +393,14 @@ export function createTrain() {
   })
 
   const locomotive = createLocomotive(shared)
-  // Sits ahead of carriage 0, past the coupling gap. 3.7 is how far the cab
-  // extends behind the locomotive's own origin, so this leaves a real gap
-  // rather than burying the cab in the first carriage.
-  const firstCarriageFront = -((CARRIAGE_TYPES.length - 1) / 2) * CARRIAGE_SPACING - CARRIAGE_LENGTH / 2
-  locomotive.position.z = firstCarriageFront - COUPLING_GAP - 3.7
+  // Rear -> front progression is Passenger -> Security -> Cargo -> Mechanical
+  // -> Vault -> Locomotive. The carriage indices already increase along +Z,
+  // so put the locomotive beyond the final (Vault) carriage and rotate it so
+  // its nose/headlamp also faces +Z. This also makes Level 1's +Z departure
+  // movement visually read as the train driving forward rather than reversing.
+  const lastCarriageFront = ((CARRIAGE_TYPES.length - 1) / 2) * CARRIAGE_SPACING + CARRIAGE_LENGTH / 2
+  locomotive.position.z = lastCarriageFront + COUPLING_GAP + 3.7
+  locomotive.rotation.y = Math.PI
   train.add(locomotive)
 
   // Stationary alongside the platform for this milestone — the train doesn't

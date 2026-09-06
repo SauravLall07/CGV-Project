@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { disposeObject } from '../core/dispose.js'
-import { createCarriageEnvironment, CARRIAGE_CEILING_Y } from '../environment/carriages.js'
+import { createCarriageEnvironment, CARRIAGE_CEILING_Y, CARRIAGE_ROOF_Y } from '../environment/carriages.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
@@ -312,7 +312,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   function enterRoof() {
     section = 'roof'
     setBounds(env.roofBounds)
-    const start = new THREE.Vector3(0, 3.3, roof.zStart + 1)
+    const start = new THREE.Vector3(0, CARRIAGE_ROOF_Y, roof.zStart + 1)
     player.setPose(start, 0)
     respawn.setCheckpoint(start, 0)
     camera.snap()

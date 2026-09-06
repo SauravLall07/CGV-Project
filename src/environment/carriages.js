@@ -31,21 +31,22 @@ import {
 // InstancedMesh — a carriage of loose meshes would be hundreds of draw calls
 // on its own, the frame-budget trap the brief's performance section warns of.
 
-export const CARRIAGE_CEILING_Y = 2.6
+export const CARRIAGE_CEILING_Y = 3.5
 
-const WALL_X = 1.6 // inside face of the side walls (player is bounded to ±0.58)
+const WALL_X = 1.7 // wider gameplay aisle; player can weave around multiple carriage obstacles
 const DOOR_W = 1.12
-const DOOR_H = 2.0
-const ROOF_Y = 3.3 // top surface of the roof catwalk — player pose height up there
+const DOOR_H = 2.7
+export const CARRIAGE_ROOF_Y = 4.2 // top surface of the roof catwalk; clears the taller interior shell
+const ROOF_Y = CARRIAGE_ROOF_Y
 const CAB_LENGTH = 8
 
 // key, interior length (m). Order is the concept doc's progression.
 const LAYOUT = [
-  { key: 'passenger', length: 16 },
-  { key: 'security', length: 14 },
-  { key: 'cargo', length: 14 },
-  { key: 'mechanical', length: 16 },
-  { key: 'vault', length: 12 }
+  { key: 'passenger', length: 20 },
+  { key: 'security', length: 20 },
+  { key: 'cargo', length: 20 },
+  { key: 'mechanical', length: 22 },
+  { key: 'vault', length: 18 }
 ]
 
 // Deterministic scatter so a rebuilt level looks identical to the first build.
@@ -755,14 +756,14 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   // Level 3 is one continuous run from the vault down to the cab, so it gets a
   // single volume; Level 2 swaps between corridor / roof / vault.
   const interiorBounds = damaged
-    ? { minX: -0.58, maxX: 0.58, minZ: spans.cab.minZ + 1.2, maxZ: spans.vault.maxZ - 1.0 }
-    : { minX: -0.58, maxX: 0.58, minZ: spans.passenger.minZ + 1.2, maxZ: spans.mechanical.maxZ - 1.4 }
+    ? { minX: -0.82, maxX: 0.82, minZ: spans.cab.minZ + 1.2, maxZ: spans.vault.maxZ - 1.0 }
+    : { minX: -0.82, maxX: 0.82, minZ: spans.passenger.minZ + 1.2, maxZ: spans.mechanical.maxZ - 1.4 }
 
   const roofBounds = roof
     ? { minX: -1.35, maxX: 1.35, minZ: roof.zStart + 0.5, maxZ: roof.zEnd - 0.5 }
     : null
   const vaultBounds = {
-    minX: -0.58, maxX: 0.58, minZ: spans.vault.minZ + 0.9, maxZ: spans.vault.maxZ - 0.8
+    minX: -0.82, maxX: 0.82, minZ: spans.vault.minZ + 0.9, maxZ: spans.vault.maxZ - 0.8
   }
 
   // Emergency lighting flickers and severed cables spark; Level 2's steady
