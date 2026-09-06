@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { bindingLabel, settings } from '../core/settings.js'
 
 // Interaction system (Phase 1 foundation): each frame, the registry of
 // "interactable" objects is scanned for the best candidate in front of the
@@ -16,10 +17,13 @@ import * as THREE from 'three'
 // all go through register() rather than each wiring their own detection or
 // key handler. The prompt DOM element lives here for now; it can move into
 // the full HUD (Phase 8) later without changing this API.
+//
+// The interact key is not owned here — it comes in through the keyboard's
+// "interact" action, so it follows whatever the player has rebound it to and
+// falls silent while a menu has input disabled.
 
 const DEFAULT_RANGE = 3 // metres (horizontal); per-registration override via opts.range
 const FACING_MIN = 0.35 // dot(forward, toTarget); ~70 degrees to either side
-const INTERACT_CODE = 'KeyE'
 const FOCUS_EMISSIVE = 0x3a3a44 // tint applied to an unlit focused mesh
 const FOCUS_BOOST = 1.8 // multiplier applied instead when it already glows
 
@@ -48,7 +52,7 @@ function createPromptElement() {
   return el
 }
 
-export function createInteractionSystem({ camera } = {}) {
+export function createInteractionSystem({ camera, input } = {}) {
   // Keyed by the registered Object3D. A Group or a Mesh both work — its world
   // position is the point range and facing are measured against.
   const registry = new Map()
@@ -106,7 +110,8 @@ export function createInteractionSystem({ camera } = {}) {
   function renderPrompt() {
     if (performance.now() < flashUntil) return // a flash message owns the DOM
     if (focused) {
-      prompt.textContent = `E — ${focused.label}`
+      // Read the binding per render so a rebind is reflected immediately.
+      prompt.textContent = `${bindingLabel(settings.getBinding('interact'))} — ${focused.label}`
       prompt.style.opacity = '1'
     } else {
       prompt.style.opacity = '0'
@@ -179,13 +184,16 @@ export function createInteractionSystem({ camera } = {}) {
     setFocus(best)
   }
 
-  function onKeyDown(event) {
-    if (event.code !== INTERACT_CODE || event.repeat) return
-    if (!enabled || !focused) return
+  // Fire the focused interactable, if there is one. Wired to the keyboard's
+  // "interact" action below; also callable directly (a future on-screen
+  // prompt button, say).
+  function interact() {
+    if (!enabled || !focused) return false
     focused.onInteract({ object: focused.object, entry: focused })
+    return true
   }
 
-  window.addEventListener('keydown', onKeyDown)
+  const unbindInteract = input ? input.onAction('interact', () => interact()) : null
 
   function setEnabled(value) {
     enabled = value
@@ -193,7 +201,7 @@ export function createInteractionSystem({ camera } = {}) {
   }
 
   function dispose() {
-    window.removeEventListener('keydown', onKeyDown)
+    if (unbindInteract) unbindInteract()
     if (focused) applyHighlight(focused, false)
     prompt.remove()
     registry.clear()
@@ -203,6 +211,7 @@ export function createInteractionSystem({ camera } = {}) {
   return {
     register,
     update,
+    interact,
     flashPrompt,
     setEnabled,
     dispose,
