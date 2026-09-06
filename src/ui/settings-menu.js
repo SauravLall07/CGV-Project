@@ -16,6 +16,7 @@
 import {
   settings, OPTION_DEFS, ACTIONS, RESERVED_CODES, codeLabel
 } from '../core/settings.js'
+import { BROWSER_RESERVED_CODES } from '../input/keyboard-lock.js'
 import {
   THEME, createButton, createHeading, createSectionLabel,
   createSliderRow, createToggleRow, createKeyCap, createOverlayRoot,
@@ -372,6 +373,14 @@ export function createSettingsMenu() {
     if (conflict) {
       const stolen = ACTIONS.find((a) => a.id === conflict)
       flashNotice(`${codeLabel(code)} was unbound from ${stolen ? stolen.label : conflict}.`)
+    } else if (code && BROWSER_RESERVED_CODES.has(code)) {
+      // Ctrl, Alt, the Windows key and Tab drive browser shortcuts — Ctrl+W
+      // closes the tab — and only reach the game while it is capturing them.
+      flashNotice(
+        settings.get('captureShortcuts')
+          ? `${codeLabel(code)} is a browser shortcut key; it only works fullscreen.`
+          : `${codeLabel(code)} is a browser shortcut key. Turn on Capture Browser Shortcuts, or it may close the tab.`
+      )
     }
   }
 

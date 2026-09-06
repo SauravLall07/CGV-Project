@@ -7,6 +7,7 @@ import { createAssetLoader } from './core/assets.js'
 import { createLevelManager } from './core/level-manager.js'
 import { createPlayer } from './entities/player.js'
 import { createKeyboardState } from './input/keyboard-state.js'
+import { createKeyboardLock } from './input/keyboard-lock.js'
 import { createPlayerView } from './cameras/player-view.js'
 import { createInteractionSystem } from './systems/interaction.js'
 import { createRespawnSystem } from './systems/respawn.js'
@@ -44,6 +45,11 @@ const player = createPlayer()
 scene.add(player.mesh)
 
 const keyboard = createKeyboardState()
+// Browser shortcuts (Ctrl+W, Ctrl+T, Ctrl+Tab) fire above the page unless the
+// document is fullscreen with the keyboard locked, so a run engages both and a
+// menu hands them back. Fullscreen covers documentElement rather than the
+// canvas so the HUD and menu overlays come along with it.
+const keyboardLock = createKeyboardLock(document.documentElement)
 const playerView = createPlayerView({
   camera,
   domElement: renderer.domElement,
@@ -170,7 +176,14 @@ function setPaused(value) {
 
   if (value) {
     pauseMenu.open()
+    // Menus should behave like an ordinary page — the player may well want
+    // Ctrl+W once they are out of the run. Fullscreen is left alone so
+    // resuming does not flash the whole window.
+    keyboardLock.release({ exitFullscreen: false })
   } else if (gameStarted) {
+    // Runs from the Resume click, which is the user gesture a fullscreen
+    // request needs; resuming with Esc instead just leaves the lock off.
+    keyboardLock.engage()
     // Re-grab the mouse straight away; if the browser refuses (it rate-limits
     // a re-lock right after an Escape-driven exit) clicking the canvas still
     // works, which is what the camera's own click handler is for.
@@ -201,6 +214,7 @@ function startGame() {
   hud.setVisible(true)
   playerView.setEnabled(true)
   keyboard.setEnabled(true)
+  keyboardLock.engage()
   levelManager.enter('Boarding')
 }
 
@@ -215,6 +229,7 @@ function quitToTitle() {
 
   levelManager.unload()
   keyboard.setEnabled(false)
+  keyboardLock.release()
   playerView.setEnabled(false)
   // Quitting mid-run from first person left the player figure hidden; the
   // title screen's cinematic shot needs it back.

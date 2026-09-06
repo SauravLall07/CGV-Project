@@ -75,6 +75,13 @@ export const OPTION_DEFS = [
     type: 'toggle'
   },
   {
+    id: 'captureShortcuts',
+    label: 'Capture Browser Shortcuts',
+    hint: 'Plays fullscreen so Ctrl+W, Ctrl+T and Ctrl+Tab reach the game instead of the browser. Esc still pauses.',
+    group: 'Display',
+    type: 'toggle'
+  },
+  {
     id: 'mouseSensitivity',
     label: 'Mouse Sensitivity',
     hint: 'Multiplier on how far the camera swings per mouse movement.',
@@ -112,6 +119,7 @@ export const DEFAULT_OPTIONS = {
   shadows: true,
   softShadows: true,
   showStats: false,
+  captureShortcuts: true,
   mouseSensitivity: 1,
   invertY: false,
   cameraDistance: 4.8
@@ -152,7 +160,11 @@ export const DEFAULT_BINDINGS = {
   right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'],
   jump: ['Space', null],
-  duck: ['KeyX', 'ControlLeft'],
+  // Crouch avoids Ctrl on purpose. Ctrl is the usual crouch key, but in a
+  // browser Ctrl+W (crouch-walking forward) closes the tab, and a page can
+  // only intercept that while the keyboard lock is up — see
+  // input/keyboard-lock.js. Ctrl is still bindable by hand.
+  duck: ['KeyX', 'KeyZ'],
   interact: ['KeyE', null],
   toggleView: ['KeyV', null],
   slow: ['Digit1', 'KeyQ'],
