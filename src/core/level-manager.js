@@ -19,7 +19,8 @@ import * as THREE from 'three'
 const DEFAULT_CHECKPOINT = { position: new THREE.Vector3(0, 0, 0), yaw: 0 }
 
 export function createLevelManager({
-  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, levels
+  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, levels,
+  onEnter, onLeave
 }) {
   const sequence = levels.map((l) => l.state)
   const factories = new Map(levels.map((l) => [l.state, l.create]))
@@ -31,6 +32,7 @@ export function createLevelManager({
   const ctx = { scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance }
 
   function teardown() {
+    if (onLeave) onLeave()
     if (timeSystem) timeSystem.setMode('NORMAL')
     if (!current) return
     current.dispose()
@@ -51,6 +53,7 @@ export function createLevelManager({
     if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
     camera.snap()
     hud.setObjective(current.objective ?? '')
+    if (onEnter) onEnter(state)
   }
 
   function enter(state) {

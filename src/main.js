@@ -5,6 +5,7 @@ import { createClock } from './core/clock.js'
 import { createLoop } from './core/loop.js'
 import { createAssetLoader } from './core/assets.js'
 import { createLevelManager } from './core/level-manager.js'
+import { initAudio, resumeAudio, getContext } from './core/audio.js'
 import { createPlayer } from './entities/player.js'
 import { createKeyboardState } from './input/keyboard-state.js'
 import { createKeyboardLock } from './input/keyboard-lock.js'
@@ -12,6 +13,7 @@ import { createPlayerView } from './cameras/player-view.js'
 import { createInteractionSystem } from './systems/interaction.js'
 import { createRespawnSystem } from './systems/respawn.js'
 import { createTimeSystem } from './systems/time-system.js'
+import { loadTrack, startLevelMusic, stopLevelMusic } from './systems/level-music.js'
 import { createHud } from './ui/hud.js'
 import { createLoadingScreen } from './ui/loading-screen.js'
 import { createMainMenu } from './ui/main-menu.js'
@@ -56,6 +58,81 @@ const playerView = createPlayerView({
   player,
   hud
 })
+
+// Browsers keep the AudioContext suspended until a user gesture. The title
+// menu overlay sits on top of the canvas, so NEW GAME / SETTINGS have to
+// unlock it as well as the canvas click that later grabs pointer lock.
+const LEVEL_TRACKS = {
+  Boarding: { file: '../assets/audio/music/level1-constance.mp3', loop: true },
+  MovingHeist: { file: '../assets/audio/music/level2-mistake-the-getaway.mp3', loop: true },
+  Timewreck: { file: '../assets/audio/music/level3-final-count.mp3', loop: true },
+  Complete: { file: '../assets/audio/music/victory-theme.mp3', loop: false }
+}
+
+function playMusicForState(state) {
+  const spec = LEVEL_TRACKS[state]
+  if (!spec) {
+    stopLevelMusic()
+    return
+  }
+  startLevelMusic(loadTrack(spec.file), { loop: spec.loop })
+}
+
+async function playMenuMusic() {
+  console.log('playMenuMusic called')
+  await startLevelMusic(loadTrack('../assets/audio/music/menu-theme.mp3'), { loop: true })
+  console.log('playMenuMusic: startLevelMusic() resolved')
+}
+
+function unlockAudio() {
+  console.log('unlockAudio() called')
+  initAudio()
+  const ctx = getContext()
+  console.log('unlockAudio context before resume: ' + (ctx ? ctx.state : 'none'))
+  const unlocking = resumeAudio()
+  console.log('unlockAudio resumeAudio() returned:', unlocking)
+
+  const startMenu = async () => {
+    console.log('startMenu called, gameStarted: ' + gameStarted)
+    if (gameStarted) return
+    await playMenuMusic()
+  }
+
+  const runStartMenu = () => {
+    console.log('unlockAudio: calling startMenu()')
+    const started = startMenu()
+    if (started && typeof started.then === 'function') {
+      return started.then(() => {
+        console.log('unlockAudio: startMenu() finished')
+      })
+    }
+    console.log('unlockAudio: startMenu() finished')
+  }
+
+  if (unlocking && typeof unlocking.then === 'function') unlocking.then(runStartMenu)
+  else runStartMenu()
+}
+
+// Earliest possible unlock: any click, key, or touch — not just NEW GAME /
+// SETTINGS. once-per-type plus an explicit remove so the three events share
+// a single first-gesture fire.
+const FIRST_GESTURES = ['click', 'keydown', 'touchstart']
+function onFirstUserGesture() {
+  for (const type of FIRST_GESTURES) {
+    document.removeEventListener(type, onFirstUserGesture, true)
+  }
+  unlockAudio()
+}
+for (const type of FIRST_GESTURES) {
+  document.addEventListener(type, onFirstUserGesture, { once: true, capture: true })
+}
+
+canvas.addEventListener('click', () => {
+  console.log('Canvas clicked, attempting audio resume')
+  unlockAudio()
+})
+console.log('Audio click listener attached to: ' + canvas.tagName)
+
 const interaction = createInteractionSystem({ camera, input: keyboard })
 const respawn = createRespawnSystem({ player, hud, camera: playerView })
 const timeSystem = createTimeSystem({ scene, player, hud })
@@ -85,6 +162,8 @@ const levelManager = createLevelManager({
   respawn,
   timeSystem,
   loadingScreen,
+  onEnter: playMusicForState,
+  onLeave: stopLevelMusic,
   levels: [
     { state: 'Boarding', create: createBoardingLevel },
     { state: 'MovingHeist', create: createMovingHeistLevel },
@@ -92,6 +171,7 @@ const levelManager = createLevelManager({
     { state: 'Complete', create: createCompleteLevel }
   ]
 })
+if (import.meta.env.DEV) window.levelManager = levelManager
 
 // ---------------------------------------------------------------
 // Main Menu
@@ -133,7 +213,7 @@ function buildTitleBackdrop() {
 }
 
 const settingsMenu = createSettingsMenu()
-const menu = createMainMenu({ camera, renderer, settingsMenu })
+const menu = createMainMenu({ camera, renderer, settingsMenu, unlockAudio })
 
 // ---------------------------------------------------------------
 // Pause menu
@@ -240,6 +320,7 @@ function quitToTitle() {
 
   titleBackdrop = buildTitleBackdrop()
   menu.show()
+  unlockAudio()
 }
 
 // Defer by two animation frames: the first paints the loading screen,

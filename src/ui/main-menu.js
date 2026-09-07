@@ -26,7 +26,7 @@ const DRIFT_X = 0.35
 const DRIFT_Y = 0.12
 const DRIFT_SPEED = 0.07
 
-export function createMainMenu({ camera, renderer, settingsMenu }) {
+export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio }) {
   // ---------------------------------------------------------------
   // DOM overlay
   // ---------------------------------------------------------------
@@ -178,6 +178,7 @@ export function createMainMenu({ camera, renderer, settingsMenu }) {
   const settingsBtn = createButton('Settings', {
     variant: 'ghost',
     onClick: () => {
+      if (unlockAudio) unlockAudio()
       if (!settingsMenu) return
       settingsMenu.open(() => {
         if (isVisible) newGameBtn.focus()
@@ -229,6 +230,7 @@ export function createMainMenu({ camera, renderer, settingsMenu }) {
   function handleStart() {
     if (!isVisible || isTransitioning) return
     if (settingsMenu && settingsMenu.isOpen) return
+    if (unlockAudio) unlockAudio()
     isTransitioning = true
 
     // Fade menu out after a brief beat
