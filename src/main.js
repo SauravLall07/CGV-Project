@@ -70,6 +70,9 @@ keyboard.onAction('freeze', () => timeSystem.triggerFreeze())
 keyboard.onAction('rewind', () => timeSystem.triggerRewind())
 keyboard.onAction('ghost', () => timeSystem.triggerGhost())
 keyboard.onAction('restart', () => { if (gameStarted) levelManager.restart() })
+// Passage-specific action routing. Boarding owns the distraction mechanic, but
+// the keyboard binding remains global/rebindable like every other action.
+keyboard.onAction('distract', () => { if (gameStarted) levelManager.handleAction('distract') })
 
 // First-person / third-person toggle (V by default, rebindable like the rest).
 keyboard.onAction('toggleView', () => playerView.toggle())

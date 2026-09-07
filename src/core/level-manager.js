@@ -113,6 +113,14 @@ export function createLevelManager({
     if (current && current.update) current.update(delta)
   }
 
+  // One-shot gameplay actions that belong to the active level (for example the
+  // Passageway 2 distraction throw) are forwarded here instead of making main.js
+  // know which level currently owns them.
+  function handleAction(action, payload) {
+    if (!current || typeof current.handleAction !== 'function') return false
+    return Boolean(current.handleAction(action, payload))
+  }
+
   function dispose() {
     teardown()
   }
@@ -123,6 +131,7 @@ export function createLevelManager({
     unload,
     advance,
     update,
+    handleAction,
     dispose,
     getState: () => currentState,
     get bounds() {

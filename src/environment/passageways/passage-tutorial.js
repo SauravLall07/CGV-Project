@@ -189,7 +189,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
   }
 }
 
-export function createTutorialPassage({ interaction, hud, player, respawn } = {}) {
+export function createTutorialPassage({ interaction, hud, player, respawn, connectedToPassage2 = false } = {}) {
   const group = new THREE.Group()
   group.name = 'passage-tutorial'
   const colliders = []
@@ -427,13 +427,19 @@ export function createTutorialPassage({ interaction, hud, player, respawn } = {}
     material: wallMat
   })
 
-  const stageBulkhead = addBox(group, colliders, {
-    size: new THREE.Vector3(0.3, ROOM_HEIGHT, lowerRoomDepth),
-    position: new THREE.Vector3(lowerCenterX + lowerRoomWidth / 2, LOWER_FLOOR_Y + ROOM_HEIGHT / 2, lowerCenterZ),
-    material: ironMat,
-    name: 'passage-2-stage-bulkhead'
-  })
-  stageBulkhead.userData.stageBoundary = true
+  // Stage 1 used a sealed east bulkhead here. Once Passageway 2 exists the
+  // landing stays physically open so the modules join without overlapping wall
+  // collision. Keeping this switch preserves the ability to run Passageway 1
+  // by itself during isolated testing.
+  if (!connectedToPassage2) {
+    const stageBulkhead = addBox(group, colliders, {
+      size: new THREE.Vector3(0.3, ROOM_HEIGHT, lowerRoomDepth),
+      position: new THREE.Vector3(lowerCenterX + lowerRoomWidth / 2, LOWER_FLOOR_Y + ROOM_HEIGHT / 2, lowerCenterZ),
+      material: ironMat,
+      name: 'passage-2-stage-bulkhead'
+    })
+    stageBulkhead.userData.stageBoundary = true
+  }
 
   // Tutorial hint zones. These are non-blocking, fade using the existing HUD,
   // and never repeat during the current level instance.
@@ -478,7 +484,9 @@ export function createTutorialPassage({ interaction, hud, player, respawn } = {}
     center: { x: STAIR_X, y: LOWER_FLOOR_Y, z: -38.4 },
     size: { x: 5.2, y: 3.5, z: 2.2 },
     condition: () => symbolPuzzle.isSolved(),
-    text: 'Passageway 1 complete. The sealed bulkhead ahead is the connection point for Passageway 2.',
+    text: connectedToPassage2
+      ? 'Passageway 1 complete. Continue east into the lower security passage.'
+      : 'Passageway 1 complete. The sealed bulkhead ahead is the connection point for Passageway 2.',
     duration: 4200
   })
 

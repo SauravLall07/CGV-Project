@@ -223,7 +223,10 @@ export function createSweepingLaser({
 
     const closeAcrossBeam = Math.abs(playerPosition.z - group.position.z) <= beamLength / 2
     const closeToSweep = Math.abs(playerPosition.x - group.position.x) <= hitHalfThickness
-    const feetTooLow = playerPosition.y <= beamHeight + 0.12
+    // beamHeight is local to the laser group. Using world-space Y here keeps the
+    // same component valid in Passageway 2's lower floor at y=-4.
+    const beamWorldY = group.position.y + beamHeight
+    const feetTooLow = playerPosition.y <= beamWorldY + 0.12
 
     if (closeAcrossBeam && closeToSweep && feetTooLow && hitCooldown <= 0) {
       hitCooldown = 0.75

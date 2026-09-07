@@ -145,6 +145,7 @@ export const ACTIONS = [
   { id: 'jump', label: 'Jump', group: 'Movement', held: true },
   { id: 'duck', label: 'Crouch', group: 'Movement', held: true },
   { id: 'interact', label: 'Interact', group: 'Actions' },
+  { id: 'distract', label: 'Throw Distractor', group: 'Actions' },
   { id: 'toggleView', label: 'First / Third Person', group: 'Actions' },
   { id: 'slow', label: 'Slow Time', group: 'Time Abilities' },
   { id: 'freeze', label: 'Freeze Time', group: 'Time Abilities' },
@@ -166,6 +167,7 @@ export const DEFAULT_BINDINGS = {
   // input/keyboard-lock.js. Ctrl is still bindable by hand.
   duck: ['KeyX', 'KeyZ'],
   interact: ['KeyE', null],
+  distract: ['KeyT', null],
   toggleView: ['KeyV', null],
   slow: ['Digit1', 'KeyQ'],
   freeze: ['Digit2', 'KeyF'],

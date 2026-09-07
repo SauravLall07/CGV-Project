@@ -5,14 +5,12 @@ import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { resolveBoxCollision, resolveCircleCollision } from '../core/collision.js'
 
 // Level 1 Stealth & Infiltration System:
-// - Deterministic guard patrol AI, two states only:
-//     PATROL — walk waypoints, pause and scan left/right on a schedule.
-//              Sighting the player from range does NOT interrupt this — it
-//              only raises suspicion (scaled by the player's gait).
-//     ALERT  — proximity-only hard lock (GUARD_LOCK_ON_DISTANCE), ignores
-//              facing, breaks the routine and tracks the player directly.
-//              Give it a few seconds of searching (GUARD_LOSE_LOCK_GRACE)
-//              before it concedes and resumes the route.
+// - Deterministic guard patrol AI with three readable states:
+//     PATROL      — walk waypoints, pause and scan left/right on a schedule.
+//     INVESTIGATE — temporarily leave the route to inspect a distraction noise,
+//                   then return to the patrol without escalating suspicion.
+//     ALERT       — proximity-only hard lock (GUARD_LOCK_ON_DISTANCE), ignores
+//                   facing, breaks the routine and tracks the player directly.
 // - Dynamic vision cones with obstacle line-of-sight occlusion
 // - Sweeping security cameras with ground projection cones
 // - Laser security grids and interactive disable terminals
@@ -123,16 +121,47 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       speed,
       waitTime,
       waitTimer: 0,
-      state: 'PATROL', // 'PATROL' (routine) or 'ALERT' (proximity lock-on)
+      state: 'PATROL', // PATROL | INVESTIGATE | ALERT
       facing: 0,
       scanBase: 0, // heading the guard sweeps around while waiting at a waypoint
       stridePhase: 0,
-      lookAroundTimer: 0
+      lookAroundTimer: 0,
+      investigateTarget: null,
+      investigateTimer: 0,
+      investigateGiveUpTimer: 0,
+      investigateArrived: false
     }
 
     guards.push(guard)
     scene.add(group)
     return guard
+  }
+
+  // Send guards who are close enough to a noise source to inspect it. ALERT
+  // guards ignore distractions; PATROL/INVESTIGATE guards can be redirected.
+  // The return value is useful feedback for the throwable system.
+  function investigate(position, { radius = 9, duration = 3.2 } = {}) {
+    if (!position) return 0
+    let responders = 0
+
+    guards.forEach((guard) => {
+      if (guard.state === 'ALERT') return
+      const dx = position.x - guard.group.position.x
+      const dz = position.z - guard.group.position.z
+      const dy = Math.abs((position.y ?? guard.group.position.y) - guard.group.position.y)
+      if (dy > 2.25 || dx * dx + dz * dz > radius * radius) return
+
+      guard.state = 'INVESTIGATE'
+      guard.investigateTarget = new THREE.Vector3(position.x, guard.group.position.y, position.z)
+      guard.investigateTimer = duration
+      guard.investigateGiveUpTimer = Math.max(9, duration + 6)
+      guard.investigateArrived = false
+      guard.waitTimer = 0
+      guard.lookAroundTimer = 0
+      responders += 1
+    })
+
+    return responders
   }
 
   // -----------------------------------------------------------------
@@ -606,9 +635,64 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       } else if (isSeeingPlayer) {
         guard.coneMat.color.setHex(0xf97316)
         guard.statusBeacon.material.color.setHex(0xf97316)
+      } else if (guard.state === 'INVESTIGATE') {
+        guard.coneMat.color.setHex(0x22d3ee)
+        guard.statusBeacon.material.color.setHex(0x22d3ee)
       } else {
         guard.coneMat.color.setHex(0xfacc15)
         guard.statusBeacon.material.color.setHex(0xfacc15)
+      }
+
+      // A distraction temporarily overrides the patrol target. The guard turns
+      // and walks there using the same collision rules as normal patrol, scans
+      // the impact point, then resumes from its existing patrol index.
+      if (guard.state === 'INVESTIGATE' && guard.investigateTarget) {
+        guard.investigateGiveUpTimer -= delta
+        const target = guard.investigateTarget
+        const gx = target.x - guard.group.position.x
+        const gz = target.z - guard.group.position.z
+        const distToTarget = Math.hypot(gx, gz)
+
+        if (!guard.investigateArrived && distToTarget > 0.18) {
+          const moveAngle = Math.atan2(gx, gz)
+          let diff = moveAngle - guard.facing
+          while (diff > Math.PI) diff -= Math.PI * 2
+          while (diff < -Math.PI) diff += Math.PI * 2
+
+          guard.facing += diff * Math.min(1, delta * GUARD_PATROL_TURN_SMOOTHING)
+          guard.group.rotation.y = guard.facing
+
+          if (Math.abs(diff) <= GUARD_PATROL_TURN_TOLERANCE) {
+            const step = Math.min(guard.speed * 1.08 * delta, distToTarget)
+            guard.group.position.x += (gx / distToTarget) * step
+            guard.group.position.z += (gz / distToTarget) * step
+            resolveBoxCollision(guard.group.position, obstacles)
+            guard.stridePhase += step * STRIDE_FREQUENCY
+          } else {
+            guard.stridePhase *= Math.max(0, 1 - delta * 10)
+          }
+        } else {
+          if (!guard.investigateArrived) {
+            guard.investigateArrived = true
+            guard.scanBase = guard.facing
+            guard.lookAroundTimer = 0
+          }
+
+          guard.lookAroundTimer += delta
+          guard.investigateTimer -= delta
+          guard.facing = guard.scanBase + Math.sin(guard.lookAroundTimer * 2.5) * (Math.PI / 2.8)
+          guard.group.rotation.y = guard.facing
+          guard.stridePhase *= Math.max(0, 1 - delta * 10)
+        }
+
+        if (guard.investigateTimer <= 0 || guard.investigateGiveUpTimer <= 0) {
+          guard.state = 'PATROL'
+          guard.investigateTarget = null
+          guard.investigateArrived = false
+          guard.lookAroundTimer = 0
+          guard.waitTimer = 0.5
+          guard.scanBase = guard.facing
+        }
       }
 
       // Patrol movement along waypoints
@@ -803,6 +887,10 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       guards.forEach((g) => {
         g.state = 'PATROL'
         g.waitTimer = 1.0
+        g.investigateTarget = null
+        g.investigateTimer = 0
+        g.investigateGiveUpTimer = 0
+        g.investigateArrived = false
       })
       if (respawn) respawn.fail(detectionReason ?? 'caught')
     }
@@ -819,6 +907,10 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       g.state = 'PATROL'
       g.waitTimer = 0
       g.targetIdx = 0
+      g.investigateTarget = null
+      g.investigateTimer = 0
+      g.investigateGiveUpTimer = 0
+      g.investigateArrived = false
       if (g.waypoints.length > 0) g.group.position.copy(g.waypoints[0])
     })
     if (hud && hud.setSuspicion) hud.setSuspicion(0)
@@ -847,6 +939,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     addGuard,
     addCamera,
     addLaserGrid,
+    investigate,
     getSuspicion: () => suspicion,
     update,
     reset,
