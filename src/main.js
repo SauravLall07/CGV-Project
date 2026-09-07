@@ -285,7 +285,8 @@ loop.add((delta) => {
     keyboard: keyboard.state,
     cameraYaw: playerView.getYaw(),
     bounds: levelManager.bounds,
-    obstacles: levelManager.obstacles
+    obstacles: levelManager.obstacles,
+    groundHeightAt: levelManager.groundHeightAt
   })
 
   playerView.update(delta, player.mesh, scene, {

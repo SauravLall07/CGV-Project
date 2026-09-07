@@ -433,7 +433,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     // had no occlusion check before this; angle + distance alone let them
     // see straight through walls.
     camEyePos.copy(camPos)
-    camToPlayer.set(playerPos.x, camPos.y, playerPos.z).sub(camEyePos)
+    camToPlayer.set(playerPos.x, playerPos.y + playerDetectionHeight(), playerPos.z).sub(camEyePos)
     const losDist = camToPlayer.length()
     camToPlayer.normalize()
 

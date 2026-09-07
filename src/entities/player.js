@@ -304,7 +304,7 @@ export function createPlayer() {
     resetPose()
   }
 
-  function update(delta, { keyboard, cameraYaw, bounds, obstacles }) {
+  function update(delta, { keyboard, cameraYaw, bounds, obstacles, groundHeightAt }) {
     const sin = Math.sin(cameraYaw)
     const cos = Math.cos(cameraYaw)
 
@@ -334,7 +334,16 @@ export function createPlayer() {
     crouching = Boolean(keyboard.duck) && !airborne
     running = Boolean(keyboard.run) && moving && !crouching
 
-    if (!airborne) groundY = group.position.y
+    function sampleGroundHeight(fallback) {
+      if (typeof groundHeightAt !== 'function') return fallback
+      const sampled = groundHeightAt(group.position.x, group.position.z, fallback)
+      return Number.isFinite(sampled) ? sampled : fallback
+    }
+
+    if (!airborne) {
+      groundY = sampleGroundHeight(group.position.y)
+      group.position.y = groundY
+    }
 
     // -----------------------------------------------------------------------
     // MOVEMENT / JUMP PHYSICS
@@ -342,6 +351,11 @@ export function createPlayer() {
     if (airborne) {
       group.position.x += airVelocityX * delta
       group.position.z += airVelocityZ * delta
+
+      // A jump can cross a staircase/ramp. Sample the floor underneath the
+      // player's current X/Z so landing follows the connector instead of the
+      // take-off height.
+      groundY = sampleGroundHeight(groundY)
 
       verticalVelocity -= GRAVITY * delta
       group.position.y += verticalVelocity * delta
@@ -375,6 +389,13 @@ export function createPlayer() {
 
       group.position.x += dx * distance
       group.position.z += dz * distance
+
+      // Flat levels simply return the fallback. Stair-enabled levels can return
+      // a local floor height, allowing smooth vertical traversal while the
+      // rendered staircase remains visibly stepped.
+      groundY = sampleGroundHeight(group.position.y)
+      group.position.y = groundY
+
       turnToward(dx, dz, delta)
 
       stridePhase += distance * STRIDE_FREQUENCY

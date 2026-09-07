@@ -130,6 +130,9 @@ export function createLevelManager({
     },
     get obstacles() {
       return current && current.obstacles ? current.obstacles : null
+    },
+    get groundHeightAt() {
+      return current && current.groundHeightAt ? current.groundHeightAt : null
     }
   }
 }

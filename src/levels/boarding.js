@@ -5,11 +5,11 @@ import {
   bounds,
   GATE_Z,
   APPROACH_GATE_X,
-  APPROACH_SPAWN,
   JUNCTION_CHECKPOINT
 } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { createTutorialPassage } from '../environment/passageways/passage-tutorial.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { disposeObject } from '../core/dispose.js'
 
@@ -22,6 +22,22 @@ import { disposeObject } from '../core/dispose.js'
 
 export function createBoardingLevel({ scene, interaction, assets, hud, player, respawn, advance }) {
   const { group: station, boardingControl, wallColliders } = createStationBlockout({ includePlaceholders: false })
+
+  // Stage 1 expansion: build only the new tutorial passageway. It owns its
+  // geometry, hint zones, moving laser and cipher puzzle, while boarding.js
+  // remains the level orchestrator. Passageways 2/3 will attach to its lower
+  // landing in later stages without rewriting this module.
+  const tutorialPassage = createTutorialPassage({ interaction, hud, player, respawn })
+  station.add(tutorialPassage.group)
+  wallColliders.push(...tutorialPassage.colliders)
+
+  const levelBounds = {
+    minX: Math.min(bounds.minX, tutorialPassage.bounds.minX),
+    maxX: Math.max(bounds.maxX, tutorialPassage.bounds.maxX),
+    minZ: Math.min(bounds.minZ, tutorialPassage.bounds.minZ),
+    maxZ: Math.max(bounds.maxZ, tutorialPassage.bounds.maxZ)
+  }
+
   const { train } = createTrain()
   const lights = createStationLighting()
   const outdoorEnv = createOutdoorEnvironment({ mode: 'station', stationSpotLights: lights.spotLights })
@@ -50,6 +66,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     collidables,
     obstacles: wallColliders
   })
+
+  tutorialPassage.setupStealth(stealth)
 
   // -------------------------------------------------------------
   // New west-side infiltration wing — four extra stealth zones before the
@@ -375,7 +393,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     'Security hall — stay behind cover and avoid the patrol',
     'Final approach — reach the station junction'
   ]
-  let approachZoneIndex = -1
+  let approachZoneIndex = 0
 
   const zoneNames = [
     'Slip past the guard in the approach',
@@ -396,15 +414,19 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   let junctionCheckpointActive = false
 
   return {
-    objective: 'Bypass guards & security grid to board the Chrono Express',
+    objective: 'Learn the security systems and reach the lower passage',
     checkpoint: {
-      position: new THREE.Vector3(APPROACH_SPAWN.x, 0, APPROACH_SPAWN.z),
-      yaw: Math.PI / 2 // face east along the new corridor
+      position: tutorialPassage.spawn.clone(),
+      yaw: Math.PI / 2 // face east through Passageway 1
     },
-    bounds,
+    bounds: levelBounds,
     obstacles: wallColliders,
+    groundHeightAt(x, z, fallback = 0) {
+      return tutorialPassage.getGroundHeight(x, z, fallback)
+    },
     update(delta) {
       outdoorEnv.update(delta)
+      tutorialPassage.update(delta)
 
       // Before the junction checkpoint, zone progression is measured along X
       // because the new wing runs west -> east.
@@ -453,6 +475,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
       unregisterApproachTerminal()
       unregisterTerminal()
       unregisterBoarding()
+      tutorialPassage.dispose()
       stealth.dispose()
       outdoorEnv.dispose()
       scene.remove(outdoorEnv.group, station, train, ...lights)

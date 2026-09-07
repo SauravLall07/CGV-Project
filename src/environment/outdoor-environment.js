@@ -23,16 +23,24 @@ const CORRIDOR_CENTER_X = 1.0
 const CORRIDOR_FLAT_HALF_WIDTH = 20.0
 const CORRIDOR_CLEAR_X = 24.0
 
-const WEST_WING_CLEAR_MIN_X = -66.0
+// Reserve the complete Level 1 indoor expansion footprint now (tutorial,
+// guards and bridge passageways). Passageways 2/3 will descend below platform
+// level, so merely flattening the outdoor terrain at y=-2.5 is not sufficient:
+// the terrain must stay underneath the entire enclosed route. The final train
+// platform at positive Z intentionally remains outside this exclusion so it can
+// keep the level's only exterior-facing environment.
+const WEST_WING_CLEAR_MIN_X = -102.0
 const WEST_WING_CLEAR_MAX_X = 8.0
-const WEST_WING_CLEAR_CENTER_Z = -24.5
-const WEST_WING_CLEAR_HALF_Z = 12.0
+const WEST_WING_CLEAR_MIN_Z = -53.0
+const WEST_WING_CLEAR_MAX_Z = -16.0
+const WEST_WING_TERRAIN_Y = -10.0
 
 function isInsideWestWingClearance(x, z) {
   return (
     x >= WEST_WING_CLEAR_MIN_X &&
     x <= WEST_WING_CLEAR_MAX_X &&
-    Math.abs(z - WEST_WING_CLEAR_CENTER_Z) <= WEST_WING_CLEAR_HALF_Z
+    z >= WEST_WING_CLEAR_MIN_Z &&
+    z <= WEST_WING_CLEAR_MAX_Z
   )
 }
 
@@ -99,11 +107,10 @@ export function createOutdoorEnvironment(options = {}) {
 
   // Trigonometric procedural height calculation
   function getTerrainHeight(x, z) {
-    // Keep the new west infiltration wing completely clear of procedural terrain.
-    // -2.5 matches the flat ground level already produced by the normal station
-    // corridor calculation.
+    // Keep the complete indoor passage network clear of procedural terrain,
+    // including the lower floors planned for Passageways 2 and 3.
     if (isInsideWestWingClearance(x, z)) {
-      return -2.5
+      return WEST_WING_TERRAIN_Y
     }
 
     // Keep a flat corridor around the original station/train envelope.

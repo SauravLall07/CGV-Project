@@ -5,6 +5,7 @@
 export function resolveBoxCollision(position, obstacles) {
   if (!obstacles) return
   for (const box of obstacles) {
+    if (box.enabled === false) continue
     if (
       position.x > box.minX && position.x < box.maxX &&
       position.z > box.minZ && position.z < box.maxZ
