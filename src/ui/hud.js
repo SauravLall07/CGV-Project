@@ -69,6 +69,95 @@ export function createHud() {
     transition: 'opacity 160ms ease-out'
   })
 
+  // ---------------------------------------------------------------------
+  // Comms briefing panel (bottom-left).
+  //
+  // Story beats and per-carriage goals. Deliberately a separate channel from
+  // showToast: toasts are reactive ("the shutter slammed"), briefings are the
+  // handler telling you where you are and what the car wants from you. Lines
+  // play in sequence and the panel hides itself when the queue drains.
+  //
+  // The one rule for its content: state the GOAL, never the solution.
+  // ---------------------------------------------------------------------
+  const briefing = document.createElement('div')
+  Object.assign(briefing.style, {
+    position: 'absolute',
+    left: '20px',
+    // Sits below the FPS counter's slot (top 18px, ~26px tall) so the two
+    // never overlap when the performance counter is switched on.
+    top: '56px',
+    maxWidth: 'min(400px, 40vw)',
+    padding: '10px 14px',
+    background: 'rgba(10, 14, 24, 0.82)',
+    border: '1px solid rgba(80, 160, 255, 0.28)',
+    borderLeft: '3px solid #38bdf8',
+    borderRadius: '5px',
+    backdropFilter: 'blur(8px)',
+    boxShadow: '0 6px 20px rgba(0, 0, 0, 0.45)',
+    opacity: '0',
+    transform: 'translateY(-6px)',
+    transition: 'opacity 260ms ease-out, transform 260ms ease-out',
+    pointerEvents: 'none'
+  })
+
+  const briefingSpeaker = document.createElement('div')
+  Object.assign(briefingSpeaker.style, {
+    fontSize: '10px',
+    letterSpacing: '1.4px',
+    textTransform: 'uppercase',
+    color: '#38bdf8',
+    fontWeight: '700',
+    marginBottom: '3px'
+  })
+
+  const briefingBody = document.createElement('div')
+  Object.assign(briefingBody.style, {
+    fontSize: '13px',
+    lineHeight: '1.45',
+    color: '#e2e8f0',
+    textShadow: '0 1px 4px rgba(0, 0, 0, 0.8)'
+  })
+
+  briefing.append(briefingSpeaker, briefingBody)
+
+  let briefingQueue = []
+  let briefingTimer = null
+
+  function hideBriefing() {
+    briefing.style.opacity = '0'
+    briefing.style.transform = 'translateY(-6px)'
+  }
+
+  function advanceBriefing() {
+    if (briefingQueue.length === 0) {
+      hideBriefing()
+      briefingTimer = null
+      return
+    }
+    const line = briefingQueue.shift()
+    briefingBody.textContent = line
+    briefing.style.opacity = '1'
+    briefing.style.transform = 'translateY(0)'
+    // Long lines need longer on screen; short ones shouldn't linger.
+    const hold = Math.min(7000, Math.max(2600, 1400 + line.length * 48))
+    briefingTimer = setTimeout(advanceBriefing, hold)
+  }
+
+  // lines: a string or an array of strings, played in order.
+  function showBriefing(lines, { speaker = 'HANDLER' } = {}) {
+    clearTimeout(briefingTimer)
+    briefingQueue = (Array.isArray(lines) ? lines : [lines]).filter(Boolean)
+    briefingSpeaker.textContent = speaker
+    advanceBriefing()
+  }
+
+  function clearBriefing() {
+    clearTimeout(briefingTimer)
+    briefingTimer = null
+    briefingQueue = []
+    hideBriefing()
+  }
+
   // Top-Right Suspicion / Alert Meter
   const suspicionContainer = document.createElement('div')
   Object.assign(suspicionContainer.style, {
@@ -244,6 +333,47 @@ export function createHud() {
   energyBarTrack.appendChild(energyBarFill)
   energyRow.append(energyLabel, energyBarTrack)
 
+  // Chrono Strain bar. Hidden unless the active level enables strain, so the
+  // deck looks exactly as it did before on levels that don't use it.
+  const strainRow = document.createElement('div')
+  Object.assign(strainRow.style, {
+    display: 'none',
+    alignItems: 'center',
+    gap: '10px',
+    width: '100%'
+  })
+
+  const strainLabel = document.createElement('span')
+  strainLabel.textContent = 'CHRONO STRAIN'
+  Object.assign(strainLabel.style, {
+    fontSize: '11px',
+    letterSpacing: '1px',
+    color: '#f59e0b',
+    textTransform: 'uppercase',
+    fontWeight: '700'
+  })
+
+  const strainBarTrack = document.createElement('div')
+  Object.assign(strainBarTrack.style, {
+    flex: '1',
+    height: '6px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: '3px',
+    overflow: 'hidden',
+    minWidth: '160px'
+  })
+
+  const strainBarFill = document.createElement('div')
+  Object.assign(strainBarFill.style, {
+    height: '100%',
+    width: '0%',
+    background: 'linear-gradient(90deg, #b45309, #f59e0b, #fde68a)',
+    boxShadow: '0 0 8px rgba(245, 158, 11, 0.7)',
+    transition: 'width 80ms ease-out'
+  })
+  strainBarTrack.appendChild(strainBarFill)
+  strainRow.append(strainLabel, strainBarTrack)
+
   // Ability slots row
   const abilitySlots = document.createElement('div')
   Object.assign(abilitySlots.style, {
@@ -297,7 +427,7 @@ export function createHud() {
     slotElements.set(ab.id, { slot, ab, keyElem, nameElem })
   })
 
-  timeDeck.append(energyRow, abilitySlots)
+  timeDeck.append(energyRow, strainRow, abilitySlots)
 
   // Optional FPS counter (Settings → Display → Performance Counter). Top-left
   // is the one corner nothing else on the HUD claims.
@@ -318,7 +448,7 @@ export function createHud() {
   })
   stats.textContent = '-- FPS'
 
-  root.append(objective, toast, suspicionContainer, timeDeck, stats)
+  root.append(objective, toast, briefing, suspicionContainer, timeDeck, stats)
   document.body.appendChild(root)
 
   // Re-label the ability slots when the player rebinds a time ability.
@@ -398,7 +528,18 @@ export function createHud() {
     }
   }
 
-  function updateTimeState({ mode, energy, maxEnergy, ghostCooldown, hasGhost, available }) {
+  function updateTimeState({
+    mode,
+    energy,
+    maxEnergy,
+    ghostCooldown,
+    hasGhost,
+    available,
+    strain = 0,
+    maxStrain = 100,
+    strainEnabled = false,
+    freezeLockout = 0
+  }) {
     // Update energy bar
     const pct = Math.max(0, Math.min(100, (energy / maxEnergy) * 100))
     energyBarFill.style.width = `${pct}%`
@@ -410,6 +551,22 @@ export function createHud() {
     } else {
       energyBarFill.style.background = 'linear-gradient(90deg, #0284c7, #38bdf8, #a5f3fc)'
       energyBarFill.style.boxShadow = '0 0 8px rgba(56, 189, 248, 0.8)'
+    }
+
+    // Chrono Strain bar — only rendered on levels that opted in.
+    strainRow.style.display = strainEnabled ? 'flex' : 'none'
+    if (strainEnabled) {
+      const strainPct = Math.max(0, Math.min(100, (strain / maxStrain) * 100))
+      strainBarFill.style.width = `${strainPct}%`
+      if (freezeLockout > 0) {
+        strainLabel.textContent = `FREEZE OFFLINE ${freezeLockout.toFixed(1)}s`
+        strainLabel.style.color = '#ef4444'
+        strainBarFill.style.background = 'linear-gradient(90deg, #991b1b, #ef4444, #fca5a5)'
+      } else {
+        strainLabel.textContent = 'CHRONO STRAIN'
+        strainLabel.style.color = strainPct > 70 ? '#f97316' : '#f59e0b'
+        strainBarFill.style.background = 'linear-gradient(90deg, #b45309, #f59e0b, #fde68a)'
+      }
     }
 
     // Update ability active states
@@ -429,7 +586,15 @@ export function createHud() {
       slot.style.opacity = '1'
 
       const isActive = mode === id
-      if (id === 'GHOST') {
+      if (id === 'FREEZE' && freezeLockout > 0) {
+        // Overheated: distinct from "not unlocked" (grey) so the player reads
+        // it as a temporary penalty they caused, not a level restriction.
+        slot.style.opacity = '0.6'
+        slot.style.background = 'rgba(239, 68, 68, 0.18)'
+        slot.style.borderColor = '#ef4444'
+        slot.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.45)'
+        slot.style.transform = 'scale(1.0)'
+      } else if (id === 'GHOST') {
         if (hasGhost) {
           slot.style.background = 'rgba(45, 212, 191, 0.25)'
           slot.style.borderColor = '#2dd4bf'
@@ -484,6 +649,7 @@ export function createHud() {
 
   function dispose() {
     clearTimeout(toastTimer)
+    clearTimeout(briefingTimer)
     unsubscribeSettings()
     root.remove()
   }
@@ -494,6 +660,8 @@ export function createHud() {
     root,
     setObjective,
     showToast,
+    showBriefing,
+    clearBriefing,
     setSuspicion,
     updateTimeState,
     setChronoVisible,

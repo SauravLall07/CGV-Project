@@ -52,7 +52,29 @@ const CROUCH_SUSPICION_MULT = 0.35
 const RUN_SUSPICION_MULT = 1.6
 const JUMP_SUSPICION_MULT = 2.0
 
-export function createStealthSystem({ scene, player, respawn, hud, collidables = [], obstacles = [] }) {  let suspicion = 0
+// How close a guard has to be to a distraction (the Time Ghost) to abandon its
+// route and go look at it, and how close it walks before stopping to stare.
+const DISTRACTION_RADIUS = 9.0
+const DISTRACTION_STOP_DISTANCE = 1.5
+
+// Effective time scale a chrono mode applies to security hardware. Rewind is
+// clamped to a full stop rather than played backwards: guards walking their
+// patrol in reverse looks like a bug, and standing still reads the same to the
+// player (the route is not progressing).
+const CHRONO_SCALE = { NORMAL: 1, SLOW: 0.2, FREEZE: 0, REWIND: 0 }
+
+export function createStealthSystem({
+  scene,
+  player,
+  respawn,
+  hud,
+  collidables = [],
+  obstacles = [],
+  // Optional. When supplied, guards / cameras run on chrono-scaled time, so
+  // Slow and Freeze actually affect them. Detectors created with
+  // `shielded: true` opt back out and keep running on real time.
+  timeSystem = null
+}) {  let suspicion = 0
   const maxSuspicion = 100
   const suspicionRiseRate = 45 // percent per second in line of sight
   const suspicionDecayRate = 22 // percent per second in shadow/cover
@@ -88,9 +110,19 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
   // -----------------------------------------------------------------
   // Guard Factory
   // -----------------------------------------------------------------
-  function addGuard({ waypoints, speed = 1.6, waitTime = 2.5, initialWaypoint = 0 }) {
+  function addGuard({
+    waypoints,
+    speed = 1.6,
+    waitTime = 2.5,
+    initialWaypoint = 0,
+    // A shielded guard carries a chrono-damped badge: Slow and Freeze do
+    // nothing to him, so the player has to solve him with cover or a Ghost
+    // decoy instead of stopping the clock.
+    shielded = false,
+    distractible = true
+  }) {
     const { group, body, leftArm, rightArm, leftLeg, rightLeg } = createHumanoid(GUARD_PALETTE)
-    group.name = 'guard'
+    group.name = shielded ? 'guard-shielded' : 'guard'
 
     const { mesh: visionCone, coneMat } = createVisionConeMesh(GUARD_VISION_DISTANCE, Math.PI / 3.2)
     visionCone.position.set(0, 1.55, 0)
@@ -104,10 +136,47 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     statusBeacon.position.set(0, 2.15, 0)
     group.add(statusBeacon)
 
+    // Chrono shield: a visibly different guard, so "Freeze did nothing" reads
+    // as a property of this guard rather than a broken ability.
+    let shieldRing = null
+    let shieldMat = null
+    if (shielded) {
+      shieldMat = new THREE.MeshBasicMaterial({
+        color: 0xf59e0b,
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+      const ringGeo = new THREE.RingGeometry(0.44, 0.6, 28)
+      ringGeo.rotateX(-Math.PI / 2)
+      shieldRing = new THREE.Mesh(ringGeo, shieldMat)
+      shieldRing.position.y = 0.04
+      shieldRing.name = 'chrono-shield'
+      group.add(shieldRing)
+
+      const badge = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.09, 0),
+        new THREE.MeshStandardMaterial({
+          color: 0xfde68a,
+          emissive: 0xf59e0b,
+          emissiveIntensity: 3.5,
+          roughness: 0.2
+        })
+      )
+      badge.position.set(0, 1.42, 0.22)
+      group.add(badge)
+    }
+
     const startPos = waypoints[initialWaypoint] || waypoints[0]
     group.position.copy(startPos)
 
     const guard = {
+      shielded,
+      distractible,
+      shieldRing,
+      shieldMat,
+      shieldPulse: 0,
       group,
       body,
       leftArm,
@@ -123,7 +192,9 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       speed,
       waitTime,
       waitTimer: 0,
-      state: 'PATROL', // 'PATROL' (routine) or 'ALERT' (proximity lock-on)
+      // 'PATROL' (routine), 'INVESTIGATE' (walking to a Ghost decoy) or
+      // 'ALERT' (proximity lock-on).
+      state: 'PATROL',
       facing: 0,
       scanBase: 0, // heading the guard sweeps around while waiting at a waypoint
       stridePhase: 0,
@@ -138,7 +209,14 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
   // -----------------------------------------------------------------
   // Security Camera Factory
   // -----------------------------------------------------------------
-  function addCamera({ position, baseAngle = 0, sweepRange = Math.PI / 3, sweepSpeed = 0.8, range = 9 }) {
+  function addCamera({
+    position,
+    baseAngle = 0,
+    sweepRange = Math.PI / 3,
+    sweepSpeed = 0.8,
+    range = 9,
+    shielded = false
+  }) {
     const camGroup = new THREE.Group()
     camGroup.name = 'security-camera'
     camGroup.position.copy(position)
@@ -180,6 +258,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     pivot.add(coneMesh)
 
     const camera = {
+      shielded,
       camGroup,
       pivot,
       ledMat,
@@ -553,13 +632,47 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
   // guard merely spotting you from a distance, so those take priority).
   const REASON_PRIORITY = { 'guard-bump': 4, laser: 4, camera: 2, 'guard-sight': 1 }
 
+  // A point in the world that pulls distractible guards off their route — the
+  // level feeds the Time Ghost's position in here every frame while it replays,
+  // and the short default lifetime means it expires on its own when the ghost
+  // fades rather than needing an explicit clear.
+  const distraction = { position: new THREE.Vector3(), timer: 0 }
+
+  function setDistraction(position, duration = 0.4) {
+    if (!position) {
+      distraction.timer = 0
+      return
+    }
+    distraction.position.copy(position)
+    distraction.timer = duration
+  }
+
+  function chronoScale() {
+    const mode = timeSystem?.getMode?.()
+    if (!mode) return 1
+    return CHRONO_SCALE[mode] ?? 1
+  }
+
   function update(delta) {
     const playerPos = player?.mesh?.position
     let isDetectedThisFrame = false
     let detectionReason = null
 
-    function reportDetection(reason) {
+    // Security hardware runs on chrono time; shielded hardware runs on real
+    // time. Suspicion then rises at whatever rate the detector that actually
+    // saw you is running at, so freezing an ordinary guard really does stop
+    // him noticing, while a shielded one keeps filling the meter.
+    const scale = chronoScale()
+    const scaledDelta = delta * scale
+    let riseDelta = 0
+
+    if (distraction.timer > 0) {
+      distraction.timer = Math.max(0, distraction.timer - delta)
+    }
+
+    function reportDetection(reason, detectorDelta = delta) {
       isDetectedThisFrame = true
+      riseDelta = Math.max(riseDelta, detectorDelta)
       if (!detectionReason || REASON_PRIORITY[reason] >= REASON_PRIORITY[detectionReason]) {
         detectionReason = reason
       }
@@ -567,12 +680,20 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
     // 1. Update Guards
     guards.forEach((guard) => {
+      // A shielded guard ignores the chrono field entirely.
+      const gd = guard.shielded ? delta : scaledDelta
+
       const isSeeingPlayer = checkGuardDetection(guard, playerPos)
       const isLockedRange = checkGuardLockOn(guard, playerPos)
 
       // Any sighting feeds suspicion, near or far — but only genuine close
       // proximity breaks the routine below.
-      if (isSeeingPlayer || isLockedRange) reportDetection('guard-sight')
+      if (isSeeingPlayer || isLockedRange) reportDetection('guard-sight', gd)
+
+      const lured =
+        distraction.timer > 0 &&
+        guard.distractible &&
+        guard.group.position.distanceTo(distraction.position) < DISTRACTION_RADIUS
 
       if (isLockedRange) {
         guard.state = 'ALERT'
@@ -581,19 +702,27 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
         const dx = playerPos.x - guard.group.position.x
         const dz = playerPos.z - guard.group.position.z
         const targetAngle = Math.atan2(dx, dz)
-        guard.facing += (targetAngle - guard.facing) * Math.min(1, delta * 6.0)
+        guard.facing += (targetAngle - guard.facing) * Math.min(1, gd * 6.0)
         guard.group.rotation.y = guard.facing
       } else if (guard.state === 'ALERT') {
         // Lost proximity — keep searching for a few seconds before giving up
         // and resuming the route, rather than resetting the instant the
         // player takes one step back.
-        guard.lookAroundTimer += delta
+        guard.lookAroundTimer += gd
         guard.facing += Math.sin(guard.lookAroundTimer * 3) * 0.02
         guard.group.rotation.y = guard.facing
         if (guard.lookAroundTimer > GUARD_LOSE_LOCK_GRACE) {
           guard.state = 'PATROL'
           guard.lookAroundTimer = 0
         }
+      } else if (lured) {
+        guard.state = 'INVESTIGATE'
+      } else if (guard.state === 'INVESTIGATE') {
+        // The echo faded. Stand and scan for a beat before picking the route
+        // back up, which is the window the player is meant to move through.
+        guard.state = 'PATROL'
+        guard.waitTimer = 1.4
+        guard.scanBase = guard.facing
       }
 
       // Guard visual cues. This is purely cosmetic feedback for the player —
@@ -603,6 +732,10 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       if (guard.state === 'ALERT') {
         guard.coneMat.color.setHex(0xef4444)
         guard.statusBeacon.material.color.setHex(0xef4444)
+      } else if (guard.state === 'INVESTIGATE') {
+        // Ghost teal: the decoy is working, this guard is looking elsewhere.
+        guard.coneMat.color.setHex(0x2dd4bf)
+        guard.statusBeacon.material.color.setHex(0x2dd4bf)
       } else if (isSeeingPlayer) {
         guard.coneMat.color.setHex(0xf97316)
         guard.statusBeacon.material.color.setHex(0xf97316)
@@ -614,12 +747,36 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       // Patrol movement along waypoints
       // Strict, readable patrol routine:
       // WALK -> STOP/SCAN -> TURN ON SPOT -> WALK -> repeat.
-      if (guard.state === 'PATROL' && guard.waypoints.length > 1) {
+      if (guard.state === 'INVESTIGATE') {
+        // ---------------------------------------------------------
+        // WALK TO THE DECOY
+        // ---------------------------------------------------------
+        const dx = distraction.position.x - guard.group.position.x
+        const dz = distraction.position.z - guard.group.position.z
+        const distToLure = Math.hypot(dx, dz)
+
+        const lureAngle = Math.atan2(dx, dz)
+        let lureDiff = lureAngle - guard.facing
+        while (lureDiff > Math.PI) lureDiff -= Math.PI * 2
+        while (lureDiff < -Math.PI) lureDiff += Math.PI * 2
+        guard.facing += lureDiff * Math.min(1, gd * GUARD_ALERT_TURN_SMOOTHING)
+        guard.group.rotation.y = guard.facing
+
+        if (distToLure > DISTRACTION_STOP_DISTANCE) {
+          const step = Math.min(guard.speed * gd, distToLure - DISTRACTION_STOP_DISTANCE)
+          guard.group.position.x += (dx / distToLure) * step
+          guard.group.position.z += (dz / distToLure) * step
+          resolveBoxCollision(guard.group.position, obstacles)
+          guard.stridePhase += step * STRIDE_FREQUENCY
+        } else {
+          guard.stridePhase *= Math.max(0, 1 - gd * 10)
+        }
+      } else if (guard.state === 'PATROL' && guard.waypoints.length > 1) {
         if (guard.waitTimer > 0) {
           // ---------------------------------------------------------
           // STOP + SCAN
           // ---------------------------------------------------------
-          guard.waitTimer = Math.max(0, guard.waitTimer - delta)
+          guard.waitTimer = Math.max(0, guard.waitTimer - gd)
 
           const elapsed = guard.waitTime - guard.waitTimer
 
@@ -631,7 +788,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
           guard.group.rotation.y = guard.facing
 
           // Ease walk animation back to standing.
-          guard.stridePhase *= Math.max(0, 1 - delta * 10)
+          guard.stridePhase *= Math.max(0, 1 - gd * 10)
         } else {
           const target = guard.waypoints[guard.targetIdx]
 
@@ -669,7 +826,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
               diff *
               Math.min(
                 1,
-                delta * GUARD_PATROL_TURN_SMOOTHING
+                gd * GUARD_PATROL_TURN_SMOOTHING
               )
 
             guard.group.rotation.y = guard.facing
@@ -681,7 +838,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
             // turning. This makes the routine readable to the player.
             if (Math.abs(diff) <= GUARD_PATROL_TURN_TOLERANCE) {
               const step = Math.min(
-                guard.speed * delta,
+                guard.speed * gd,
                 distToTarget
               )
 
@@ -700,12 +857,12 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
                 step * STRIDE_FREQUENCY
             } else {
               guard.stridePhase *=
-                Math.max(0, 1 - delta * 10)
+                Math.max(0, 1 - gd * 10)
             }
           }
         }
       } else {
-        guard.stridePhase *= Math.max(0, 1 - delta * 10)
+        guard.stridePhase *= Math.max(0, 1 - gd * 10)
       }
 
       // Limb swing animation
@@ -726,6 +883,14 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
       guard.leftArm.rotation.x = -swing * 0.8
       guard.rightArm.rotation.x = swing * 0.8
       guard.body.position.y = Math.abs(Math.sin(guard.stridePhase)) * BOB_HEIGHT
+
+      // While the chrono field is up, the shield ring pulses hard — that is
+      // the moment the player needs to understand this guard is exempt.
+      if (guard.shieldMat) {
+        guard.shieldPulse += delta * (scale < 1 ? 9 : 2.5)
+        const base = scale < 1 ? 0.75 : 0.45
+        guard.shieldMat.opacity = base + Math.sin(guard.shieldPulse) * 0.22
+      }
     })
 
     if (playerPos) {
@@ -745,7 +910,8 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
     // 2. Update Cameras
     cameras.forEach((cam) => {
-      cam.elapsed += delta
+      const cd = cam.shielded ? delta : scaledDelta
+      cam.elapsed += cd
       const angle = cam.baseAngle + Math.sin(cam.elapsed * cam.sweepSpeed) * cam.sweepRange
       cam.pivot.rotation.y = angle
 
@@ -763,7 +929,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
       const isSeeing = checkCameraDetection(cam, playerPos)
       if (isSeeing) {
-        reportDetection('camera')
+        reportDetection('camera', cd)
         cam.ledMat.color.setHex(0xef4444)
         cam.coneMat.color.setHex(0xef4444)
       } else {
@@ -791,9 +957,12 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     }
 
     // 4. Update Suspicion Meter
-    if (isDetectedThisFrame) {
-      suspicion = Math.min(maxSuspicion, suspicion + suspicionRiseRate * delta * movementSuspicionMultiplier())
-    } else {
+    if (isDetectedThisFrame && riseDelta > 0) {
+      suspicion = Math.min(
+        maxSuspicion,
+        suspicion + suspicionRiseRate * riseDelta * movementSuspicionMultiplier()
+      )
+    } else if (!isDetectedThisFrame) {
       suspicion = Math.max(0, suspicion - suspicionDecayRate * delta)
     }
 
@@ -815,6 +984,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
 
   function reset() {
     suspicion = 0
+    distraction.timer = 0
     guards.forEach((g) => {
       g.state = 'PATROL'
       g.waitTimer = 0
@@ -847,6 +1017,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     addGuard,
     addCamera,
     addLaserGrid,
+    setDistraction,
     getSuspicion: () => suspicion,
     update,
     reset,

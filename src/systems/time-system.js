@@ -23,8 +23,31 @@ const DRAIN_RATES = {
 }
 const GHOST_ENERGY_COST = 35
 const GHOST_BUFFER_SECONDS = 5.0
+
+// Chrono Strain — thermal load on the Chrono Interface.
+//
+// Energy is the *budget* for using time powers; strain is the *penalty* for
+// leaning on one of them. Only Freeze (and, mildly, Rewind) heats the
+// interface, so a player who answers every hazard with Freeze overheats it and
+// loses Freeze for a few seconds while Slow / Rewind / Ghost keep working.
+// Levels opt in via setStrainEnabled() so Level 1 and Level 3 are unaffected.
+const MAX_STRAIN = 100
+const STRAIN_RATES = { SLOW: 0, FREEZE: 34, REWIND: 8 }
+// Flat cost per Freeze activation, so tapping it on and off is not a way to
+// dodge the sustained-use penalty.
+const FREEZE_ACTIVATION_STRAIN = 14
+const STRAIN_DECAY = 13 // per second while not heating
+const STRAIN_LOCKOUT_SECONDS = 8.0
 const SNAPSHOT_INTERVAL = 0.05 // 20 snapshots per second
-const MAX_SNAPSHOT_HISTORY = 6.0 // max rewind buffer seconds
+// Max rewind buffer, in seconds of recorded history.
+//
+// This has to be at least as long as the reach a full energy bar buys, or the
+// player hits an invisible wall well before they run out of power: Rewind pops
+// snapshots at ~3x real time and drains 32/s, so a full 100 energy is ~3.1s of
+// holding REWIND and ~9.4s of history. At the old value of 6.0 the buffer ran
+// dry first, and anything that had been broken for more than a few seconds
+// could not be restored at all.
+const MAX_SNAPSHOT_HISTORY = 10.0
 
 // Which abilities the player currently has. Level 3's scripted Chrono Core
 // depletion locks everything but Freeze, which is why this lives here rather
@@ -47,6 +70,9 @@ export function createTimeSystem({ scene, player, hud }) {
   let snapshotTimer = 0
   let rewindPlaybackTime = 0
   let ghostCooldown = 0
+  let strain = 0
+  let strainEnabled = false
+  let freezeLockout = 0
   let levelMultiplier = 1.0 // 1.0 for Level 2 (controlled), 1.8 for Level 3 (unstable timewreck)
 
   // Shader uniforms exposed for custom materials
@@ -72,7 +98,19 @@ export function createTimeSystem({ scene, player, hud }) {
         if (hud) hud.showToast('Chrono Core energy depleted!', 1200)
         return
       }
+      if (newMode === TIME_MODES.FREEZE && freezeLockout > 0) {
+        if (hud) {
+          hud.showToast(
+            `Chrono Interface overheated — FREEZE offline for ${freezeLockout.toFixed(1)}s`,
+            1400
+          )
+        }
+        return
+      }
       mode = newMode
+      if (strainEnabled && mode === TIME_MODES.FREEZE) {
+        strain = Math.min(MAX_STRAIN, strain + FREEZE_ACTIVATION_STRAIN)
+      }
     }
 
     // Notify registered objects of state changes
@@ -83,6 +121,16 @@ export function createTimeSystem({ scene, player, hud }) {
     })
 
     updateUniforms()
+  }
+
+  // Levels that want the anti-Freeze-spam pressure turn this on; everything
+  // else keeps the original behaviour with no strain bar at all.
+  function setStrainEnabled(enabled) {
+    strainEnabled = Boolean(enabled)
+    if (!strainEnabled) {
+      strain = 0
+      freezeLockout = 0
+    }
   }
 
   function setLevelMultiplier(mult) {
@@ -200,6 +248,29 @@ export function createTimeSystem({ scene, player, hud }) {
       ghostCooldown = Math.max(0, ghostCooldown - delta)
     }
 
+    // Chrono Strain. Heats while Freeze (or Rewind) runs, cools otherwise, and
+    // takes Freeze offline entirely once it tops out.
+    if (strainEnabled) {
+      if (freezeLockout > 0) {
+        freezeLockout = Math.max(0, freezeLockout - delta)
+        if (freezeLockout === 0 && hud) {
+          hud.showToast('Chrono Interface re-synchronised — FREEZE online', 1600)
+        }
+      }
+
+      const strainRate = STRAIN_RATES[mode] || 0
+      if (strainRate > 0) {
+        strain = Math.min(MAX_STRAIN, strain + strainRate * delta)
+        if (strain >= MAX_STRAIN && mode === TIME_MODES.FREEZE) {
+          freezeLockout = STRAIN_LOCKOUT_SECONDS
+          setMode(TIME_MODES.NORMAL)
+          if (hud) hud.showToast('CHRONO INTERFACE OVERHEATED — FREEZE offline', 2400)
+        }
+      } else {
+        strain = Math.max(0, strain - STRAIN_DECAY * delta)
+      }
+    }
+
     // Energy drain & recharge
     if (mode === TIME_MODES.NORMAL) {
       energy = Math.min(MAX_ENERGY, energy + RECHARGE_RATE * delta)
@@ -301,6 +372,9 @@ export function createTimeSystem({ scene, player, hud }) {
 
   function dispose() {
     availability = { ...ALL_ABILITIES }
+    strainEnabled = false
+    strain = 0
+    freezeLockout = 0
     setMode(TIME_MODES.NORMAL)
     registered.clear()
     playerHistory.length = 0
@@ -316,6 +390,7 @@ export function createTimeSystem({ scene, player, hud }) {
     setLevelMultiplier,
     setAbilityAvailability,
     getAbilityAvailability,
+    setStrainEnabled,
     triggerSlow: () => setMode(TIME_MODES.SLOW),
     triggerFreeze: () => setMode(TIME_MODES.FREEZE),
     triggerRewind: () => setMode(TIME_MODES.REWIND),
@@ -324,6 +399,10 @@ export function createTimeSystem({ scene, player, hud }) {
     getEnergy: () => energy,
     getMaxEnergy: () => MAX_ENERGY,
     getGhostCooldown: () => ghostCooldown,
+    getStrain: () => strain,
+    getMaxStrain: () => MAX_STRAIN,
+    isStrainEnabled: () => strainEnabled,
+    getFreezeLockout: () => freezeLockout,
     getGhost: () => ghost,
     getUniforms: () => uniforms,
     update,

@@ -300,7 +300,11 @@ loop.add((delta) => {
     maxEnergy: timeSystem.getMaxEnergy(),
     ghostCooldown: timeSystem.getGhostCooldown(),
     hasGhost: timeSystem.getGhost().isPlaying(),
-    available: timeSystem.getAbilityAvailability()
+    available: timeSystem.getAbilityAvailability(),
+    strain: timeSystem.getStrain(),
+    maxStrain: timeSystem.getMaxStrain(),
+    strainEnabled: timeSystem.isStrainEnabled(),
+    freezeLockout: timeSystem.getFreezeLockout()
   })
 })
 loop.start()

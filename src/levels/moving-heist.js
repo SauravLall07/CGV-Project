@@ -4,6 +4,7 @@ import { createCarriageEnvironment, CARRIAGE_CEILING_Y, CARRIAGE_ROOF_Y } from '
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
+import { signMaterial } from '../environment/textures.js'
 
 // Level 2 — "The Moving Heist".
 //
@@ -13,10 +14,18 @@ import { createStealthSystem } from '../systems/stealth.js'
 // Ability progression is equally deliberate:
 // Passenger  : no powers; reuse Level 1 timing/stealth instincts.
 // Security   : acquire the Chrono Interface -> unlock SLOW.
-// Relay      : apply what was learned with a routing puzzle; no new power.
-// Cargo      : acquire the Cryo Phase module -> unlock FREEZE.
-// Mechanical : acquire the Rollback module -> unlock REWIND.
-// Vault      : acquire the Echo Synchronizer -> unlock GHOST.
+// Relay      : acquire the Echo Synchronizer -> unlock GHOST, and immediately
+//              need it: the routing pattern only shows while the bus pad is
+//              weighted, and only SLOW makes its strobe readable.
+// Cargo      : acquire the Cryo Phase module -> unlock FREEZE, which also
+//              switches on Chrono Strain. A chrono-shielded guard patrols here
+//              precisely so Freeze cannot be the answer to everything.
+// Mechanical : acquire the Rollback module -> unlock REWIND, plus a twin-plate
+//              drive clamp that only a Ghost can hold open with you.
+// Vault      : no new power — a finale that asks for all four at once.
+//
+// GHOST is deliberately granted before FREEZE. It used to be the last pickup,
+// which left it with exactly one use in the whole level.
 //
 // The Chrono Interface is NOT the heist target. It is a maintenance controller
 // that remotely draws power from the train's Chrono Core. The Core itself is the
@@ -245,7 +254,53 @@ function makeBarrierProp({ width = 0.68, height = 0.95, depth = 0.9, color = 0x5
   return g
 }
 
-function makeRotor(accent = 0x38bdf8, radius = 0.9) {
+// Small engraved plaque. The relay puzzle spreads three terminals down an 18 m
+// car and posts their target colours on one panel at the far end — without a
+// shared A/B/C marking on both, there is nothing telling the player which light
+// belongs to which terminal, and the pattern is unreadable even when visible.
+function makeLabelPlate(letter, size = 0.16) {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size),
+    signMaterial({
+      text: letter,
+      background: 0x0f172a,
+      foreground: 0xe2e8f0,
+      width: 128,
+      height: 128,
+      emissiveIntensity: 1.6
+    })
+  )
+  return mesh
+}
+
+function makePressurePlate(size = 0.9) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x334155,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 1.4,
+    roughness: 0.3
+  })
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(size, 0.05, size), mat)
+  mesh.userData.plateMat = mat
+  return mesh
+}
+
+// Rotor hazards are a single bar through a hub, not a four-armed cross.
+//
+// A cross this wide in a 1.6 m aisle has no safe phase at all — every angle
+// puts an arm across the player — which is exactly why these hazards used to
+// need a `mode === 'NORMAL'` check to be passable. A two-armed bar leaves a
+// genuine window: roughly a quarter of each rotation standing, and about half
+// of it crouched, since a horizontal bar passes over a ducking player.
+//
+// ROTOR_ARMS / ROTOR_RADIUS / ROTOR_HUB_Y are shared by the mesh and the
+// collision test on purpose. If the geometry and the maths drift apart the
+// hazard becomes unreadable, so change them here and nowhere else.
+const ROTOR_ARMS = 2
+const ROTOR_RADIUS = 0.9
+const ROTOR_HUB_Y = 1.55
+
+function makeRotor(accent = 0x38bdf8, radius = ROTOR_RADIUS) {
   const g = new THREE.Group()
   const hubMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.82, roughness: 0.22 })
   const beamMat = new THREE.MeshStandardMaterial({
@@ -259,11 +314,83 @@ function makeRotor(accent = 0x38bdf8, radius = 0.9) {
   hub.rotation.x = Math.PI / 2
   g.add(hub)
 
-  const h = new THREE.Mesh(new THREE.BoxGeometry(radius * 2, 0.07, 0.07), beamMat)
-  const v = new THREE.Mesh(new THREE.BoxGeometry(0.07, radius * 2, 0.07), beamMat)
-  g.add(h, v)
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(radius * 2, 0.09, 0.09), beamMat)
+  g.add(bar)
+
+  // Counterweights on the tips so the bar's angle stays readable at speed.
+  for (const side of [-1, 1]) {
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.16), beamMat)
+    cap.position.x = side * radius
+    g.add(cap)
+  }
 
   return g
+}
+
+// ---------------------------------------------------------------------------
+// Rotor hazard geometry.
+//
+// The spinning hazards used to fail on `mode === 'NORMAL'`, which made every
+// chrono ability an equally valid answer and Freeze the strictly safest one.
+// These helpers replace that with real geometry: an arm either overlaps the
+// player's body column or it doesn't. Normal time leaves a window too tight to
+// read, Slow makes it readable, and Freeze only works if you stop the rotor on
+// a gap — freezing it mid-arm leaves the aisle blocked until you pay to unfreeze.
+// ---------------------------------------------------------------------------
+
+function pointSegmentDistance(px, py, ax, ay, bx, by) {
+  const abx = bx - ax
+  const aby = by - ay
+  const lenSq = abx * abx + aby * aby
+  if (lenSq < 1e-8) return Math.hypot(px - ax, py - ay)
+  let t = ((px - ax) * abx + (py - ay) * aby) / lenSq
+  t = Math.max(0, Math.min(1, t))
+  return Math.hypot(px - (ax + abx * t), py - (ay + aby * t))
+}
+
+function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const cross = (ox, oy, px, py, qx, qy) => (px - ox) * (qy - oy) - (py - oy) * (qx - ox)
+  const d1 = cross(ax, ay, bx, by, cx, cy)
+  const d2 = cross(ax, ay, bx, by, dx, dy)
+  const d3 = cross(cx, cy, dx, dy, ax, ay)
+  const d4 = cross(cx, cy, dx, dy, bx, by)
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))
+}
+
+function segmentDistance(ax, ay, bx, by, cx, cy, dx, dy) {
+  if (segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy)) return 0
+  return Math.min(
+    pointSegmentDistance(ax, ay, cx, cy, dx, dy),
+    pointSegmentDistance(bx, by, cx, cy, dx, dy),
+    pointSegmentDistance(cx, cy, ax, ay, bx, by),
+    pointSegmentDistance(dx, dy, ax, ay, bx, by)
+  )
+}
+
+// A rotor is a cross of `arms` beams spinning in the XY plane about
+// (centreX, centreY). The player is a vertical column at `playerX` reaching up
+// to `playerTopY`, so crouching genuinely shrinks the profile the arms can hit.
+function rotorBlocks({
+  angle,
+  radius,
+  centreX = 0,
+  centreY,
+  playerX,
+  playerTopY,
+  clearance = 0.3,
+  arms = ROTOR_ARMS
+}) {
+  for (let i = 0; i < arms; i++) {
+    const a = angle + (i / arms) * Math.PI * 2
+    const tipX = centreX + Math.cos(a) * radius
+    const tipY = centreY + Math.sin(a) * radius
+    const d = segmentDistance(
+      centreX, centreY, tipX, tipY,
+      playerX, 0, playerX, playerTopY
+    )
+    if (d < clearance) return true
+  }
+  return false
 }
 
 export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, player, camera, respawn, advance }) {
@@ -304,16 +431,29 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   // identity stable and swap its contents when changing interior/roof/vault.
   const activeObstacles = []
   const corridorObstacles = []
-  const passengerStealth =
+  // One stealth system for the whole interior run, not just the Passenger car:
+  // Security gets a sweeping camera, Cargo gets a laser grid and a chrono-
+  // shielded guard. Passing timeSystem makes ordinary guards and cameras obey
+  // Slow and Freeze; the shielded guard opts out of that below.
+  const corridorStealth =
     createStealthSystem({
       scene,
       player,
       respawn,
       hud,
       collidables: guardCollidables,
-      obstacles: corridorObstacles
+      obstacles: corridorObstacles,
+      timeSystem
     })
   const vaultObstacles = []
+
+  // Standing / crouched body height used by the rotor hazards. Ducking really
+  // does slip you under an arm that would have clipped you upright.
+  const PLAYER_STAND_TOP = 1.72
+  const PLAYER_CROUCH_TOP = 1.04
+  function playerTopY() {
+    return player?.isCrouching?.() ? PLAYER_CROUCH_TOP : PLAYER_STAND_TOP
+  }
 
   function useObstacles(list) {
     activeObstacles.splice(0, activeObstacles.length, ...list)
@@ -357,6 +497,30 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     if (toastText) hud?.showToast?.(toastText, 3000)
   }
 
+  // Failsafe re-arm for the one-way "breaks and stays broken" hazards.
+  //
+  // Rewind can only reach as far back as the snapshot buffer holds, and dying
+  // at one of these respawns the player far enough away that walking back
+  // always takes longer than that. Without this, one mistake at the bridge,
+  // the slam gate or the roof hatch leaves it permanently broken with no way
+  // past — an unwinnable car, not a hard one. Retreating behind the hazard's
+  // own trigger line re-seats it after a beat. REWIND is still the fast answer
+  // and the only one that works without giving up ground.
+  const REARM_DELAY = 1.2
+  const rearmTimers = { bridge: 0, slam: 0, hatch: 0, vaultBridge: 0 }
+  function readyToRearm(key, retreated, delta) {
+    if (!retreated) {
+      rearmTimers[key] = 0
+      return false
+    }
+    rearmTimers[key] += delta
+    if (rearmTimers[key] >= REARM_DELAY) {
+      rearmTimers[key] = 0
+      return true
+    }
+    return false
+  }
+
   let failCooldown = 0
   function failSoft(message, reason = 'caught') {
     if (failCooldown > 0) return
@@ -367,12 +531,19 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   let section = 'interior' // interior | roof | vault
 
+  // Per-carriage briefings.
+  //
+  // House rule for everything in here: state the GOAL and the CONSTRAINT, never
+  // the solution. "The pad is a long way from the gate" is a goal. "Use the
+  // Time Ghost on the pad" is a walkthrough, and the room stops being a puzzle.
   const hintsShown = new Set()
-  function hint(key, playerZ, enterZ, message) {
+  function hint(key, playerZ, enterZ, lines) {
     if (hintsShown.has(key) || playerZ < enterZ) return
     hintsShown.add(key)
-    hud.showToast(message, 3200)
+    hud.showBriefing?.(lines)
   }
+
+  let introShown = false
 
   // Rolling corridor checkpoints; the player always progresses toward +Z.
   let lastCheckpointZ = spans.passenger.minZ + 2.2
@@ -426,25 +597,45 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   })
 
   // ------------------------------------------------------------------
-  // PASSENGER GUARD
+  // PASSENGER — CAMERA FIRST, THEN THE CONDUCTOR
   //
-  // One deliberately simple patrol keeps the first carriage connected
-  // to Level 1's stealth gameplay without overwhelming the player before
-  // the Chrono powers are introduced.
+  // The guard used to start at minZ + 3.4, which is 1.2 m from the player's
+  // spawn at minZ + 2.2 — inside GUARD_LOCK_ON_DISTANCE. He hard-locked on
+  // before the player could take a step, which read as being caught for no
+  // reason. The opening threat is now a ceiling camera the player walks up to
+  // and reads, and the conductor patrols the far end of the car instead.
   // ------------------------------------------------------------------
 
-  passengerStealth.addGuard({
+  corridorStealth.addCamera({
+    position: new THREE.Vector3(
+      0.62,
+      CARRIAGE_CEILING_Y - 0.55,
+      spans.passenger.center + 0.5
+    ),
+    baseAngle: Math.PI, // facing back down the car, toward the player's approach
+    sweepRange: Math.PI / 3.4,
+    sweepSpeed: 0.7,
+    // Reach ends at minZ + 10.5, a good 2 m short of the first luggage barrier
+    // and 4.3 m short of the spawn: the player always gets a clear look at the
+    // car, and cover exists before anything can see them.
+    range: 6.0
+  })
+
+  // The conductor now walks the forward quarter of the car, well past the last
+  // luggage barrier and 11 m from the spawn — outside GUARD_VISION_DISTANCE, so
+  // the player meets him on their own terms.
+  corridorStealth.addGuard({
     waypoints: [
       new THREE.Vector3(
         0.42,
         0,
-        spans.passenger.minZ + 3.4
+        spans.passenger.center + 3.0
       ),
 
       new THREE.Vector3(
         0.42,
         0,
-        spans.passenger.center - 1.4
+        spans.passenger.maxZ - 2.5
       )
     ],
 
@@ -636,9 +827,9 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     }
   }))
 
-  const secRotor = makeRotor(0x60a5fa, 0.9)
+  const secRotor = makeRotor(0x60a5fa)
   const secRotorZ = spans.security.center + 3.7
-  addProp(secRotor, secRotorZ, 0, 1.45)
+  addProp(secRotor, secRotorZ, 0, ROTOR_HUB_Y)
   let secRotorA = 0
   unregisters.push(timeSystem.register(secRotor, {
     onUpdate(scaledDelta) {
@@ -651,6 +842,18 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       secRotor.rotation.z = secRotorA
     }
   }))
+
+  // Sweeping ceiling camera watching the run-up to the shutter. It is NOT
+  // chrono-shielded, so Slow stretches its sweep and Freeze parks it — the
+  // first place the player is rewarded for using a power on a person-detector
+  // rather than on a machine.
+  corridorStealth.addCamera({
+    position: new THREE.Vector3(0.62, CARRIAGE_CEILING_Y - 0.55, spans.security.center + 1.0),
+    baseAngle: Math.PI,
+    sweepRange: Math.PI / 3.0,
+    sweepSpeed: 0.85,
+    range: 8.0
+  })
 
   const secShutter = new THREE.Mesh(
     new THREE.BoxGeometry(2.4, 1.45, 0.12),
@@ -676,9 +879,37 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   }))
 
   // --------------------------------------------------------------------------
-  // CHRONO RELAY — ROUTING PUZZLE
-  // Match the three relay terminal colours to the pattern above the exit gate.
+  // CHRONO RELAY — ECHO SYNCHRONIZER + ROUTING PUZZLE
+  //
+  // This car used to hand out no power at all, which made it the one room with
+  // nothing to practise. It now grants GHOST and immediately demands it: the
+  // routing pattern is only displayed while the bus pad is weighted, and the
+  // pad is nowhere near the terminals, so a Time Ghost has to stand on it.
+  // The pattern also strobes far too fast to read at normal time, so the room
+  // is solved with GHOST and SLOW together and no Freeze at all.
   // --------------------------------------------------------------------------
+  const ghostPickup =
+    makeChronoPickup(0x2dd4bf, 0.52)
+  powerPickups.push(ghostPickup)
+  const ghostModule = ghostPickup.group
+  ghostModule.name = 'ghost-module'
+  addProp(ghostModule, spans.relay.minZ + 2.2, 0)
+
+  let ghostTaken = false
+  unregisters.push(interaction.register(ghostModule, {
+    prompt: 'Install Echo Synchronizer',
+    onInteract: () => {
+      if (ghostTaken) return
+      if (!abilityState.SLOW) {
+        interaction.flashPrompt('The Chrono Interface is not linked yet.')
+        return
+      }
+      ghostTaken = true
+      ghostPickup.collect()
+      unlockAbility('GHOST', 'ECHO SYNCHRONIZER INSTALLED — TIME GHOST unlocked')
+      hud.setObjective('Relay — the routing pattern only shows while the bus pad is weighted')
+    }
+  }))
 
   const RELAY_COLORS = [
     0xef4444, // red
@@ -686,6 +917,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     0x38bdf8  // cyan
   ]
 
+  const RELAY_LABELS = ['A', 'B', 'C']
   const relayTarget = [2, 1, 0] // cyan, amber, red
   const relayState = [0, 0, 0]
   let relaySolved = false
@@ -721,6 +953,17 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
     terminal.name = `relay-terminal-${cfg.label}`
     addProp(terminal, cfg.z, cfg.x)
+
+    // Turn the console to face the aisle rather than the front of the train.
+    // makeConsole builds its screen on +Z, so a terminal left as-is points its
+    // only readable surface away from a player walking toward the front — you
+    // had to walk past and look back to see what colour you had set it to.
+    terminal.rotation.y = cfg.x < 0 ? Math.PI / 2 : -Math.PI / 2
+
+    // Matching plaque, so the panel at the gate can be read against the car.
+    const termLabel = makeLabelPlate(cfg.label, 0.14)
+    termLabel.position.set(0, 0.34, 0.175)
+    terminal.add(termLabel)
 
     unregisters.push(interaction.register(terminal, {
       prompt: `Cycle Chrono Relay ${cfg.label}`,
@@ -790,8 +1033,10 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   let relayGateOpen = 0
 
-  // Target pattern above the exit gate.
+  // Target pattern above the exit gate. Dark until the bus pad is weighted,
+  // and then only lit during a very short flash each cycle.
   const relayTargetPanel = new THREE.Group()
+  const relayTargetLights = []
 
   relayTarget.forEach((targetColour, i) => {
     const light = new THREE.Mesh(
@@ -803,13 +1048,28 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       })
     )
 
+    // NOTE the sign. The player always walks toward +Z, so world +X projects to
+    // SCREEN-LEFT from their viewpoint. Laying these out as (i - 1) put A on the
+    // right and the panel read C, B, A — the exact reverse of the answer, which
+    // is a cruel thing to do to a player reading left to right. (1 - i) makes
+    // the panel read A, B, C in the same order the terminals are encountered.
     light.position.set(
-      (i - 1) * 0.35,
+      (1 - i) * 0.35,
       0,
       0
     )
 
+    light.visible = false
+    relayTargetLights.push(light)
     relayTargetPanel.add(light)
+
+    // Always-on plaque under each bulb. The colours come and go with the
+    // strobe; the letters must not, or the player cannot tell which reading
+    // belongs to which terminal.
+    const label = makeLabelPlate(RELAY_LABELS[i], 0.15)
+    label.position.set((1 - i) * 0.35, -0.26, -0.08)
+    label.rotation.y = Math.PI // face back down the car, toward the player
+    relayTargetPanel.add(label)
   })
 
   addProp(
@@ -818,6 +1078,62 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     0,
     2.45
   )
+
+  // Dead housing so the panel still reads as a fixture while unlit.
+  //
+  // This MUST sit at a higher z than the bulbs at relayGateZ - 0.12. The player
+  // approaches the gate from -Z, so lower z is nearer the eye — mounting the
+  // housing at relayGateZ - 0.2 put it directly in front of all three lights
+  // and the pattern could never be seen, however correctly the pad was weighted.
+  const relayPanelShell = new THREE.Mesh(
+    new THREE.BoxGeometry(1.16, 0.28, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.4 })
+  )
+  addProp(relayPanelShell, relayGateZ, 0, 2.45)
+
+  // The strobe runs on chrono-scaled time, so SLOW genuinely stretches the
+  // flash from ~0.13s to ~0.65s of real time — long enough to read.
+  // Tuned so a ~3.5 s Ghost hold always covers at least one full flash even at
+  // 0.2x: period 0.62 s becomes 3.1 s under SLOW, flash 0.15 s becomes 0.75 s.
+  const RELAY_STROBE_PERIOD = 0.62
+  const RELAY_STROBE_FLASH = 0.15
+  let relayStrobeT = 0
+  let relayFlashOn = false
+  unregisters.push(timeSystem.register(relayTargetPanel, {
+    onUpdate(scaledDelta) {
+      relayStrobeT = (relayStrobeT + Math.max(0, scaledDelta)) % RELAY_STROBE_PERIOD
+      relayFlashOn = relayStrobeT < RELAY_STROBE_FLASH
+    },
+    getSnapshot: () => ({ relayStrobeT }),
+    restoreSnapshot: (snap) => {
+      relayStrobeT = snap.relayStrobeT
+      relayFlashOn = relayStrobeT < RELAY_STROBE_FLASH
+    }
+  }))
+
+  // The bus pad sits well behind the terminals, so weighting it yourself and
+  // then reading the panel at the gate is not possible — only an echo can hold
+  // it while you stand at the far end of the car.
+  const relayPadPos = new THREE.Vector3(0.55, 0.03, spans.relay.minZ + 5.6)
+  const relayPad = makePressurePlate(0.95)
+  const relayPadMat = relayPad.userData.plateMat
+  relayPad.position.copy(relayPadPos)
+  root.add(relayPad)
+
+  const relayPadPostMat = new THREE.MeshStandardMaterial({
+    color: 0x2dd4bf,
+    emissive: 0x2dd4bf,
+    emissiveIntensity: 1.6,
+    metalness: 0.7,
+    roughness: 0.3
+  })
+  const relayPadPost = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.05, 1.1, 10),
+    relayPadPostMat
+  )
+  let relayPadEverHeld = false
+  relayPadPost.position.set(relayPadPos.x, 0.55, relayPadPos.z)
+  root.add(relayPadPost)
   // --------------------------------------------------------------------------
   // CARGO — FREEZE
   // Three moving cargo hazards: crane crate, pallet sweeper, crush gate.
@@ -842,14 +1158,21 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         )
         return
       }
-      if (!abilityState.SLOW) {
-        interaction.flashPrompt('The Chrono Interface is not linked yet.')
+      if (!abilityState.GHOST) {
+        interaction.flashPrompt('The Echo Synchronizer is not installed yet.')
         return
       }
       freezeTaken = true
       freezePickup.collect()
       unlockAbility('FREEZE', 'CRYO PHASE MODULE INSTALLED — FREEZE unlocked')
-      hud.setObjective('Cross Cargo — FREEZE moving loads when they clear the aisle')
+      // Freeze is the module that heats the interface, so the strain meter
+      // only appears once the player actually has it.
+      timeSystem?.setStrainEnabled?.(true)
+      hud.showToast(
+        'WARNING: sustained FREEZE overheats the Chrono Interface. Watch the strain meter.',
+        3600
+      )
+      hud.setObjective('Cross Cargo — FREEZE moving loads, but do not lean on it')
     }
   }))
 
@@ -928,6 +1251,70 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       cargoCrusher.position.y = 0.45 + crusherOpen * 2.6
     }
   }))
+
+  // Laser grid across the forward Cargo doorway. It cycles on chrono time, so
+  // SLOW stretches the gap and FREEZE parks it — but see the shielded guard
+  // below for why parking it is not free.
+  const cargoGridZ = spans.cargo.maxZ - 5.4
+  const cargoGrid = corridorStealth.addLaserGrid({
+    position: new THREE.Vector3(0, 0, cargoGridZ),
+    width: 2.3,
+    height: 2.2,
+    beamCount: 4
+  })
+
+  const CARGO_GRID_PERIOD = 4.2
+  const CARGO_GRID_DOWN = 1.25
+  let cargoGridT = 0
+  unregisters.push(timeSystem.register(cargoGrid.gridGroup, {
+    onUpdate(scaledDelta) {
+      cargoGridT = (cargoGridT + Math.max(0, scaledDelta)) % CARGO_GRID_PERIOD
+      cargoGrid.setActive(cargoGridT > CARGO_GRID_DOWN)
+    },
+    getSnapshot: () => ({ cargoGridT }),
+    restoreSnapshot: (snap) => {
+      cargoGridT = snap.cargoGridT
+      cargoGrid.setActive(cargoGridT > CARGO_GRID_DOWN)
+    }
+  }))
+
+  // Cover on the starboard side of the Cargo aisle. The shielded guard below
+  // patrols the port lane at x = -0.42, so these sit clear of his route and
+  // give the player a line of sight breaks to work with — he cannot be frozen,
+  // so there has to be an answer that costs no energy at all.
+  addStaticBarrier({
+    z: spans.cargo.center + 1.8,
+    x: 0.48,
+    width: 0.6,
+    depth: 1.2,
+    height: 1.4,
+    color: 0x6b4b2f
+  })
+
+  addStaticBarrier({
+    z: spans.cargo.center + 4.2,
+    x: 0.48,
+    width: 0.6,
+    depth: 1.2,
+    height: 1.4,
+    color: 0x4f3b2c
+  })
+
+  // Chrono-shielded guard. His badge damps the field, so Slow and Freeze do
+  // nothing to him — the answer is a Time Ghost decoy (or patience and cover).
+  // Putting him next to a grid the player wants to freeze is the point: the
+  // obvious Freeze answer to the grid leaves you standing still in front of a
+  // guard who never stopped moving.
+  corridorStealth.addGuard({
+    waypoints: [
+      new THREE.Vector3(-0.42, 0, spans.cargo.center - 0.6),
+      new THREE.Vector3(-0.42, 0, spans.cargo.maxZ - 2.4)
+    ],
+    speed: 1.3,
+    waitTime: 2.4,
+    initialWaypoint: 0,
+    shielded: true
+  })
 
   // --------------------------------------------------------------------------
   // MECHANICAL — REWIND
@@ -1021,9 +1408,9 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     }
   }))
 
-  const mechBlade = makeRotor(0x38bdf8, 0.95)
+  const mechBlade = makeRotor(0x38bdf8)
   const mechBladeZ = spans.mechanical.maxZ - 6.0
-  addProp(mechBlade, mechBladeZ, 0, 1.45)
+  addProp(mechBlade, mechBladeZ, 0, ROTOR_HUB_Y)
   let mechBladeA = 0
   unregisters.push(timeSystem.register(mechBlade, {
     onUpdate(scaledDelta) {
@@ -1036,6 +1423,49 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       mechBlade.rotation.z = mechBladeA
     }
   }))
+
+  // ------------------------------------------------------------------
+  // DRIVE CLAMP — TWIN SYNC PLATES (Time Ghost)
+  //
+  // Two plates six metres apart that must be weighted at the SAME moment.
+  // Neither sits on the route, so you cannot solve it by walking through:
+  // walk onto plate A, carry on to plate B, then summon the echo — it replays
+  // your walk onto A while you stand on B. Unlike the Vault plate this one
+  // latches, so the door stays open once the pair fires.
+  // ------------------------------------------------------------------
+  const syncPlateAPos = new THREE.Vector3(-0.56, 0.03, spans.mechanical.center - 3.1)
+  const syncPlateBPos = new THREE.Vector3(0.56, 0.03, spans.mechanical.center + 2.9)
+
+  const syncPlateA = makePressurePlate(0.86)
+  const syncPlateAMat = syncPlateA.userData.plateMat
+  syncPlateA.position.copy(syncPlateAPos)
+  root.add(syncPlateA)
+
+  const syncPlateB = makePressurePlate(0.86)
+  const syncPlateBMat = syncPlateB.userData.plateMat
+  syncPlateB.position.copy(syncPlateBPos)
+  root.add(syncPlateB)
+
+  // Sits between the turbine blade and the roof ladder, so the clamp really is
+  // the last thing standing between the player and the roof.
+  const clampDoorZ = spans.mechanical.maxZ - 4.6
+  const clampDoor = new THREE.Mesh(
+    new THREE.BoxGeometry(2.3, 1.7, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0x2f3742, metalness: 0.9, roughness: 0.35 })
+  )
+  addProp(clampDoor, clampDoorZ, 0, 1.05)
+
+  // Status light on the clamp door, so "both plates at once" is legible.
+  const clampLampMat = new THREE.MeshStandardMaterial({
+    color: 0xef4444,
+    emissive: 0xef4444,
+    emissiveIntensity: 3
+  })
+  const clampLamp = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), clampLampMat)
+  addProp(clampLamp, clampDoorZ - 0.14, 0, 2.15)
+
+  let clampReleased = false
+  let clampDoorOpen = 0
 
   const { hatchCover, ladder } = env.parts.mechanical
   let hatchBroken = false
@@ -1060,6 +1490,10 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   unregisters.push(interaction.register(ladder, {
     prompt: 'Climb to the carriage roof',
     onInteract: () => {
+      if (!clampReleased) {
+        interaction.flashPrompt('The drive clamp is still locked — sync both plates at once.')
+        return
+      }
       if (hatchOpen < 0.65) {
         interaction.flashPrompt('The hatch motor failed shut — REWIND it to the open state.')
         return
@@ -1076,9 +1510,8 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   let gustPhase = 0
   let sweptTime = 0
 
-  const roofArc = makeRotor(0x7dd3fc, 0.65)
-  roofArc.scale.set(1.1, 1.1, 1.1)
-  roofArc.position.set(0, CARRIAGE_ROOF_Y + 1.0, (roof.zStart + roof.zEnd) / 2)
+  const roofArc = makeRotor(0x7dd3fc)
+  roofArc.position.set(0, CARRIAGE_ROOF_Y + ROTOR_HUB_Y, (roof.zStart + roof.zEnd) / 2)
   roof.group.add(roofArc)
 
   let roofArcT = 0
@@ -1115,7 +1548,10 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     gustPhase = 0
     sweptTime = 0
     hud.setObjective('Cross the roof toward the Vault — keep moving FORWARD')
-    hud.showToast('Roof traversal — use SLOW to survive the slipstream and arc timing.', 3400)
+    hud.showBriefing?.([
+      'You are outside. Slipstream at line speed will take you off the roof if you stand up in it for long.',
+      'Keep moving forward, stay low when you have to, and watch what comes over the top of the car.'
+    ])
   }
 
   unregisters.push(interaction.register(roof.dropHatch, {
@@ -1128,29 +1564,6 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   // Sequence: unlock Ghost -> Ghost gate -> Slow lattice -> Rewind bridge ->
   // Freeze cage -> steal Core.
   // --------------------------------------------------------------------------
-  const ghostPickup =
-    makeChronoPickup(0x2dd4bf, 0.52)
-  powerPickups.push(ghostPickup)
-  const ghostModule = ghostPickup.group
-  ghostModule.name = 'ghost-module'
-  addProp(ghostModule, spans.vault.minZ + 3.0, 0)
-
-  let ghostTaken = false
-  unregisters.push(interaction.register(ghostModule, {
-    prompt: 'Install Echo Synchronizer',
-    onInteract: () => {
-      if (ghostTaken) return
-      if (!abilityState.REWIND) {
-        interaction.flashPrompt('The Chrono Interface is not fully calibrated.')
-        return
-      }
-      ghostTaken = true
-      ghostPickup.collect()
-      unlockAbility('GHOST', 'ECHO SYNCHRONIZER INSTALLED — TIME GHOST unlocked')
-      hud.setObjective('Breach the Vault — use every Chrono ability you have learned')
-    }
-  }))
-
   const plateMat = new THREE.MeshStandardMaterial({
     color: 0x334155,
     emissive: 0xf59e0b,
@@ -1170,9 +1583,9 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   addProp(ghostGate, ghostGateZ, 0, 1.05)
   let ghostGateOpen = 0
 
-  const vaultLattice = makeRotor(0x38bdf8, 1.0)
+  const vaultLattice = makeRotor(0x38bdf8)
   const vaultLatticeZ = spans.vault.center - 0.4
-  addProp(vaultLattice, vaultLatticeZ, 0, 1.45)
+  addProp(vaultLattice, vaultLatticeZ, 0, ROTOR_HUB_Y)
   let latticeA = 0
   unregisters.push(timeSystem.register(vaultLattice, {
     onUpdate(scaledDelta) {
@@ -1282,10 +1695,6 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const unregisterCage = interaction.register(cage, {
     prompt: 'Breach the Chrono Core cage',
     onInteract: () => {
-      if (!ghostTaken) {
-        interaction.flashPrompt('Complete the Vault synchronisation first.')
-        return
-      }
       if (timeSystem.getMode() !== 'FREEZE') {
         interaction.flashPrompt('The lock ring is spinning — FREEZE it, then breach the cage.')
         return
@@ -1309,6 +1718,9 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       taken = true
       interaction.flashPrompt('Chrono Core secured!')
       hud.setObjective('TEMPORAL CONTAINMENT LOST — the train is destabilising')
+      hud.showBriefing?.([
+        'You have it. Containment is gone and the whole train is going with it — hold on.'
+      ])
     }
   }))
 
@@ -1322,8 +1734,11 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     respawn.setCheckpoint(p, 0)
     camera.snap()
 
-    hud.setObjective('Vault approach — synchronise the final Echo module')
-    hud.showToast('Inside the Vault car — the Chrono Core is ahead.', 3000)
+    hud.setObjective('Breach the Vault — you will need every Chrono ability at once')
+    hud.showBriefing?.([
+      'Vault car. This is the one they built the train around.',
+      'No new gear from here. Everything between you and the Core is something you have already been taught to beat — it just comes at you all at once.'
+    ])
   }
 
   // Decorative side blockers in the Vault force a final weave without blocking
@@ -1362,7 +1777,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     update(delta) {
       outdoorEnv.update(delta)
       env.update(delta)
-      passengerStealth.update(delta)
+      corridorStealth.update(delta)
       elapsed += delta
       // Draw the player's eye toward the Chrono Interface until collected.
       for (const pickup of powerPickups) {
@@ -1391,6 +1806,20 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
       const pp = player.mesh.position
       const mode = timeSystem.getMode()
+      const ghost = timeSystem.getGhost()
+      const topY = playerTopY()
+
+      if (!introShown) {
+        introShown = true
+        hud.showBriefing?.([
+          'Comms check. You are on the 03:14 Chrono Express, and the clock in the vault car is the only reason anyone robs this train.',
+          'Work your way to the front. I will tell you what each car wants from you — figuring out how is your job.'
+        ])
+      }
+
+      // A replaying echo reads as a person to anything that watches for one,
+      // which is what makes it a decoy for the chrono-shielded Cargo guard.
+      corridorStealth.setDistraction(ghost.isPlaying() ? ghost.getPosition() : null)
 
       // Chrono Relay exit gate.
       relayGateOpen +=
@@ -1407,6 +1836,74 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         pp.z < spans.relay.maxZ
       ) {
         pp.z = relayGateZ - 0.48
+      }
+
+      // Relay bus pad. Only an echo can hold this while the player is at the
+      // far end of the car reading the panel, and the panel's flash is only
+      // long enough to read once SLOW has stretched it.
+      const relayPadHeld =
+        ghost.isOccupying(relayPadPos, 0.62) ||
+        (Math.abs(pp.z - relayPadPos.z) < 0.56 && Math.abs(pp.x - relayPadPos.x) < 0.56)
+
+      relayPadMat.emissive.setHex(relayPadHeld ? 0x10b981 : 0xf59e0b)
+      relayPad.position.y = relayPadHeld ? 0.012 : 0.03
+      relayPadPostMat.emissive.setHex(relayPadHeld ? 0x10b981 : 0x2dd4bf)
+      relayPadPostMat.emissiveIntensity = relayPadHeld ? 3.2 : 1.6
+
+      // Standing on the pad shows you nothing at the gate eleven metres away,
+      // which reads as "the pad is broken". Say once, out loud, that it worked
+      // and why you still cannot see the pattern — the constraint, not the fix.
+      if (relayPadHeld && !relayPadEverHeld) {
+        relayPadEverHeld = true
+        hud.showBriefing?.([
+          'Bus energised — that pad is doing its job.',
+          'The pattern is live on the panel over the gate now. You will not read it from back there, and it dies the moment the pad is clear.'
+        ])
+      }
+
+      // The panel is a low-power display: it is only legible from close up.
+      // Without this the player could weight the pad themselves and squint at
+      // it from eleven metres away, and the Ghost would be optional again.
+      const atRelayPanel = Math.abs(pp.z - relayGateZ) < 3.6
+      for (const light of relayTargetLights) {
+        light.visible = relayPadHeld && relayFlashOn && atRelayPanel
+      }
+
+      // Mechanical drive clamp — both sync plates weighted in the same frame.
+      if (!clampReleased) {
+        const onA =
+          ghost.isOccupying(syncPlateAPos, 0.6) ||
+          (Math.abs(pp.z - syncPlateAPos.z) < 0.54 && Math.abs(pp.x - syncPlateAPos.x) < 0.54)
+        const onB =
+          ghost.isOccupying(syncPlateBPos, 0.6) ||
+          (Math.abs(pp.z - syncPlateBPos.z) < 0.54 && Math.abs(pp.x - syncPlateBPos.x) < 0.54)
+
+        syncPlateAMat.emissive.setHex(onA ? 0x10b981 : 0xf59e0b)
+        syncPlateBMat.emissive.setHex(onB ? 0x10b981 : 0xf59e0b)
+        syncPlateA.position.y = onA ? 0.012 : 0.03
+        syncPlateB.position.y = onB ? 0.012 : 0.03
+
+        if (onA && onB) {
+          clampReleased = true
+          clampLampMat.color.setHex(0x10b981)
+          clampLampMat.emissive.setHex(0x10b981)
+          hud.showToast('DRIVE CLAMP RELEASED — the forward bulkhead is open', 2600)
+        }
+      }
+
+      clampDoorOpen +=
+        ((clampReleased ? 1 : 0) - clampDoorOpen) * Math.min(1, delta * 5)
+      clampDoor.position.y = 1.05 + clampDoorOpen * 2.2
+
+      // Interior only: the roof span starts just past the clamp door, and a
+      // stray z-clamp up there would shove the player backwards off the train.
+      if (
+        section === 'interior' &&
+        !clampReleased &&
+        pp.z > clampDoorZ - 0.48 &&
+        pp.z < spans.mechanical.maxZ
+      ) {
+        pp.z = clampDoorZ - 0.48
       }
 
       // Core idle animation and shader reaction.
@@ -1441,31 +1938,49 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           'passenger',
           pp.z,
           spans.passenger.minZ + 2,
-          'Passenger car — stay out of sight. Move between luggage and service carts when the guard turns away.'
+          [
+            'You’re aboard. Six cars between you and the Chrono Core, and the Express does not stop for anyone.',
+            'Every bulkhead on this train opens from the rear only. Once you’re through one, forward is the only direction left.',
+            'Passenger car. A ceiling camera and a conductor on the walk — and you have no chrono gear yet. Use the cabin for cover and pick your moment.'
+          ]
         )
         hint(
           'security',
           pp.z,
           spans.security.minZ,
-          'Security car — find the glowing BLUE CHRONO INTERFACE and interact with it before continuing.'        
+          [
+            'Security car. There is a maintenance interface in here wired straight into the train’s Chrono Core.',
+            'Take it and you can start bending the clock. Past that point the systems run faster than anyone can react to.'
+          ]
         )
         hint(
           'relay',
           pp.z,
           spans.relay.minZ,
-          'Chrono Relay — match the three terminal colours to the pattern above the locked bulkhead.'
+          [
+            'Chrono Relay. The forward bulkhead is locked behind a routing pattern.',
+            'The pattern is posted above the gate, but that display stays dark unless the bus pad is carrying weight — and the pad sits a long way back from the gate.',
+            'There is one more module in here. You will want it before you try.'
+          ]
         )
         hint(
           'cargo',
           pp.z,
           spans.cargo.minZ,
-          'Cargo car — install the next phase module, then FREEZE moving loads when the aisle is clear.'
+          [
+            'Cargo. Live loads swinging on the move, and a hard security line across the forward door.',
+            'Fair warning: the guard in this car carries a chrono-damped badge. Whatever you do to the clock will not touch him. Plan around that.'
+          ]
         )
         hint(
           'mechanical',
           pp.z,
           spans.mechanical.minZ,
-          'Mechanical car — install Rollback, then REWIND failing machinery to its earlier state.'
+          [
+            'Mechanical. This car is coming apart — things fail the moment you put weight on them.',
+            'The module in here can put them back the way they were.',
+            'The drive clamp is the way up to the roof, and it needs both release plates weighted in the same instant. You can only ever stand on one of them.'
+          ]
         )
 
         for (const z of corridorCheckpoints) {
@@ -1492,14 +2007,21 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           )
         }
 
-        // Security obstacle 2: rotating energy bar. Normal speed is punishing;
-        // Slow creates a broad safe timing window.
+        // Security obstacle 2: rotating energy bar. No longer "any power works" —
+        // an arm either overlaps you or it doesn't, so Slow is what makes the
+        // gap readable and Freeze only helps if you stop it on a gap.
         if (
           Math.abs(pp.z - secRotorZ) < 0.55 &&
-          mode === 'NORMAL' &&
-          abilityState.SLOW
+          abilityState.SLOW &&
+          rotorBlocks({
+            angle: secRotorA,
+            radius: ROTOR_RADIUS,
+            centreY: ROTOR_HUB_Y,
+            playerX: pp.x,
+            playerTopY: topY
+          })
         ) {
-          failSoft('The security rotor caught you — slow the mechanism.')
+          failSoft('The security rotor caught you — SLOW it and cross on a gap.')
         }
 
         // Security obstacle 3: vertical shutter. Slow extends the open phase.
@@ -1529,6 +2051,16 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         }
 
         // Mechanical obstacle 1: collapsing bridge. Rewind restores snapshots.
+        if (
+          bridgeY < 0.05 &&
+          readyToRearm('bridge', pp.z < bridgeZ - 3.4, delta)
+        ) {
+          bridgeY = 0.06
+          bridgeTriggered = false
+          bridgeCollapsing = false
+          bridgeFuse = 0.8
+          mechBridge.position.y = bridgeY
+        }
         if (!bridgeTriggered && pp.z > bridgeZ - 3.0) bridgeTriggered = true
         if (
           Math.abs(pp.z - bridgeZ) < 1.05 &&
@@ -1540,20 +2072,44 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
         // Mechanical obstacle 2: slam gate. Approaching it creates a "before"
         // state in the snapshot history for Rewind to restore.
+        if (
+          slamGateY < 2.95 &&
+          readyToRearm('slam', pp.z < slamGateZ - 3.0, delta)
+        ) {
+          slamGateY = 3.0
+          slamTriggered = false
+          slamGate.position.y = slamGateY
+        }
         if (!slamTriggered && pp.z > slamGateZ - 2.6) slamTriggered = true
         if (Math.abs(pp.z - slamGateZ) < 0.35 && slamGateY < 1.75) {
           failSoft('The bulkhead slammed shut — REWIND the gate.')
         }
 
-        // Extra Mechanical timing obstacle.
+        // Extra Mechanical timing obstacle. Crouching genuinely slips under a
+        // high arm here, which is a second answer that costs no energy at all.
         if (
           Math.abs(pp.z - mechBladeZ) < 0.62 &&
-          mode === 'NORMAL'
+          rotorBlocks({
+            angle: mechBladeA,
+            radius: ROTOR_RADIUS,
+            centreY: ROTOR_HUB_Y,
+            playerX: pp.x,
+            playerTopY: topY
+          })
         ) {
           failSoft('The turbine blade clipped you!')
         }
 
         // Mechanical obstacle 3: the hatch motor fails shut near the ladder.
+        // This one is the car's only exit, so its failsafe matters most.
+        if (
+          hatchOpen < 0.99 &&
+          readyToRearm('hatch', pp.z < spans.mechanical.maxZ - 5.0, delta)
+        ) {
+          hatchOpen = 1
+          hatchBroken = false
+          hatchCover.position.x = -1.15
+        }
         if (!hatchBroken && pp.z > spans.mechanical.maxZ - 4.0) hatchBroken = true
       } else if (section === 'roof') {
         // Slipstream. Slow affects the gust cycle AND the other registered roof
@@ -1583,7 +2139,13 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         const roofArcZ = roofArc.position.z
         if (
           Math.abs(pp.z - roofArcZ) < 0.58 &&
-          mode === 'NORMAL'
+          rotorBlocks({
+            angle: roofArcT * 4.8,
+            radius: ROTOR_RADIUS,
+            centreY: ROTOR_HUB_Y,
+            playerX: pp.x,
+            playerTopY: topY
+          })
         ) {
           failSoft('The roof arc caught you — SLOW the timing.')
         }
@@ -1596,7 +2158,6 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           failSoft('Duck under the roof signal frame!')
         }
       } else if (section === 'vault') {
-        const ghost = timeSystem.getGhost()
         const ghostOnPlate = ghost.isOccupying(vaultPlatePos, 0.64)
         const playerOnPlate =
           Math.abs(pp.z - vaultPlatePos.z) < 0.58 &&
@@ -1616,11 +2177,27 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
         if (
           Math.abs(pp.z - vaultLatticeZ) < 0.62 &&
-          mode === 'NORMAL'
+          rotorBlocks({
+            angle: latticeA,
+            radius: ROTOR_RADIUS,
+            centreY: ROTOR_HUB_Y,
+            playerX: pp.x,
+            playerTopY: topY
+          })
         ) {
           failSoft('The temporal lattice is too fast — use SLOW.')
         }
 
+        if (
+          vaultBridgeY < 0.05 &&
+          readyToRearm('vaultBridge', pp.z < vaultBridgeZ - 2.9, delta)
+        ) {
+          vaultBridgeY = 0.06
+          vaultBridgeTriggered = false
+          vaultBridgeCollapse = false
+          vaultBridgeFuse = 0.65
+          vaultBridge.position.y = vaultBridgeY
+        }
         if (!vaultBridgeTriggered && pp.z > vaultBridgeZ - 2.5) vaultBridgeTriggered = true
         if (
           Math.abs(pp.z - vaultBridgeZ) < 0.95 &&
@@ -1634,8 +2211,9 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
     dispose() {
       unregisters.forEach((fn) => fn())
+      timeSystem?.setStrainEnabled?.(false)
       outdoorEnv.dispose()
-      passengerStealth.dispose()
+      corridorStealth.dispose()
       scene.remove(outdoorEnv.group, root)
       disposeObject(root)
     }
