@@ -81,6 +81,142 @@ export function createAxisAlignedCorridor({
   return { group, colliders }
 }
 
+
+// Builds a fully enclosed rectangular room with optional centered openings on
+// any wall. This is deliberately separate from createAxisAlignedCorridor():
+// overlapping straight corridor shells are fine for straight runs, but their
+// side walls cross each other at 90-degree turns. Junction rooms give those
+// turns explicit perimeter walls and predictable collider openings.
+//
+// openings keys are minX, maxX, minZ, maxZ. Each value may be true (entire
+// side open) or { width, height, offset }. width is measured along the wall,
+// height starts at floor level, and offset shifts the opening along the wall.
+export function createAxisAlignedRoom({
+  center,
+  sizeX = 4.8,
+  sizeZ = 4.8,
+  height = 5.0,
+  wallThickness = 0.24,
+  openings = {},
+  floorMaterial,
+  wallMaterial,
+  ceilingMaterial
+} = {}) {
+  if (!center) throw new Error('passage-components: room needs center')
+  if (sizeX <= 0 || sizeZ <= 0 || height <= 0) {
+    throw new Error('passage-components: room dimensions must be positive')
+  }
+
+  const group = new THREE.Group()
+  group.name = 'room-shell'
+  const colliders = []
+  const floorY = center.y ?? 0
+
+  const floorMat = floorMaterial ?? new THREE.MeshStandardMaterial({ color: 0x5d5961, roughness: 0.82 })
+  const wallMat = wallMaterial ?? new THREE.MeshStandardMaterial({ color: 0x6f665f, roughness: 0.9 })
+  const roofMat = ceilingMaterial ?? wallMat
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(sizeX, sizeZ), floorMat)
+  floor.name = 'room-floor'
+  floor.rotation.x = -Math.PI / 2
+  floor.position.set(center.x, floorY + 0.01, center.z)
+  floor.receiveShadow = true
+  group.add(floor)
+
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(sizeX, 0.2, sizeZ), roofMat)
+  ceiling.name = 'room-ceiling'
+  ceiling.position.set(center.x, floorY + height, center.z)
+  ceiling.receiveShadow = true
+  group.add(ceiling)
+
+  function openingFor(key, sideLength) {
+    const raw = openings[key]
+    if (!raw) return null
+    if (raw === true) return { width: sideLength, height, offset: 0 }
+
+    const width = THREE.MathUtils.clamp(raw.width ?? sideLength, 0, sideLength)
+    const openHeight = THREE.MathUtils.clamp(raw.height ?? height, 0, height)
+    const maxOffset = Math.max(0, (sideLength - width) / 2)
+    const offset = THREE.MathUtils.clamp(raw.offset ?? 0, -maxOffset, maxOffset)
+    return { width, height: openHeight, offset }
+  }
+
+  function addSegment(key, alongMin, alongMax) {
+    const segmentLength = alongMax - alongMin
+    if (segmentLength <= 0.01) return
+
+    let mesh
+    let collider
+    if (key === 'minX' || key === 'maxX') {
+      const x = center.x + (key === 'minX' ? -sizeX / 2 : sizeX / 2)
+      const z = center.z + (alongMin + alongMax) / 2
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, height, segmentLength), wallMat)
+      mesh.position.set(x, floorY + height / 2, z)
+      collider = {
+        minX: x - wallThickness / 2 - 0.05,
+        maxX: x + wallThickness / 2 + 0.05,
+        minZ: center.z + alongMin,
+        maxZ: center.z + alongMax
+      }
+    } else {
+      const z = center.z + (key === 'minZ' ? -sizeZ / 2 : sizeZ / 2)
+      const x = center.x + (alongMin + alongMax) / 2
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(segmentLength, height, wallThickness), wallMat)
+      mesh.position.set(x, floorY + height / 2, z)
+      collider = {
+        minX: center.x + alongMin,
+        maxX: center.x + alongMax,
+        minZ: z - wallThickness / 2 - 0.05,
+        maxZ: z + wallThickness / 2 + 0.05
+      }
+    }
+
+    mesh.name = `room-wall-${key}`
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    group.add(mesh)
+    colliders.push(collider)
+  }
+
+  function addLintel(key, opening, sideLength) {
+    if (!opening || opening.height >= height - 0.01 || opening.width <= 0.01) return
+    const lintelHeight = height - opening.height
+    let mesh
+    if (key === 'minX' || key === 'maxX') {
+      const x = center.x + (key === 'minX' ? -sizeX / 2 : sizeX / 2)
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, lintelHeight, opening.width), wallMat)
+      mesh.position.set(x, floorY + opening.height + lintelHeight / 2, center.z + opening.offset)
+    } else {
+      const z = center.z + (key === 'minZ' ? -sizeZ / 2 : sizeZ / 2)
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(opening.width, lintelHeight, wallThickness), wallMat)
+      mesh.position.set(center.x + opening.offset, floorY + opening.height + lintelHeight / 2, z)
+    }
+    mesh.name = `room-lintel-${key}`
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    group.add(mesh)
+    // No X/Z collider for a lintel: the lightweight character collision is
+    // intentionally 2D and would otherwise treat overhead geometry as a wall.
+  }
+
+  for (const key of ['minX', 'maxX', 'minZ', 'maxZ']) {
+    const sideLength = (key === 'minX' || key === 'maxX') ? sizeZ : sizeX
+    const opening = openingFor(key, sideLength)
+    if (!opening) {
+      addSegment(key, -sideLength / 2, sideLength / 2)
+      continue
+    }
+
+    const openMin = opening.offset - opening.width / 2
+    const openMax = opening.offset + opening.width / 2
+    addSegment(key, -sideLength / 2, openMin)
+    addSegment(key, openMax, sideLength / 2)
+    addLintel(key, opening, sideLength)
+  }
+
+  return { group, colliders }
+}
+
 export function createPuzzleDoor({
   position,
   width = 3.4,
@@ -259,5 +395,135 @@ export function createTimedLaserController(laserGrid, {
   return {
     update,
     isActive: () => active
+  }
+}
+
+// A reusable floor-level laser obstacle. Rows sit perpendicular to the travel
+// direction with dark landing pads between them, so the intended interaction is
+// jump -> land -> read the next row rather than simply timing one moving beam.
+export function createLaserFloor({
+  start,
+  end,
+  width = 4.2,
+  rowCount = 5,
+  floorY,
+  hitHalfDepth = 0.2,
+  clearanceHeight = 0.44,
+  onHit
+} = {}) {
+  if (!start || !end) throw new Error('passage-components: laser floor needs start/end')
+
+  const group = new THREE.Group()
+  group.name = 'laser-floor-course'
+
+  const y = Number.isFinite(floorY) ? floorY : (start.y ?? 0)
+  const dx = end.x - start.x
+  const dz = end.z - start.z
+  const alongX = Math.abs(dx) >= Math.abs(dz)
+  const length = alongX ? Math.abs(dx) : Math.abs(dz)
+  const direction = alongX ? Math.sign(dx || 1) : Math.sign(dz || 1)
+
+  const laserMat = createSecurityLaserMaterial({ beamCount: 1 })
+  const emitterMat = new THREE.MeshStandardMaterial({ color: 0x151e27, roughness: 0.3, metalness: 0.86 })
+  const padMat = new THREE.MeshStandardMaterial({ color: 0x20262c, roughness: 0.72, metalness: 0.42 })
+
+  const rows = []
+  const margin = Math.min(1.05, length * 0.12)
+  const usable = Math.max(0.5, length - margin * 2)
+  const spacing = rowCount > 1 ? usable / (rowCount - 1) : 0
+
+  for (let i = 0; i < rowCount; i++) {
+    const along = margin + i * spacing
+    const x = alongX ? start.x + direction * along : start.x
+    const z = alongX ? start.z : start.z + direction * along
+
+    // A double beam makes every hazard row unmistakable while keeping the
+    // collision band narrow enough for forgiving beginner jumps.
+    for (const offset of [-0.07, 0.07]) {
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.024, 0.024, width - 0.34, 14),
+        laserMat
+      )
+      if (alongX) {
+        beam.rotation.x = Math.PI / 2
+        beam.position.set(x + offset, y + 0.09, z)
+      } else {
+        beam.rotation.z = Math.PI / 2
+        beam.position.set(x, y + 0.09, z + offset)
+      }
+      group.add(beam)
+    }
+
+    for (const side of [-1, 1]) {
+      const emitter = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), emitterMat)
+      if (alongX) emitter.position.set(x, y + 0.09, z + side * (width / 2 - 0.08))
+      else emitter.position.set(x + side * (width / 2 - 0.08), y + 0.09, z)
+      group.add(emitter)
+    }
+
+    rows.push({ x, z })
+  }
+
+  // Slightly raised dark pads make the safe gaps legible without becoming
+  // physical steps that would interfere with the player's ground sampler.
+  const padCount = rowCount + 1
+  const segment = length / padCount
+  for (let i = 0; i < padCount; i++) {
+    const along = segment * (i + 0.5)
+    const x = alongX ? start.x + direction * along : start.x
+    const z = alongX ? start.z : start.z + direction * along
+    const geometry = alongX
+      ? new THREE.BoxGeometry(Math.max(0.55, segment * 0.62), 0.035, width - 0.55)
+      : new THREE.BoxGeometry(width - 0.55, 0.035, Math.max(0.55, segment * 0.62))
+    const pad = new THREE.Mesh(geometry, padMat)
+    pad.position.set(x, y + 0.025, z)
+    pad.receiveShadow = true
+    group.add(pad)
+  }
+
+  let active = true
+  let hitCooldown = 0
+
+  function update(delta, playerPosition) {
+    hitCooldown = Math.max(0, hitCooldown - delta)
+    if (laserMat.customUniforms) {
+      laserMat.customUniforms.uTime.value += delta
+      laserMat.customUniforms.uState.value = active ? 0 : 1
+    }
+    if (!active || !playerPosition || typeof onHit !== 'function' || hitCooldown > 0) return
+
+    const lateral = alongX ? Math.abs(playerPosition.z - start.z) : Math.abs(playerPosition.x - start.x)
+    if (lateral > width / 2) return
+    if (playerPosition.y > y + clearanceHeight) return
+
+    const touching = rows.some((row) => (
+      alongX
+        ? Math.abs(playerPosition.x - row.x) <= hitHalfDepth
+        : Math.abs(playerPosition.z - row.z) <= hitHalfDepth
+    ))
+
+    if (touching) {
+      hitCooldown = 0.9
+      onHit()
+    }
+  }
+
+  function setActive(value) {
+    active = Boolean(value)
+  }
+
+  function dispose() {
+    laserMat.dispose()
+    emitterMat.dispose()
+    padMat.dispose()
+  }
+
+  return {
+    group,
+    update,
+    setActive,
+    isActive: () => active,
+    dispose,
+    rows
   }
 }

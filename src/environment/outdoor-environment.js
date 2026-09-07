@@ -29,10 +29,10 @@ const CORRIDOR_CLEAR_X = 24.0
 // the terrain must stay underneath the entire enclosed route. The final train
 // platform at positive Z intentionally remains outside this exclusion so it can
 // keep the level's only exterior-facing environment.
-const WEST_WING_CLEAR_MIN_X = -102.0
-const WEST_WING_CLEAR_MAX_X = 8.0
-const WEST_WING_CLEAR_MIN_Z = -53.0
-const WEST_WING_CLEAR_MAX_Z = -16.0
+const WEST_WING_CLEAR_MIN_X = -168.0
+const WEST_WING_CLEAR_MAX_X = 10.0
+const WEST_WING_CLEAR_MIN_Z = -58.0
+const WEST_WING_CLEAR_MAX_Z = -14.0
 const WEST_WING_TERRAIN_Y = -10.0
 
 function isInsideWestWingClearance(x, z) {

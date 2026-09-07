@@ -15,24 +15,28 @@ import {
   createTimedLaserController
 } from './passage-components.js'
 
+const PASSAGE_X_SHIFT = -66
+const worldX = (x) => x + PASSAGE_X_SHIFT
+
 export const GUARD_PASSAGE_FLOOR_Y = -4
-export const GUARD_PASSAGE_ENTRY = new THREE.Vector3(-58.25, GUARD_PASSAGE_FLOOR_Y, -38.3)
+export const GUARD_PASSAGE_ENTRY = new THREE.Vector3(worldX(-58.25), GUARD_PASSAGE_FLOOR_Y, -38.3)
 
 export const GUARD_PASSAGE_BOUNDS = {
-  minX: -60.2,
-  maxX: -13.8,
+  minX: worldX(-60.2),
+  maxX: worldX(-13.8),
   minZ: -42.15,
   maxZ: -34.45
 }
 
 const CORRIDOR_Z = -38.3
 const ROOM_HEIGHT = 5.0
-const ENTRY_X = -60
-const WIDEN_X = -56
-const EXIT_DOOR_X = -17.8
-const STAGE3_WALL_X = -14.2
+const ENTRY_X = worldX(-60)
+const WIDEN_X = worldX(-56)
+const EXIT_DOOR_X = worldX(-17.8)
+const STAGE3_WALL_X = worldX(-14.2)
+export const GUARD_PASSAGE_EXIT = new THREE.Vector3(STAGE3_WALL_X, GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z)
 const MAIN_WIDTH = 7.2
-const ENTRY_WIDTH = 3.3
+const ENTRY_WIDTH = 3.4
 const EXIT_BAY_WIDTH = 5.4
 
 function addBox(group, colliders, {
@@ -72,10 +76,10 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   const target = [1, 3, 0, 2]
   const unregisters = []
   const platePositions = [
-    new THREE.Vector3(-23.4, floorY + 0.055, CORRIDOR_Z - 1.55),
-    new THREE.Vector3(-20.7, floorY + 0.055, CORRIDOR_Z - 1.55),
-    new THREE.Vector3(-23.4, floorY + 0.055, CORRIDOR_Z + 1.55),
-    new THREE.Vector3(-20.7, floorY + 0.055, CORRIDOR_Z + 1.55)
+    new THREE.Vector3(worldX(-23.4), floorY + 0.055, CORRIDOR_Z - 1.55),
+    new THREE.Vector3(worldX(-20.7), floorY + 0.055, CORRIDOR_Z - 1.55),
+    new THREE.Vector3(worldX(-23.4), floorY + 0.055, CORRIDOR_Z + 1.55),
+    new THREE.Vector3(worldX(-20.7), floorY + 0.055, CORRIDOR_Z + 1.55)
   ]
 
   const baseColors = [0x38bdf8, 0xf59e0b, 0xc084fc, 0x34d399]
@@ -122,7 +126,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   // puzzle rather than another dial-code puzzle.
   const panel = new THREE.Group()
   panel.name = 'routing-sequence-relay'
-  panel.position.set(-22.05, floorY + 1.55, CORRIDOR_Z + MAIN_WIDTH / 2 - 0.13)
+  panel.position.set(worldX(-22.05), floorY + 1.55, CORRIDOR_Z + MAIN_WIDTH / 2 - 0.13)
   panel.rotation.y = Math.PI
   group.add(panel)
 
@@ -265,7 +269,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   }
 }
 
-export function createGuardPassage({ scene, interaction, hud, player, respawn, camera } = {}) {
+export function createGuardPassage({ scene, interaction, hud, player, respawn, camera, connectedToPassage3 = false } = {}) {
   const group = new THREE.Group()
   group.name = 'passage-guards'
   const colliders = []
@@ -328,7 +332,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     emissiveIntensity: 3,
     roughness: 0.18
   })
-  for (const x of [-57.5, -52, -46.5, -41, -35.5, -30, -24.5, -19.5]) {
+  for (const x of [-57.5, -52, -46.5, -41, -35.5, -30, -24.5, -19.5].map(worldX)) {
     const bulb = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.95, 10), bulbMat)
     bulb.rotation.z = Math.PI / 2
     bulb.position.set(x, GUARD_PASSAGE_FLOOR_Y + 4.35, CORRIDOR_Z)
@@ -343,13 +347,13 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
   // block line of sight and teach that physical cover matters.
   addBox(group, colliders, {
     size: new THREE.Vector3(1.45, 1.55, 0.9),
-    position: new THREE.Vector3(-53.0, GUARD_PASSAGE_FLOOR_Y + 0.775, CORRIDOR_Z - 2.35),
+    position: new THREE.Vector3(worldX(-53.0), GUARD_PASSAGE_FLOOR_Y + 0.775, CORRIDOR_Z - 2.35),
     material: ironMat,
     name: 'guard-passage-cover-a'
   })
   addBox(group, colliders, {
     size: new THREE.Vector3(1.25, 1.25, 0.85),
-    position: new THREE.Vector3(-48.2, GUARD_PASSAGE_FLOOR_Y + 0.625, CORRIDOR_Z + 2.25),
+    position: new THREE.Vector3(worldX(-48.2), GUARD_PASSAGE_FLOOR_Y + 0.625, CORRIDOR_Z + 2.25),
     material: woodMat,
     name: 'guard-passage-cover-b'
   })
@@ -358,7 +362,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
   // mechanically — the player can throw anywhere — but gives first-time players
   // a legible place to lure the second guard toward.
   const trolley = new THREE.Group()
-  trolley.position.set(-40.8, GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z + 2.55)
+  trolley.position.set(worldX(-40.8), GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z + 2.55)
   const trolleyDeck = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 0.72), ironMat)
   trolleyDeck.position.y = 0.35
   trolley.add(trolleyDeck)
@@ -373,13 +377,13 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
   // before the camera and generous safe window on the timed grid.
   addBox(group, colliders, {
     size: new THREE.Vector3(1.2, 1.35, 0.82),
-    position: new THREE.Vector3(-35.0, GUARD_PASSAGE_FLOOR_Y + 0.675, CORRIDOR_Z - 2.45),
+    position: new THREE.Vector3(worldX(-35.0), GUARD_PASSAGE_FLOOR_Y + 0.675, CORRIDOR_Z - 2.45),
     material: ironMat,
     name: 'guard-passage-camera-cover'
   })
 
   const movingLaser = createSweepingLaser({
-    position: new THREE.Vector3(-28.4, GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z),
+    position: new THREE.Vector3(worldX(-28.4), GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z),
     beamLength: 6.15,
     beamHeight: 0.58,
     travelAxis: 'x',
@@ -432,13 +436,18 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
   group.add(exitBay.group)
   colliders.push(...exitBay.colliders)
 
-  const stage3Bulkhead = addBox(group, colliders, {
-    size: new THREE.Vector3(0.3, ROOM_HEIGHT, EXIT_BAY_WIDTH),
-    position: new THREE.Vector3(STAGE3_WALL_X, GUARD_PASSAGE_FLOOR_Y + ROOM_HEIGHT / 2, CORRIDOR_Z),
-    material: ironMat,
-    name: 'passage-3-stage-bulkhead'
-  })
-  stage3Bulkhead.userData.stageBoundary = true
+  // Stage 2 originally ended at a sealed bulkhead. Once Passageway 3 is
+  // mounted, the bay stays open and Passageway 3 supplies the smaller crouch
+  // vent frame that closes this wide opening down to a maintenance duct.
+  if (!connectedToPassage3) {
+    const stage3Bulkhead = addBox(group, colliders, {
+      size: new THREE.Vector3(0.3, ROOM_HEIGHT, EXIT_BAY_WIDTH),
+      position: new THREE.Vector3(STAGE3_WALL_X, GUARD_PASSAGE_FLOOR_Y + ROOM_HEIGHT / 2, CORRIDOR_Z),
+      material: ironMat,
+      name: 'passage-3-stage-bulkhead'
+    })
+    stage3Bulkhead.userData.stageBoundary = true
+  }
 
   const signalPuzzle = createSignalStepPuzzle({
     group,
@@ -452,52 +461,54 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
   const hints = createTutorialHintSystem({ player, hud })
   hints.addZone({
     id: 'guards-intro',
-    center: { x: -57.7, y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
+    center: { x: worldX(-57.7), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 3.8, y: 3.2, z: 3.0 },
     text: 'GUARDS — yellow vision cones show where they can see. Watch patrols before committing to a route.',
     duration: 3400
   })
   hints.addZone({
     id: 'crouch-intro',
-    center: { x: -53.4, y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
+    center: { x: worldX(-53.4), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 4.0, y: 3.2, z: 6.4 },
     text: () => `CROUCH — hold ${bindingLabel(settings.getBinding('duck'))}. You move slower, but suspicion rises much more slowly while a guard sees you.`,
     duration: 4100
   })
   hints.addZone({
     id: 'distract-intro',
-    center: { x: -45.5, y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
+    center: { x: worldX(-45.5), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 5.0, y: 3.2, z: 6.4 },
     text: () => `DISTRACT — press ${bindingLabel(settings.getBinding('distract'))} to throw a metal distractor where you are facing. Nearby guards investigate the impact, then resume patrol.`,
     duration: 4700
   })
   hints.addZone({
     id: 'combine-camera-laser',
-    center: { x: -35.2, y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
+    center: { x: worldX(-35.2), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 4.8, y: 3.2, z: 6.5 },
     text: 'COMBINE MECHANICS — use the cabinet as camera cover, read the laser cycle, then cross during the safe window.',
     duration: 3900
   })
   hints.addZone({
     id: 'moving-laser-recall',
-    center: { x: -29.4, y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
+    center: { x: worldX(-29.4), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 4.0, y: 3.2, z: 6.5 },
     text: 'MOVING LASER — same principle as Passageway 1, but now after stealth pressure. Wait for a clean jump rather than rushing.',
     duration: 3500
   })
   hints.addZone({
     id: 'signal-step-puzzle',
-    center: { x: -24.2, y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
+    center: { x: worldX(-24.2), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 5.0, y: 3.2, z: 6.5 },
     text: 'ROUTING FLOOR — watch the wall relay flash four symbols, then step on the matching floor plates in that order. Interact with the relay to replay it.',
     duration: 4700
   })
   hints.addZone({
     id: 'passage-2-complete',
-    center: { x: -15.9, y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
+    center: { x: worldX(-15.9), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 2.8, y: 3.2, z: 4.8 },
     condition: () => signalPuzzle.isSolved(),
-    text: 'Passageway 2 complete. The bulkhead ahead is the Stage 3 connection point.',
+    text: connectedToPassage3
+      ? 'Passageway 2 complete. The maintenance vent ahead is the only route forward — crouch to fit through.'
+      : 'Passageway 2 complete. The bulkhead ahead is the Stage 3 connection point.',
     duration: 3600
   })
 
@@ -534,8 +545,8 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     // dedicated crouch/sneak lesson and is intentionally easy to read.
     stealth.addGuard({
       waypoints: [
-        new THREE.Vector3(-50.6, GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z - 2.35),
-        new THREE.Vector3(-50.6, GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z + 2.25)
+        new THREE.Vector3(worldX(-50.6), GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z - 2.35),
+        new THREE.Vector3(worldX(-50.6), GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z + 2.25)
       ],
       speed: 1.08,
       waitTime: 2.7,
@@ -546,8 +557,8 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     // baggage trolley pulls this guard north, opening the south-side route.
     stealth.addGuard({
       waypoints: [
-        new THREE.Vector3(-44.0, GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z),
-        new THREE.Vector3(-38.4, GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z)
+        new THREE.Vector3(worldX(-44.0), GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z),
+        new THREE.Vector3(worldX(-38.4), GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z)
       ],
       speed: 1.22,
       waitTime: 2.25,
@@ -555,7 +566,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     })
 
     stealth.addCamera({
-      position: new THREE.Vector3(-34.7, GUARD_PASSAGE_FLOOR_Y + 4.45, CORRIDOR_Z + MAIN_WIDTH / 2 - 0.12),
+      position: new THREE.Vector3(worldX(-34.7), GUARD_PASSAGE_FLOOR_Y + 4.45, CORRIDOR_Z + MAIN_WIDTH / 2 - 0.12),
       baseAngle: Math.PI,
       sweepRange: Math.PI / 4.7,
       sweepSpeed: 0.58,
@@ -563,7 +574,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     })
 
     const timedGrid = stealth.addLaserGrid({
-      position: new THREE.Vector3(-32.15, GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z),
+      position: new THREE.Vector3(worldX(-32.15), GUARD_PASSAGE_FLOOR_Y, CORRIDOR_Z),
       width: 6.25,
       height: 2.2,
       beamCount: 4,

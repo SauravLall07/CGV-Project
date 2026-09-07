@@ -5,12 +5,15 @@ import {
   bounds,
   GATE_Z,
   APPROACH_GATE_X,
+  APPROACH_START_X,
+  APPROACH_CENTER_Z,
   JUNCTION_CHECKPOINT
 } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createTutorialPassage } from '../environment/passageways/passage-tutorial.js'
 import { createGuardPassage } from '../environment/passageways/passage-guards.js'
+import { createBridgePassage } from '../environment/passageways/passage-bridge.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { disposeObject } from '../core/dispose.js'
 
@@ -40,17 +43,30 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     hud,
     player,
     respawn,
+    camera,
+    connectedToPassage3: true
+  })
+  const bridgePassage = createBridgePassage({
+    scene,
+    interaction,
+    hud,
+    player,
+    respawn,
     camera
   })
 
-  station.add(tutorialPassage.group, guardPassage.group)
-  wallColliders.push(...tutorialPassage.colliders, ...guardPassage.colliders)
+  station.add(tutorialPassage.group, guardPassage.group, bridgePassage.group)
+  wallColliders.push(
+    ...tutorialPassage.colliders,
+    ...guardPassage.colliders,
+    ...bridgePassage.colliders
+  )
 
   const levelBounds = {
-    minX: Math.min(bounds.minX, tutorialPassage.bounds.minX, guardPassage.bounds.minX),
-    maxX: Math.max(bounds.maxX, tutorialPassage.bounds.maxX, guardPassage.bounds.maxX),
-    minZ: Math.min(bounds.minZ, tutorialPassage.bounds.minZ, guardPassage.bounds.minZ),
-    maxZ: Math.max(bounds.maxZ, tutorialPassage.bounds.maxZ, guardPassage.bounds.maxZ)
+    minX: Math.min(bounds.minX, tutorialPassage.bounds.minX, guardPassage.bounds.minX, bridgePassage.bounds.minX),
+    maxX: Math.max(bounds.maxX, tutorialPassage.bounds.maxX, guardPassage.bounds.maxX, bridgePassage.bounds.maxX),
+    minZ: Math.min(bounds.minZ, tutorialPassage.bounds.minZ, guardPassage.bounds.minZ, bridgePassage.bounds.minZ),
+    maxZ: Math.max(bounds.maxZ, tutorialPassage.bounds.maxZ, guardPassage.bounds.maxZ, bridgePassage.bounds.maxZ)
   }
 
   const { train } = createTrain()
@@ -84,6 +100,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
 
   tutorialPassage.setupStealth(stealth)
   guardPassage.setupStealth(stealth)
+  bridgePassage.setupStealth(stealth)
 
   // -------------------------------------------------------------
   // New west-side infiltration wing — four extra stealth zones before the
@@ -409,7 +426,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     'Security hall — stay behind cover and avoid the patrol',
     'Final approach — reach the station junction'
   ]
-  let approachZoneIndex = 0
+  let approachZoneIndex = -1
 
   const zoneNames = [
     'Slip past the guard in the approach',
@@ -435,8 +452,14 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
   const passage2CheckpointPos = guardPassage.entryCheckpoint.clone()
   let passage2CheckpointActive = false
 
+  // Passageway 3 gets its own checkpoint only after the player successfully
+  // clears the crouch vent. That makes the vent a real transition without
+  // respawning the player inside its low ceiling.
+  const passage3CheckpointPos = bridgePassage.entryCheckpoint.clone()
+  let passage3CheckpointActive = false
+
   return {
-    objective: 'Learn the security systems, infiltrate the lower guard passage, and reach Passageway 3 access',
+    objective: 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express',
     checkpoint: {
       position: tutorialPassage.spawn.clone(),
       yaw: Math.PI / 2 // face east through Passageway 1
@@ -444,25 +467,32 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     bounds: levelBounds,
     obstacles: wallColliders,
     groundHeightAt(x, z, fallback = 0) {
+      const bridgeHeight = bridgePassage.getGroundHeight(x, z, Number.NaN)
+      if (Number.isFinite(bridgeHeight)) return bridgeHeight
       const lowerHeight = guardPassage.getGroundHeight(x, z, Number.NaN)
       if (Number.isFinite(lowerHeight)) return lowerHeight
       return tutorialPassage.getGroundHeight(x, z, fallback)
     },
     handleAction(action) {
+      if (bridgePassage.handleAction(action)) return true
       return guardPassage.handleAction(action)
     },
     update(delta) {
       outdoorEnv.update(delta)
       tutorialPassage.update(delta)
       guardPassage.update(delta)
+      bridgePassage.update(delta)
 
       if (!passage2CheckpointActive && guardPassage.isInsidePassage()) {
-        const p = player.mesh.position
-        if (p.x > -58.8) {
-          passage2CheckpointActive = true
-          respawn.setCheckpoint(passage2CheckpointPos, Math.PI / 2)
-          hud?.showToast?.('Checkpoint reached — lower security passage', 2100)
-        }
+        passage2CheckpointActive = true
+        respawn.setCheckpoint(passage2CheckpointPos, Math.PI / 2)
+        hud?.showToast?.('Checkpoint reached — lower security passage', 2100)
+      }
+
+      if (!passage3CheckpointActive && bridgePassage.hasClearedVent()) {
+        passage3CheckpointActive = true
+        respawn.setCheckpoint(passage3CheckpointPos, Math.PI)
+        hud?.showToast?.('Checkpoint reached — Passageway 3 maintenance level', 2200)
       }
 
       // The old west-wing progression also runs west -> east, so X alone is no
@@ -470,8 +500,10 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
       // Gate these toasts/checkpoint to the upper station footprint.
       if (!junctionCheckpointActive) {
         const inExistingApproach = (
-          player.mesh.position.y > -1 &&
-          player.mesh.position.z > -30.5
+          bridgePassage.isComplete() &&
+          player.mesh.position.y > -0.15 &&
+          player.mesh.position.x >= APPROACH_START_X - 0.15 &&
+          Math.abs(player.mesh.position.z - APPROACH_CENTER_Z) <= 3.0
         )
 
         if (inExistingApproach) {
@@ -488,7 +520,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
           player.mesh.position.x - JUNCTION_CHECKPOINT.x,
           player.mesh.position.z - JUNCTION_CHECKPOINT.z
         )
-        if (player.mesh.position.y > -1 && checkpointDistance < 1.4) {
+        if (bridgePassage.isComplete() && player.mesh.position.y > -1 && checkpointDistance < 1.4) {
           junctionCheckpointActive = true
           respawn.setCheckpoint(junctionCheckpointPos, 0)
           if (hud) hud.showToast('Checkpoint reached — station concourse infiltrated', 2400)
@@ -523,6 +555,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
       unregisterBoarding()
       tutorialPassage.dispose()
       guardPassage.dispose()
+      bridgePassage.dispose()
       stealth.dispose()
       outdoorEnv.dispose()
       scene.remove(outdoorEnv.group, station, train, ...lights)

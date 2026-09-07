@@ -5,6 +5,8 @@
 export function resolveBoxCollision(position, obstacles) {
   if (!obstacles) return
   for (const box of obstacles) {
+    // Passage doors and crouch-clearance gates can disable their lightweight
+    // X/Z collider at runtime without rebuilding the obstacle array.
     if (box.enabled === false) continue
     if (
       position.x > box.minX && position.x < box.maxX &&

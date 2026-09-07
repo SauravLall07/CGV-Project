@@ -14,11 +14,14 @@ import {
   createTimedLaserController
 } from './passage-components.js'
 
-export const TUTORIAL_PASSAGE_SPAWN = new THREE.Vector3(-90.5, 0, -24.5)
+const PASSAGE_X_SHIFT = -66
+const worldX = (x) => x + PASSAGE_X_SHIFT
+
+export const TUTORIAL_PASSAGE_SPAWN = new THREE.Vector3(worldX(-90.5), 0, -24.5)
 
 export const TUTORIAL_PASSAGE_BOUNDS = {
-  minX: -93.2,
-  maxX: -59.2,
+  minX: worldX(-93.2),
+  maxX: worldX(-59.2),
   minZ: -40.4,
   maxZ: -21.2
 }
@@ -28,10 +31,10 @@ const CORRIDOR_WIDTH = 6
 const FLOOR_Y = 0
 const LOWER_FLOOR_Y = -4
 const ROOM_HEIGHT = 5.2
-const PASSAGE_START_X = -93
-const PUZZLE_DOOR_X = -66
-const TURN_ROOM_EAST_X = -60
-const STAIR_X = -63
+const PASSAGE_START_X = worldX(-93)
+const PUZZLE_DOOR_X = worldX(-66)
+const TURN_ROOM_EAST_X = worldX(-60)
+const STAIR_X = worldX(-63)
 const STAIR_START_Z = -27.5
 const STAIR_END_Z = -36.6
 const LOWER_ROOM_Z_MIN = -40
@@ -81,7 +84,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
 
   const panel = new THREE.Group()
   panel.name = 'tutorial-symbol-puzzle'
-  panel.position.set(-69.3, 1.45, -21.42)
+  panel.position.set(worldX(-69.3), 1.45, -21.42)
   panel.rotation.y = Math.PI
   group.add(panel)
 
@@ -134,7 +137,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
   // a generic button sequence.
   const clue = new THREE.Group()
   clue.name = 'symbol-clue-plaque'
-  clue.position.set(-70.2, 1.55, -27.42)
+  clue.position.set(worldX(-70.2), 1.55, -27.42)
   group.add(clue)
 
   const cluePlate = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 0.13), casingMat)
@@ -233,7 +236,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   for (const side of [-1, 1]) {
     const z = CORRIDOR_Z + side * (CORRIDOR_WIDTH / 2 - 0.16)
     const wainscot = new THREE.Mesh(new THREE.BoxGeometry(26.4, 1.35, 0.07), panelMat)
-    wainscot.position.set(-79.5, 0.68, z)
+    wainscot.position.set(worldX(-79.5), 0.68, z)
     group.add(wainscot)
   }
 
@@ -243,7 +246,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     emissiveIntensity: 3.2,
     roughness: 0.15
   })
-  for (const x of [-89, -84, -79, -74, -69]) {
+  for (const x of [-89, -84, -79, -74, -69].map(worldX)) {
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), bulbMat)
     lamp.position.set(x, 4.55, CORRIDOR_Z)
     group.add(lamp)
@@ -256,7 +259,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   // Low moving beam: the player's first active obstacle. It is intentionally
   // low enough to clear with the existing jump arc.
   const sweepingLaser = createSweepingLaser({
-    position: new THREE.Vector3(-86, 0, CORRIDOR_Z),
+    position: new THREE.Vector3(worldX(-86), 0, CORRIDOR_Z),
     beamLength: 5.1,
     beamHeight: 0.56,
     travelAxis: 'x',
@@ -273,13 +276,13 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   // introducing guard stealth before Passageway 2.
   addBox(group, colliders, {
     size: new THREE.Vector3(1.25, 1.35, 0.85),
-    position: new THREE.Vector3(-81.3, 0.675, -26.25),
+    position: new THREE.Vector3(worldX(-81.3), 0.675, -26.25),
     material: ironMat,
     name: 'camera-cover-cabinet-a'
   })
   addBox(group, colliders, {
     size: new THREE.Vector3(1.1, 1.2, 0.85),
-    position: new THREE.Vector3(-79.7, 0.6, -22.8),
+    position: new THREE.Vector3(worldX(-79.7), 0.6, -22.8),
     material: ironMat,
     name: 'camera-cover-cabinet-b'
   })
@@ -446,35 +449,35 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   const hints = createTutorialHintSystem({ player, hud })
   hints.addZone({
     id: 'tutorial-movement',
-    center: { x: -90.2, y: 0, z: CORRIDOR_Z },
+    center: { x: worldX(-90.2), y: 0, z: CORRIDOR_Z },
     size: { x: 4.4, y: 4, z: 5.4 },
     text: 'Move through the gallery. Run when the route is clear and jump over low hazards.',
     duration: 3400
   })
   hints.addZone({
     id: 'tutorial-moving-laser',
-    center: { x: -88, y: 0, z: CORRIDOR_Z },
+    center: { x: worldX(-88), y: 0, z: CORRIDOR_Z },
     size: { x: 3.4, y: 4, z: 5.4 },
     text: 'MOVING LASER — watch its rhythm, then jump over the low beam as it sweeps past.',
     duration: 3300
   })
   hints.addZone({
     id: 'tutorial-camera',
-    center: { x: -82.2, y: 0, z: CORRIDOR_Z },
+    center: { x: worldX(-82.2), y: 0, z: CORRIDOR_Z },
     size: { x: 3.5, y: 4, z: 5.4 },
     text: 'SECURITY CAMERA — blue vision cones raise suspicion. Wait for the sweep or use solid cover.',
     duration: 3600
   })
   hints.addZone({
     id: 'tutorial-timed-gate',
-    center: { x: -78.4, y: 0, z: CORRIDOR_Z },
+    center: { x: worldX(-78.4), y: 0, z: CORRIDOR_Z },
     size: { x: 3.5, y: 4, z: 5.4 },
     text: 'LASER GATE — this one cycles off briefly. Read the timing and cross during the safe window.',
     duration: 3500
   })
   hints.addZone({
     id: 'tutorial-puzzle',
-    center: { x: -72, y: 0, z: CORRIDOR_Z },
+    center: { x: worldX(-72), y: 0, z: CORRIDOR_Z },
     size: { x: 4.5, y: 4, z: 5.4 },
     text: 'LOCKED DOOR — inspect the opposite maintenance plaque, then rotate all three cipher dials to match it.',
     duration: 3900
@@ -494,7 +497,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     if (!stealth) return
 
     stealthObjects.camera = stealth.addCamera({
-      position: new THREE.Vector3(-80.4, 4.45, -21.78),
+      position: new THREE.Vector3(worldX(-80.4), 4.45, -21.78),
       baseAngle: Math.PI,
       sweepRange: Math.PI / 5.2,
       sweepSpeed: 0.58,
@@ -502,7 +505,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     })
 
     stealthObjects.timedGrid = stealth.addLaserGrid({
-      position: new THREE.Vector3(-76.3, FLOOR_Y, CORRIDOR_Z),
+      position: new THREE.Vector3(worldX(-76.3), FLOOR_Y, CORRIDOR_Z),
       width: 5.25,
       height: 2.2,
       beamCount: 4,

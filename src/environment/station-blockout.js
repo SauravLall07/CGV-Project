@@ -35,8 +35,14 @@ export const APPROACH_WIDTH = 5.5
 export const APPROACH_GATE_X = [-40, -29, -18]
 export const APPROACH_SPAWN = { x: -49.5, z: APPROACH_CENTER_Z }
 export const JUNCTION_CHECKPOINT = { x: 1.6, z: -25 }
+// Passageway 3 now rejoins at the FIXED western entrance of the original
+// approach corridor. The first three passageways are relocated around this
+// anchor rather than cutting a side doorway into the middle of Passageway 4.
+export const STAGE3_REJOIN_X = APPROACH_START_X
+export const STAGE3_REJOIN_WIDTH = 3.8
+export const STAGE3_REJOIN_HEIGHT = 4.45
 
-const APPROACH_Z_MIN = APPROACH_CENTER_Z - APPROACH_WIDTH / 2
+export const APPROACH_Z_MIN = APPROACH_CENTER_Z - APPROACH_WIDTH / 2
 const APPROACH_Z_MAX = APPROACH_CENTER_Z + APPROACH_WIDTH / 2
 
 const GATE_DOORS = [
@@ -253,7 +259,9 @@ function createApproachCorridor() {
   floor.receiveShadow = true
   group.add(floor)
 
-  // Full-height walls on both sides of the long approach.
+  // Full-height walls on both sides of the original approach corridor. Stage 3
+  // no longer cuts a doorway into either side wall; it meets Passageway 4 at
+  // the corridor's intended western entrance instead.
   for (const z of [APPROACH_Z_MIN, APPROACH_Z_MAX]) {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(length, ROOF_Y, 0.3), wallMat)
     wall.position.set(centerX, ROOF_Y / 2, z)
@@ -261,11 +269,11 @@ function createApproachCorridor() {
     wall.receiveShadow = true
     group.add(wall)
 
-    const wainscot = new THREE.Mesh(new THREE.BoxGeometry(length - 0.4, 1.45, 0.08), panelMat)
+    const wainscot = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.1, length - 0.18), 1.45, 0.08), panelMat)
     wainscot.position.set(centerX, 0.73, z + (z === APPROACH_Z_MIN ? 0.17 : -0.17))
     group.add(wainscot)
 
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(length - 0.4, 0.1, 0.1), brassMat)
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.1, length - 0.18), 0.1, 0.1), brassMat)
     rail.position.set(centerX, 1.52, z + (z === APPROACH_Z_MIN ? 0.2 : -0.2))
     group.add(rail)
 
@@ -277,18 +285,50 @@ function createApproachCorridor() {
     })
   }
 
-  // Closed wall behind the new spawn point.
-  const endWall = new THREE.Mesh(new THREE.BoxGeometry(0.3, ROOF_Y, APPROACH_WIDTH), wallMat)
-  endWall.position.set(APPROACH_START_X, ROOF_Y / 2, APPROACH_CENTER_Z)
-  endWall.castShadow = true
-  endWall.receiveShadow = true
-  group.add(endWall)
-  colliders.push({
-    minX: APPROACH_START_X - 0.2,
-    maxX: APPROACH_START_X + 0.2,
-    minZ: APPROACH_Z_MIN,
-    maxZ: APPROACH_Z_MAX
-  })
+  // Western entrance frame. Passageway 3's second staircase climbs east through
+  // this opening at x = APPROACH_START_X, centered on APPROACH_CENTER_Z.
+  const openingMinZ = APPROACH_CENTER_Z - STAGE3_REJOIN_WIDTH / 2
+  const openingMaxZ = APPROACH_CENTER_Z + STAGE3_REJOIN_WIDTH / 2
+  for (const [spanMinZ, spanMaxZ] of [
+    [APPROACH_Z_MIN, openingMinZ],
+    [openingMaxZ, APPROACH_Z_MAX]
+  ]) {
+    const spanDepth = spanMaxZ - spanMinZ
+    if (spanDepth <= 0.05) continue
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(0.3, ROOF_Y, spanDepth), wallMat)
+    wall.position.set(APPROACH_START_X, ROOF_Y / 2, (spanMinZ + spanMaxZ) / 2)
+    wall.castShadow = true
+    wall.receiveShadow = true
+    group.add(wall)
+    colliders.push({
+      minX: APPROACH_START_X - 0.2,
+      maxX: APPROACH_START_X + 0.2,
+      minZ: spanMinZ,
+      maxZ: spanMaxZ
+    })
+  }
+
+  const entranceLintel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, ROOF_Y - STAGE3_REJOIN_HEIGHT, STAGE3_REJOIN_WIDTH),
+    wallMat
+  )
+  entranceLintel.position.set(
+    APPROACH_START_X,
+    STAGE3_REJOIN_HEIGHT + (ROOF_Y - STAGE3_REJOIN_HEIGHT) / 2,
+    APPROACH_CENTER_Z
+  )
+  entranceLintel.castShadow = true
+  group.add(entranceLintel)
+
+  const entranceJambGeometry = new THREE.BoxGeometry(0.34, STAGE3_REJOIN_HEIGHT, 0.14)
+  for (const z of [openingMinZ, openingMaxZ]) {
+    const jamb = new THREE.Mesh(entranceJambGeometry, brassMat)
+    jamb.position.set(APPROACH_START_X, STAGE3_REJOIN_HEIGHT / 2, z)
+    group.add(jamb)
+  }
+  const entranceHeader = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, STAGE3_REJOIN_WIDTH + 0.24), brassMat)
+  entranceHeader.position.set(APPROACH_START_X, STAGE3_REJOIN_HEIGHT, APPROACH_CENTER_Z)
+  group.add(entranceHeader)
 
   // Ceiling and skylight strip continue the same luxury-station architecture.
   const ceiling = new THREE.Mesh(
