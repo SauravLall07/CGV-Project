@@ -15,8 +15,8 @@ import { signMaterial } from '../environment/textures.js'
 // Passenger  : no powers; reuse Level 1 timing/stealth instincts.
 // Security   : acquire the Chrono Interface -> unlock SLOW.
 // Relay      : acquire the Echo Synchronizer -> unlock GHOST, and immediately
-//              need it: the routing pattern only shows while the bus pad is
-//              weighted, and only SLOW makes its strobe readable.
+//              need it: the routing order only plays while the bus pad is
+//              weighted, and the pad is nowhere near the panel that shows it.
 // Cargo      : acquire the Cryo Phase module -> unlock FREEZE, which also
 //              switches on Chrono Strain. A chrono-shielded guard patrols here
 //              precisely so Freeze cannot be the answer to everything.
@@ -879,14 +879,15 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   }))
 
   // --------------------------------------------------------------------------
-  // CHRONO RELAY — ECHO SYNCHRONIZER + ROUTING PUZZLE
+  // CHRONO RELAY — ECHO SYNCHRONIZER + ROUTING SEQUENCE
   //
   // This car used to hand out no power at all, which made it the one room with
   // nothing to practise. It now grants GHOST and immediately demands it: the
-  // routing pattern is only displayed while the bus pad is weighted, and the
-  // pad is nowhere near the terminals, so a Time Ghost has to stand on it.
-  // The pattern also strobes far too fast to read at normal time, so the room
-  // is solved with GHOST and SLOW together and no Freeze at all.
+  // panel over the exit gate plays a routing order one lamp at a time, and it
+  // only runs while the bus pad is weighted. The pad is eleven metres behind
+  // the panel and the panel is unreadable from there, so a Time Ghost has to
+  // stand on the pad while the player watches. Then the order has to be keyed
+  // back into terminals A / B / C — memory, not colour-matching, and no Freeze.
   // --------------------------------------------------------------------------
   const ghostPickup =
     makeChronoPickup(0x2dd4bf, 0.52)
@@ -907,28 +908,55 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       ghostTaken = true
       ghostPickup.collect()
       unlockAbility('GHOST', 'ECHO SYNCHRONIZER INSTALLED — TIME GHOST unlocked')
-      hud.setObjective('Relay — the routing pattern only shows while the bus pad is weighted')
+      hud.setObjective('Relay — the routing order only plays while the bus pad is weighted')
     }
   }))
 
   const RELAY_COLORS = [
-    0xef4444, // red
-    0xf59e0b, // amber
-    0x38bdf8  // cyan
+    0xef4444, // A — red
+    0xf59e0b, // B — amber
+    0x38bdf8  // C — cyan
   ]
 
   const RELAY_LABELS = ['A', 'B', 'C']
-  const relayTarget = [2, 1, 0] // cyan, amber, red
-  const relayState = [0, 0, 0]
-  let relaySolved = false
+  const RELAY_SEQUENCE_LENGTH = 4
 
-  function setRelayScreen(consoleObj, colourIndex) {
-    const screen = consoleObj.userData.screen
-    const colour = RELAY_COLORS[colourIndex]
+  // The routing pattern is call-and-response: the panel over the exit gate
+  // plays a run of lamps one at a time, and the player repeats that order on
+  // the terminals. Rolled fresh each run so it cannot be memorised between
+  // attempts, but never the same lamp twice in a row — two identical flashes
+  // back to back are indistinguishable from one long one.
+  const relaySequence = []
 
-    screen.material.color.setHex(colour)
-    screen.material.emissive.setHex(colour)
+  while (relaySequence.length < RELAY_SEQUENCE_LENGTH) {
+    const next = Math.floor(Math.random() * RELAY_COLORS.length)
+    if (next === relaySequence[relaySequence.length - 1]) continue
+    relaySequence.push(next)
   }
+
+  // Which steps the player has actually watched play. The playback loop
+  // free-runs, so one short echo shows a slice of the sequence and the next
+  // shows a different slice; progress carries across both rather than demanding
+  // a single uninterrupted viewing that a 5 s echo cannot always buy.
+  const relaySeen = relaySequence.map(() => false)
+  const relayInput = []
+  let relayLogged = false
+  let relaySolved = false
+  // Seconds of red "rejected" flash left on the panel after a wrong terminal.
+  let relayRejectFlash = 0
+
+  // Playback timing. Kept on real time in the level update — see the playback
+  // block there for why this must not be chrono-scaled.
+  const RELAY_STEP_ON = 0.34
+  const RELAY_STEP_GAP = 0.16
+  const RELAY_LOOP_PAUSE = 0.8
+  const RELAY_STEP_SPAN = RELAY_STEP_ON + RELAY_STEP_GAP
+  const RELAY_CYCLE = RELAY_STEP_SPAN * RELAY_SEQUENCE_LENGTH + RELAY_LOOP_PAUSE
+  let relayPlayT = 0
+  // Index of the step lit this frame, or -1 during a gap or the loop pause.
+  let relayActiveStep = -1
+
+  const relayTerminals = []
 
   const relayPositions = [
     {
@@ -949,7 +977,10 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   ]
 
   relayPositions.forEach((cfg, i) => {
-    const terminal = makeConsole(RELAY_COLORS[0], 0.4)
+    // Each terminal wears its own colour permanently now: the panel lamp that
+    // fires for this terminal is the same colour as the terminal itself, which
+    // is the only cue tying a flash eleven metres away to a box in the aisle.
+    const terminal = makeConsole(RELAY_COLORS[i], 0.4)
 
     terminal.name = `relay-terminal-${cfg.label}`
     addProp(terminal, cfg.z, cfg.x)
@@ -957,7 +988,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     // Turn the console to face the aisle rather than the front of the train.
     // makeConsole builds its screen on +Z, so a terminal left as-is points its
     // only readable surface away from a player walking toward the front — you
-    // had to walk past and look back to see what colour you had set it to.
+    // had to walk past and look back to see it react to a press.
     terminal.rotation.y = cfg.x < 0 ? Math.PI / 2 : -Math.PI / 2
 
     // Matching plaque, so the panel at the gate can be read against the car.
@@ -965,35 +996,60 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     termLabel.position.set(0, 0.34, 0.175)
     terminal.add(termLabel)
 
+    terminal.userData.pulse = 0
+    relayTerminals.push(terminal)
+
     unregisters.push(interaction.register(terminal, {
-      prompt: `Cycle Chrono Relay ${cfg.label}`,
+      prompt: `Key Chrono Relay ${cfg.label}`,
 
       onInteract: () => {
         if (relaySolved) return
 
-        relayState[i] =
-          (relayState[i] + 1) %
-          RELAY_COLORS.length
+        // Entry is closed until the pattern has been watched. Otherwise the
+        // panel — and with it the Ghost — is optional: rejection after every
+        // wrong press turns three lamps and four steps into twelve guesses.
+        if (!relayLogged) {
+          interaction.flashPrompt(
+            'No routing order logged — read the panel above the gate first.'
+          )
+          return
+        }
 
-        setRelayScreen(terminal, relayState[i])
+        terminal.userData.pulse = 1
 
-        const correct = relayState.every(
-          (value, index) =>
-            value === relayTarget[index]
-        )
-
-        if (correct) {
-          relaySolved = true
+        if (relaySequence[relayInput.length] !== i) {
+          relayInput.length = 0
+          relayRejectFlash = 1.0
 
           hud.showToast(
-            'CHRONO RELAY STABLE — bulkhead unlocked',
-            2600
+            'ROUTING REJECTED — key the pattern again from the start',
+            2200
           )
 
-          hud.setObjective(
-            'Proceed to Cargo and acquire the next Chrono module'
-          )
+          return
         }
+
+        relayInput.push(i)
+
+        if (relayInput.length < RELAY_SEQUENCE_LENGTH) {
+          hud.showToast(
+            `ROUTING ${relayInput.length} / ${RELAY_SEQUENCE_LENGTH} ACCEPTED`,
+            900
+          )
+
+          return
+        }
+
+        relaySolved = true
+
+        hud.showToast(
+          'CHRONO RELAY STABLE — bulkhead unlocked',
+          2600
+        )
+
+        hud.setObjective(
+          'Proceed to Cargo and acquire the next Chrono module'
+        )
       }
     }))
   })
@@ -1033,26 +1089,28 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   let relayGateOpen = 0
 
-  // Target pattern above the exit gate. Dark until the bus pad is weighted,
-  // and then only lit during a very short flash each cycle.
+  // Routing panel above the exit gate: one lamp per terminal, lit one at a
+  // time as the pattern steps through its order. Dark unless the bus pad is
+  // weighted — or the pattern has already been logged, after which it replays
+  // on its own as a reminder.
   const relayTargetPanel = new THREE.Group()
   const relayTargetLights = []
+  const relayLightMats = []
 
-  relayTarget.forEach((targetColour, i) => {
-    const light = new THREE.Mesh(
-      new THREE.SphereGeometry(0.1, 12, 10),
-      new THREE.MeshStandardMaterial({
-        color: RELAY_COLORS[targetColour],
-        emissive: RELAY_COLORS[targetColour],
-        emissiveIntensity: 3
-      })
-    )
+  RELAY_LABELS.forEach((label, i) => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: RELAY_COLORS[i],
+      emissive: RELAY_COLORS[i],
+      emissiveIntensity: 3
+    })
+
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), mat)
 
     // NOTE the sign. The player always walks toward +Z, so world +X projects to
     // SCREEN-LEFT from their viewpoint. Laying these out as (i - 1) put A on the
-    // right and the panel read C, B, A — the exact reverse of the answer, which
-    // is a cruel thing to do to a player reading left to right. (1 - i) makes
-    // the panel read A, B, C in the same order the terminals are encountered.
+    // right and the panel read C, B, A — the exact reverse of the terminals,
+    // which is a cruel thing to do to a player reading left to right. (1 - i)
+    // makes the panel read A, B, C in the order the terminals are encountered.
     light.position.set(
       (1 - i) * 0.35,
       0,
@@ -1061,16 +1119,35 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
     light.visible = false
     relayTargetLights.push(light)
+    relayLightMats.push(mat)
     relayTargetPanel.add(light)
 
-    // Always-on plaque under each bulb. The colours come and go with the
-    // strobe; the letters must not, or the player cannot tell which reading
+    // Always-on plaque under each lamp. The lamps come and go with the
+    // sequence; the letters must not, or the player cannot tell which flash
     // belongs to which terminal.
-    const label = makeLabelPlate(RELAY_LABELS[i], 0.15)
-    label.position.set((1 - i) * 0.35, -0.26, -0.08)
-    label.rotation.y = Math.PI // face back down the car, toward the player
-    relayTargetPanel.add(label)
+    const plate = makeLabelPlate(label, 0.15)
+    plate.position.set((1 - i) * 0.35, -0.26, -0.08)
+    plate.rotation.y = Math.PI // face back down the car, toward the player
+    relayTargetPanel.add(plate)
   })
+
+  // Progress pips under the lamps: how much of the pattern has been watched
+  // while learning it, and how much has been keyed in while repeating it.
+  // Without them a half-read pattern and a half-entered one look identical.
+  const relayPipMats = []
+
+  for (let i = 0; i < RELAY_SEQUENCE_LENGTH; i++) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      emissive: 0x1e293b,
+      emissiveIntensity: 0.5
+    })
+
+    const pip = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), mat)
+    pip.position.set((1.5 - i) * 0.17, -0.46, 0)
+    relayPipMats.push(mat)
+    relayTargetPanel.add(pip)
+  }
 
   addProp(
     relayTargetPanel,
@@ -1090,26 +1167,6 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.4 })
   )
   addProp(relayPanelShell, relayGateZ, 0, 2.45)
-
-  // The strobe runs on chrono-scaled time, so SLOW genuinely stretches the
-  // flash from ~0.13s to ~0.65s of real time — long enough to read.
-  // Tuned so a ~3.5 s Ghost hold always covers at least one full flash even at
-  // 0.2x: period 0.62 s becomes 3.1 s under SLOW, flash 0.15 s becomes 0.75 s.
-  const RELAY_STROBE_PERIOD = 0.62
-  const RELAY_STROBE_FLASH = 0.15
-  let relayStrobeT = 0
-  let relayFlashOn = false
-  unregisters.push(timeSystem.register(relayTargetPanel, {
-    onUpdate(scaledDelta) {
-      relayStrobeT = (relayStrobeT + Math.max(0, scaledDelta)) % RELAY_STROBE_PERIOD
-      relayFlashOn = relayStrobeT < RELAY_STROBE_FLASH
-    },
-    getSnapshot: () => ({ relayStrobeT }),
-    restoreSnapshot: (snap) => {
-      relayStrobeT = snap.relayStrobeT
-      relayFlashOn = relayStrobeT < RELAY_STROBE_FLASH
-    }
-  }))
 
   // The bus pad sits well behind the terminals, so weighting it yourself and
   // then reading the panel at the gate is not possible — only an echo can hold
@@ -1838,9 +1895,8 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         pp.z = relayGateZ - 0.48
       }
 
-      // Relay bus pad. Only an echo can hold this while the player is at the
-      // far end of the car reading the panel, and the panel's flash is only
-      // long enough to read once SLOW has stretched it.
+      // Relay bus pad. Only an echo can hold this while the player stands at the
+      // far end of the car watching the routing pattern play out on the panel.
       const relayPadHeld =
         ghost.isOccupying(relayPadPos, 0.62) ||
         (Math.abs(pp.z - relayPadPos.z) < 0.56 && Math.abs(pp.x - relayPadPos.x) < 0.56)
@@ -1857,16 +1913,94 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         relayPadEverHeld = true
         hud.showBriefing?.([
           'Bus energised — that pad is doing its job.',
-          'The pattern is live on the panel over the gate now. You will not read it from back there, and it dies the moment the pad is clear.'
+          'The panel over the gate is stepping through the routing order now. Watch which lamps fire and in what sequence, then key that same order into the terminals. It goes dark the moment the pad is clear.'
         ])
       }
+
+      // Pattern playback. Real time on purpose — an echo replays at 1x whatever
+      // the player does with the clock, so a chrono-scaled sequence would run
+      // past the end of the echo that is holding the pad open.
+      if (relaySolved) {
+        relayActiveStep = -1
+      } else {
+        relayPlayT = (relayPlayT + delta) % RELAY_CYCLE
+        const stepIndex = Math.floor(relayPlayT / RELAY_STEP_SPAN)
+        relayActiveStep =
+          stepIndex < RELAY_SEQUENCE_LENGTH &&
+          relayPlayT - stepIndex * RELAY_STEP_SPAN < RELAY_STEP_ON
+            ? stepIndex
+            : -1
+      }
+
+      relayRejectFlash = Math.max(0, relayRejectFlash - delta)
 
       // The panel is a low-power display: it is only legible from close up.
       // Without this the player could weight the pad themselves and squint at
       // it from eleven metres away, and the Ghost would be optional again.
-      const atRelayPanel = Math.abs(pp.z - relayGateZ) < 3.6
-      for (const light of relayTargetLights) {
-        light.visible = relayPadHeld && relayFlashOn && atRelayPanel
+      const atRelayPanel = Math.abs(pp.z - relayGateZ) < 4.4
+
+      // Once the whole pattern has been logged the panel keeps replaying it
+      // with no pad. The echo is the price of *learning* the order, not a toll
+      // on every retry after one mistyped step at the far end of the car.
+      const relayPanelLive =
+        !relaySolved && atRelayPanel && (relayPadHeld || relayLogged)
+
+      for (let i = 0; i < relayTargetLights.length; i++) {
+        const mat = relayLightMats[i]
+        if (relaySolved) {
+          mat.color.setHex(0x10b981)
+          mat.emissive.setHex(0x10b981)
+          relayTargetLights[i].visible = true
+        } else if (relayRejectFlash > 0) {
+          // Rejection is shown at any range: the player is standing at a
+          // terminal when it happens, not at the panel.
+          mat.color.setHex(0xef4444)
+          mat.emissive.setHex(0xef4444)
+          relayTargetLights[i].visible = true
+        } else {
+          mat.color.setHex(RELAY_COLORS[i])
+          mat.emissive.setHex(RELAY_COLORS[i])
+          relayTargetLights[i].visible =
+            relayPanelLive &&
+            relayActiveStep >= 0 &&
+            relaySequence[relayActiveStep] === i
+        }
+      }
+
+      // Steps are logged as they are actually watched, so two short echoes that
+      // each catch part of the loop add up to the whole pattern.
+      if (relayPanelLive && relayActiveStep >= 0 && !relayLogged) {
+        relaySeen[relayActiveStep] = true
+        if (relaySeen.every(Boolean)) {
+          relayLogged = true
+          hud.showToast('ROUTING PATTERN LOGGED — repeat it on the terminals', 3200)
+          hud.setObjective('Relay — key the routing order into terminals A / B / C')
+        }
+      }
+
+      const relayPipsLit = relayLogged
+        ? relayInput.length
+        : relaySeen.reduce((n, seen) => n + (seen ? 1 : 0), 0)
+      const relayPipHue = relaySolved ? 0x10b981 : relayLogged ? 0x2dd4bf : 0xf59e0b
+
+      for (let i = 0; i < relayPipMats.length; i++) {
+        const lit = i < relayPipsLit
+        const mat = relayPipMats[i]
+        mat.color.setHex(lit ? relayPipHue : 0x1e293b)
+        mat.emissive.setHex(lit ? relayPipHue : 0x1e293b)
+        mat.emissiveIntensity = lit ? 2.6 : 0.5
+      }
+
+      // Terminal screens idle dim and flare on a press, so a keyed step is
+      // legible from the terminal itself rather than only on the far panel.
+      for (const terminal of relayTerminals) {
+        const screenMat = terminal.userData.screen.material
+        terminal.userData.pulse = Math.max(0, terminal.userData.pulse - delta * 2.4)
+        if (relaySolved) {
+          screenMat.color.setHex(0x10b981)
+          screenMat.emissive.setHex(0x10b981)
+        }
+        screenMat.emissiveIntensity = 0.9 + terminal.userData.pulse * 2.6
       }
 
       // Mechanical drive clamp — both sync plates weighted in the same frame.
