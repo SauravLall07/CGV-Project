@@ -225,6 +225,14 @@ export function createPlayer() {
   let airborne = false
   let wasJumpHeld = false
 
+  // Movement flags, lifted out of update()'s locals so the stealth system can
+  // read the player's current gait (crouch/run/jump) to scale detectability —
+  // crouching should be much quieter than a normal walk, running or jumping
+  // much louder.
+  let crouching = false
+  let running = false
+  let moving = false
+
   function turnToward(dx, dz, delta) {
     const target = Math.atan2(dx, dz)
     let difference = target - facing
@@ -312,7 +320,7 @@ export function createPlayer() {
     if (keyboard.right) { dx -= cos; dz += sin }
 
     const inputLength = Math.hypot(dx, dz)
-    const moving = inputLength > 0
+    moving = inputLength > 0
 
     if (moving) {
       dx /= inputLength
@@ -323,8 +331,8 @@ export function createPlayer() {
     const jumpPressed = jumpHeld && !wasJumpHeld
     wasJumpHeld = jumpHeld
 
-    const crouching = Boolean(keyboard.duck) && !airborne
-    const running = Boolean(keyboard.run) && moving && !crouching
+    crouching = Boolean(keyboard.duck) && !airborne
+    running = Boolean(keyboard.run) && moving && !crouching
 
     if (!airborne) groundY = group.position.y
 
@@ -469,5 +477,13 @@ export function createPlayer() {
     }
   }
 
-  return { mesh: group, update, setPose }
+  return {
+    mesh: group,
+    update,
+    setPose,
+    isCrouching: () => crouching,
+    isRunning: () => running,
+    isAirborne: () => airborne,
+    isMoving: () => moving
+  }
 }
