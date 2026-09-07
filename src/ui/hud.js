@@ -415,6 +415,10 @@ export function createHud() {
     }
   }
 
+  function setChronoVisible(visible) {
+    timeDeck.style.display = visible ? 'flex' : 'none'
+  }
+
   function setVisible(visible) {
     root.style.display = visible ? 'block' : 'none'
   }
@@ -433,6 +437,7 @@ export function createHud() {
     showToast,
     setSuspicion,
     updateTimeState,
+    setChronoVisible,
     updateStats,
     setVisible,
     dispose,

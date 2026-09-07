@@ -44,6 +44,7 @@ const CAB_LENGTH = 8
 const LAYOUT = [
   { key: 'passenger', length: 20 },
   { key: 'security', length: 20 },
+  { key: 'relay', length: 18 },
   { key: 'cargo', length: 20 },
   { key: 'mechanical', length: 22 },
   { key: 'vault', length: 18 }
@@ -74,6 +75,8 @@ function wallMaterialFor(key, length, damaged) {
       return woodMaterial({ repeat: r, light: damaged ? 0x4d3620 : 0x8a5c33, dark: damaged ? 0x1e1409 : 0x452a16 })
     case 'security':
       return metalMaterial({ repeat: r, base: damaged ? 0x2f343c : 0x474d57, roughness: damaged ? 0.7 : 0.45, metalness: 0.8 })
+    case 'relay':
+      return metalMaterial({ repeat: r, base: damaged ? 0x293138 : 0x344957, roughness: damaged ? 0.72 : 0.48, metalness: 0.8 })
     case 'cargo':
       return woodMaterial({ repeat: r, light: damaged ? 0x3e2b18 : 0x6a4a2c, dark: damaged ? 0x1b1209 : 0x33210f })
     case 'mechanical':
@@ -331,6 +334,75 @@ function dressSecurity(g, half, shared, damaged, fx) {
     const l = new THREE.PointLight(damaged ? 0xff5030 : 0x9fd0ff, damaged ? 12 : 14, damaged ? 8 : 10, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, damaged)
+  }
+}
+
+function dressRelay(g, half, shared, damaged, fx) {
+  const rackMat = metalMaterial({
+    repeat: [1, 1],
+    base: damaged ? 0x252c31 : 0x33434f,
+    roughness: 0.55,
+    metalness: 0.78
+  })
+
+  const statusMat = new THREE.MeshStandardMaterial({
+    color: damaged ? 0x6b261d : 0x38bdf8,
+    emissive: damaged ? 0xc43120 : 0x38bdf8,
+    emissiveIntensity: 2.2,
+    roughness: 0.2
+  })
+
+  // Electrical racks down both walls.
+  for (let z = -half + 2.2; z <= half - 2.2; z += 2.8) {
+    for (const side of [-1, 1]) {
+      const rack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.48, 1.9, 1.35),
+        rackMat
+      )
+
+      rack.position.set(
+        side * (WALL_X - 0.3),
+        0.95,
+        z
+      )
+
+      rack.castShadow = true
+      g.add(rack)
+
+      const status = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.16, 0.75),
+        statusMat
+      )
+
+      status.position.set(
+        side * (WALL_X - 0.045),
+        1.4,
+        z
+      )
+
+      g.add(status)
+    }
+  }
+
+  // Central ceiling power conduit.
+  const conduit = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.08, half * 2 - 2),
+    shared.darkSteel
+  )
+
+  conduit.position.set(0, CARRIAGE_CEILING_Y - 0.12, 0)
+  g.add(conduit)
+
+  for (const z of [-half * 0.55, 0, half * 0.55]) {
+    const light = new THREE.PointLight(
+      damaged ? 0xff5030 : 0x67c8ff,
+      damaged ? 12 : 15,
+      9,
+      2
+    )
+
+    light.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
+    addLight(g, fx, light, damaged)
   }
 }
 
@@ -720,6 +792,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
 
     if (cfg.key === 'passenger') dressPassenger(group, half, shared, damaged, fx)
     else if (cfg.key === 'security') dressSecurity(group, half, shared, damaged, fx)
+    else if (cfg.key === 'relay') dressRelay(group, half, shared, damaged, fx)
     else if (cfg.key === 'cargo') dressCargo(group, half, shared, damaged, fx)
     else if (cfg.key === 'mechanical') parts.mechanical = dressMechanical(group, half, shared, damaged, fx)
     else if (cfg.key === 'vault') parts.vault = dressVault(group, half, shared, damaged, fx)
