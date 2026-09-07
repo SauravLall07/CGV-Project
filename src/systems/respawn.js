@@ -7,10 +7,13 @@ import * as THREE from 'three'
 // implement their own reset.
 
 const FALL_Y = -8 // below this, assume the player left the playable volume
+const CAUGHT_FREEZE_DURATION = 900 // ms the caught screen holds before resetting position
 
-export function createRespawnSystem({ player, hud, camera }) {
+export function createRespawnSystem({ player, hud, camera, setControlsEnabled }) {
   const checkpoint = { position: new THREE.Vector3(0, 0, 0), yaw: 0 }
   const listeners = new Set()
+  let failing = false
+  let failTimer = null
 
   function setCheckpoint(position, yaw = 0) {
     checkpoint.position.copy(position)
@@ -25,9 +28,18 @@ export function createRespawnSystem({ player, hud, camera }) {
   }
 
   function fail(reason = 'caught') {
-    respawn()
-    if (hud) hud.showToast(reason === 'fell' ? 'Fell off — back to checkpoint' : 'Caught — back to checkpoint')
-    for (const fn of listeners) fn(reason)
+    if (failing) return
+    failing = true
+    if (setControlsEnabled) setControlsEnabled(false)
+    if (hud && hud.showCaughtScreen) hud.showCaughtScreen(reason)
+
+    failTimer = setTimeout(() => {
+      respawn()
+      if (hud && hud.hideCaughtScreen) hud.hideCaughtScreen()
+      if (setControlsEnabled) setControlsEnabled(true)
+      failing = false
+      for (const fn of listeners) fn(reason)
+    }, CAUGHT_FREEZE_DURATION)
   }
 
   function onFail(fn) {
@@ -40,6 +52,7 @@ export function createRespawnSystem({ player, hud, camera }) {
   }
 
   function dispose() {
+    clearTimeout(failTimer)
     listeners.clear()
   }
 
