@@ -63,7 +63,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   // -------------------------------------------------------------
 
   // Wing Zone A — Entry Gallery
-  stealth.addGuard({
+  /*stealth.addGuard({
     waypoints: [
       new THREE.Vector3(-47.0, 0, -24.2),
       new THREE.Vector3(-41.5, 0, -24.2)
@@ -71,7 +71,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     speed: 1.25,
     waitTime: 2.6,
     initialWaypoint: 0
-  })
+  })*/
 
   // Wing Zone B — Baggage Passage (medium)
   stealth.addGuard({

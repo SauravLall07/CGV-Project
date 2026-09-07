@@ -57,7 +57,10 @@ const playerView = createPlayerView({
   hud
 })
 const interaction = createInteractionSystem({ camera, input: keyboard })
-const respawn = createRespawnSystem({ player, hud, camera: playerView })
+const respawn = createRespawnSystem({
+  player, hud, camera: playerView,
+  setControlsEnabled: (enabled) => { if (!paused) keyboard.setEnabled(enabled) }
+})
 const timeSystem = createTimeSystem({ scene, player, hud })
 
 // Time abilities. The key codes live in core/settings.js and are rebindable
