@@ -144,7 +144,34 @@ function buildShell(key, length, shared, damaged, seals = {}) {
       metalness: 0.7
     })
   }
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(WALL_X * 2, length), floorMat)
+  let floorGeometry
+  if (key === 'mechanical' && !damaged) {
+    const outline = new THREE.Shape()
+    outline.moveTo(-WALL_X, -half)
+    outline.lineTo(WALL_X, -half)
+    outline.lineTo(WALL_X, half)
+    outline.lineTo(-WALL_X, half)
+    outline.closePath()
+    // Plane Y becomes negative world Z after the floor's rotation. This
+    // opening matches the Rollback plank six metres from the rear bulkhead.
+    const openingY = half - 6
+    const hole = new THREE.Path()
+    hole.moveTo(-0.725, openingY - 1.4)
+    hole.lineTo(-0.725, openingY + 1.4)
+    hole.lineTo(0.725, openingY + 1.4)
+    hole.lineTo(0.725, openingY - 1.4)
+    hole.closePath()
+    outline.holes.push(hole)
+    floorGeometry = new THREE.ShapeGeometry(outline)
+    const uv = floorGeometry.getAttribute('uv')
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, uv.getX(i) / (WALL_X * 2) + 0.5, uv.getY(i) / length + 0.5)
+    }
+  } else {
+    floorGeometry = new THREE.PlaneGeometry(WALL_X * 2, length)
+  }
+  const floor = new THREE.Mesh(floorGeometry, floorMat)
+  floor.name = `floor-${key}`
   floor.rotation.x = -Math.PI / 2
   floor.receiveShadow = true
   g.add(floor)

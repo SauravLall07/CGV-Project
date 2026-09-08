@@ -39,14 +39,9 @@ const FREEZE_ACTIVATION_STRAIN = 14
 const STRAIN_DECAY = 13 // per second while not heating
 const STRAIN_LOCKOUT_SECONDS = 8.0
 const SNAPSHOT_INTERVAL = 0.05 // 20 snapshots per second
-// Max rewind buffer, in seconds of recorded history.
-//
-// This has to be at least as long as the reach a full energy bar buys, or the
-// player hits an invisible wall well before they run out of power: Rewind pops
-// snapshots at ~3x real time and drains 32/s, so a full 100 energy is ~3.1s of
-// holding REWIND and ~9.4s of history. At the old value of 6.0 the buffer ran
-// dry first, and anything that had been broken for more than a few seconds
-// could not be restored at all.
+const REWIND_SPEED = 2.5
+// Continuous objects keep ten seconds of history. One-shot machinery can
+// use recordWhen to retain the failure animation without recording idle time.
 const MAX_SNAPSHOT_HISTORY = 10.0
 
 // Which abilities the player currently has. Level 3's scripted Chrono Core
@@ -66,6 +61,7 @@ export function createTimeSystem({ scene, player, hud }) {
 
   // Set of registered time-affected objects
   const registered = new Set()
+  const ghostPads = new Set()
 
   let snapshotTimer = 0
   let rewindPlaybackTime = 0
@@ -86,6 +82,7 @@ export function createTimeSystem({ scene, player, hud }) {
   }
 
   function setMode(newMode) {
+    const previousMode = mode
     if (mode === newMode) {
       // Toggle off back to normal
       mode = TIME_MODES.NORMAL
@@ -112,6 +109,8 @@ export function createTimeSystem({ scene, player, hud }) {
         strain = Math.min(MAX_STRAIN, strain + FREEZE_ACTIVATION_STRAIN)
       }
     }
+
+    if (mode !== previousMode) rewindPlaybackTime = 0
 
     // Notify registered objects of state changes
     registered.forEach((entry) => {
@@ -151,6 +150,18 @@ export function createTimeSystem({ scene, player, hud }) {
     return { ...availability }
   }
 
+  function resetGhost() {
+    ghost.stop()
+    playerHistory.length = 0
+    ghostCooldown = 0
+  }
+
+  function registerGhostPad(center, halfSize) {
+    const pad = { center, halfSize }
+    ghostPads.add(pad)
+    return () => ghostPads.delete(pad)
+  }
+
   function triggerGhost() {
     if (ghost.isPlaying()) {
       ghost.stop()
@@ -168,7 +179,13 @@ export function createTimeSystem({ scene, player, hud }) {
       if (hud) hud.showToast('Not enough Chrono energy for Time Ghost!', 1200)
       return
     }
-    if (playerHistory.length < 5) {
+    const onPad = [...ghostPads].some(({ center, halfSize }) => {
+      const position = player.mesh.position
+      return Math.abs(position.y - center.y) < 0.25 &&
+        Math.abs(position.x - center.x) < halfSize &&
+        Math.abs(position.z - center.z) < halfSize
+    })
+    if (!onPad && playerHistory.length < 5) {
       if (hud) hud.showToast('Recording movement trajectory… try again in 1s', 1000)
       return
     }
@@ -177,12 +194,25 @@ export function createTimeSystem({ scene, player, hud }) {
     ghostCooldown = 4.0
 
     // Clone trajectory from player history
-    const trajectory = playerHistory.map((p) => ({
+    const trajectory = onPad ? [0, 0.001].map((time) => ({
+      time,
+      position: player.mesh.position.clone(),
+      rotationY: player.mesh.rotation.y,
+      stridePhase: 0
+    })) : playerHistory.map((p) => ({
       time: p.time,
       position: p.position.clone(),
       rotationY: p.rotationY,
       stridePhase: p.stridePhase
     }))
+    // Include the summon position, even if the player just stepped onto a pad
+    // since the last history sample.
+    trajectory.push({
+      ...trajectory[trajectory.length - 1],
+      time: trajectory[trajectory.length - 1].time + 0.001,
+      position: player.mesh.position.clone(),
+      rotationY: player.mesh.rotation.y
+    })
 
     ghost.startReplay(trajectory, {
       onComplete: () => {
@@ -190,7 +220,7 @@ export function createTimeSystem({ scene, player, hud }) {
       }
     })
 
-    if (hud) hud.showToast('Time Ghost summoned!', 1200)
+    if (hud) hud.showToast(onPad ? 'Ghost holding pad — move ahead! (8 seconds)' : 'Time Ghost summoned!', 1800)
   }
 
   function updateUniforms() {
@@ -210,7 +240,7 @@ export function createTimeSystem({ scene, player, hud }) {
         distortion = 0.8 * levelMultiplier
         break
       case TIME_MODES.REWIND:
-        scale = -1.5
+        scale = -REWIND_SPEED
         modeInt = 3
         distortion = 1.0 * levelMultiplier
         break
@@ -231,13 +261,23 @@ export function createTimeSystem({ scene, player, hud }) {
     const entry = {
       object,
       options,
-      snapshots: [],
-      lastSnapshotTime: 0
+      snapshots: []
     }
+    const initial = captureSnapshot(entry)
+    if (initial) entry.snapshots.push(initial)
     registered.add(entry)
 
     return function unregister() {
       registered.delete(entry)
+    }
+  }
+
+  function captureSnapshot(entry) {
+    if (entry.options.getSnapshot) return entry.options.getSnapshot()
+    if (!entry.object) return null
+    return {
+      position: entry.object.position.clone(),
+      rotation: entry.object.rotation.clone()
     }
   }
 
@@ -304,25 +344,25 @@ export function createTimeSystem({ scene, player, hud }) {
     let timeScale = 1.0
     if (mode === TIME_MODES.SLOW) timeScale = 0.2
     else if (mode === TIME_MODES.FREEZE) timeScale = 0.0
-    else if (mode === TIME_MODES.REWIND) timeScale = -2.0
+    else if (mode === TIME_MODES.REWIND) timeScale = -REWIND_SPEED
 
     const scaledDelta = delta * timeScale
 
     // Update Ghost
     ghost.update(delta)
 
-    // Snapshot recording & playback for registered objects
-    snapshotTimer += delta
-    const shouldRecordSnapshot = snapshotTimer >= SNAPSHOT_INTERVAL
-
     if (mode === TIME_MODES.REWIND) {
+      snapshotTimer = 0
+      rewindPlaybackTime += delta * REWIND_SPEED
+      const stepsToPop = Math.floor((rewindPlaybackTime + 1e-9) / SNAPSHOT_INTERVAL)
+      rewindPlaybackTime -= stepsToPop * SNAPSHOT_INTERVAL
       // Replay registered snapshots backwards
       registered.forEach((entry) => {
         if (entry.snapshots.length > 0) {
-          // Pop snapshots backward
-          const stepsToPop = Math.max(1, Math.round(2.5 * (delta / SNAPSHOT_INTERVAL)))
-          for (let i = 0; i < stepsToPop && entry.snapshots.length > 0; i++) {
-            const snap = entry.snapshots.pop()
+          for (let i = 0; i < stepsToPop; i++) {
+            // Keep the oldest state so an exhausted buffer remains stable.
+            if (entry.snapshots.length > 1) entry.snapshots.pop()
+            const snap = entry.snapshots[entry.snapshots.length - 1]
             if (entry.options.restoreSnapshot) {
               entry.options.restoreSnapshot(snap)
             } else if (entry.object) {
@@ -330,41 +370,39 @@ export function createTimeSystem({ scene, player, hud }) {
               if (snap.rotation) entry.object.rotation.copy(snap.rotation)
             }
           }
-        }
-        if (entry.options.onUpdate) {
+        } else if (entry.options.onUpdate) {
+          // Snapshot-driven objects must not also integrate backwards after
+          // restoration; doing both applies rewind twice.
           entry.options.onUpdate(scaledDelta, timeScale, delta)
         }
       })
     } else {
-      // Normal / Slow / Freeze forward updates + recording
-      registered.forEach((entry) => {
-        if (shouldRecordSnapshot) {
-          let snapData = null
-          if (entry.options.getSnapshot) {
-            snapData = entry.options.getSnapshot()
-          } else if (entry.object) {
-            snapData = {
-              position: entry.object.position.clone(),
-              rotation: entry.object.rotation.clone()
+      // Split slow frames at sample boundaries so recording stays at 20 Hz
+      // even below 20 FPS. Each callback still receives elapsed real time.
+      let remaining = delta
+      while (remaining > 1e-9) {
+        const step = Math.min(remaining, SNAPSHOT_INTERVAL - snapshotTimer)
+        snapshotTimer += step
+        remaining -= step
+        const shouldRecordSnapshot = snapshotTimer >= SNAPSHOT_INTERVAL - 1e-9
+        registered.forEach((entry) => {
+          const record = !entry.options.recordWhen || (timeScale > 0 && entry.options.recordWhen())
+          entry.options.onUpdate?.(step * timeScale, timeScale, step)
+          if (shouldRecordSnapshot && record) {
+            const snapData = captureSnapshot(entry)
+            if (snapData) {
+              entry.snapshots.push(snapData)
+              const maxSnaps = Math.round(MAX_SNAPSHOT_HISTORY / SNAPSHOT_INTERVAL)
+              if (entry.snapshots.length > maxSnaps) {
+                // Selectively recorded failure histories retain their intact
+                // baseline even after several failed attempts.
+                entry.snapshots.splice(entry.options.recordWhen ? 1 : 0, 1)
+              }
             }
           }
-          if (snapData) {
-            entry.snapshots.push(snapData)
-            const maxSnaps = Math.round(MAX_SNAPSHOT_HISTORY / SNAPSHOT_INTERVAL)
-            if (entry.snapshots.length > maxSnaps) {
-              entry.snapshots.shift()
-            }
-          }
-        }
-
-        if (entry.options.onUpdate) {
-          entry.options.onUpdate(scaledDelta, timeScale, delta)
-        }
-      })
-    }
-
-    if (shouldRecordSnapshot) {
-      snapshotTimer = 0
+        })
+        if (shouldRecordSnapshot) snapshotTimer = 0
+      }
     }
 
     updateUniforms()
@@ -377,6 +415,7 @@ export function createTimeSystem({ scene, player, hud }) {
     freezeLockout = 0
     setMode(TIME_MODES.NORMAL)
     registered.clear()
+    ghostPads.clear()
     playerHistory.length = 0
     if (ghost) {
       scene.remove(ghost.mesh)
@@ -386,6 +425,7 @@ export function createTimeSystem({ scene, player, hud }) {
 
   return {
     register,
+    registerGhostPad,
     setMode,
     setLevelMultiplier,
     setAbilityAvailability,
@@ -395,6 +435,7 @@ export function createTimeSystem({ scene, player, hud }) {
     triggerFreeze: () => setMode(TIME_MODES.FREEZE),
     triggerRewind: () => setMode(TIME_MODES.REWIND),
     triggerGhost,
+    resetGhost,
     getMode: () => mode,
     getEnergy: () => energy,
     getMaxEnergy: () => MAX_ENERGY,

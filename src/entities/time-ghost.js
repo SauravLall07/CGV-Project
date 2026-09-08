@@ -18,9 +18,11 @@ const GHOST_PALETTE = {
 
 const STRIDE_AMPLITUDE = 0.72
 const BOB_HEIGHT = 0.035
+const HOLD_SECONDS = 8
 
 export function createTimeGhost() {
   const { group, body, leftArm, rightArm, leftLeg, rightLeg } = createHumanoid(GHOST_PALETTE)
+  const bodyBaseY = body.position.y
   group.name = 'time-ghost'
 
   // Convert all meshes in the ghost hierarchy to translucent glowing hologram materials
@@ -110,13 +112,17 @@ export function createTimeGhost() {
     playbackTime += delta
 
     const totalDuration = trajectory[trajectory.length - 1].time - trajectory[0].time
-    if (totalDuration <= 0 || playbackTime >= totalDuration) {
-      // Reached the end of the recording
+    if (playbackTime >= Math.max(0, totalDuration)) {
+      // The echo keeps its weight at the summon point after replay finishes,
+      // giving the player time to reach the other plate or pass the gate.
       const last = trajectory[trajectory.length - 1]
       group.position.copy(last.position)
       group.rotation.y = last.rotationY
+      leftLeg.rotation.x = rightLeg.rotation.x = 0
+      leftArm.rotation.x = rightArm.rotation.x = 0
+      body.position.y = bodyBaseY
       if (onTriggerCallback) onTriggerCallback(group.position)
-      stop()
+      if (playbackTime >= Math.max(0, totalDuration) + HOLD_SECONDS) stop()
       return
     }
 
@@ -149,7 +155,7 @@ export function createTimeGhost() {
     rightLeg.rotation.x = -swing
     leftArm.rotation.x = -swing * 0.8
     rightArm.rotation.x = swing * 0.8
-    body.position.y = Math.abs(Math.sin(stride)) * BOB_HEIGHT
+    body.position.y = bodyBaseY + Math.abs(Math.sin(stride)) * BOB_HEIGHT
 
     // Fire trigger callback to press plates / switches
     if (onTriggerCallback) {
@@ -157,11 +163,15 @@ export function createTimeGhost() {
     }
   }
 
-  function isOccupying(center, radius = 1.0) {
-    if (!isPlaying && !group.visible) return false
+  function isOccupying(center, halfSize = 1.0) {
+    if (!isPlaying) return false
+    // A replay on the roof (or in mid-jump) cannot weight a pad below it.
+    if (Math.abs(group.position.y - center.y) > 0.25) return false
     const dx = group.position.x - center.x
     const dz = group.position.z - center.z
-    return (dx * dx + dz * dz) <= (radius * radius)
+    // Pads are square. Use the same footprint as the player's pad check so
+    // an echo standing at a pad's corner has exactly the same weight.
+    return Math.abs(dx) < halfSize && Math.abs(dz) < halfSize
   }
 
   function dispose() {

@@ -62,6 +62,7 @@ const respawn = createRespawnSystem({
   setControlsEnabled: (enabled) => { if (!paused) keyboard.setEnabled(enabled) }
 })
 const timeSystem = createTimeSystem({ scene, player, hud })
+respawn.onFail(() => timeSystem.resetGhost())
 
 // Time abilities. The key codes live in core/settings.js and are rebindable
 // from the settings screen — everything here works in actions, not keys.

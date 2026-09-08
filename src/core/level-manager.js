@@ -32,6 +32,7 @@ export function createLevelManager({
 
   function teardown() {
     if (timeSystem) timeSystem.setMode('NORMAL')
+    timeSystem?.resetGhost()
     if (!current) return
     current.dispose()
     current = null

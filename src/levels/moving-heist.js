@@ -18,8 +18,7 @@ import { signMaterial } from '../environment/textures.js'
 //              need it: the routing order only plays while the bus pad is
 //              weighted, and the pad is nowhere near the panel that shows it.
 // Cargo      : acquire the Cryo Phase module -> unlock FREEZE, which also
-//              switches on Chrono Strain. A chrono-shielded guard patrols here
-//              precisely so Freeze cannot be the answer to everything.
+//              switches on Chrono Strain while the player crosses moving loads.
 // Mechanical : acquire the Rollback module -> unlock REWIND, plus a twin-plate
 //              drive clamp that only a Ghost can hold open with you.
 // Vault      : no new power — a finale that asks for all four at once.
@@ -432,9 +431,8 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const activeObstacles = []
   const corridorObstacles = []
   // One stealth system for the whole interior run, not just the Passenger car:
-  // Security gets a sweeping camera, Cargo gets a laser grid and a chrono-
-  // shielded guard. Passing timeSystem makes ordinary guards and cameras obey
-  // Slow and Freeze; the shielded guard opts out of that below.
+  // Security gets a sweeping camera and Cargo gets a laser grid. Passing
+  // timeSystem makes the Passenger guard and cameras obey Slow and Freeze.
   const corridorStealth =
     createStealthSystem({
       scene,
@@ -453,6 +451,13 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const PLAYER_CROUCH_TOP = 1.04
   function playerTopY() {
     return player?.isCrouching?.() ? PLAYER_CROUCH_TOP : PLAYER_STAND_TOP
+  }
+
+  function playerOnPad(center, halfSize) {
+    const position = player.mesh.position
+    return Math.abs(position.y - center.y) < 0.25 &&
+      Math.abs(position.x - center.x) < halfSize &&
+      Math.abs(position.z - center.z) < halfSize
   }
 
   function useObstacles(list) {
@@ -497,17 +502,11 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     if (toastText) hud?.showToast?.(toastText, 3000)
   }
 
-  // Failsafe re-arm for the one-way "breaks and stays broken" hazards.
-  //
-  // Rewind can only reach as far back as the snapshot buffer holds, and dying
-  // at one of these respawns the player far enough away that walking back
-  // always takes longer than that. Without this, one mistake at the bridge,
-  // the slam gate or the roof hatch leaves it permanently broken with no way
-  // past — an unwinnable car, not a hard one. Retreating behind the hazard's
-  // own trigger line re-seats it after a beat. REWIND is still the fast answer
-  // and the only one that works without giving up ground.
+  // Retreating behind a hazard re-seats it for another attempt, even without
+  // energy. A completed rollback repairs it permanently for this level run;
+  // its failure history survives idle time while the player recharges.
   const REARM_DELAY = 1.2
-  const rearmTimers = { bridge: 0, slam: 0, hatch: 0, vaultBridge: 0 }
+  const rearmTimers = { hatch: 0, vaultBridge: 0 }
   function readyToRearm(key, retreated, delta) {
     if (!retreated) {
       rearmTimers[key] = 0
@@ -1173,6 +1172,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   // it while you stand at the far end of the car.
   const relayPadPos = new THREE.Vector3(0.55, 0.03, spans.relay.minZ + 5.6)
   const relayPad = makePressurePlate(0.95)
+  unregisters.push(timeSystem.registerGhostPad(relayPadPos, 0.56))
   const relayPadMat = relayPad.userData.plateMat
   relayPad.position.copy(relayPadPos)
   root.add(relayPad)
@@ -1310,8 +1310,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   }))
 
   // Laser grid across the forward Cargo doorway. It cycles on chrono time, so
-  // SLOW stretches the gap and FREEZE parks it — but see the shielded guard
-  // below for why parking it is not free.
+  // SLOW stretches the gap and FREEZE parks it.
   const cargoGridZ = spans.cargo.maxZ - 5.4
   const cargoGrid = corridorStealth.addLaserGrid({
     position: new THREE.Vector3(0, 0, cargoGridZ),
@@ -1335,10 +1334,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     }
   }))
 
-  // Cover on the starboard side of the Cargo aisle. The shielded guard below
-  // patrols the port lane at x = -0.42, so these sit clear of his route and
-  // give the player a line of sight breaks to work with — he cannot be frozen,
-  // so there has to be an answer that costs no energy at all.
+  // Cargo stacked to starboard leaves the port lane clear for traversal.
   addStaticBarrier({
     z: spans.cargo.center + 1.8,
     x: 0.48,
@@ -1357,25 +1353,12 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     color: 0x4f3b2c
   })
 
-  // Chrono-shielded guard. His badge damps the field, so Slow and Freeze do
-  // nothing to him — the answer is a Time Ghost decoy (or patience and cover).
-  // Putting him next to a grid the player wants to freeze is the point: the
-  // obvious Freeze answer to the grid leaves you standing still in front of a
-  // guard who never stopped moving.
-  corridorStealth.addGuard({
-    waypoints: [
-      new THREE.Vector3(-0.42, 0, spans.cargo.center - 0.6),
-      new THREE.Vector3(-0.42, 0, spans.cargo.maxZ - 2.4)
-    ],
-    speed: 1.3,
-    waitTime: 2.4,
-    initialWaypoint: 0,
-    shielded: true
-  })
+  // No guard at the Cargo / Rollback approach: the machinery and pad puzzle
+  // can be worked without a patrol following the player into Mechanical.
 
   // --------------------------------------------------------------------------
   // MECHANICAL — REWIND
-  // Three main challenges: collapsing bridge, slam gate, hatch motor.
+  // Three main challenges: fallen plank, pad-powered block, hatch motor.
   // A spinning blade remains as an extra timing obstacle.
   // --------------------------------------------------------------------------
   const rewindPickup =
@@ -1406,39 +1389,38 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     new THREE.BoxGeometry(1.35, 0.12, 2.6),
     new THREE.MeshStandardMaterial({ color: 0x5b6068, roughness: 0.66, metalness: 0.72 })
   )
-  let bridgeY = 0.06
-  let bridgeTriggered = false
-  let bridgeCollapsing = false
-  let bridgeFuse = 0.8
+  mechBridge.name = 'mechanical-rewind-plank'
+  let bridgeY = -3.2
+  let bridgeRepaired = false
   mechBridge.position.set(0, bridgeY, bridgeZ)
   root.add(mechBridge)
 
-  const bridgePit = new THREE.Mesh(
-    new THREE.BoxGeometry(1.45, 3.4, 2.8),
-    new THREE.MeshStandardMaterial({ color: 0x030409, roughness: 1 })
-  )
+  const pitGeometry = new THREE.BoxGeometry(1.45, 3.4, 2.8)
+  // Open top; interior faces show the plank rising out of the well.
+  const pitIndices = pitGeometry.getIndex().array
+  pitGeometry.setIndex(pitGeometry.groups
+    .filter((group) => group.materialIndex !== 2)
+    .flatMap((group) => Array.from(pitIndices.slice(group.start, group.start + group.count))))
+  pitGeometry.clearGroups()
+  const bridgePit = new THREE.Mesh(pitGeometry,
+    new THREE.MeshStandardMaterial({ color: 0x151923, roughness: 1, side: THREE.BackSide }))
   bridgePit.position.set(0, -1.7, bridgeZ)
   bridgePit.userData.noCameraCollision = true
   root.add(bridgePit)
 
-  unregisters.push(timeSystem.register(mechBridge, {
+  // This failure predates the player's arrival. Reverse its fall directly,
+  // so it needs no live recording and cannot time out while waiting to repair.
+  unregisters.push(timeSystem.register(null, {
     onUpdate(scaledDelta, timeScale) {
-      if (timeScale > 0) {
-        if (bridgeCollapsing) bridgeY = Math.max(-3.2, bridgeY - scaledDelta * 4.2)
-        else if (bridgeTriggered) {
-          bridgeFuse -= scaledDelta
-          if (bridgeFuse <= 0) bridgeCollapsing = true
-        }
+      if (timeScale >= 0 || bridgeRepaired || section !== 'interior' ||
+          player.mesh.position.z < spans.mechanical.minZ ||
+          player.mesh.position.z > spans.mechanical.maxZ) return
+      bridgeY = Math.min(0.06, bridgeY - scaledDelta * 1.5)
+      mechBridge.position.y = bridgeY
+      if (bridgeY >= 0.06) {
+        bridgeRepaired = true
+        hud.showToast('PLANK RESTORED — stable and safe to cross', 2200)
       }
-      mechBridge.position.y = bridgeY
-    },
-    getSnapshot: () => ({ bridgeY, bridgeTriggered, bridgeCollapsing, bridgeFuse }),
-    restoreSnapshot: (s) => {
-      bridgeY = s.bridgeY
-      bridgeTriggered = s.bridgeTriggered
-      bridgeCollapsing = s.bridgeCollapsing
-      bridgeFuse = s.bridgeFuse
-      mechBridge.position.y = bridgeY
     }
   }))
 
@@ -1447,23 +1429,15 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     new THREE.MeshStandardMaterial({ color: 0x343a42, metalness: 0.86, roughness: 0.36 })
   )
   const slamGateZ = spans.mechanical.center + 0.8
-  let slamGateY = 3.0
-  let slamTriggered = false
+  let slamGateY = 0.75
+  slamGate.name = 'mechanical-pad-block'
   slamGate.position.set(0, slamGateY, slamGateZ)
   root.add(slamGate)
-
-  unregisters.push(timeSystem.register(slamGate, {
-    onUpdate(scaledDelta, timeScale) {
-      if (timeScale > 0 && slamTriggered) slamGateY = Math.max(0.65, slamGateY - scaledDelta * 4.5)
-      slamGate.position.y = slamGateY
-    },
-    getSnapshot: () => ({ slamGateY, slamTriggered }),
-    restoreSnapshot: (s) => {
-      slamGateY = s.slamGateY
-      slamTriggered = s.slamTriggered
-      slamGate.position.y = slamGateY
-    }
-  }))
+  const padBlockObstacle = {
+    minX: -1.1, maxX: 1.1,
+    minZ: slamGateZ - 0.48, maxZ: slamGateZ + 0.48
+  }
+  corridorObstacles.push(padBlockObstacle)
 
   const mechBlade = makeRotor(0x38bdf8)
   const mechBladeZ = spans.mechanical.maxZ - 6.0
@@ -1486,22 +1460,32 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   //
   // Two plates six metres apart that must be weighted at the SAME moment.
   // Neither sits on the route, so you cannot solve it by walking through:
-  // walk onto plate A, carry on to plate B, then summon the echo — it replays
-  // your walk onto A while you stand on B. Unlike the Vault plate this one
-  // latches, so the door stays open once the pair fires.
+  // summon an echo on A to hold the intervening block up, then move to B.
+  // Unlike the Vault plate this one latches, so the door stays open once the
+  // pair fires.
   // ------------------------------------------------------------------
   const syncPlateAPos = new THREE.Vector3(-0.56, 0.03, spans.mechanical.center - 3.1)
   const syncPlateBPos = new THREE.Vector3(0.56, 0.03, spans.mechanical.center + 2.9)
 
   const syncPlateA = makePressurePlate(0.86)
+  syncPlateA.name = 'mechanical-sync-pad-a'
   const syncPlateAMat = syncPlateA.userData.plateMat
   syncPlateA.position.copy(syncPlateAPos)
   root.add(syncPlateA)
 
   const syncPlateB = makePressurePlate(0.86)
+  syncPlateB.name = 'mechanical-sync-pad-b'
   const syncPlateBMat = syncPlateB.userData.plateMat
   syncPlateB.position.copy(syncPlateBPos)
   root.add(syncPlateB)
+  unregisters.push(timeSystem.registerGhostPad(syncPlateAPos, 0.54))
+  unregisters.push(timeSystem.registerGhostPad(syncPlateBPos, 0.54))
+  for (const [pad, letter] of [[syncPlateA, 'A'], [syncPlateB, 'B']]) {
+    const label = makeLabelPlate(letter, 0.32)
+    label.rotation.x = -Math.PI / 2
+    label.position.y = 0.03
+    pad.add(label)
+  }
 
   // Sits between the turbine blade and the roof ladder, so the clamp really is
   // the last thing standing between the player and the roof.
@@ -1510,6 +1494,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     new THREE.BoxGeometry(2.3, 1.7, 0.16),
     new THREE.MeshStandardMaterial({ color: 0x2f3742, metalness: 0.9, roughness: 0.35 })
   )
+  clampDoor.name = 'mechanical-drive-clamp'
   addProp(clampDoor, clampDoorZ, 0, 1.05)
 
   // Status light on the clamp door, so "both plates at once" is legible.
@@ -1523,21 +1508,25 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   let clampReleased = false
   let clampDoorOpen = 0
+  let syncHintShown = false
 
   const { hatchCover, ladder } = env.parts.mechanical
   let hatchBroken = false
+  let hatchRepaired = false
   let hatchOpen = 1
 
   // Start the hatch visually open. It slams shut as the player approaches;
   // Rewind restores the earlier open state from the time-system snapshot buffer.
   hatchCover.position.x = -1.15
   unregisters.push(timeSystem.register(hatchCover, {
+    recordWhen: () => hatchBroken && hatchOpen > 0,
     onUpdate(scaledDelta, timeScale) {
       if (timeScale > 0 && hatchBroken) hatchOpen = Math.max(0, hatchOpen - scaledDelta * 2.8)
       hatchCover.position.x = -1.15 * hatchOpen
     },
     getSnapshot: () => ({ hatchBroken, hatchOpen }),
     restoreSnapshot: (s) => {
+      if (hatchBroken && !s.hatchBroken) hatchRepaired = true
       hatchBroken = s.hatchBroken
       hatchOpen = s.hatchOpen
       hatchCover.position.x = -1.15 * hatchOpen
@@ -1628,6 +1617,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     roughness: 0.3
   })
   const vaultPlatePos = new THREE.Vector3(0, 0.03, spans.vault.minZ + 4.0)
+  unregisters.push(timeSystem.registerGhostPad(vaultPlatePos, 0.58))
   const vaultPlate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.9), plateMat)
   vaultPlate.position.copy(vaultPlatePos)
   root.add(vaultPlate)
@@ -1663,6 +1653,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   )
   let vaultBridgeY = 0.06
   let vaultBridgeTriggered = false
+  let vaultBridgeRepaired = false
   let vaultBridgeCollapse = false
   let vaultBridgeFuse = 0.65
   vaultBridge.position.set(0, vaultBridgeY, vaultBridgeZ)
@@ -1677,6 +1668,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   root.add(vaultPit)
 
   unregisters.push(timeSystem.register(vaultBridge, {
+    recordWhen: () => vaultBridgeTriggered && vaultBridgeY > -3.0,
     onUpdate(scaledDelta, timeScale) {
       if (timeScale > 0) {
         if (vaultBridgeCollapse) vaultBridgeY = Math.max(-3.0, vaultBridgeY - scaledDelta * 4.5)
@@ -1689,6 +1681,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     },
     getSnapshot: () => ({ vaultBridgeY, vaultBridgeTriggered, vaultBridgeCollapse, vaultBridgeFuse }),
     restoreSnapshot: (s) => {
+      if (vaultBridgeTriggered && !s.vaultBridgeTriggered) vaultBridgeRepaired = true
       vaultBridgeY = s.vaultBridgeY
       vaultBridgeTriggered = s.vaultBridgeTriggered
       vaultBridgeCollapse = s.vaultBridgeCollapse
@@ -1875,7 +1868,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       }
 
       // A replaying echo reads as a person to anything that watches for one,
-      // which is what makes it a decoy for the chrono-shielded Cargo guard.
+      // so the Passenger guard can react to a moving temporal decoy.
       corridorStealth.setDistraction(ghost.isPlaying() ? ghost.getPosition() : null)
 
       // Chrono Relay exit gate.
@@ -1898,8 +1891,8 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       // Relay bus pad. Only an echo can hold this while the player stands at the
       // far end of the car watching the routing pattern play out on the panel.
       const relayPadHeld =
-        ghost.isOccupying(relayPadPos, 0.62) ||
-        (Math.abs(pp.z - relayPadPos.z) < 0.56 && Math.abs(pp.x - relayPadPos.x) < 0.56)
+        ghost.isOccupying(relayPadPos, 0.56) ||
+        playerOnPad(relayPadPos, 0.56)
 
       relayPadMat.emissive.setHex(relayPadHeld ? 0x10b981 : 0xf59e0b)
       relayPad.position.y = relayPadHeld ? 0.012 : 0.03
@@ -2003,19 +1996,28 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         screenMat.emissiveIntensity = 0.9 + terminal.userData.pulse * 2.6
       }
 
-      // Mechanical drive clamp — both sync plates weighted in the same frame.
-      if (!clampReleased) {
-        const onA =
-          ghost.isOccupying(syncPlateAPos, 0.6) ||
-          (Math.abs(pp.z - syncPlateAPos.z) < 0.54 && Math.abs(pp.x - syncPlateAPos.x) < 0.54)
-        const onB =
-          ghost.isOccupying(syncPlateBPos, 0.6) ||
-          (Math.abs(pp.z - syncPlateBPos.z) < 0.54 && Math.abs(pp.x - syncPlateBPos.x) < 0.54)
+      // Each pad lifts the block between them. Both together latch the exit.
+      const onA = ghost.isOccupying(syncPlateAPos, 0.54) || playerOnPad(syncPlateAPos, 0.54)
+      const onB = ghost.isOccupying(syncPlateBPos, 0.54) || playerOnPad(syncPlateBPos, 0.54)
+      const blockPowered = onA || onB || clampReleased
+      slamGateY += ((blockPowered ? 3.0 : 0.75) - slamGateY) * Math.min(1, delta * 5)
+      slamGate.position.y = slamGateY
+      // Collapse the collision box to zero depth once the block clears a
+      // standing player. It follows the visible lift, including during Freeze.
+      const blockDepth = slamGateY < 2.5 ? 0.48 : 0
+      padBlockObstacle.minZ = slamGateZ - blockDepth
+      padBlockObstacle.maxZ = slamGateZ + blockDepth
 
-        syncPlateAMat.emissive.setHex(onA ? 0x10b981 : 0xf59e0b)
-        syncPlateBMat.emissive.setHex(onB ? 0x10b981 : 0xf59e0b)
-        syncPlateA.position.y = onA ? 0.012 : 0.03
-        syncPlateB.position.y = onB ? 0.012 : 0.03
+      syncPlateAMat.emissive.setHex(onA ? 0x10b981 : 0xf59e0b)
+      syncPlateBMat.emissive.setHex(onB ? 0x10b981 : 0xf59e0b)
+      syncPlateA.position.y = onA ? 0.012 : 0.03
+      syncPlateB.position.y = onB ? 0.012 : 0.03
+
+      if (!clampReleased) {
+        if ((onA || onB) && section === 'interior' && !syncHintShown) {
+          syncHintShown = true
+          hud.showToast('PAD A LIFTS THE BLOCK — summon a Ghost here, then cross to pad B to unlock the exit.', 5500)
+        }
 
         if (onA && onB) {
           clampReleased = true
@@ -2103,7 +2105,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           spans.cargo.minZ,
           [
             'Cargo. Live loads swinging on the move, and a hard security line across the forward door.',
-            'Fair warning: the guard in this car carries a chrono-damped badge. Whatever you do to the clock will not touch him. Plan around that.'
+            'Watch the load cycles and the security grid. The route into Mechanical is clear of guards.'
           ]
         )
         hint(
@@ -2111,9 +2113,9 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           pp.z,
           spans.mechanical.minZ,
           [
-            'Mechanical. This car is coming apart — things fail the moment you put weight on them.',
-            'The module in here can put them back the way they were.',
-            'The drive clamp is the way up to the roof, and it needs both release plates weighted in the same instant. You can only ever stand on one of them.'
+            'Mechanical. The plank has already fallen into the floor gap. Install Rollback and REWIND it until it is level with the floor.',
+            'Past the plank, pad A lifts the blocking bulkhead. Summon a Ghost on A to hold it up while you cross to pad B.',
+            'Both pads together release the drive clamp leading to the roof.'
           ]
         )
 
@@ -2184,39 +2186,13 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           failSoft('The cargo press came down — FREEZE it at the top of its cycle.')
         }
 
-        // Mechanical obstacle 1: collapsing bridge. Rewind restores snapshots.
+        // The plank starts in the pit. Retreating never rebuilds it for free.
         if (
-          bridgeY < 0.05 &&
-          readyToRearm('bridge', pp.z < bridgeZ - 3.4, delta)
-        ) {
-          bridgeY = 0.06
-          bridgeTriggered = false
-          bridgeCollapsing = false
-          bridgeFuse = 0.8
-          mechBridge.position.y = bridgeY
-        }
-        if (!bridgeTriggered && pp.z > bridgeZ - 3.0) bridgeTriggered = true
-        if (
-          Math.abs(pp.z - bridgeZ) < 1.05 &&
-          Math.abs(pp.x) < 0.74 &&
-          bridgeY < -0.42
+          Math.abs(pp.z - bridgeZ) < 1.3 &&
+          Math.abs(pp.x) < 1.0 &&
+          bridgeY < 0.05
         ) {
           failSoft('The mechanical bridge collapsed — REWIND it!', 'fell')
-        }
-
-        // Mechanical obstacle 2: slam gate. Approaching it creates a "before"
-        // state in the snapshot history for Rewind to restore.
-        if (
-          slamGateY < 2.95 &&
-          readyToRearm('slam', pp.z < slamGateZ - 3.0, delta)
-        ) {
-          slamGateY = 3.0
-          slamTriggered = false
-          slamGate.position.y = slamGateY
-        }
-        if (!slamTriggered && pp.z > slamGateZ - 2.6) slamTriggered = true
-        if (Math.abs(pp.z - slamGateZ) < 0.35 && slamGateY < 1.75) {
-          failSoft('The bulkhead slammed shut — REWIND the gate.')
         }
 
         // Extra Mechanical timing obstacle. Crouching genuinely slips under a
@@ -2244,7 +2220,10 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           hatchBroken = false
           hatchCover.position.x = -1.15
         }
-        if (!hatchBroken && pp.z > spans.mechanical.maxZ - 4.0) hatchBroken = true
+        if (
+          mode !== 'REWIND' && mode !== 'FREEZE' &&
+          !hatchRepaired && !hatchBroken && pp.z > spans.mechanical.maxZ - 4.0
+        ) hatchBroken = true
       } else if (section === 'roof') {
         // Slipstream. Slow affects the gust cycle AND the other registered roof
         // hazards because all of them use scaledDelta.
@@ -2292,10 +2271,8 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           failSoft('Duck under the roof signal frame!')
         }
       } else if (section === 'vault') {
-        const ghostOnPlate = ghost.isOccupying(vaultPlatePos, 0.64)
-        const playerOnPlate =
-          Math.abs(pp.z - vaultPlatePos.z) < 0.58 &&
-          Math.abs(pp.x - vaultPlatePos.x) < 0.58
+        const ghostOnPlate = ghost.isOccupying(vaultPlatePos, 0.58)
+        const playerOnPlate = playerOnPad(vaultPlatePos, 0.58)
 
         const pressed = ghostOnPlate || playerOnPlate
         ghostGateOpen += ((pressed ? 1 : 0) - ghostGateOpen) * Math.min(1, delta * 5)
@@ -2332,7 +2309,11 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
           vaultBridgeFuse = 0.65
           vaultBridge.position.y = vaultBridgeY
         }
-        if (!vaultBridgeTriggered && pp.z > vaultBridgeZ - 2.5) vaultBridgeTriggered = true
+        if (
+          mode !== 'REWIND' && mode !== 'FREEZE' &&
+          !vaultBridgeRepaired && !vaultBridgeTriggered &&
+          pp.z > vaultBridgeZ - 2.5 && pp.z < vaultBridgeZ + 1.05
+        ) vaultBridgeTriggered = true
         if (
           Math.abs(pp.z - vaultBridgeZ) < 0.95 &&
           Math.abs(pp.x) < 0.72 &&
