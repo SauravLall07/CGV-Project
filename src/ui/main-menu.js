@@ -26,7 +26,7 @@ const DRIFT_X = 0.35
 const DRIFT_Y = 0.12
 const DRIFT_SPEED = 0.07
 
-export function createMainMenu({ camera, renderer, settingsMenu }) {
+export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio, onCredits, isCreditsOpen }) {
   // ---------------------------------------------------------------
   // DOM overlay
   // ---------------------------------------------------------------
@@ -178,10 +178,19 @@ export function createMainMenu({ camera, renderer, settingsMenu }) {
   const settingsBtn = createButton('Settings', {
     variant: 'ghost',
     onClick: () => {
+      if (unlockAudio) unlockAudio()
       if (!settingsMenu) return
       settingsMenu.open(() => {
         if (isVisible) newGameBtn.focus()
       })
+    }
+  })
+
+  const creditsBtn = createButton('Credits', {
+    variant: 'ghost',
+    onClick: () => {
+      if (unlockAudio) unlockAudio()
+      if (onCredits) onCredits()
     }
   })
 
@@ -195,7 +204,7 @@ export function createMainMenu({ camera, renderer, settingsMenu }) {
     fontWeight: '400'
   })
 
-  buttonWrap.append(newGameBtn, settingsBtn, hint)
+  buttonWrap.append(newGameBtn, settingsBtn, creditsBtn, hint)
 
   // ---------------------------------------------------------------
   // Version / credit line (bottom)
@@ -229,6 +238,8 @@ export function createMainMenu({ camera, renderer, settingsMenu }) {
   function handleStart() {
     if (!isVisible || isTransitioning) return
     if (settingsMenu && settingsMenu.isOpen) return
+    if (isCreditsOpen && isCreditsOpen()) return
+    if (unlockAudio) unlockAudio()
     isTransitioning = true
 
     // Fade menu out after a brief beat
@@ -245,6 +256,7 @@ export function createMainMenu({ camera, renderer, settingsMenu }) {
   function onKeyDown(event) {
     if (!isVisible || isTransitioning) return
     if (settingsMenu && settingsMenu.isOpen) return
+    if (isCreditsOpen && isCreditsOpen()) return
     if (event.code === 'Enter' || event.code === 'Space') {
       event.preventDefault()
       handleStart()

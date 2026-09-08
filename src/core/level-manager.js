@@ -19,42 +19,71 @@ import * as THREE from 'three'
 const DEFAULT_CHECKPOINT = { position: new THREE.Vector3(0, 0, 0), yaw: 0 }
 
 export function createLevelManager({
-  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, levels
+  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, levels,
+  onEnter, onLeave
 }) {
   const sequence = levels.map((l) => l.state)
   const factories = new Map(levels.map((l) => [l.state, l.create]))
+  const keepPrevious = new Set(levels.filter((l) => l.keepPrevious).map((l) => l.state))
 
   let current = null
   let currentState = null
   let pendingToken = 0
+  let held = null
 
   const ctx = { scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance }
 
   function teardown() {
+    if (onLeave) onLeave()
     if (timeSystem) timeSystem.setMode('NORMAL')
+    if (held) {
+      held.dispose()
+      held = null
+    }
     if (!current) return
     current.dispose()
     current = null
   }
 
   function build(state) {
-    teardown()
+    const preserve = keepPrevious.has(state) && current
+    if (preserve) {
+      // Credits (and anything else flagged keepPrevious) freeze the outgoing
+      // level in the scene instead of disposing it. held is disposed on the
+      // next real teardown (quit to title, restart).
+      held = current
+      current = null
+    } else {
+      teardown()
+    }
 
     currentState = state
     current = factories.get(state)(ctx)
 
-    const checkpoint = current.checkpoint ?? DEFAULT_CHECKPOINT
-    respawn.setCheckpoint(checkpoint.position, checkpoint.yaw)
-    player.setPose(checkpoint.position, checkpoint.yaw)
-    // Movement is camera-relative, so the spawn yaw has to reach the camera or
-    // "forward" would still mean whatever the previous level was facing.
-    if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
-    camera.snap()
-    hud.setObjective(current.objective ?? '')
+    if (!preserve) {
+      const checkpoint = current.checkpoint ?? DEFAULT_CHECKPOINT
+      respawn.setCheckpoint(checkpoint.position, checkpoint.yaw)
+      player.setPose(checkpoint.position, checkpoint.yaw)
+      // Movement is camera-relative, so the spawn yaw has to reach the camera or
+      // "forward" would still mean whatever the previous level was facing.
+      if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
+      camera.snap()
+      hud.setObjective(current.objective ?? '')
+    }
+    if (onEnter) onEnter(state)
   }
 
   function enter(state) {
     if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
+
+    // Keep-previous states (Complete / credits) must not flash the loading
+    // screen or dispose the outgoing level — the last frame stays up.
+    if (keepPrevious.has(state) && current) {
+      pendingToken += 1
+      interaction.setEnabled(false)
+      build(state)
+      return
+    }
 
     loadingScreen.show()
     // No interacting mid-transition: the outgoing level's interactables stay
