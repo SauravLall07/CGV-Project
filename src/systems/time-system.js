@@ -25,6 +25,8 @@ const GHOST_ENERGY_COST = 35
 const GHOST_BUFFER_SECONDS = 5.0
 const SNAPSHOT_INTERVAL = 0.05 // 20 snapshots per second
 const MAX_SNAPSHOT_HISTORY = 6.0 // max rewind buffer seconds
+const REWIND_RATE = 2.5 // seconds of recorded history restored per real second
+const TIME_EPSILON = 1e-7
 
 // Which abilities the player currently has. Level 3's scripted Chrono Core
 // depletion locks everything but Freeze, which is why this lives here rather
@@ -44,8 +46,14 @@ export function createTimeSystem({ scene, player, hud }) {
   // Set of registered time-affected objects
   const registered = new Set()
 
-  let snapshotTimer = 0
-  let rewindPlaybackTime = 0
+  // activeTime only advances while update() is called, so opening a menu or
+  // pausing cannot insert a wall-clock hole into a Time Ghost recording.
+  let activeTime = 0
+
+  // timelineTime is the timestamp carried by object snapshots. It advances
+  // during forward play and moves backwards during Rewind.
+  let timelineTime = 0
+  let snapshotAccumulator = 0
   let ghostCooldown = 0
   let levelMultiplier = 1.0 // 1.0 for Level 2 (controlled), 1.8 for Level 3 (unstable timewreck)
 
@@ -60,20 +68,40 @@ export function createTimeSystem({ scene, player, hud }) {
   }
 
   function setMode(newMode) {
-    if (mode === newMode) {
+    const previousMode = mode
+    let nextMode = newMode
+
+    if (previousMode === nextMode) {
       // Toggle off back to normal
-      mode = TIME_MODES.NORMAL
+      nextMode = TIME_MODES.NORMAL
     } else {
-      if (newMode !== TIME_MODES.NORMAL && !availability[newMode]) {
+      if (nextMode !== TIME_MODES.NORMAL && !availability[nextMode]) {
         if (hud) hud.showToast('That chrono ability is offline', 1200)
         return
       }
-      if (newMode !== TIME_MODES.NORMAL && energy < 10) {
+      if (nextMode !== TIME_MODES.NORMAL && energy < 10) {
         if (hud) hud.showToast('Chrono Core energy depleted!', 1200)
         return
       }
-      mode = newMode
     }
+
+    if (previousMode === TIME_MODES.REWIND && nextMode !== TIME_MODES.REWIND) {
+      finishRewindBranch()
+    }
+
+    if (nextMode === TIME_MODES.REWIND) {
+      // Capture the exact state at the button press. The regular recorder may
+      // be part-way to its next fixed boundary at this point.
+      captureAllSnapshots(timelineTime)
+      snapshotAccumulator = 0
+
+      if (!hasRewindHistory()) {
+        if (hud) hud.showToast('Nothing left to rewind', 1200)
+        return
+      }
+    }
+
+    mode = nextMode
 
     // Notify registered objects of state changes
     registered.forEach((entry) => {
@@ -183,27 +211,226 @@ export function createTimeSystem({ scene, player, hud }) {
     const entry = {
       object,
       options,
-      snapshots: [],
-      lastSnapshotTime: 0
+      snapshots: []
     }
     registered.add(entry)
+    captureSnapshot(entry, timelineTime)
 
     return function unregister() {
       registered.delete(entry)
     }
   }
 
-  function update(delta, now = performance.now() / 1000) {
+  function readSnapshot(entry) {
+    if (entry.options.getSnapshot) return entry.options.getSnapshot()
+    if (!entry.object) return null
+
+    return {
+      position: entry.object.position.clone(),
+      rotation: entry.object.rotation.clone()
+    }
+  }
+
+  function captureSnapshot(entry, time) {
+    const state = readSnapshot(entry)
+    if (state == null) return
+
+    const snapshots = entry.snapshots
+    const last = snapshots[snapshots.length - 1]
+    if (last && Math.abs(last.time - time) <= TIME_EPSILON) {
+      last.state = state
+    } else {
+      snapshots.push({ time, state })
+    }
+
+    const cutoff = time - MAX_SNAPSHOT_HISTORY
+    while (snapshots.length > 1 && snapshots[1].time < cutoff - TIME_EPSILON) {
+      snapshots.shift()
+    }
+  }
+
+  function captureAllSnapshots(time) {
+    registered.forEach((entry) => captureSnapshot(entry, time))
+  }
+
+  function interpolateValue(before, after, t) {
+    if (typeof before === 'number' && typeof after === 'number') {
+      return THREE.MathUtils.lerp(before, after, t)
+    }
+    if (before?.isVector2 && after?.isVector2) return before.clone().lerp(after, t)
+    if (before?.isVector3 && after?.isVector3) return before.clone().lerp(after, t)
+    if (before?.isVector4 && after?.isVector4) return before.clone().lerp(after, t)
+    if (before?.isQuaternion && after?.isQuaternion) return before.clone().slerp(after, t)
+    if (before?.isEuler && after?.isEuler) {
+      return new THREE.Euler(
+        THREE.MathUtils.lerp(before.x, after.x, t),
+        THREE.MathUtils.lerp(before.y, after.y, t),
+        THREE.MathUtils.lerp(before.z, after.z, t),
+        before.order
+      )
+    }
+    if (Array.isArray(before) && Array.isArray(after) && before.length === after.length) {
+      return before.map((value, index) => interpolateValue(value, after[index], t))
+    }
+    if (
+      before && after &&
+      Object.getPrototypeOf(before) === Object.prototype &&
+      Object.getPrototypeOf(after) === Object.prototype
+    ) {
+      const result = {}
+      for (const key of Object.keys(before)) {
+        result[key] = key in after
+          ? interpolateValue(before[key], after[key], t)
+          : before[key]
+      }
+      return result
+    }
+
+    // Discrete state changes (booleans, strings and unsupported objects) take
+    // effect at the newer snapshot boundary, not halfway between samples.
+    return t >= 1 ? after : before
+  }
+
+  function restoreSnapshot(entry, state) {
+    if (entry.options.restoreSnapshot) {
+      entry.options.restoreSnapshot(state)
+    } else if (entry.object) {
+      if (state.position) entry.object.position.copy(state.position)
+      if (state.rotation) entry.object.rotation.copy(state.rotation)
+    }
+  }
+
+  function restoreAtTime(entry, targetTime) {
+    const snapshots = entry.snapshots
+    if (snapshots.length === 0) return false
+
+    if (targetTime <= snapshots[0].time + TIME_EPSILON) {
+      restoreSnapshot(entry, snapshots[0].state)
+      return true
+    }
+
+    const last = snapshots[snapshots.length - 1]
+    if (targetTime >= last.time - TIME_EPSILON) {
+      restoreSnapshot(entry, last.state)
+      return true
+    }
+
+    let low = 0
+    let high = snapshots.length - 1
+    while (low + 1 < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (snapshots[middle].time <= targetTime) low = middle
+      else high = middle
+    }
+
+    const before = snapshots[low]
+    const after = snapshots[high]
+    const span = Math.max(TIME_EPSILON, after.time - before.time)
+    const t = THREE.MathUtils.clamp((targetTime - before.time) / span, 0, 1)
+    const state = entry.options.interpolateSnapshot
+      ? entry.options.interpolateSnapshot(before.state, after.state, t)
+      : interpolateValue(before.state, after.state, t)
+    restoreSnapshot(entry, state)
+    return true
+  }
+
+  function oldestHistoryTime() {
+    let oldest = Infinity
+    registered.forEach((entry) => {
+      if (entry.snapshots.length > 0) oldest = Math.min(oldest, entry.snapshots[0].time)
+    })
+    return oldest
+  }
+
+  function hasRewindHistory() {
+    const oldest = oldestHistoryTime()
+    return Number.isFinite(oldest) && timelineTime - oldest > TIME_EPSILON
+  }
+
+  function finishRewindBranch() {
+    // Rewind creates a new future. Discard snapshots from the abandoned
+    // branch, then store the exact interpolated state at the branch point.
+    registered.forEach((entry) => {
+      while (
+        entry.snapshots.length > 0 &&
+        entry.snapshots[entry.snapshots.length - 1].time > timelineTime + TIME_EPSILON
+      ) {
+        entry.snapshots.pop()
+      }
+      captureSnapshot(entry, timelineTime)
+    })
+    snapshotAccumulator = 0
+  }
+
+  function updateForward(delta, timeScale) {
+    let remaining = delta
+
+    // Subdivide only at snapshot boundaries. Objects still receive all of the
+    // elapsed time, while every history sample represents the same simulation
+    // instant regardless of display refresh rate or uneven frame intervals.
+    while (remaining > TIME_EPSILON) {
+      const untilSnapshot = SNAPSHOT_INTERVAL - snapshotAccumulator
+      const step = Math.min(remaining, untilSnapshot)
+
+      registered.forEach((entry) => {
+        if (entry.options.onUpdate) {
+          entry.options.onUpdate(step * timeScale, timeScale, step)
+        }
+      })
+
+      timelineTime += step
+      snapshotAccumulator += step
+      remaining -= step
+
+      if (snapshotAccumulator >= SNAPSHOT_INTERVAL - TIME_EPSILON) {
+        captureAllSnapshots(timelineTime)
+        snapshotAccumulator = Math.max(0, snapshotAccumulator - SNAPSHOT_INTERVAL)
+      }
+    }
+  }
+
+  function updateRewind(delta) {
+    const oldest = oldestHistoryTime()
+    if (!Number.isFinite(oldest) || timelineTime <= oldest + TIME_EPSILON) {
+      setMode(TIME_MODES.NORMAL)
+      if (hud) hud.showToast('Rewind history exhausted', 1200)
+      return
+    }
+
+    const affordableDelta = Math.min(delta, energy / DRAIN_RATES.REWIND)
+    const requestedHistory = affordableDelta * REWIND_RATE
+    const restoredHistory = Math.min(requestedHistory, timelineTime - oldest)
+    const targetTime = timelineTime - restoredHistory
+
+    registered.forEach((entry) => restoreAtTime(entry, targetTime))
+    timelineTime = targetTime
+
+    const consumedRealTime = restoredHistory / REWIND_RATE
+    energy = Math.max(0, energy - DRAIN_RATES.REWIND * consumedRealTime)
+
+    if (energy <= TIME_EPSILON) {
+      energy = 0
+      setMode(TIME_MODES.NORMAL)
+      if (hud) hud.showToast('Chrono energy depleted — time normalized', 1500)
+    } else if (timelineTime <= oldest + TIME_EPSILON) {
+      setMode(TIME_MODES.NORMAL)
+      if (hud) hud.showToast('Rewind history exhausted', 1200)
+    }
+  }
+
+  function update(delta) {
     uniforms.uTime.value += delta
+    activeTime += delta
 
     if (ghostCooldown > 0) {
       ghostCooldown = Math.max(0, ghostCooldown - delta)
     }
 
-    // Energy drain & recharge
+    // Energy drain & recharge. Rewind accounts for its own consumption so an
+    // update that reaches the end of history does not charge for unused time.
     if (mode === TIME_MODES.NORMAL) {
       energy = Math.min(MAX_ENERGY, energy + RECHARGE_RATE * delta)
-    } else {
+    } else if (mode !== TIME_MODES.REWIND) {
       const drain = (DRAIN_RATES[mode] || 20) * delta
       energy -= drain
       if (energy <= 0) {
@@ -216,84 +443,29 @@ export function createTimeSystem({ scene, player, hud }) {
     // Record player trajectory for Ghost
     if (player && player.mesh) {
       playerHistory.push({
-        time: now,
+        time: activeTime,
         position: player.mesh.position.clone(),
         rotationY: player.mesh.rotation.y,
-        stridePhase: now * 4
+        stridePhase: activeTime * 4
       })
 
       // Trim player history to max duration
-      const cutoff = now - GHOST_BUFFER_SECONDS
+      const cutoff = activeTime - GHOST_BUFFER_SECONDS
       while (playerHistory.length > 0 && playerHistory[0].time < cutoff) {
         playerHistory.shift()
       }
     }
 
-    // Calculate effective time scale for objects
-    let timeScale = 1.0
-    if (mode === TIME_MODES.SLOW) timeScale = 0.2
-    else if (mode === TIME_MODES.FREEZE) timeScale = 0.0
-    else if (mode === TIME_MODES.REWIND) timeScale = -2.0
-
-    const scaledDelta = delta * timeScale
-
     // Update Ghost
     ghost.update(delta)
 
-    // Snapshot recording & playback for registered objects
-    snapshotTimer += delta
-    const shouldRecordSnapshot = snapshotTimer >= SNAPSHOT_INTERVAL
-
     if (mode === TIME_MODES.REWIND) {
-      // Replay registered snapshots backwards
-      registered.forEach((entry) => {
-        if (entry.snapshots.length > 0) {
-          // Pop snapshots backward
-          const stepsToPop = Math.max(1, Math.round(2.5 * (delta / SNAPSHOT_INTERVAL)))
-          for (let i = 0; i < stepsToPop && entry.snapshots.length > 0; i++) {
-            const snap = entry.snapshots.pop()
-            if (entry.options.restoreSnapshot) {
-              entry.options.restoreSnapshot(snap)
-            } else if (entry.object) {
-              if (snap.position) entry.object.position.copy(snap.position)
-              if (snap.rotation) entry.object.rotation.copy(snap.rotation)
-            }
-          }
-        }
-        if (entry.options.onUpdate) {
-          entry.options.onUpdate(scaledDelta, timeScale, delta)
-        }
-      })
+      updateRewind(delta)
     } else {
-      // Normal / Slow / Freeze forward updates + recording
-      registered.forEach((entry) => {
-        if (shouldRecordSnapshot) {
-          let snapData = null
-          if (entry.options.getSnapshot) {
-            snapData = entry.options.getSnapshot()
-          } else if (entry.object) {
-            snapData = {
-              position: entry.object.position.clone(),
-              rotation: entry.object.rotation.clone()
-            }
-          }
-          if (snapData) {
-            entry.snapshots.push(snapData)
-            const maxSnaps = Math.round(MAX_SNAPSHOT_HISTORY / SNAPSHOT_INTERVAL)
-            if (entry.snapshots.length > maxSnaps) {
-              entry.snapshots.shift()
-            }
-          }
-        }
-
-        if (entry.options.onUpdate) {
-          entry.options.onUpdate(scaledDelta, timeScale, delta)
-        }
-      })
-    }
-
-    if (shouldRecordSnapshot) {
-      snapshotTimer = 0
+      let timeScale = 1.0
+      if (mode === TIME_MODES.SLOW) timeScale = 0.2
+      else if (mode === TIME_MODES.FREEZE) timeScale = 0.0
+      updateForward(delta, timeScale)
     }
 
     updateUniforms()
