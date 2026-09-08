@@ -26,7 +26,7 @@ const DRIFT_X = 0.35
 const DRIFT_Y = 0.12
 const DRIFT_SPEED = 0.07
 
-export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio }) {
+export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio, onCredits, isCreditsOpen }) {
   // ---------------------------------------------------------------
   // DOM overlay
   // ---------------------------------------------------------------
@@ -186,6 +186,14 @@ export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio }) 
     }
   })
 
+  const creditsBtn = createButton('Credits', {
+    variant: 'ghost',
+    onClick: () => {
+      if (unlockAudio) unlockAudio()
+      if (onCredits) onCredits()
+    }
+  })
+
   // Keyboard hint
   const hint = document.createElement('div')
   hint.textContent = 'Click or press Enter to begin'
@@ -196,7 +204,7 @@ export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio }) 
     fontWeight: '400'
   })
 
-  buttonWrap.append(newGameBtn, settingsBtn, hint)
+  buttonWrap.append(newGameBtn, settingsBtn, creditsBtn, hint)
 
   // ---------------------------------------------------------------
   // Version / credit line (bottom)
@@ -230,6 +238,7 @@ export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio }) 
   function handleStart() {
     if (!isVisible || isTransitioning) return
     if (settingsMenu && settingsMenu.isOpen) return
+    if (isCreditsOpen && isCreditsOpen()) return
     if (unlockAudio) unlockAudio()
     isTransitioning = true
 
@@ -247,6 +256,7 @@ export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio }) 
   function onKeyDown(event) {
     if (!isVisible || isTransitioning) return
     if (settingsMenu && settingsMenu.isOpen) return
+    if (isCreditsOpen && isCreditsOpen()) return
     if (event.code === 'Enter' || event.code === 'Space') {
       event.preventDefault()
       handleStart()

@@ -19,6 +19,7 @@ import { createLoadingScreen } from './ui/loading-screen.js'
 import { createMainMenu } from './ui/main-menu.js'
 import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
+import { createCredits } from './ui/credits.js'
 import { createBoardingLevel } from './levels/boarding.js'
 import { createMovingHeistLevel } from './levels/moving-heist.js'
 import { createTimewreckLevel } from './levels/timewreck.js'
@@ -146,7 +147,9 @@ keyboard.onAction('slow', () => timeSystem.triggerSlow())
 keyboard.onAction('freeze', () => timeSystem.triggerFreeze())
 keyboard.onAction('rewind', () => timeSystem.triggerRewind())
 keyboard.onAction('ghost', () => timeSystem.triggerGhost())
-keyboard.onAction('restart', () => { if (gameStarted) levelManager.restart() })
+keyboard.onAction('restart', () => {
+  if (gameStarted && !credits.isOpen) levelManager.restart()
+})
 
 // First-person / third-person toggle (V by default, rebindable like the rest).
 keyboard.onAction('toggleView', () => playerView.toggle())
@@ -165,13 +168,16 @@ const levelManager = createLevelManager({
   respawn,
   timeSystem,
   loadingScreen,
-  onEnter: playMusicForState,
+  onEnter: (state) => {
+    playMusicForState(state)
+    if (state === 'Complete') showCompleteCredits()
+  },
   onLeave: stopLevelMusic,
   levels: [
     { state: 'Boarding', create: createBoardingLevel },
     { state: 'MovingHeist', create: createMovingHeistLevel },
     { state: 'Timewreck', create: createTimewreckLevel },
-    { state: 'Complete', create: createCompleteLevel }
+    { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })
 if (import.meta.env.DEV) window.levelManager = levelManager
@@ -216,7 +222,19 @@ function buildTitleBackdrop() {
 }
 
 const settingsMenu = createSettingsMenu()
-const menu = createMainMenu({ camera, renderer, settingsMenu, unlockAudio })
+const credits = createCredits({
+  onDismiss: (source) => {
+    if (source === 'complete') quitToTitle()
+  }
+})
+const menu = createMainMenu({
+  camera,
+  renderer,
+  settingsMenu,
+  unlockAudio,
+  onCredits: () => credits.open({ source: 'menu' }),
+  isCreditsOpen: () => credits.isOpen
+})
 
 // ---------------------------------------------------------------
 // Pause menu
@@ -227,7 +245,7 @@ const menu = createMainMenu({ camera, renderer, settingsMenu, unlockAudio })
 
 const pauseMenu = createPauseMenu({
   settingsMenu,
-  canPause: () => gameStarted,
+  canPause: () => gameStarted && !credits.isOpen,
   getStatus: () => ({
     level: levelManager.getState(),
     objective: hud.getObjective(),
@@ -278,8 +296,19 @@ function setPaused(value) {
 // Escape while the mouse was captured — browsers consume that keydown — so it
 // doubles as a pause trigger.
 playerView.onLockLost(() => {
+  if (credits.isOpen) return
   if (gameStarted && !paused && !settingsMenu.isOpen) setPaused(true)
 })
+
+function showCompleteCredits() {
+  // Open first so the pointer-lock release is not treated as a pause.
+  credits.open({ source: 'complete' })
+  hud.setVisible(false)
+  keyboard.setEnabled(false)
+  interaction.setEnabled(false)
+  playerView.setEnabled(false)
+  keyboardLock.release({ exitFullscreen: false })
+}
 
 function startGame() {
   // Clean up the silently-built backdrop level; the level manager will
@@ -346,6 +375,8 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 const loop = createLoop({ renderer, scene, camera, clock })
 loop.add((delta) => {
   hud.updateStats(delta)
+
+  if (credits.isOpen) return
 
   // While the menu is visible, drift the camera and skip gameplay.
   if (!gameStarted) {
