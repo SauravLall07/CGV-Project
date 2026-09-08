@@ -97,6 +97,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   scene.fog = new THREE.Fog(0x241d24, 30, 250)
 
   const unregisters = [] // interaction + time-system unregister callbacks
+  unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds } // mutated on section transitions
 
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
@@ -197,6 +198,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   addProp(secConsole, spans.security.minZ + 2, 0.44)
   unregisters.push(interaction.register(secConsole, {
     prompt: 'Read the security notice',
+    isEligible: () => section === 'interior',
     onInteract: () => interaction.flashPrompt('"Internal scanner active — authorised chrono-tech may FREEZE ([2]/F) to pass."', 2800)
   }))
 
@@ -294,6 +296,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   unregisters.push(interaction.register(ladder, {
     prompt: 'Climb to the carriage roof',
+    isEligible: () => section === 'interior',
     onInteract: () => {
       if (hatchOpen < 0.6) {
         interaction.flashPrompt('The roof hatch is sealed — hold the pressure plate open.')
@@ -323,6 +326,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   unregisters.push(interaction.register(roof.dropHatch, {
     prompt: 'Drop into the vault car',
+    isEligible: () => section === 'roof',
     onInteract: () => enterVault()
   }))
 
@@ -375,6 +379,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   const unregisterCage = interaction.register(cage, {
     prompt: 'Breach the Chrono Core cage',
+    isEligible: () => section === 'vault',
     onInteract: () => {
       if (timeSystem.getMode() !== 'FREEZE') {
         interaction.flashPrompt('The lock ring is spinning — FREEZE ([2]/F) it to breach.')
@@ -390,6 +395,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   unregisters.push(interaction.register(core, {
     prompt: 'Take the Chrono Core',
+    isEligible: () => section === 'vault',
     onInteract: () => {
       if (taken) return
       if (!breached) { interaction.flashPrompt('Breach the cage first.'); return }

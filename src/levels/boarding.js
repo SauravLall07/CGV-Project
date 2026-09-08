@@ -27,6 +27,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
   const outdoorEnv = createOutdoorEnvironment({ mode: 'station', stationSpotLights: lights.spotLights })
 
   scene.add(outdoorEnv.group, station, train, ...lights)
+  const unregisterStationBlocker = interaction.registerBlocker(station)
+  const unregisterTrainBlocker = interaction.registerBlocker(train)
 
   // Dusk atmosphere with depth fog
   scene.fog = new THREE.Fog(0x241d24, 30, 250)
@@ -450,6 +452,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     },
 
     dispose() {
+      unregisterStationBlocker()
+      unregisterTrainBlocker()
       unregisterApproachTerminal()
       unregisterTerminal()
       unregisterBoarding()

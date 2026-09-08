@@ -108,6 +108,7 @@ export function createTimewreckLevel({
   scene.fog = new THREE.Fog(0x1a0708, 10, 120)
 
   const unregisters = []
+  unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds }
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
 
