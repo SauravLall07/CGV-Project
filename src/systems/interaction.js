@@ -2,16 +2,15 @@ import * as THREE from 'three'
 import { bindingLabel, settings } from '../core/settings.js'
 
 // Interaction system (Phase 1 foundation): each frame, the registry of
-// "interactable" objects is scanned for the best candidate in front of the
-// player — within its own range and inside a facing cone along the camera
-// yaw. That candidate becomes the focused target; a contextual prompt ("E to
-// open") is shown for it, and pressing the interact key fires its callback.
+// "interactable" objects is scanned for the best visible candidate in front
+// of the player — within its own range, vertical reach and a forgiving facing
+// cone. Registered level geometry provides a line-of-sight test, so an
+// otherwise valid target cannot be used through a wall or another floor.
 //
-// This is a proximity + facing test rather than a single thin raycast, so a
-// short object (a floor switch, a waist-high terminal) is still detectable
-// when the player walks up to it. Line-of-sight occlusion (don't trigger a
-// switch through a wall) can be layered on later as a raycast against level
-// geometry once levels actually have dividing walls.
+// Candidate selection stays broader than a single thin camera ray, so a short
+// object (a floor switch, a waist-high terminal) remains easy to select. The
+// raycast is only the final visibility check from the player's interaction
+// height to that candidate.
 //
 // Doors, terminals, switches, the boarding control and the emergency brake
 // all go through register() rather than each wiring their own detection or
@@ -23,9 +22,49 @@ import { bindingLabel, settings } from '../core/settings.js'
 // falls silent while a menu has input disabled.
 
 const DEFAULT_RANGE = 3 // metres (horizontal); per-registration override via opts.range
+const DEFAULT_VERTICAL_TOLERANCE = 1.8
+const INTERACTION_ORIGIN_HEIGHT = 1.1
 const FACING_MIN = 0.35 // dot(forward, toTarget); ~70 degrees to either side
+const OCCLUSION_PADDING = 0.08
+const DISTANCE_EPSILON = 1e-7
 const FOCUS_EMISSIVE = 0x3a3a44 // tint applied to an unlit focused mesh
 const FOCUS_BOOST = 1.8 // multiplier applied instead when it already glows
+
+function isDescendantOf(node, root) {
+  let current = node
+  while (current) {
+    if (current === root) return true
+    current = current.parent
+  }
+  return false
+}
+
+function isWorldVisible(object) {
+  let current = object
+  while (current) {
+    if (!current.visible) return false
+    current = current.parent
+  }
+  return true
+}
+
+function isNonBlockingEffect(object) {
+  let current = object
+  while (current) {
+    if (current.userData?.noInteractionBlocker) return true
+    current = current.parent
+  }
+
+  if (object.isPoints || object.isSprite || object.isLine) return true
+
+  const materials = Array.isArray(object.material)
+    ? object.material
+    : (object.material ? [object.material] : [])
+
+  return materials.length > 0 && materials.every((material) => (
+    material.transparent && (material.depthWrite === false || material.opacity < 0.35)
+  ))
+}
 
 function createPromptElement() {
   const el = document.createElement('div')
@@ -56,26 +95,56 @@ export function createInteractionSystem({ camera, input } = {}) {
   // Keyed by the registered Object3D. A Group or a Mesh both work — its world
   // position is the point range and facing are measured against.
   const registry = new Map()
+  const blockerRegistry = new Set()
 
   const playerPos = new THREE.Vector3()
   const targetPos = new THREE.Vector3()
   const cameraDir = new THREE.Vector3()
+  const rayOrigin = new THREE.Vector3()
+  const rayDirection = new THREE.Vector3()
+  const raycaster = new THREE.Raycaster()
 
   const prompt = createPromptElement()
   let focused = null
   let enabled = true
   let flashUntil = 0
+  let lastPlayer = null
+  let lastYaw
 
-  function register(object, { prompt: label, onInteract, range = DEFAULT_RANGE } = {}) {
+  function register(object, {
+    prompt: label,
+    onInteract,
+    range = DEFAULT_RANGE,
+    verticalTolerance = DEFAULT_VERTICAL_TOLERANCE,
+    isEligible
+  } = {}) {
     if (!object || typeof onInteract !== 'function') {
       throw new Error('register(object, { prompt, onInteract }) requires an object and an onInteract callback')
     }
-    const entry = { object, label: label ?? 'Interact', onInteract, range }
+    const entry = {
+      object,
+      label: label ?? 'Interact',
+      onInteract,
+      range,
+      verticalTolerance,
+      isEligible
+    }
     registry.set(object, entry)
 
     return function unregister() {
       registry.delete(object)
       if (focused && focused.object === object) setFocus(null)
+    }
+  }
+
+  function registerBlocker(object) {
+    if (!object?.isObject3D) {
+      throw new Error('registerBlocker(object) requires a Three.js Object3D')
+    }
+    blockerRegistry.add(object)
+
+    return function unregisterBlocker() {
+      blockerRegistry.delete(object)
     }
   }
 
@@ -135,17 +204,7 @@ export function createInteractionSystem({ camera, input } = {}) {
     prompt.style.opacity = '1'
   }
 
-  // `player` is the object detection is measured from; `yaw` is the camera
-  // yaw (radians) that defines "forward". Falls back to the camera's own
-  // facing if yaw is missing.
-  function update(player, yaw) {
-    if (!enabled || registry.size === 0 || !player) {
-      setFocus(null)
-      return
-    }
-
-    player.getWorldPosition(playerPos)
-
+  function getForward(yaw) {
     let forwardX
     let forwardZ
     if (typeof yaw === 'number') {
@@ -161,17 +220,55 @@ export function createInteractionSystem({ camera, input } = {}) {
       forwardZ = 1
     }
 
+    return { forwardX, forwardZ }
+  }
+
+  function hasLineOfSight(entry) {
+    if (blockerRegistry.size === 0) return true
+
+    rayOrigin.copy(playerPos)
+    rayOrigin.y += INTERACTION_ORIGIN_HEIGHT
+    rayDirection.subVectors(targetPos, rayOrigin)
+    const targetDistance = rayDirection.length()
+    if (targetDistance <= DISTANCE_EPSILON) return true
+
+    rayDirection.multiplyScalar(1 / targetDistance)
+    raycaster.set(rayOrigin, rayDirection)
+    raycaster.far = Math.max(0, targetDistance - OCCLUSION_PADDING)
+
+    const hits = raycaster.intersectObjects(Array.from(blockerRegistry), true)
+    for (const hit of hits) {
+      if (isDescendantOf(hit.object, entry.object)) continue
+      if (!isWorldVisible(hit.object)) continue
+      if (isNonBlockingEffect(hit.object)) continue
+      return false
+    }
+    return true
+  }
+
+  function findBestCandidate(player, yaw) {
+    if (!enabled || registry.size === 0 || !player) return null
+
+    player.getWorldPosition(playerPos)
+    blockerRegistry.forEach((blocker) => blocker.updateWorldMatrix(true, true))
+    const { forwardX, forwardZ } = getForward(yaw)
+
     let best = null
     let bestScore = Infinity
     for (const entry of registry.values()) {
+      if (!entry.object.parent || !isWorldVisible(entry.object)) continue
+      if (entry.isEligible && !entry.isEligible({ player, object: entry.object })) continue
+
       entry.object.getWorldPosition(targetPos)
       const dx = targetPos.x - playerPos.x
       const dz = targetPos.z - playerPos.z
       const distance = Math.hypot(dx, dz)
       if (distance > entry.range) continue
+      if (Math.abs(targetPos.y - playerPos.y) > entry.verticalTolerance) continue
 
       const facing = distance > 1e-4 ? (dx * forwardX + dz * forwardZ) / distance : 1
       if (facing < FACING_MIN) continue
+      if (!hasLineOfSight(entry)) continue
 
       // Closest wins, with better-aimed breaking ties.
       const score = distance - facing
@@ -181,15 +278,32 @@ export function createInteractionSystem({ camera, input } = {}) {
       }
     }
 
-    setFocus(best)
+    return best
+  }
+
+  // `player` is the object detection is measured from; `yaw` is the camera
+  // yaw (radians) that defines "forward". Falls back to the camera's own
+  // facing if yaw is missing.
+  function update(player, yaw) {
+    lastPlayer = player ?? null
+    lastYaw = yaw
+
+    setFocus(findBestCandidate(lastPlayer, lastYaw))
   }
 
   // Fire the focused interactable, if there is one. Wired to the keyboard's
   // "interact" action below; also callable directly (a future on-screen
   // prompt button, say).
   function interact() {
-    if (!enabled || !focused) return false
-    focused.onInteract({ object: focused.object, entry: focused })
+    if (!enabled || !lastPlayer) return false
+
+    // Do not trust focus from the previous rendered frame: the target may
+    // have been hidden, made ineligible, moved behind a wall or unregistered.
+    setFocus(findBestCandidate(lastPlayer, lastYaw))
+    if (!focused) return false
+
+    const entry = focused
+    entry.onInteract({ object: entry.object, entry, player: lastPlayer })
     return true
   }
 
@@ -205,11 +319,14 @@ export function createInteractionSystem({ camera, input } = {}) {
     if (focused) applyHighlight(focused, false)
     prompt.remove()
     registry.clear()
+    blockerRegistry.clear()
     focused = null
+    lastPlayer = null
   }
 
   return {
     register,
+    registerBlocker,
     update,
     interact,
     flashPrompt,
