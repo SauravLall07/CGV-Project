@@ -24,6 +24,9 @@ const RUN_LEAN = 0.13
 const GRAVITY = 18
 const JUMP_SPEED = 6.4
 const JUMP_MOMENTUM = 0.8
+const AIR_CONTROL = 8
+const PLAYER_COLLISION_RADIUS = 0.28
+const MAX_PLANAR_STEP = 0.08
 
 // -----------------------------------------------------------------------------
 // CROUCH POSE
@@ -340,6 +343,23 @@ export function createPlayer() {
       return Number.isFinite(sampled) ? sampled : fallback
     }
 
+    // Move in short X/Z substeps so thin wall colliders cannot be tunneled
+    // through on a long/slow frame. The player is treated as a small circle
+    // rather than a mathematical point, which also keeps the visible body out
+    // of walls and corners.
+    function movePlanar(moveX, moveZ) {
+      const distance = Math.hypot(moveX, moveZ)
+      const steps = Math.max(1, Math.ceil(distance / MAX_PLANAR_STEP))
+      const stepX = moveX / steps
+      const stepZ = moveZ / steps
+
+      for (let i = 0; i < steps; i++) {
+        group.position.x += stepX
+        group.position.z += stepZ
+        if (obstacles) resolveBoxCollision(group.position, obstacles, PLAYER_COLLISION_RADIUS)
+      }
+    }
+
     if (!airborne) {
       groundY = sampleGroundHeight(group.position.y)
       group.position.y = groundY
@@ -349,8 +369,18 @@ export function createPlayer() {
     // MOVEMENT / JUMP PHYSICS
     // -----------------------------------------------------------------------
     if (airborne) {
-      group.position.x += airVelocityX * delta
-      group.position.z += airVelocityZ * delta
+      // Allow controlled air movement. Previously the X/Z velocity was captured
+      // only on the jump-start frame, so jumping first and then pressing a
+      // direction left the player hanging vertically with no way to clear the
+      // Passageway 3 laser rows.
+      if (moving) {
+        const desiredSpeed = MOVE_SPEED * (running ? RUN_MULTIPLIER : 1) * JUMP_MOMENTUM
+        const control = Math.min(1, delta * AIR_CONTROL)
+        airVelocityX += (dx * desiredSpeed - airVelocityX) * control
+        airVelocityZ += (dz * desiredSpeed - airVelocityZ) * control
+      }
+
+      movePlanar(airVelocityX * delta, airVelocityZ * delta)
 
       // A jump can cross a staircase/ramp. Sample the floor underneath the
       // player's current X/Z so landing follows the connector instead of the
@@ -387,8 +417,7 @@ export function createPlayer() {
 
       const distance = MOVE_SPEED * movementMultiplier * delta
 
-      group.position.x += dx * distance
-      group.position.z += dz * distance
+      movePlanar(dx * distance, dz * distance)
 
       // Flat levels simply return the fallback. Stair-enabled levels can return
       // a local floor height, allowing smooth vertical traversal while the
@@ -490,7 +519,7 @@ export function createPlayer() {
     // -----------------------------------------------------------------------
     // COLLISION / BOUNDS
     // -----------------------------------------------------------------------
-    if (obstacles) resolveBoxCollision(group.position, obstacles)
+    if (obstacles) resolveBoxCollision(group.position, obstacles, PLAYER_COLLISION_RADIUS)
 
     if (bounds) {
       group.position.x = THREE.MathUtils.clamp(group.position.x, bounds.minX, bounds.maxX)

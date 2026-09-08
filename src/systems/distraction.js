@@ -11,8 +11,12 @@ export function createDistractionSystem({
   hud,
   groundHeightAt,
   isEnabled = () => true,
-  hearingRadius = 10
+  hearingRadius = 10,
+  inventory = { count: 0, max: 3 }
 } = {}) {
+  if (!Number.isFinite(inventory.count)) inventory.count = 0
+  if (!Number.isFinite(inventory.max) || inventory.max < 1) inventory.max = 3
+
   const projectileMaterial = new THREE.MeshStandardMaterial({
     color: 0xb08d3f,
     roughness: 0.28,
@@ -57,6 +61,10 @@ export function createDistractionSystem({
   function throwDistraction() {
     if (!isEnabled()) return false
     if (!player?.mesh || cooldown > 0 || projectile) return false
+    if (inventory.count <= 0) {
+      hud?.showToast?.('No distractors left — search the passage for loose metal objects.', 1700)
+      return false
+    }
 
     const yaw = camera?.getYaw?.() ?? player.mesh.rotation.y ?? 0
     const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw))
@@ -75,11 +83,14 @@ export function createDistractionSystem({
     velocity.y = crouched ? 3.6 : 4.15
 
     scene.add(projectile)
+    inventory.count = Math.max(0, inventory.count - 1)
     cooldown = 0.65
 
     if (firstThrow) {
       firstThrow = false
-      hud?.showToast?.('Distractor thrown — guards who hear the impact will investigate it.', 2200)
+      hud?.showToast?.(`Distractor thrown — ${inventory.count}/${inventory.max} remaining. Guards who hear it will investigate.`, 2400)
+    } else {
+      hud?.showToast?.(`Distractors: ${inventory.count}/${inventory.max}`, 1100)
     }
 
     return true
@@ -155,6 +166,7 @@ export function createDistractionSystem({
     throw: throwDistraction,
     update,
     dispose,
-    isReady: () => cooldown <= 0 && !projectile
+    isReady: () => cooldown <= 0 && !projectile && inventory.count > 0,
+    getCount: () => inventory.count
   }
 }

@@ -66,6 +66,65 @@ function addBox(group, colliders, {
   return mesh
 }
 
+function addCylinderBetween(group, start, end, radius, material, name = '') {
+  const direction = end.clone().sub(start)
+  const length = direction.length()
+  if (length < 0.001) return null
+
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, length, 8),
+    material
+  )
+  mesh.name = name
+  mesh.position.copy(start).add(end).multiplyScalar(0.5)
+  mesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.normalize()
+  )
+  mesh.castShadow = true
+  group.add(mesh)
+  return mesh
+}
+
+function addStairRailings(group, stair, material, {
+  railHeight = 0.95,
+  inset = 0.16,
+  postSpacing = 1.15
+} = {}) {
+  const dx = stair.end.x - stair.start.x
+  const dz = stair.end.z - stair.start.z
+  const horizontalLength = Math.hypot(dx, dz)
+  if (horizontalLength < 0.001) return
+
+  const ux = dx / horizontalLength
+  const uz = dz / horizontalLength
+  const px = uz
+  const pz = -ux
+  const sideOffset = Math.max(0.2, stair.width / 2 - inset)
+  const postCount = Math.max(2, Math.ceil(stair.runLength / postSpacing))
+
+  for (const side of [-1, 1]) {
+    const offsetX = px * side * sideOffset
+    const offsetZ = pz * side * sideOffset
+
+    const railStart = stair.start.clone().add(new THREE.Vector3(offsetX, railHeight, offsetZ))
+    const railEnd = stair.end.clone().add(new THREE.Vector3(offsetX, railHeight, offsetZ))
+    addCylinderBetween(group, railStart, railEnd, 0.035, material, `tutorial-stair-rail-${side}`)
+
+    for (let i = 0; i <= postCount; i++) {
+      const t = i / postCount
+      const base = new THREE.Vector3(
+        THREE.MathUtils.lerp(stair.start.x, stair.end.x, t) + offsetX,
+        THREE.MathUtils.lerp(stair.start.y, stair.end.y, t) + 0.04,
+        THREE.MathUtils.lerp(stair.start.z, stair.end.z, t) + offsetZ
+      )
+      const top = base.clone()
+      top.y += railHeight - 0.04
+      addCylinderBetween(group, base, top, 0.025, material, `tutorial-stair-post-${side}-${i}`)
+    }
+  }
+}
+
 function createSymbolMesh(type, material) {
   let geometry
   if (type === 0) geometry = new THREE.CircleGeometry(0.13, 20)
@@ -84,7 +143,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
 
   const panel = new THREE.Group()
   panel.name = 'tutorial-symbol-puzzle'
-  panel.position.set(worldX(-69.3), 1.45, -21.42)
+  panel.position.set(worldX(-69.3), 1.45, -21.72)
   panel.rotation.y = Math.PI
   group.add(panel)
 
@@ -105,7 +164,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
     emissiveIntensity: 2
   })
   const solvedLamp = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.04), solvedLampMat)
-  solvedLamp.position.set(0, 0.33, -0.11)
+  solvedLamp.position.set(0, 0.33, 0.115)
   panel.add(solvedLamp)
 
   const dialGroups = []
@@ -113,7 +172,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
   for (let i = 0; i < 3; i++) {
     const dial = new THREE.Group()
     dial.name = `symbol-dial-${i + 1}`
-    dial.position.set(-0.62 + i * 0.62, -0.05, -0.12)
+    dial.position.set(-0.62 + i * 0.62, -0.05, 0.12)
 
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 8, 20), brassMat)
     dial.add(ring)
@@ -121,7 +180,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
     const variants = []
     for (let s = 0; s < 3; s++) {
       const symbol = createSymbolMesh(s, symbolMats[s])
-      symbol.position.z = -0.025
+      symbol.position.z = 0.025
       symbol.visible = s === current[i]
       dial.add(symbol)
       variants.push(symbol)
@@ -209,6 +268,13 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   const ceilingMat = plasterMaterial({ repeat: [12, 2], base: 0x3d3a3c, roughness: 0.96 })
   const ironMat = metalMaterial({ repeat: [8, 1], base: 0x2c3640, roughness: 0.48, metalness: 0.72 })
   const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.9 })
+  const stairRailMat = new THREE.MeshStandardMaterial({
+    color: 0xb08d3f,
+    emissive: 0x2f2108,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.9
+  })
 
   // Main tutorial gallery: long enough to teach one mechanic at a time before
   // the player reaches the final cipher door.
@@ -357,17 +423,79 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     })
   }
 
+  const stairStepMat = new THREE.MeshStandardMaterial({
+    color: 0x53505a,
+    roughness: 0.82,
+    metalness: 0.05
+  })
+
   const staircase = createStaircase({
     start: new THREE.Vector3(STAIR_X, FLOOR_Y, STAIR_START_Z),
     end: new THREE.Vector3(STAIR_X, LOWER_FLOOR_Y, STAIR_END_Z),
     width: stairWidth,
     steps: 15,
     wallHeight: 4.6,
-    stepMaterial: new THREE.MeshStandardMaterial({ color: 0x53505a, roughness: 0.82, metalness: 0.05 }),
+    stepMaterial: stairStepMat,
     wallMaterial: wallMat,
-    ceilingMaterial: ceilingMat
+    ceilingMaterial: ceilingMat,
+    // The shared staircase helper makes one roof slab per step. On a steep
+    // descent that exposes thin exterior seams between the slabs, so this
+    // passage uses one continuous sloped ceiling instead.
+    addCeiling: false
   })
   group.add(staircase.group)
+
+  // Fully seal the stairwell roof with one continuous sloped slab. This keeps
+  // the outdoor environment out of view even when the third-person camera is
+  // looking sharply upward from the lower flight.
+  const stairRoofStart = new THREE.Vector3(STAIR_X, FLOOR_Y + 4.6, STAIR_START_Z + 0.10)
+  const stairRoofEnd = new THREE.Vector3(STAIR_X, LOWER_FLOOR_Y + 4.6, STAIR_END_Z - 0.10)
+  const stairRoofDirection = stairRoofEnd.clone().sub(stairRoofStart)
+  const stairRoof = new THREE.Mesh(
+    new THREE.BoxGeometry(stairWidth + 0.42, 0.20, stairRoofDirection.length() + 0.22),
+    ceilingMat
+  )
+  stairRoof.name = 'tutorial-stair-continuous-roof'
+  stairRoof.position.copy(stairRoofStart).add(stairRoofEnd).multiplyScalar(0.5)
+  stairRoof.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 0, 1),
+    stairRoofDirection.clone().normalize()
+  )
+  stairRoof.castShadow = true
+  stairRoof.receiveShadow = true
+  group.add(stairRoof)
+
+  // Close the small vertical gap created because the first generated tread is
+  // one step below the upper landing. Without this riser cap the exterior can
+  // be seen underneath the first step from some camera angles.
+  const firstStepDrop = Math.abs(LOWER_FLOOR_Y - FLOOR_Y) / 15
+  const thresholdRiser = new THREE.Mesh(
+    new THREE.BoxGeometry(stairWidth + 0.04, firstStepDrop + 0.05, 0.16),
+    stairStepMat
+  )
+  thresholdRiser.name = 'tutorial-stair-upper-threshold-riser'
+  thresholdRiser.position.set(
+    STAIR_X,
+    FLOOR_Y - firstStepDrop / 2,
+    STAIR_START_Z - 0.055
+  )
+  thresholdRiser.castShadow = true
+  thresholdRiser.receiveShadow = true
+  group.add(thresholdRiser)
+
+  // A short header closes the remaining space between the stair tunnel roof
+  // and the taller Passage 1 turn-room ceiling.
+  addBox(group, colliders, {
+    size: new THREE.Vector3(stairWidth + 0.32, ROOM_HEIGHT - 4.56, 0.28),
+    position: new THREE.Vector3(
+      STAIR_X,
+      4.56 + (ROOM_HEIGHT - 4.56) / 2,
+      northWallZ - 0.02
+    ),
+    material: wallMat,
+    collider: false,
+    name: 'tutorial-stair-upper-header'
+  })
 
   // The rendered stair walls also need X/Z collision because the shared player
   // controller intentionally uses lightweight 2D wall boxes.
@@ -381,14 +509,94 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     })
   }
 
-  // Narrow decorative handrails make the descent read clearly from the turn.
-  for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 9.7, 8), brassMat)
-    rail.rotation.x = Math.PI / 2
-    rail.rotation.z = Math.atan2(LOWER_FLOOR_Y - FLOOR_Y, STAIR_END_Z - STAIR_START_Z)
-    rail.position.set(STAIR_X + side * 1.45, -0.65, (STAIR_START_Z + STAIR_END_Z) / 2)
-    group.add(rail)
+  // Match the Passage 3 -> 4 stair treatment: a continuous brass handrail
+  // supported by evenly spaced vertical posts on both sides.
+  addStairRailings(group, staircase, stairRailMat)
+
+  // Use the same compact practical wall sconces as the later staircase rather
+  // than bright floating bulbs. Their alternating placement keeps both the
+  // treads and brass rails readable without washing the walls out.
+  const stairHousingMat = new THREE.MeshStandardMaterial({
+    color: 0x202930,
+    roughness: 0.42,
+    metalness: 0.82
+  })
+  const stairLensMat = new THREE.MeshStandardMaterial({
+    color: 0xffdfb0,
+    emissive: 0xffa64d,
+    emissiveIntensity: 1.2,
+    roughness: 0.28,
+    metalness: 0.12
+  })
+
+  function addStairSconce(stair, t, side, intensity = 5.1) {
+    const dx = stair.end.x - stair.start.x
+    const dz = stair.end.z - stair.start.z
+    const run = Math.hypot(dx, dz)
+    const ux = dx / run
+    const uz = dz / run
+    const px = uz
+    const pz = -ux
+    const yaw = Math.atan2(ux, uz)
+    const floorY = THREE.MathUtils.lerp(stair.start.y, stair.end.y, t)
+    const centerX = THREE.MathUtils.lerp(stair.start.x, stair.end.x, t)
+    const centerZ = THREE.MathUtils.lerp(stair.start.z, stair.end.z, t)
+    const wallOffset = stair.width / 2 + 0.035
+
+    const fixture = new THREE.Group()
+    fixture.position.set(
+      centerX + px * side * wallOffset,
+      floorY + 1.62,
+      centerZ + pz * side * wallOffset
+    )
+    fixture.rotation.y = yaw
+    group.add(fixture)
+
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.38, 0.46), stairHousingMat)
+    housing.castShadow = true
+    fixture.add(housing)
+
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.23, 0.30), stairLensMat)
+    lens.position.x = -side * 0.085
+    fixture.add(lens)
+
+    const light = new THREE.PointLight(0xffc886, intensity, 5.8, 2.25)
+    light.position.set(
+      centerX - px * side * 0.30,
+      floorY + 1.55,
+      centerZ - pz * side * 0.30
+    )
+    group.add(light)
   }
+
+  for (const [t, side] of [[0.16, -1], [0.48, 1], [0.80, -1]]) {
+    addStairSconce(staircase, t, side, 5.1)
+  }
+
+  function addLandingCeilingFixture(position, intensity = 5.4) {
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.11, 0.34), stairHousingMat)
+    housing.position.copy(position)
+    group.add(housing)
+
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.61, 0.03, 0.20), stairLensMat)
+    lens.position.copy(position)
+    lens.position.y -= 0.07
+    group.add(lens)
+
+    const light = new THREE.PointLight(0xffc886, intensity, 6.2, 2.25)
+    light.position.copy(position)
+    light.position.y -= 0.28
+    group.add(light)
+  }
+
+  addLandingCeilingFixture(
+    new THREE.Vector3(STAIR_X, FLOOR_Y + 4.72, STAIR_START_Z + 0.95),
+    5.2
+  )
+  addLandingCeilingFixture(
+    new THREE.Vector3(STAIR_X, LOWER_FLOOR_Y + 4.72, STAIR_END_Z - 0.90),
+    5.4
+  )
 
   // Bottom landing / Stage 2 connection point. It is a real enclosed room, not
   // an exterior gap, so outdoor terrain can never become part of the playable

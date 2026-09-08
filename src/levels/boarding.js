@@ -15,6 +15,7 @@ import { createTutorialPassage } from '../environment/passageways/passage-tutori
 import { createGuardPassage } from '../environment/passageways/passage-guards.js'
 import { createBridgePassage } from '../environment/passageways/passage-bridge.js'
 import { createStealthSystem } from '../systems/stealth.js'
+import { createDistractionSystem } from '../systems/distraction.js'
 import { disposeObject } from '../core/dispose.js'
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
@@ -26,6 +27,10 @@ import { disposeObject } from '../core/dispose.js'
 
 export function createBoardingLevel({ scene, interaction, assets, hud, player, camera, respawn, advance }) {
   const { group: station, boardingControl, wallColliders } = createStationBlockout({ includePlaceholders: false })
+
+  // Shared finite inventory for throwable guard distractions. Passageways 2
+  // and 3 both read/write this same object, so pickups carry across the vent.
+  const distractionInventory = { count: 0, max: 3 }
 
   // Expansion modules stay self-contained. Passageway 1 opens its lower landing
   // when Passageway 2 is mounted; Passageway 2 then owns the lower guard hall,
@@ -44,6 +49,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     player,
     respawn,
     camera,
+    distractionInventory,
     connectedToPassage3: true
   })
   const bridgePassage = createBridgePassage({
@@ -52,7 +58,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     hud,
     player,
     respawn,
-    camera
+    camera,
+    distractionInventory
   })
 
   station.add(tutorialPassage.group, guardPassage.group, bridgePassage.group)
@@ -101,6 +108,74 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
   tutorialPassage.setupStealth(stealth)
   guardPassage.setupStealth(stealth)
   bridgePassage.setupStealth(stealth)
+
+  // Passageways 4 and 5 reuse the same finite distraction inventory as P2/P3.
+  // Their guards belong to the station-level stealth system, so they need a
+  // station-level throw handler rather than one owned by either lower passage.
+  const stationDistraction = createDistractionSystem({
+    scene,
+    player,
+    camera,
+    stealth,
+    hud,
+    inventory: distractionInventory,
+    hearingRadius: 10.5,
+    groundHeightAt: () => 0,
+    isEnabled: () => Boolean(
+      bridgePassage.isComplete() &&
+      player?.mesh?.position?.y > -0.55 &&
+      !bridgePassage.isInsidePassage()
+    )
+  })
+
+  const stationPickupUnregisters = []
+  const stationPickupGeometry = new THREE.CylinderGeometry(0.09, 0.09, 0.26, 10)
+  stationPickupGeometry.rotateZ(Math.PI / 2)
+  const stationPickupMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb08d3f,
+    emissive: 0x3a2608,
+    emissiveIntensity: 0.45,
+    roughness: 0.28,
+    metalness: 0.9
+  })
+
+  function addStationDistractorPickup(position, name) {
+    const pickup = new THREE.Group()
+    pickup.name = name
+    pickup.position.copy(position)
+
+    const body = new THREE.Mesh(stationPickupGeometry, stationPickupMaterial)
+    body.position.y = 0.16
+    body.castShadow = true
+    pickup.add(body)
+    station.add(pickup)
+
+    let collected = false
+    const unregister = interaction.register(pickup, {
+      prompt: 'Pick up loose metal distractor',
+      range: 2.2,
+      onInteract: () => {
+        if (collected) return
+        if (distractionInventory.count >= distractionInventory.max) {
+          hud?.showToast?.(`Distractor pouch full — ${distractionInventory.count}/${distractionInventory.max}`, 1300)
+          return
+        }
+
+        collected = true
+        distractionInventory.count += 1
+        pickup.visible = false
+        hud?.showToast?.(`Distractor collected — ${distractionInventory.count}/${distractionInventory.max}`, 1300)
+      }
+    })
+    stationPickupUnregisters.push(unregister)
+  }
+
+  // Two replenishment points in Passageway 4's west approach and two in the
+  // final station passage. They remain uncollected if the pouch is already full.
+  addStationDistractorPickup(new THREE.Vector3(-43.5, 0.02, -26.2), 'distractor-pickup-p4-a')
+  addStationDistractorPickup(new THREE.Vector3(-14.5, 0.02, -22.7), 'distractor-pickup-p4-b')
+  addStationDistractorPickup(new THREE.Vector3(0.2, 0.02, -10.0), 'distractor-pickup-p5-a')
+  addStationDistractorPickup(new THREE.Vector3(-2.8, 0.02, 10.0), 'distractor-pickup-p5-b')
 
   // -------------------------------------------------------------
   // New west-side infiltration wing — four extra stealth zones before the
@@ -458,6 +533,12 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
   const passage3CheckpointPos = bridgePassage.entryCheckpoint.clone()
   let passage3CheckpointActive = false
 
+  // Passageway 4 starts immediately after Passageway 3's upper return stairs.
+  // Give the player a checkpoint as soon as they step onto that upper approach
+  // corridor, before any Passageway 4 stealth encounters begin.
+  const passage4CheckpointPos = bridgePassage.exitCheckpoint.clone()
+  let passage4CheckpointActive = false
+
   return {
     objective: 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express',
     checkpoint: {
@@ -475,13 +556,16 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     },
     handleAction(action) {
       if (bridgePassage.handleAction(action)) return true
-      return guardPassage.handleAction(action)
+      if (guardPassage.handleAction(action)) return true
+      if (action === 'distract') return stationDistraction.throw()
+      return false
     },
     update(delta) {
       outdoorEnv.update(delta)
       tutorialPassage.update(delta)
       guardPassage.update(delta)
       bridgePassage.update(delta)
+      stationDistraction.update(delta)
 
       if (!passage2CheckpointActive && guardPassage.isInsidePassage()) {
         passage2CheckpointActive = true
@@ -493,6 +577,12 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
         passage3CheckpointActive = true
         respawn.setCheckpoint(passage3CheckpointPos, Math.PI)
         hud?.showToast?.('Checkpoint reached — Passageway 3 maintenance level', 2200)
+      }
+
+      if (!passage4CheckpointActive && bridgePassage.hasReachedExit()) {
+        passage4CheckpointActive = true
+        respawn.setCheckpoint(passage4CheckpointPos, Math.PI / 2)
+        hud?.showToast?.('Checkpoint reached — Passageway 4 approach', 2200)
       }
 
       // The old west-wing progression also runs west -> east, so X alone is no
@@ -556,6 +646,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
       tutorialPassage.dispose()
       guardPassage.dispose()
       bridgePassage.dispose()
+      stationPickupUnregisters.forEach((unregister) => unregister())
+      stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()
       scene.remove(outdoorEnv.group, station, train, ...lights)

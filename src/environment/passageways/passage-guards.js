@@ -136,7 +136,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   panel.add(casing)
 
   const labelRail = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.06, 0.05), brassMat)
-  labelRail.position.set(0, 0.39, -0.115)
+  labelRail.position.set(0, 0.39, 0.115)
   panel.add(labelRail)
 
   const panelMarkers = []
@@ -144,7 +144,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
     const mat = symbolMats[i].clone()
     mat.emissiveIntensity = 0.18
     const symbol = new THREE.Mesh(markerGeometry(i), mat)
-    symbol.position.set(-0.9 + i * 0.6, -0.05, -0.115)
+    symbol.position.set(-0.9 + i * 0.6, -0.05, 0.12)
     panel.add(symbol)
     panelMarkers.push(symbol)
   }
@@ -269,7 +269,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   }
 }
 
-export function createGuardPassage({ scene, interaction, hud, player, respawn, camera, connectedToPassage3 = false } = {}) {
+export function createGuardPassage({ scene, interaction, hud, player, respawn, camera, distractionInventory, connectedToPassage3 = false } = {}) {
   const group = new THREE.Group()
   group.name = 'passage-guards'
   const colliders = []
@@ -284,6 +284,49 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
   const ceilingMat = plasterMaterial({ repeat: [16, 2], base: 0x292d31, roughness: 0.98 })
   const ironMat = metalMaterial({ repeat: [10, 2], base: 0x293540, roughness: 0.5, metalness: 0.75 })
   const woodMat = woodMaterial({ repeat: [6, 2], light: 0x5c402c, dark: 0x2b1d15 })
+  const pickupUnregisters = []
+  const sharedInventory = distractionInventory ?? { count: 0, max: 3 }
+
+  function addDistractorPickup(position, name) {
+    const pickup = new THREE.Group()
+    pickup.name = name
+    pickup.position.copy(position)
+
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0xb08d3f,
+      emissive: 0x3a2608,
+      emissiveIntensity: 0.45,
+      roughness: 0.28,
+      metalness: 0.9
+    })
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.26, 10), bodyMat)
+    body.rotation.z = Math.PI / 2
+    body.position.y = 0.16
+    body.castShadow = true
+    pickup.add(body)
+    group.add(pickup)
+
+    let collected = false
+    let unregister = null
+    unregister = interaction.register(pickup, {
+      prompt: 'Pick up loose metal distractor',
+      range: 2.2,
+      onInteract: () => {
+        if (collected) return
+        if (sharedInventory.count >= sharedInventory.max) {
+          hud?.showToast?.(`Distractor pouch full — ${sharedInventory.count}/${sharedInventory.max}`, 1300)
+          return
+        }
+
+        collected = true
+        sharedInventory.count += 1
+        pickup.visible = false
+        unregister?.()
+        interaction?.flashPrompt?.(`Distractor collected — ${sharedInventory.count}/${sharedInventory.max}`)
+      }
+    })
+    pickupUnregisters.push(() => unregister?.())
+  }
 
   // Narrow connector lines up exactly with Passageway 1's lower landing, then
   // opens into the wider guard-training hall.
@@ -372,6 +415,22 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     trolley.add(bag)
   }
   group.add(trolley)
+
+  // Limited-use distraction pickups. These feed a shared inventory used by
+  // Passageways 2 and 3; once the player spends them, the throw key does
+  // nothing until another physical pickup is collected.
+  addDistractorPickup(
+    new THREE.Vector3(worldX(-54.8), GUARD_PASSAGE_FLOOR_Y + 0.02, CORRIDOR_Z + 1.9),
+    'distractor-pickup-p2-a'
+  )
+  addDistractorPickup(
+    new THREE.Vector3(worldX(-41.1), GUARD_PASSAGE_FLOOR_Y + 0.02, CORRIDOR_Z + 2.0),
+    'distractor-pickup-p2-b'
+  )
+  addDistractorPickup(
+    new THREE.Vector3(worldX(-34.2), GUARD_PASSAGE_FLOOR_Y + 0.02, CORRIDOR_Z - 1.9),
+    'distractor-pickup-p2-c'
+  )
 
   // Camera/laser combination zone: still forgiving, with a cabinet immediately
   // before the camera and generous safe window on the timed grid.
@@ -477,7 +536,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     id: 'distract-intro',
     center: { x: worldX(-45.5), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 5.0, y: 3.2, z: 6.4 },
-    text: () => `DISTRACT — press ${bindingLabel(settings.getBinding('distract'))} to throw a metal distractor where you are facing. Nearby guards investigate the impact, then resume patrol.`,
+    text: () => `DISTRACT — collect loose metal with ${bindingLabel(settings.getBinding('interact'))}, then press ${bindingLabel(settings.getBinding('distract'))} to throw one. Each throw consumes a pickup.`,
     duration: 4700
   })
   hints.addZone({
@@ -595,7 +654,8 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
       hud,
       groundHeightAt: getGroundHeight,
       isEnabled: () => isInsidePassage(),
-      hearingRadius: 10
+      hearingRadius: 10,
+      inventory: sharedInventory
     })
   }
 
@@ -615,6 +675,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
 
   function dispose() {
     signalPuzzle.dispose()
+    pickupUnregisters.forEach((unregister) => unregister())
     distraction?.dispose()
     distraction = null
     stealthRef = null
