@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import * as CANNON from 'cannon-es'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y } from '../environment/carriages.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
@@ -92,9 +93,26 @@ export function createMovingHeistLevel({
 }) {
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.0)
 
+  // Physics world for Level 2 cargo interactions.
+  const physicsWorld = new CANNON.World({
+    gravity: new CANNON.Vec3(0, -9.82, 0)
+  })
+  physicsWorld.defaultContactMaterial.friction = 0.12
+  physicsWorld.defaultContactMaterial.restitution = 0
+
   const env = createCarriageEnvironment()
   const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 38.0 })
   const { root, spans, roof } = env
+
+  // Invisible physics floor aligned with the carriage floor at y = 0.
+  const floorBody = new CANNON.Body({
+    type: CANNON.Body.STATIC,
+    shape: new CANNON.Plane()
+  })
+
+  floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0)
+  physicsWorld.addBody(floorBody)
+
   scene.add(outdoorEnv.group, root)
   scene.fog = new THREE.Fog(0x241d24, 30, 250)
 
@@ -102,26 +120,39 @@ export function createMovingHeistLevel({
   unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds } // mutated on section transitions
 
-  const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
+  const addProp = (obj, z, x = 0, y = 0) => {
+    obj.position.set(x, y, z)
+    root.add(obj)
+    return obj
+  }
 
   // Throttled fail so a hazard the player is standing in doesn't respawn-spam.
   let failCooldown = 0
+
   function failSoft(message, reason = 'caught') {
     if (failCooldown > 0) return
+
     failCooldown = 1.2
     respawn.fail(reason)
+
     if (message) hud.showToast(message, 1800)
   }
 
   let section = 'interior' // 'interior' | 'roof' | 'vault'
+
   function setBounds(b) {
-    bounds.minX = b.minX; bounds.maxX = b.maxX; bounds.minZ = b.minZ; bounds.maxZ = b.maxZ
+    bounds.minX = b.minX
+    bounds.maxX = b.maxX
+    bounds.minZ = b.minZ
+    bounds.maxZ = b.maxZ
   }
 
   // One-time contextual hint as the player first enters each carriage.
   const hintsShown = new Set()
+
   function hint(key, playerZ, enterZ, message) {
     if (hintsShown.has(key) || playerZ < enterZ) return
+
     hintsShown.add(key)
     hud.showToast(message, 3200)
   }
@@ -129,6 +160,7 @@ export function createMovingHeistLevel({
   // Mid-corridor checkpoints so an interior fail doesn't send the player back
   // through cars they already cleared.
   let lastCheckpointZ = spans.passenger.minZ + 3
+
   const corridorCheckpoints = [
     spans.passenger.center - 2.5, // just before the swinging lamp
     spans.security.minZ + 1.5,
@@ -139,32 +171,65 @@ export function createMovingHeistLevel({
   // ============================================================
   // PASSENGER — SLOW: swinging luggage lamp
   // ============================================================
+
   const pendulum = new THREE.Group()
+
   const rod = new THREE.Mesh(
     new THREE.CylinderGeometry(0.02, 0.02, 1.05, 8),
-    new THREE.MeshStandardMaterial({ color: 0x8d939c, metalness: 0.9, roughness: 0.3 })
+    new THREE.MeshStandardMaterial({
+      color: 0x8d939c,
+      metalness: 0.9,
+      roughness: 0.3
+    })
   )
+
   rod.position.y = -0.52
   pendulum.add(rod)
+
   const lamp = new THREE.Mesh(
     new THREE.SphereGeometry(0.22, 16, 12),
-    new THREE.MeshStandardMaterial({ color: 0xffe6b8, emissive: 0xffca7a, emissiveIntensity: 2.4 })
+    new THREE.MeshStandardMaterial({
+      color: 0xffe6b8,
+      emissive: 0xffca7a,
+      emissiveIntensity: 2.4
+    })
   )
+
   lamp.position.y = -1.06
   pendulum.add(lamp)
+
   const lampLight = new THREE.PointLight(0xffcaa0, 7, 6, 2)
   lampLight.position.y = -1.06
   pendulum.add(lampLight)
+
   const pendulumZ = spans.passenger.center + 2
-  addProp(pendulum, pendulumZ, 0, CARRIAGE_CEILING_Y - 0.02)
+
+  addProp(
+    pendulum,
+    pendulumZ,
+    0,
+    CARRIAGE_CEILING_Y - 0.02
+  )
 
   let pendT = 0
+
   const pendSwing = () => Math.sin(pendT * 1.9) * 0.8
-  unregisters.push(timeSystem.register(pendulum, {
-    onUpdate(scaledDelta) { pendT += scaledDelta; pendulum.rotation.x = pendSwing() },
-    getSnapshot: () => ({ pendT }),
-    restoreSnapshot: (s) => { pendT = s.pendT; pendulum.rotation.x = pendSwing() }
-  }))
+
+  unregisters.push(
+    timeSystem.register(pendulum, {
+      onUpdate(scaledDelta) {
+        pendT += scaledDelta
+        pendulum.rotation.x = pendSwing()
+      },
+
+      getSnapshot: () => ({ pendT }),
+
+      restoreSnapshot: (s) => {
+        pendT = s.pendT
+        pendulum.rotation.x = pendSwing()
+      }
+    })
+  )
 
   // ============================================================
   // SECURITY — FREEZE: sweeping internal scanner
@@ -247,16 +312,49 @@ export function createMovingHeistLevel({
     }
   }))
 
-  // Loose crates in the aisle — nudge targets for the Phase 6 physics pass;
-  // static for now, just dressing the Rewind puzzle.
-  const looseMat = new THREE.MeshStandardMaterial({ color: 0x8a6a40, roughness: 0.75, metalness: 0.05 })
-  for (const [x, z] of [[-0.32, gapZ - 3.4], [0.3, gapZ - 3.0], [0.36, gapZ + 3.2]]) {
-    const c = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), looseMat)
-    c.position.set(x, 0.28, z)
-    c.rotation.y = x
-    c.castShadow = true
-    root.add(c)
+  // Loose crates at the aisle edges — same Cannon + AABB push as the test crate,
+  // kept off the collapsing walkway so the corridor stays passable.
+  const CRATE_HALF = 0.275
+  const PLAYER_RADIUS = 0.32
+  const crateGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55)
+  const crateMat = new THREE.MeshStandardMaterial({
+    color: 0x8a6a40,
+    roughness: 0.75,
+    metalness: 0.05
+  })
+
+  const cargoCrates = [
+    { x: -0.62, z: gapZ - 4.2 },
+    { x: 0.62, z: gapZ - 2.8 },
+    { x: -0.62, z: gapZ + 3.6 }
+  ].map(({ x, z }) => {
+    const mesh = new THREE.Mesh(crateGeo, crateMat)
+    mesh.position.set(x, 0.28, z)
+    mesh.castShadow = true
+    root.add(mesh)
+
+    const body = new CANNON.Body({
+      mass: 2,
+      shape: new CANNON.Box(new CANNON.Vec3(CRATE_HALF, CRATE_HALF, CRATE_HALF)),
+      position: new CANNON.Vec3(x, 0.28, z),
+      linearDamping: 0.18,
+      angularDamping: 0.85
+    })
+    physicsWorld.addBody(body)
+
+    const obstacle = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }
+    return { mesh, body, obstacle, pushHeld: false }
+  })
+
+  function syncCrateObstacle(crate) {
+    const pad = CRATE_HALF + PLAYER_RADIUS
+    crate.obstacle.minX = crate.body.position.x - pad
+    crate.obstacle.maxX = crate.body.position.x + pad
+    crate.obstacle.minZ = crate.body.position.z - pad
+    crate.obstacle.maxZ = crate.body.position.z + pad
   }
+
+  cargoCrates.forEach(syncCrateObstacle)
 
   // ============================================================
   // MECHANICAL — GHOST: pressure plate holds the roof hatch, + blade hazard
@@ -467,28 +565,64 @@ export function createMovingHeistLevel({
       restore: captureCheckpointRestore()
     },
     bounds,
+    obstacles: cargoCrates.map((crate) => crate.obstacle),
     get isCinematic() { return taken },
 
     update(delta) {
       outdoorEnv.update(delta)
       env.update(delta)
+
+      // Advance the Cannon physics simulation.
+      physicsWorld.step(1 / 60, delta, 3)
+
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
-      const pp = player.mesh.position
-      const mode = timeSystem.getMode()
 
+      const pp = player.mesh.position
+      const movingIntoCrate = typeof player.isMoving === 'function' && player.isMoving()
+      const pushReach = CRATE_HALF + PLAYER_RADIUS + 0.08
+
+      for (const crate of cargoCrates) {
+        crate.mesh.position.copy(crate.body.position)
+        crate.mesh.quaternion.copy(crate.body.quaternion)
+        syncCrateObstacle(crate)
+
+        const dx = crate.body.position.x - pp.x
+        const dz = crate.body.position.z - pp.z
+        const distanceToCrate = Math.hypot(dx, dz)
+        const pushX = dx / Math.max(distanceToCrate, 0.001)
+        const pushZ = dz / Math.max(distanceToCrate, 0.001)
+        const inContact = distanceToCrate < pushReach && distanceToCrate > 0.001
+
+        if (!inContact && distanceToCrate > pushReach + 0.35) crate.pushHeld = false
+
+        if (inContact && !crate.pushHeld && movingIntoCrate) {
+          crate.pushHeld = true
+          crate.body.wakeUp()
+          crate.body.angularVelocity.set(0, 0, 0)
+          crate.body.applyImpulse(new CANNON.Vec3(pushX * 7, 0, pushZ * 7))
+        }
+      }
+    
+      const mode = timeSystem.getMode()
+    
       // Chrono Core idle animation + shader reaction (Phase 5 hook).
       orb.rotation.y += delta * 0.7
       orb.rotation.x += delta * 0.3
       orb.position.y = 1.2 + Math.sin(elapsed * 1.6) * 0.04
       halo.rotation.z += delta * 1.1
       halo.position.y = orb.position.y
+    
       for (const m of core.userData.shaderMats) {
         if (!m.customUniforms) continue
+    
         m.customUniforms.uTime.value += delta
         m.customUniforms.uMode.value = MODE_INT[mode] ?? 0
-        m.customUniforms.uIntensity.value = mode === 'NORMAL' ? 0.25 : 0.9
+        m.customUniforms.uIntensity.value =
+          mode === 'NORMAL' ? 0.25 : 0.9
       }
+    
+     
 
       // Destabilisation cinematic on pickup, then hand off to Level 3.
       if (taken) {
