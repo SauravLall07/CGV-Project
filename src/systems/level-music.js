@@ -28,6 +28,13 @@ export function loadTrack(relativePath) {
 }
 
 const bufferCache = new Map()
+let nextPlayerId = 1
+let livePlayers = 0
+let liveSources = 0
+
+function musicTs() {
+  return `${new Date().toISOString()} t=${performance.now().toFixed(1)}`
+}
 
 function decodeAudioData(ctx, data) {
   return new Promise((resolve, reject) => {
@@ -38,11 +45,16 @@ function decodeAudioData(ctx, data) {
 
 export class LevelMusicPlayer {
   constructor(url) {
+    this.id = nextPlayerId++
     this.url = url
     this.buffer = null
     this.source = null
     this.gain = null
     this._disposed = false
+    livePlayers += 1
+    console.log(
+      `[music ${musicTs()}] LevelMusicPlayer#${this.id} CONSTRUCT livePlayers=${livePlayers} liveSources=${liveSources} url=${String(url)}`
+    )
   }
 
   async load() {
@@ -93,6 +105,10 @@ export class LevelMusicPlayer {
     this.source.loop = loop
     this.source.connect(this.gain)
     this.source.start()
+    liveSources += 1
+    console.log(
+      `[music ${musicTs()}] LevelMusicPlayer#${this.id} SOURCE START livePlayers=${livePlayers} liveSources=${liveSources}`
+    )
   }
 
   stop() {
@@ -100,6 +116,10 @@ export class LevelMusicPlayer {
       try { this.source.stop() } catch { /* already stopped */ }
       this.source.disconnect()
       this.source = null
+      liveSources = Math.max(0, liveSources - 1)
+      console.log(
+        `[music ${musicTs()}] LevelMusicPlayer#${this.id} SOURCE STOP livePlayers=${livePlayers} liveSources=${liveSources}`
+      )
     }
     if (this.gain) {
       this.gain.disconnect()
@@ -112,6 +132,10 @@ export class LevelMusicPlayer {
     this._disposed = true
     this.stop()
     this.buffer = null
+    livePlayers = Math.max(0, livePlayers - 1)
+    console.log(
+      `[music ${musicTs()}] LevelMusicPlayer#${this.id} DISPOSE livePlayers=${livePlayers} liveSources=${liveSources}`
+    )
   }
 }
 
@@ -120,6 +144,9 @@ let token = 0
 
 export function stopLevelMusic() {
   token += 1
+  console.log(
+    `[music ${musicTs()}] stopLevelMusic token=${token} active=${active ? '#' + active.id : 'none'} livePlayers=${livePlayers}`
+  )
   if (active) {
     active.dispose()
     active = null
@@ -128,7 +155,9 @@ export function stopLevelMusic() {
 
 export async function startLevelMusic(url, opts = {}) {
   const myToken = ++token
-  console.log('startLevelMusic begin', String(url), 'token', myToken)
+  console.log(
+    `[music ${musicTs()}] startLevelMusic begin token=${myToken} url=${String(url)} prevActive=${active ? '#' + active.id : 'none'}`
+  )
   if (active) {
     active.dispose()
     active = null
@@ -141,21 +170,37 @@ export async function startLevelMusic(url, opts = {}) {
     await player.load()
   } catch (err) {
     // Superseded by another start/stop (NEW GAME mid-load) — not an error.
-    if (myToken !== token || player._disposed) return
+    if (myToken !== token || player._disposed) {
+      player.dispose()
+      if (active === player) active = null
+      return
+    }
     console.error(err)
+    player.dispose()
     if (active === player) active = null
     return
   }
 
-  if (myToken !== token) {
-    console.log('startLevelMusic: token mismatch, skipping play() (myToken ' + myToken + ', token ' + token + ')')
-    player.stop()
+  if (myToken !== token || player._disposed) {
+    console.log(
+      `[music ${musicTs()}] startLevelMusic SKIP play LevelMusicPlayer#${player.id} myToken=${myToken} token=${token} disposed=${player._disposed}`
+    )
+    player.dispose()
+    if (active === player) active = null
     return
   }
 
   const ctx = getContext()
   const buffer = player.buffer
-  console.log('startLevelMusic play() context state: ' + (ctx ? ctx.state : 'none'))
-  console.log('startLevelMusic buffer duration: ' + (buffer ? buffer.duration : 'none') + ', length: ' + (buffer ? buffer.length : 'none') + ', sampleRate: ' + (buffer ? buffer.sampleRate : 'none'))
+  console.log(
+    `[music ${musicTs()}] startLevelMusic play LevelMusicPlayer#${player.id} context=${ctx ? ctx.state : 'none'} duration=${buffer ? buffer.duration : 'none'}`
+  )
   player.play(opts)
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    console.log(`[music ${musicTs()}] HMR dispose level-music (stopping active player)`)
+    stopLevelMusic()
+  })
 }

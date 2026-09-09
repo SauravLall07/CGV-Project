@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createTimeGhost } from '../entities/time-ghost.js'
+import { playAbilitySfx } from './ability-sfx.js'
 
 // Chrono Express — Time-Manipulation Core Engine (Phase 3 foundation).
 // Provides Slow (0.2x), Freeze (0.0x), Rewind (state restoration), and
@@ -33,7 +34,7 @@ const TIME_EPSILON = 1e-7
 // than in a level: the key bindings in main.js and the HUD both read it.
 const ALL_ABILITIES = { SLOW: true, FREEZE: true, REWIND: true, GHOST: true }
 
-export function createTimeSystem({ scene, player, hud }) {
+export function createTimeSystem({ scene, player, hud, onTimeScale }) {
   let mode = TIME_MODES.NORMAL
   let energy = MAX_ENERGY
   let ghost = createTimeGhost()
@@ -111,6 +112,21 @@ export function createTimeSystem({ scene, player, hud }) {
     })
 
     updateUniforms()
+    notifyTimeDilation()
+  }
+
+  function dilationScaleForDrone() {
+    if (mode === TIME_MODES.SLOW) return 0.2
+    if (mode === TIME_MODES.FREEZE) return 0.0
+    // Shader rewind is -1.5; MusicSystem clamps to 0–1, so freeze detune.
+    if (mode === TIME_MODES.REWIND) return 0.0
+    if (ghost.isPlaying()) return 0.55
+    return 1.0
+  }
+
+  function notifyTimeDilation() {
+    if (!onTimeScale) return
+    onTimeScale(dilationScaleForDrone())
   }
 
   function setLevelMultiplier(mult) {
@@ -166,11 +182,34 @@ export function createTimeSystem({ scene, player, hud }) {
 
     ghost.startReplay(trajectory, {
       onComplete: () => {
+        notifyTimeDilation()
         if (hud) hud.showToast('Time Ghost faded', 1000)
       }
     })
 
+    notifyTimeDilation()
+    console.time('ability-sfx:GHOST playback call')
+    playAbilitySfx('GHOST')
+    console.timeEnd('ability-sfx:GHOST playback call')
     if (hud) hud.showToast('Time Ghost summoned!', 1200)
+  }
+
+  function triggerSlow() {
+    const previous = mode
+    setMode(TIME_MODES.SLOW)
+    if (mode === TIME_MODES.SLOW && previous !== TIME_MODES.SLOW) playAbilitySfx('SLOW')
+  }
+
+  function triggerFreeze() {
+    const previous = mode
+    setMode(TIME_MODES.FREEZE)
+    if (mode === TIME_MODES.FREEZE && previous !== TIME_MODES.FREEZE) playAbilitySfx('FREEZE')
+  }
+
+  function triggerRewind() {
+    const previous = mode
+    setMode(TIME_MODES.REWIND)
+    if (mode === TIME_MODES.REWIND && previous !== TIME_MODES.REWIND) playAbilitySfx('REWIND')
   }
 
   function updateUniforms() {
@@ -488,9 +527,9 @@ export function createTimeSystem({ scene, player, hud }) {
     setLevelMultiplier,
     setAbilityAvailability,
     getAbilityAvailability,
-    triggerSlow: () => setMode(TIME_MODES.SLOW),
-    triggerFreeze: () => setMode(TIME_MODES.FREEZE),
-    triggerRewind: () => setMode(TIME_MODES.REWIND),
+    triggerSlow,
+    triggerFreeze,
+    triggerRewind,
     triggerGhost,
     getMode: () => mode,
     getEnergy: () => energy,
@@ -498,6 +537,9 @@ export function createTimeSystem({ scene, player, hud }) {
     getGhostCooldown: () => ghostCooldown,
     getGhost: () => ghost,
     getUniforms: () => uniforms,
+    warmGhost(renderer, camera) {
+      if (ghost && ghost.warm) ghost.warm(renderer, scene, camera)
+    },
     update,
     dispose
   }

@@ -88,6 +88,17 @@ export function createTimeGhost() {
     group.visible = true
   }
 
+  // Programs for these emissive/transparent materials (and the beacon light)
+  // compile on first draw. The mesh exists from boot, but visible=false skips
+  // it — so the hitch lands on the first Ghost press unless we compile now.
+  function warm(renderer, scene, camera) {
+    if (!renderer || !camera) return
+    const previous = group.visible
+    group.visible = true
+    renderer.compile(scene, camera)
+    group.visible = previous
+  }
+
   function stop() {
     isPlaying = false
     group.visible = false
@@ -175,6 +186,7 @@ export function createTimeGhost() {
     mesh: group,
     startReplay,
     stop,
+    warm,
     update,
     isOccupying,
     isPlaying: () => isPlaying,

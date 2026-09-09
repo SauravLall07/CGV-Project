@@ -34,6 +34,9 @@ export function createLevelManager({
   const ctx = { scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance }
 
   function teardown() {
+    console.log(
+      `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] level-manager teardown currentState=${currentState} hasCurrent=${Boolean(current)}`
+    )
     if (onLeave) onLeave()
     if (timeSystem) timeSystem.setMode('NORMAL')
     if (held) {
@@ -70,11 +73,17 @@ export function createLevelManager({
       camera.snap()
       hud.setObjective(current.objective ?? '')
     }
+    console.log(
+      `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] level-manager onEnter("${state}") preserve=${Boolean(preserve)} pendingToken=${pendingToken}`
+    )
     if (onEnter) onEnter(state)
   }
 
   function enter(state) {
     if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
+    console.log(
+      `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] level-manager enter("${state}") currentState=${currentState} pendingToken=${pendingToken}`
+    )
 
     // Keep-previous states (Complete / credits) must not flash the loading
     // screen or dispose the outgoing level — the last frame stays up.
