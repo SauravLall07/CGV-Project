@@ -7,6 +7,7 @@ import { createAssetLoader } from './core/assets.js'
 import { createLevelManager } from './core/level-manager.js'
 import { resolveInputState } from './core/input-state.js'
 import { initAudio, resumeAudio, getContext } from './core/audio.js'
+import { preloadAbilitySfx } from './systems/ability-sfx.js'
 import { createPlayer } from './entities/player.js'
 import { createKeyboardState } from './input/keyboard-state.js'
 import { createKeyboardLock } from './input/keyboard-lock.js'
@@ -15,6 +16,7 @@ import { createInteractionSystem } from './systems/interaction.js'
 import { createRespawnSystem } from './systems/respawn.js'
 import { createTimeSystem } from './systems/time-system.js'
 import { loadTrack, startLevelMusic, stopLevelMusic } from './systems/level-music.js'
+import { MusicSystem } from './systems/music-system.js'
 import { createHud } from './ui/hud.js'
 import { createLoadingScreen } from './ui/loading-screen.js'
 import { createMainMenu } from './ui/main-menu.js'
@@ -71,12 +73,37 @@ const LEVEL_TRACKS = {
   Complete: { file: '../assets/audio/music/victory-theme.mp3', loop: false }
 }
 
+let musicSystem = null
+
+function ensureGameplayDrone() {
+  if (musicSystem) return musicSystem
+  if (!getContext()) return null
+  musicSystem = new MusicSystem()
+  musicSystem.setTimeDilation(1)
+  if (import.meta.env.DEV) window.musicSystem = musicSystem
+  return musicSystem
+}
+
+function disposeGameplayDrone() {
+  if (!musicSystem) return
+  musicSystem.dispose()
+  musicSystem = null
+  if (import.meta.env.DEV) window.musicSystem = null
+}
+
 function playMusicForState(state) {
   const spec = LEVEL_TRACKS[state]
+  console.log(
+    `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] playMusicForState("${state}") drone=${musicSystem ? '#' + musicSystem.id : 'none'} spec=${spec ? spec.file : 'none'}`
+  )
   if (!spec) {
     stopLevelMusic()
+    disposeGameplayDrone()
     return
   }
+  // Sampled tracks swap per level; the drone is one bed under L1–L3 only.
+  if (state === 'Complete') disposeGameplayDrone()
+  else ensureGameplayDrone()
   startLevelMusic(loadTrack(spec.file), { loop: spec.loop })
 }
 
@@ -89,6 +116,12 @@ async function playMenuMusic() {
 function unlockAudio() {
   console.log('unlockAudio() called')
   initAudio()
+  const preloading = preloadAbilitySfx()
+  if (preloading && typeof preloading.then === 'function') {
+    preloading.then(() => {
+      console.log('[ability-sfx] unlockAudio preload settled before/during menu')
+    })
+  }
   const ctx = getContext()
   console.log('unlockAudio context before resume: ' + (ctx ? ctx.state : 'none'))
   const unlocking = resumeAudio()
@@ -136,7 +169,14 @@ canvas.addEventListener('click', () => {
 console.log('Audio click listener attached to: ' + canvas.tagName)
 
 const interaction = createInteractionSystem({ camera, input: keyboard })
-const timeSystem = createTimeSystem({ scene, player, hud })
+const timeSystem = createTimeSystem({
+  scene,
+  player,
+  hud,
+  onTimeScale(scale) {
+    if (musicSystem) musicSystem.setTimeDilation(scale)
+  },
+})
 const respawn = createRespawnSystem({
   player,
   hud,
@@ -175,6 +215,7 @@ const levelManager = createLevelManager({
   onEnter: (state) => {
     playMusicForState(state)
     if (state === 'Complete') showCompleteCredits()
+    else timeSystem.warmGhost(renderer, camera)
   },
   onLeave: stopLevelMusic,
   onInputStateChange: () => syncInputState(),
@@ -185,7 +226,10 @@ const levelManager = createLevelManager({
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })
-if (import.meta.env.DEV) window.levelManager = levelManager
+if (import.meta.env.DEV) {
+  window.levelManager = levelManager
+  window.musicSystem = musicSystem
+}
 
 // ---------------------------------------------------------------
 // Main Menu
@@ -370,6 +414,7 @@ function quitToTitle() {
   hud.setObjective('')
 
   titleBackdrop = buildTitleBackdrop()
+  disposeGameplayDrone()
   menu.show()
   unlockAudio()
 }
@@ -379,6 +424,10 @@ function quitToTitle() {
 // pattern used by levelManager.enter() — see core/level-manager.js.
 requestAnimationFrame(() => requestAnimationFrame(() => {
   titleBackdrop = buildTitleBackdrop()
+
+  // Compile Ghost materials/lights while the loading overlay still covers
+  // the canvas — first Ghost press must not pay that shader cost in-game.
+  timeSystem.warmGhost(renderer, camera)
 
   // One more frame so the station has rendered behind the loading
   // overlay before it fades away to reveal the menu.
