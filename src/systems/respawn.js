@@ -1,50 +1,106 @@
 import * as THREE from 'three'
 
-// Checkpoint / respawn system (Phase 1 foundation): one registered checkpoint
-// at a time, plus a generic fail() that returns the player to it instead of
-// hard-failing the run. Guard detection (Phase 2), hazards (Phase 4) and the
-// fell-off-the-train check all call the same fail() — they don't each
-// implement their own reset.
+const FALL_Y = -8
+const CAUGHT_FREEZE_DURATION = 900
 
-const FALL_Y = -8 // below this, assume the player left the playable volume
-const CAUGHT_FREEZE_DURATION = 900 // ms the caught screen holds before resetting position
-
-export function createRespawnSystem({ player, hud, camera, setControlsEnabled }) {
-  const checkpoint = { position: new THREE.Vector3(0, 0, 0), yaw: 0 }
+// One checkpoint is active at a time. Its restore callback is owned by the
+// current level, while the generation token keeps delayed work inside that
+// level/run. Pausing suspends a caught sequence until gameplay resumes.
+export function createRespawnSystem({ player, hud, camera, timeSystem, onStateChange }) {
+  let checkpoint = null
   const listeners = new Set()
   let failing = false
+  let paused = false
+  let failReason = null
   let failTimer = null
+  let generation = 0
 
-  function setCheckpoint(position, yaw = 0) {
-    checkpoint.position.copy(position)
-    checkpoint.yaw = yaw
+  function setCheckpoint(position, yaw = 0, { restore = () => {} } = {}) {
+    checkpoint = {
+      position: new THREE.Vector3().copy(position),
+      yaw,
+      restore,
+      timeState: timeSystem?.captureCheckpointState()
+    }
   }
 
   function respawn() {
+    if (!checkpoint) return false
+    checkpoint.restore()
+    timeSystem?.resetForCheckpoint(checkpoint.timeState)
     player.setPose(checkpoint.position, checkpoint.yaw)
-    // Skip the third-person camera's follow-lerp so it doesn't sweep the
-    // whole level to catch up with the respawned player.
-    camera.snap()
+    camera?.setYaw?.(checkpoint.yaw)
+    camera?.snap?.()
+    return true
+  }
+
+  function invalidateTimer() {
+    generation += 1
+    if (failTimer !== null) clearTimeout(failTimer)
+    failTimer = null
+  }
+
+  function cancel() {
+    invalidateTimer()
+    failing = false
+    failReason = null
+    hud?.hideCaughtScreen?.()
+    onStateChange?.()
+  }
+
+  function reset() {
+    cancel()
+    checkpoint = null
+    paused = false
+  }
+
+  function finishFailure(expectedGeneration) {
+    if (expectedGeneration !== generation || paused || !failing) return
+    failTimer = null
+    const reason = failReason
+    if (!respawn()) {
+      cancel()
+      return
+    }
+
+    failing = false
+    failReason = null
+    hud?.hideCaughtScreen?.()
+    for (const listener of listeners) {
+      listener(reason)
+      if (expectedGeneration !== generation) return
+    }
+    onStateChange?.()
+  }
+
+  function scheduleFailure() {
+    const expectedGeneration = generation
+    hud?.showCaughtScreen?.(failReason)
+    failTimer = setTimeout(() => finishFailure(expectedGeneration), CAUGHT_FREEZE_DURATION)
   }
 
   function fail(reason = 'caught') {
-    if (failing) return
+    if (failing || paused || !checkpoint) return false
     failing = true
-    if (setControlsEnabled) setControlsEnabled(false)
-    if (hud && hud.showCaughtScreen) hud.showCaughtScreen(reason)
-
-    failTimer = setTimeout(() => {
-      respawn()
-      if (hud && hud.hideCaughtScreen) hud.hideCaughtScreen()
-      if (setControlsEnabled) setControlsEnabled(true)
-      failing = false
-      for (const fn of listeners) fn(reason)
-    }, CAUGHT_FREEZE_DURATION)
+    failReason = reason
+    onStateChange?.()
+    scheduleFailure()
+    return true
   }
 
-  function onFail(fn) {
-    listeners.add(fn)
-    return () => listeners.delete(fn)
+  function setPaused(value) {
+    if (paused === value) return
+    paused = value
+    if (!failing) return
+
+    invalidateTimer()
+    if (paused) hud?.hideCaughtScreen?.()
+    else scheduleFailure()
+  }
+
+  function onFail(listener) {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
   }
 
   function update() {
@@ -52,9 +108,20 @@ export function createRespawnSystem({ player, hud, camera, setControlsEnabled })
   }
 
   function dispose() {
-    clearTimeout(failTimer)
+    reset()
     listeners.clear()
   }
 
-  return { setCheckpoint, fail, onFail, respawn, update, dispose }
+  return {
+    setCheckpoint,
+    fail,
+    onFail,
+    respawn,
+    cancel,
+    reset,
+    setPaused,
+    update,
+    dispose,
+    isFailing: () => failing
+  }
 }

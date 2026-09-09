@@ -89,14 +89,7 @@ function makeConsole(accent) {
 }
 
 export function createMovingHeistLevel({
-  scene,
-  interaction,
-  timeSystem,
-  hud,
-  player,
-  camera,
-  respawn,
-  advance
+  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic
 }) {
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.0)
 
@@ -124,6 +117,7 @@ export function createMovingHeistLevel({
   scene.fog = new THREE.Fog(0x241d24, 30, 250)
 
   const unregisters = [] // interaction + time-system unregister callbacks
+  unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds } // mutated on section transitions
 
   const addProp = (obj, z, x = 0, y = 0) => {
@@ -271,6 +265,7 @@ export function createMovingHeistLevel({
   addProp(secConsole, spans.security.minZ + 2, 0.44)
   unregisters.push(interaction.register(secConsole, {
     prompt: 'Read the security notice',
+    isEligible: () => section === 'interior',
     onInteract: () => interaction.flashPrompt('"Internal scanner active — authorised chrono-tech may FREEZE ([2]/F) to pass."', 2800)
   }))
 
@@ -401,6 +396,7 @@ export function createMovingHeistLevel({
 
   unregisters.push(interaction.register(ladder, {
     prompt: 'Climb to the carriage roof',
+    isEligible: () => section === 'interior',
     onInteract: () => {
       if (hatchOpen < 0.6) {
         interaction.flashPrompt('The roof hatch is sealed — hold the pressure plate open.')
@@ -421,7 +417,8 @@ export function createMovingHeistLevel({
     setBounds(env.roofBounds)
     const start = new THREE.Vector3(0, 3.3, roof.zStart + 1)
     player.setPose(start, 0)
-    respawn.setCheckpoint(start, 0)
+    respawn.setCheckpoint(start, 0, { restore: captureCheckpointRestore() })
+    camera.setYaw?.(0)
     camera.snap()
     gustPhase = 0
     sweptTime = 0
@@ -430,6 +427,7 @@ export function createMovingHeistLevel({
 
   unregisters.push(interaction.register(roof.dropHatch, {
     prompt: 'Drop into the vault car',
+    isEligible: () => section === 'roof',
     onInteract: () => enterVault()
   }))
 
@@ -482,6 +480,7 @@ export function createMovingHeistLevel({
 
   const unregisterCage = interaction.register(cage, {
     prompt: 'Breach the Chrono Core cage',
+    isEligible: () => section === 'vault' && !breached,
     onInteract: () => {
       if (timeSystem.getMode() !== 'FREEZE') {
         interaction.flashPrompt('The lock ring is spinning — FREEZE ([2]/F) it to breach.')
@@ -489,7 +488,6 @@ export function createMovingHeistLevel({
       }
       breached = true
       cage.visible = false
-      unregisterCage()
       hud.showToast('Cage breached — take the Chrono Core!', 2600)
     }
   })
@@ -497,10 +495,12 @@ export function createMovingHeistLevel({
 
   unregisters.push(interaction.register(core, {
     prompt: 'Take the Chrono Core',
+    isEligible: () => section === 'vault',
     onInteract: () => {
       if (taken) return
       if (!breached) { interaction.flashPrompt('Breach the cage first.'); return }
       taken = true
+      beginCinematic?.()
       interaction.flashPrompt('Chrono Core secured!')
       hud.setObjective('The train is destabilising — brace!')
     }
@@ -511,7 +511,8 @@ export function createMovingHeistLevel({
     setBounds(env.vaultBounds)
     const p = new THREE.Vector3(0, 0, spans.vault.center - 3)
     player.setPose(p, 0)
-    respawn.setCheckpoint(p, 0)
+    respawn.setCheckpoint(p, 0, { restore: captureCheckpointRestore() })
+    camera.setYaw?.(0)
     camera.snap()
     hud.showToast('Inside the vault car — breach the Chrono Core cage.', 3000)
   }
@@ -521,11 +522,51 @@ export function createMovingHeistLevel({
   const halo = core.getObjectByName('chrono-core-halo')
   let elapsed = 0
 
+  // The level owns puzzle restoration. Transient hazards return to a known,
+  // solvable phase while durable progress captured at the checkpoint remains.
+  function captureCheckpointRestore() {
+    const saved = { section, bounds: { ...bounds }, lastCheckpointZ, breached }
+    return () => {
+      section = saved.section
+      setBounds(saved.bounds)
+      lastCheckpointZ = saved.lastCheckpointZ
+      breached = saved.breached
+      cage.visible = !breached
+      taken = false
+      destabT = 0
+      failCooldown = 0
+      pendT = 0
+      pendulum.rotation.x = pendSwing()
+      scanT = 0
+      scanBeam.position.z = 0
+      resetPlank()
+      bladeA = 0
+      blade.rotation.z = 0
+      hatchHold = 0
+      hatchLatch = 0
+      hatchOpen = 0
+      hatchCover.position.x = 0
+      plate.position.y = 0.03
+      plateMat.emissive.setHex(0xf59e0b)
+      gustPhase = 0
+      sweptTime = 0
+      lockA = 0
+      lockRing.rotation.z = 0
+      root.rotation.z = 0
+      root.position.y = 0
+    }
+  }
+
   return {
     objective: 'Cross the five carriages to the vault — [1] Slow · [2] Freeze · [3] Rewind · [4] Ghost',
-    checkpoint: { position: new THREE.Vector3(0, 0, spans.passenger.minZ + 3), yaw: 0 },
+    checkpoint: {
+      position: new THREE.Vector3(0, 0, spans.passenger.minZ + 3),
+      yaw: 0,
+      restore: captureCheckpointRestore()
+    },
     bounds,
     obstacles: cargoCrates.map((crate) => crate.obstacle),
+    get isCinematic() { return taken },
 
     update(delta) {
       outdoorEnv.update(delta)
@@ -606,7 +647,9 @@ export function createMovingHeistLevel({
         for (const z of corridorCheckpoints) {
           if (pp.z > z && z > lastCheckpointZ) {
             lastCheckpointZ = z
-            respawn.setCheckpoint(new THREE.Vector3(0, 0, z), 0)
+            respawn.setCheckpoint(new THREE.Vector3(0, 0, z), 0, {
+              restore: captureCheckpointRestore()
+            })
           }
         }
 

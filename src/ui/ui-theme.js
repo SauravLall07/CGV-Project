@@ -62,6 +62,10 @@ const MENU_CSS = `
 .cx-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
+@keyframes cx-credits-roll {
+  from { transform: translateY(100vh); }
+  to { transform: translateY(-100%); }
+}
 `
 
 function ensureMenuStyles() {

@@ -20,13 +20,17 @@ import { disposeObject } from '../core/dispose.js'
 // - Suspicion / alert fail-state
 // - Cinematic train departure sequence into Level 2
 
-export function createBoardingLevel({ scene, interaction, assets, hud, player, respawn, advance }) {
+export function createBoardingLevel({
+  scene, interaction, assets, hud, player, respawn, advance, beginCinematic
+}) {
   const { group: station, boardingControl, wallColliders } = createStationBlockout({ includePlaceholders: false })
   const { train } = createTrain()
   const lights = createStationLighting()
   const outdoorEnv = createOutdoorEnvironment({ mode: 'station', stationSpotLights: lights.spotLights })
 
   scene.add(outdoorEnv.group, station, train, ...lights)
+  const unregisterStationBlocker = interaction.registerBlocker(station)
+  const unregisterTrainBlocker = interaction.registerBlocker(train)
 
   // Dusk atmosphere with depth fog
   scene.fog = new THREE.Fog(0x241d24, 30, 250)
@@ -364,6 +368,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     onInteract: () => {
       if (isBoardingCinematic) return
       isBoardingCinematic = true
+      beginCinematic?.()
       interaction.flashPrompt('Boarding Chrono Express…')
       if (hud) hud.setObjective('Departing station… hold on!')
     }
@@ -399,10 +404,12 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     objective: 'Bypass guards & security grid to board the Chrono Express',
     checkpoint: {
       position: new THREE.Vector3(APPROACH_SPAWN.x, 0, APPROACH_SPAWN.z),
-      yaw: Math.PI / 2 // face east along the new corridor
+      yaw: Math.PI / 2, // face east along the new corridor
+      restore: () => stealth.reset()
     },
     bounds,
     obstacles: wallColliders,
+    get isCinematic() { return isBoardingCinematic },
     update(delta) {
       outdoorEnv.update(delta)
 
@@ -422,7 +429,9 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
         )
         if (checkpointDistance < 1.4) {
           junctionCheckpointActive = true
-          respawn.setCheckpoint(junctionCheckpointPos, 0)
+          respawn.setCheckpoint(junctionCheckpointPos, 0, {
+            restore: () => stealth.reset()
+          })
           if (hud) hud.showToast('Checkpoint reached — station concourse infiltrated', 2400)
         }
       } else {
@@ -450,15 +459,15 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, r
     },
 
     dispose() {
+      unregisterStationBlocker()
+      unregisterTrainBlocker()
       unregisterApproachTerminal()
       unregisterTerminal()
       unregisterBoarding()
       stealth.dispose()
       outdoorEnv.dispose()
       scene.remove(outdoorEnv.group, station, train, ...lights)
-      disposeObject(station)
-      disposeObject(train)
-      lights.forEach(disposeObject)
+      disposeObject([station, train, ...lights])
     }
   }
 }

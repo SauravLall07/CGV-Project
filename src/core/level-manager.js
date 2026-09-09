@@ -19,50 +19,93 @@ import * as THREE from 'three'
 const DEFAULT_CHECKPOINT = { position: new THREE.Vector3(0, 0, 0), yaw: 0 }
 
 export function createLevelManager({
-  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, levels
+  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, levels,
+  onEnter, onLeave, onInputStateChange
 }) {
   const sequence = levels.map((l) => l.state)
   const factories = new Map(levels.map((l) => [l.state, l.create]))
+  const keepPrevious = new Set(levels.filter((l) => l.keepPrevious).map((l) => l.state))
 
   let current = null
   let currentState = null
   let pendingToken = 0
+  let held = null
+  let transitioning = false
 
-  const ctx = { scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance }
+  const ctx = {
+    scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance,
+    beginCinematic() {
+      respawn.cancel()
+      onInputStateChange?.()
+    }
+  }
 
   function teardown() {
-    if (timeSystem) timeSystem.setMode('NORMAL')
+    if (onLeave) onLeave()
+    if (held) {
+      held.dispose()
+      held = null
+    }
     if (!current) return
     current.dispose()
     current = null
   }
 
-  function build(state) {
-    teardown()
+  function build(state, preserveEnergy) {
+    const preserve = keepPrevious.has(state) && current
+    if (preserve) {
+      // Credits (and anything else flagged keepPrevious) freeze the outgoing
+      // level in the scene instead of disposing it. held is disposed on the
+      // next real teardown (quit to title, restart).
+      held = current
+      current = null
+    } else {
+      teardown()
+    }
 
+    timeSystem?.resetForLevel({ preserveEnergy })
     currentState = state
     current = factories.get(state)(ctx)
 
-    const checkpoint = current.checkpoint ?? DEFAULT_CHECKPOINT
-    respawn.setCheckpoint(checkpoint.position, checkpoint.yaw)
-    player.setPose(checkpoint.position, checkpoint.yaw)
-    // Movement is camera-relative, so the spawn yaw has to reach the camera or
-    // "forward" would still mean whatever the previous level was facing.
-    if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
-    camera.snap()
-    hud.setObjective(current.objective ?? '')
+    if (!preserve) {
+      const checkpoint = current.checkpoint ?? DEFAULT_CHECKPOINT
+      respawn.setCheckpoint(checkpoint.position, checkpoint.yaw, checkpoint)
+      player.setPose(checkpoint.position, checkpoint.yaw)
+      // Movement is camera-relative, so the spawn yaw has to reach the camera or
+      // "forward" would still mean whatever the previous level was facing.
+      if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
+      camera.snap()
+      hud.setObjective(current.objective ?? '')
+    }
+    if (onEnter) onEnter(state)
   }
 
-  function enter(state) {
+  function setTransitioning(value) {
+    transitioning = value
+    if (value) interaction.setEnabled(false)
+    onInputStateChange?.()
+  }
+
+  function enter(state, { preserveEnergy = false } = {}) {
     if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
+    const token = ++pendingToken
+    setTransitioning(true)
+    respawn.reset()
+
+    // Keep-previous states (Complete / credits) must not flash the loading
+    // screen or dispose the outgoing level — the last frame stays up.
+    if (keepPrevious.has(state) && current) {
+      build(state, preserveEnergy)
+      loadingScreen.hide()
+      setTransitioning(false)
+      return
+    }
 
     loadingScreen.show()
     // No interacting mid-transition: the outgoing level's interactables stay
     // registered until teardown runs, and a second E press would fire the
     // same transition twice.
     interaction.setEnabled(false)
-
-    const token = ++pendingToken
 
     // Two frames before building. Levels generate their procedural textures
     // synchronously, which blocks the main thread for a few hundred
@@ -72,14 +115,15 @@ export function createLevelManager({
     // The first frame lets the loading screen paint; the second does the work.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (token !== pendingToken) return
-      build(state)
+      build(state, preserveEnergy)
 
       // And one more so the built level has rendered behind the overlay
       // before it fades away.
       requestAnimationFrame(() => {
         if (token !== pendingToken) return
-        interaction.setEnabled(true)
         loadingScreen.hide()
+        setTransitioning(false)
+        if (!onInputStateChange) interaction.setEnabled(true)
       })
     }))
   }
@@ -98,23 +142,28 @@ export function createLevelManager({
   // teardown() plus dropping the state — a later enter() starts clean.
   function unload() {
     pendingToken += 1 // cancel any build still waiting on its deferred frames
+    respawn.reset()
     teardown()
+    timeSystem?.resetForRun()
     currentState = null
     loadingScreen.hide()
+    setTransitioning(false)
     interaction.setEnabled(false)
   }
 
   function advance() {
     const index = sequence.indexOf(currentState)
-    if (index >= 0 && index < sequence.length - 1) enter(sequence[index + 1])
+    if (index >= 0 && index < sequence.length - 1) {
+      enter(sequence[index + 1], { preserveEnergy: true })
+    }
   }
 
   function update(delta) {
-    if (current && current.update) current.update(delta)
+    if (!transitioning && current?.update) current.update(delta)
   }
 
   function dispose() {
-    teardown()
+    unload()
   }
 
   return {
@@ -125,6 +174,8 @@ export function createLevelManager({
     update,
     dispose,
     getState: () => currentState,
+    isTransitioning: () => transitioning,
+    isCinematic: () => Boolean(current?.isCinematic),
     get bounds() {
       return current && current.bounds ? current.bounds : null
     },
