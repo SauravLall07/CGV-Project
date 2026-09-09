@@ -94,7 +94,7 @@ function createEmergencyBrake() {
 }
 
 export function createTimewreckLevel({
-  scene, interaction, timeSystem, hud, player, camera, respawn, advance
+  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic
 }) {
   // Level 3 is the "unstable" end of the scale — the shaders read this.
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.8)
@@ -384,6 +384,7 @@ export function createTimewreckLevel({
     onInteract: () => {
       if (braking) return
       braking = true
+      beginCinematic?.()
       // The run is over — hand the full kit back before the next level.
       timeSystem.setAbilityAvailability({})
       interaction.flashPrompt('The Chrono Express grinds to a halt…', 3000)
@@ -410,10 +411,69 @@ export function createTimewreckLevel({
   const lever = brake.getObjectByName('brake-lever')
   let elapsed = 0
 
+  // Capture the collapse at each checkpoint, then restore moving hazards to a
+  // predictable phase. The final checkpoint also puts the pursuing wave far
+  // enough behind the player for repeated deaths to remain recoverable.
+  function captureCheckpointRestore(checkpointZ) {
+    const saved = {
+      depleted,
+      breakupT,
+      lastCheckpointZ,
+      bounds: { ...bounds },
+      carriages: Object.values(carriages).map((group) => ({
+        group,
+        position: group.position.clone(),
+        rotation: group.rotation.clone()
+      }))
+    }
+
+    return () => {
+      depleted = saved.depleted
+      breakupT = saved.breakupT
+      lastCheckpointZ = saved.lastCheckpointZ
+      Object.assign(bounds, saved.bounds)
+      bounds.maxZ = Math.max(bounds.maxZ, checkpointZ + 0.75)
+      for (const { group, position, rotation } of saved.carriages) {
+        group.position.copy(position)
+        group.rotation.copy(rotation)
+      }
+
+      ramT = 0
+      applyRams()
+      loopT = 0
+      applyLoop()
+      slabDriftT = 0
+      slabSettle = 0
+      failCooldown = 0
+      braking = false
+      brakeT = 0
+      root.rotation.z = 0
+      root.position.y = 0
+      chunkGroup.visible = breakupT >= 0
+      chunks.forEach((chunk) => {
+        respawnChunk(chunk)
+        chunk.mesh.position.set(chunk.x, chunk.y, chunk.z)
+        chunk.mesh.rotation.set(0, 0, 0)
+      })
+
+      waveZ = depleted ? DEPLETE_Z + WAVE_LEAD : 0
+      wave.position.z = waveZ
+      wave.scale.set(1, 1, 1)
+      wave.visible = depleted
+      waveLight.position.z = waveZ
+      waveLight.intensity = depleted ? 12 : 0
+    }
+  }
+
   return {
     objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
-    checkpoint: { position: new THREE.Vector3(0, 0, spans.vault.center + 3), yaw: Math.PI },
+    checkpoint: {
+      position: new THREE.Vector3(0, 0, spans.vault.center + 3),
+      yaw: Math.PI,
+      restore: captureCheckpointRestore(spans.vault.center + 3)
+    },
     bounds,
+    get isCinematic() { return braking },
 
     update(delta) {
       outdoorEnv.update(delta)
@@ -475,7 +535,9 @@ export function createTimewreckLevel({
       for (const z of checkpointZs) {
         if (pp.z < z && z < lastCheckpointZ) {
           lastCheckpointZ = z
-          respawn.setCheckpoint(new THREE.Vector3(0, 0, z), Math.PI)
+          respawn.setCheckpoint(new THREE.Vector3(0, 0, z), Math.PI, {
+            restore: captureCheckpointRestore(z)
+          })
         }
       }
 
@@ -539,7 +601,10 @@ export function createTimewreckLevel({
         // would yank them forward instead of closing off behind them.
         if (breakupT > 1.0) bounds.maxZ = Math.min(bounds.maxZ, spans.passenger.maxZ - 0.5)
         if (breakupT > 3.2) {
-          bounds.maxZ = Math.min(bounds.maxZ, Math.max(spans.passenger.center + 1, pp.z + 3))
+          bounds.maxZ = Math.min(
+            bounds.maxZ,
+            Math.max(lastCheckpointZ + 0.75, spans.passenger.center + 1, pp.z + 3)
+          )
         }
       }
 
@@ -547,10 +612,12 @@ export function createTimewreckLevel({
       if (!depleted && pp.z < DEPLETE_Z) {
         depleted = true
         timeSystem.setAbilityAvailability({ SLOW: false, REWIND: false, GHOST: false })
-        respawn.setCheckpoint(new THREE.Vector3(0, 0, DEPLETE_Z), Math.PI)
         lastCheckpointZ = -Infinity // no further checkpoints past here
-        waveZ = pp.z + WAVE_LEAD
+        waveZ = DEPLETE_Z + WAVE_LEAD
         wave.visible = true
+        respawn.setCheckpoint(new THREE.Vector3(0, 0, DEPLETE_Z), Math.PI, {
+          restore: captureCheckpointRestore(DEPLETE_Z)
+        })
         hud.showToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
         hud.setObjective('Sprint to the locomotive (hold Shift) — pull the emergency brake!')
       }
@@ -558,7 +625,7 @@ export function createTimewreckLevel({
       if (depleted) {
         // Freeze is the one ability left, and it is what holds time off you.
         const holding = mode === 'FREEZE'
-        if (!holding) waveZ -= WAVE_SPEED * delta
+        if (!holding && !respawn.isFailing()) waveZ -= WAVE_SPEED * delta
         wave.position.z = waveZ
         waveLight.position.z = waveZ
         waveLight.intensity = 12 + Math.sin(elapsed * 9) * 3
@@ -571,9 +638,6 @@ export function createTimewreckLevel({
     },
 
     dispose() {
-      // Hand the full ability kit back — a restart must not inherit Level 3's
-      // scripted depletion.
-      if (timeSystem?.setAbilityAvailability) timeSystem.setAbilityAvailability({})
       unregisters.forEach((fn) => fn())
       // outdoorEnv.dispose() only frees GPU resources — the group still has to
       // come out of the scene here or it survives every level teardown.
