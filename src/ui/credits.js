@@ -125,12 +125,10 @@ function buildRollContent() {
   // --- PLACEHOLDER: third-party assets ---
   addBlock(roll, [
     label('Additional Assets'),
-    line('[ Placeholder: third-party assets and libraries to credit ]', { italic: true, dim: true })
-  ])
-
-  addBlock(roll, [
+    line('Physics library: cannon-es'),
     line('Built with Three.js', { size: '13px' })
   ])
+
 
   addBlock(roll, [
     spacer(24),

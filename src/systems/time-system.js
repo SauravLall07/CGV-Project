@@ -16,6 +16,7 @@ export const TIME_MODES = {
 }
 
 const MAX_ENERGY = 100
+const CHECKPOINT_ENERGY_FLOOR = 50
 const RECHARGE_RATE = 15 // energy per second when normal
 const DRAIN_RATES = {
   SLOW: 18,
@@ -510,11 +511,56 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     updateUniforms()
   }
 
-  function dispose() {
-    availability = { ...ALL_ABILITIES }
+  function clearTransientState() {
     setMode(TIME_MODES.NORMAL)
-    registered.clear()
+    ghost.cancel()
+    ghostCooldown = 0
     playerHistory.length = 0
+    timelineTime = 0
+    activeTime = 0
+    snapshotAccumulator = 0
+    uniforms.uTime.value = 0
+  }
+
+  // Normal level progression carries remaining energy, but grants a 50-point
+  // floor so the next puzzle cannot begin in an unusable state. Restarts and
+  // new runs use the default and receive the complete initial kit.
+  function resetForLevel({ preserveEnergy = false } = {}) {
+    clearTransientState()
+    registered.clear()
+    levelMultiplier = 1.0
+    availability = { ...ALL_ABILITIES }
+    energy = preserveEnergy ? Math.max(energy, CHECKPOINT_ENERGY_FLOOR) : MAX_ENERGY
+    updateUniforms()
+  }
+
+  function resetForRun() {
+    resetForLevel()
+  }
+
+  function captureCheckpointState() {
+    return {
+      energy,
+      availability: { ...availability },
+      levelMultiplier
+    }
+  }
+
+  // Puzzle state is restored by the level-owned checkpoint callback. Once it
+  // has done so, discard every pre-death recording and seed a fresh rewind
+  // timeline from the safe checkpoint state.
+  function resetForCheckpoint(snapshot = captureCheckpointState()) {
+    clearTransientState()
+    energy = Math.max(snapshot.energy, CHECKPOINT_ENERGY_FLOOR)
+    availability = { ...snapshot.availability }
+    levelMultiplier = snapshot.levelMultiplier
+    for (const entry of registered) entry.snapshots.length = 0
+    captureAllSnapshots(0)
+    updateUniforms()
+  }
+
+  function dispose() {
+    resetForRun()
     if (ghost) {
       scene.remove(ghost.mesh)
       ghost.dispose()
@@ -527,6 +573,10 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     setLevelMultiplier,
     setAbilityAvailability,
     getAbilityAvailability,
+    resetForLevel,
+    resetForRun,
+    resetForCheckpoint,
+    captureCheckpointState,
     triggerSlow,
     triggerFreeze,
     triggerRewind,

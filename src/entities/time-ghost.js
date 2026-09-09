@@ -100,13 +100,22 @@ export function createTimeGhost() {
   }
 
   function stop() {
+    const callback = onCompleteCallback
+    cancel()
+    if (callback) callback()
+  }
+
+  // Lifecycle resets must not run the gameplay completion callback from an
+  // outgoing level or leave the old trajectory available to a new level.
+  function cancel() {
     isPlaying = false
     group.visible = false
-    if (onCompleteCallback) {
-      const cb = onCompleteCallback
-      onCompleteCallback = null
-      cb()
-    }
+    trajectory = []
+    playbackTime = 0
+    onCompleteCallback = null
+    onTriggerCallback = null
+    elapsed = 0
+    ring.rotation.y = 0
   }
 
   function update(delta) {
@@ -176,7 +185,7 @@ export function createTimeGhost() {
   }
 
   function dispose() {
-    stop()
+    cancel()
     disposeObject(group)
   }
 
@@ -187,6 +196,7 @@ export function createTimeGhost() {
     startReplay,
     stop,
     warm,
+    cancel,
     update,
     isOccupying,
     isPlaying: () => isPlaying,
