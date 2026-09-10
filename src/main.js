@@ -27,6 +27,7 @@ import { createBoardingLevel } from './levels/boarding.js'
 import { createMovingHeistLevel } from './levels/moving-heist.js'
 import { createTimewreckLevel } from './levels/timewreck.js'
 import { createCompleteLevel } from './levels/complete.js'
+import { createModelEditor } from './dev/model-editor.js'
 
 // Composition root. Everything persistent (renderer, camera, loop, input,
 // HUD, menus, asset loader, interaction/respawn/time systems) is created here
@@ -243,6 +244,7 @@ let gameStarted = false
 let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
 let titleBackdrop = null // the silently-built station behind the title screen
+let modelEditor = null // DEV-only live scene/model workshop (F2)
 
 // Until NEW GAME is clicked there is no run to drive: the HUD is hidden, the
 // third-person camera and pointer lock are off (the menu owns the camera), and
@@ -294,7 +296,7 @@ const menu = createMainMenu({
 
 const pauseMenu = createPauseMenu({
   settingsMenu,
-  canPause: () => gameStarted && !credits.isOpen,
+  canPause: () => gameStarted && !credits.isOpen && !modelEditor?.isOpen(),
   getStatus: () => ({
     level: levelManager.getState(),
     objective: hud.getObjective(),
@@ -316,6 +318,48 @@ const pauseMenu = createPauseMenu({
   onQuit: () => quitToTitle()
 })
 
+// ---------------------------------------------------------------
+// Development Model Workshop (F2)
+// ---------------------------------------------------------------
+// This is deliberately DEV-only. It edits the live Three.js scene in memory,
+// pauses gameplay while open, and exports changed transforms/light values as
+// JSON so they can be copied back into the code-generated model constructors.
+if (import.meta.env.DEV) {
+  modelEditor = createModelEditor({
+    scene,
+    camera,
+    renderer,
+    player,
+    getObstacles: () => levelManager.obstacles,
+    getContextLabel: () => levelManager.getState() ?? 'Scene',
+    canOpen: () => (
+      gameStarted &&
+      !paused &&
+      !credits.isOpen &&
+      !levelManager.isTransitioning() &&
+      !levelManager.isCinematic() &&
+      !respawn.isFailing()
+    ),
+    onOpen: () => {
+      // Hiding the HUD makes the scene easier to inspect and, more
+      // importantly, syncInputState() disables movement, interactions and the
+      // pointer-lock player camera before OrbitControls takes over.
+      hud.setVisible(false)
+      syncInputState()
+    },
+    onClose: () => {
+      // The PlayerView object still owns exactly the same first/third-person
+      // mode and yaw/pitch as before. snap() simply puts the physical camera
+      // back onto that mode after the editor has moved it around.
+      syncInputState()
+      playerView.snap()
+      hud.setVisible(gameStarted && !credits.isOpen)
+      if (getInputState() === 'PLAYING') playerView.requestLock()
+    }
+  })
+  window.modelEditor = modelEditor
+}
+
 function getInputState() {
   return resolveInputState({
     gameStarted,
@@ -323,7 +367,8 @@ function getInputState() {
     paused,
     transitioning: levelManager.isTransitioning(),
     caught: respawn.isFailing(),
-    cinematic: levelManager.isCinematic()
+    cinematic: levelManager.isCinematic(),
+    editor: Boolean(modelEditor?.isOpen())
   })
 }
 
@@ -443,6 +488,14 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 const loop = createLoop({ renderer, scene, camera, clock })
 loop.add((delta) => {
   hud.updateStats(delta)
+
+  // The model workshop owns the same render camera while open. Gameplay is
+  // frozen, but the normal renderer keeps drawing the live level behind its
+  // editor UI so transforms and light changes are immediate.
+  if (modelEditor?.isOpen()) {
+    modelEditor.update(delta)
+    return
+  }
 
   if (credits.isOpen) return
 
