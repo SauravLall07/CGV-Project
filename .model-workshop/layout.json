@@ -1,0 +1,10 @@
+{
+  "format": "chrono-express-model-workshop/v2",
+  "contexts": {
+    "Boarding": {
+      "objects": {},
+      "views": []
+    }
+  },
+  "updatedAt": "2026-09-10T15:24:45.179Z"
+}

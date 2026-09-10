@@ -215,6 +215,10 @@ const levelManager = createLevelManager({
   loadingScreen,
   onEnter: (state) => {
     playMusicForState(state)
+    // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
+    // Workshop remaps its stable scene keys here so saved dev-layout overrides
+    // are reapplied before the loading overlay hands control back to the player.
+    modelEditor?.sceneChanged?.()
     if (state === 'Complete') showCompleteCredits()
     else timeSystem.warmGhost(renderer, camera)
   },
@@ -321,9 +325,9 @@ const pauseMenu = createPauseMenu({
 // ---------------------------------------------------------------
 // Development Model Workshop (F2)
 // ---------------------------------------------------------------
-// This is deliberately DEV-only. It edits the live Three.js scene in memory,
-// pauses gameplay while open, and exports changed transforms/light values as
-// JSON so they can be copied back into the code-generated model constructors.
+// This is deliberately DEV-only. Phase 2 edits the live Three.js scene, pauses
+// gameplay while open, and can persist transforms, names, materials, lights and
+// camera bookmarks to .model-workshop/layout.json through the Vite dev server.
 if (import.meta.env.DEV) {
   modelEditor = createModelEditor({
     scene,
