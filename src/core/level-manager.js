@@ -190,6 +190,12 @@ export function createLevelManager({
     },
     get obstacles() {
       return current && current.obstacles ? current.obstacles : null
+    },
+    get supports() {
+      return current && current.supports ? current.supports : null
+    },
+    get voids() {
+      return current && current.voids ? current.voids : null
     }
   }
 }
