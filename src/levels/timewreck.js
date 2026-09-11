@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
-import { createCarriageEnvironment, CARRIAGE_CEILING_Y } from '../environment/carriages.js'
+import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
 import { createParticleField } from '../environment/particles.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
@@ -473,6 +473,7 @@ export function createTimewreckLevel({
       restore: captureCheckpointRestore(spans.vault.center + 3)
     },
     bounds,
+    getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return braking },
 
     update(delta) {
