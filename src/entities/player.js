@@ -304,7 +304,28 @@ export function createPlayer() {
     resetPose()
   }
 
-  function update(delta, { keyboard, cameraYaw, bounds, obstacles }) {
+  function inVoid(x, z, voids) {
+    if (!voids) return false
+    for (const v of voids) {
+      if (x > v.minX && x < v.maxX && z > v.minZ && z < v.maxZ) return true
+    }
+    return false
+  }
+
+  function supportTopAt(x, y, z, supports) {
+    if (!supports) return null
+    let top = null
+    for (const s of supports) {
+      if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue
+      const sy = s.y
+      if (y >= sy - 1.0 && y <= sy + 0.55) {
+        if (top == null || sy > top) top = sy
+      }
+    }
+    return top
+  }
+
+  function update(delta, { keyboard, cameraYaw, bounds, obstacles, supports, voids }) {
     const sin = Math.sin(cameraYaw)
     const cos = Math.cos(cameraYaw)
 
@@ -350,7 +371,15 @@ export function createPlayer() {
         turnToward(airVelocityX, airVelocityZ, delta)
       }
 
-      if (group.position.y <= groundY) {
+      const landing = supportTopAt(group.position.x, group.position.y, group.position.z, supports)
+      if (verticalVelocity <= 0 && landing != null) {
+        group.position.y = landing
+        groundY = landing
+        verticalVelocity = 0
+        airVelocityX = 0
+        airVelocityZ = 0
+        airborne = false
+      } else if (!inVoid(group.position.x, group.position.z, voids) && group.position.y <= groundY) {
         group.position.y = groundY
         verticalVelocity = 0
         airVelocityX = 0
@@ -380,6 +409,19 @@ export function createPlayer() {
       stridePhase += distance * STRIDE_FREQUENCY
     } else {
       stridePhase *= Math.max(0, 1 - delta * 10)
+    }
+
+    if (!airborne) {
+      const top = supportTopAt(group.position.x, group.position.y, group.position.z, supports)
+      if (top != null) {
+        group.position.y = top
+        groundY = top
+      } else if (inVoid(group.position.x, group.position.z, voids)) {
+        airborne = true
+        verticalVelocity = 0
+        airVelocityX = 0
+        airVelocityZ = 0
+      } 
     }
 
     // Smooth crouch in/out instead of snapping.

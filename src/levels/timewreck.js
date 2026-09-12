@@ -262,7 +262,12 @@ export function createTimewreckLevel({
   const slabMat = createChronoFieldMaterial({
     baseColor: 0x3b4048, glowColor: 0x60a5fa, opacity: 0.95, doubleSided: true
   })
+  const SLAB_HALF_X = 1.15 / 2
+  const SLAB_HALF_Y = 0.16 / 2
+  const SLAB_HALF_Z = 1.05 / 2
   const slabs = []
+  const slabSupports = []
+  const gapVoids = [{ minX: -2, maxX: 2, minZ: gapMinZ, maxZ: gapMaxZ }]
   for (let i = 0; i < 5; i++) {
     const slab = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
     slab.userData.seed = i * 1.7
@@ -530,7 +535,9 @@ export function createTimewreckLevel({
       restore: captureCheckpointRestore(spans.vault.center + 3)
     },
     bounds,
-    getCarriageVolumes: () => listCarriageVolumes(spans),
+    supports: slabSupports,
+    voids: gapVoids,
+    getCarriageVolumes: () => listCarriageVolumes(spans),   
     get isCinematic() { return braking },
 
     update(delta) {
@@ -636,7 +643,21 @@ export function createTimewreckLevel({
         slab.rotation.z = THREE.MathUtils.lerp(Math.sin(slabDriftT + seed) * 0.5, 0, slabSettle)
         slab.rotation.x = THREE.MathUtils.lerp(Math.cos(slabDriftT * 0.9 + seed) * 0.4, 0, slabSettle)
       }
+      slabSupports.length = 0
+      if (frozen) {
+        for (const slab of slabs) {
+          slabSupports.push({
+            minX: slab.position.x - SLAB_HALF_X - 0.3,
+            maxX: slab.position.x + SLAB_HALF_X + 0.3,
+            minZ: slab.position.z - SLAB_HALF_Z - 0.12,
+            maxZ: slab.position.z + SLAB_HALF_Z + 0.12,
+            y: slab.position.y + SLAB_HALF_Y
+          })
+        }
+      }
       if (pp.z > gapMinZ && pp.z < gapMaxZ && !frozen) {
+        failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
+      } else if (pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.3) {
         failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
       }
 

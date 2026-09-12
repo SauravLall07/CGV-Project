@@ -191,6 +191,12 @@ export function createLevelManager({
     get obstacles() {
       return current && current.obstacles ? current.obstacles : null
     },
+    get supports() {
+      return current && current.supports ? current.supports : null
+    },
+    get voids() {
+      return current && current.voids ? current.voids : null
+    },
     // Live guard list from the current level (Boarding stealth). Other
     // levels omit getGuards and the minimap simply draws no enemy icons.
     get guards() {
