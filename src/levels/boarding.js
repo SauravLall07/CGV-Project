@@ -409,6 +409,7 @@ export function createBoardingLevel({
     },
     bounds,
     obstacles: wallColliders,
+    getGuards: () => stealth.getGuards(),
     get isCinematic() { return isBoardingCinematic },
     update(delta) {
       outdoorEnv.update(delta)

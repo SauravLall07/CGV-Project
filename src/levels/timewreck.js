@@ -1,7 +1,8 @@
 import * as THREE from 'three'
+import * as CANNON from 'cannon-es'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
-import { createCarriageEnvironment, CARRIAGE_CEILING_Y } from '../environment/carriages.js'
+import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
 import { createParticleField } from '../environment/particles.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
@@ -261,7 +262,12 @@ export function createTimewreckLevel({
   const slabMat = createChronoFieldMaterial({
     baseColor: 0x3b4048, glowColor: 0x60a5fa, opacity: 0.95, doubleSided: true
   })
+  const SLAB_HALF_X = 1.15 / 2
+  const SLAB_HALF_Y = 0.16 / 2
+  const SLAB_HALF_Z = 1.05 / 2
   const slabs = []
+  const slabSupports = []
+  const gapVoids = [{ minX: -2, maxX: 2, minZ: gapMinZ, maxZ: gapMaxZ }]
   for (let i = 0; i < 5; i++) {
     const slab = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
     slab.userData.seed = i * 1.7
@@ -300,6 +306,28 @@ export function createTimewreckLevel({
   ]
   const chunks = []
   let chunkSeed = 0
+
+  // Cannon world for thrown passenger-car debris only. Gravity matches the
+  // old ballistic 6.5; floor restitution stands in for the old y=0.12 bounce.
+  const debrisWorld = new CANNON.World({
+    gravity: new CANNON.Vec3(0, -6.5, 0)
+  })
+  debrisWorld.defaultContactMaterial.friction = 0.12
+  debrisWorld.defaultContactMaterial.restitution = 0.35
+
+  const debrisFloor = new CANNON.Body({
+    type: CANNON.Body.STATIC,
+    shape: new CANNON.Plane()
+  })
+  debrisFloor.quaternion.setFromEuler(-Math.PI / 2, 0, 0)
+  debrisWorld.addBody(debrisFloor)
+
+  const chunkShapes = [
+    new CANNON.Box(new CANNON.Vec3(0.17, 0.11, 0.14)),
+    new CANNON.Sphere(0.2),
+    new CANNON.Box(new CANNON.Vec3(0.25, 0.06, 0.08))
+  ]
+
   function respawnChunk(c) {
     const s = ++chunkSeed
     c.x = skew(s + 11) * 1.25
@@ -309,12 +337,25 @@ export function createTimewreckLevel({
     c.vy = 0.3 + Math.abs(skew(s + 7)) * 1.4
     c.vz = -(7 + Math.abs(skew(s + 9)) * 6)
     c.life = 4.0
+    if (!c.body) return
+    c.body.position.set(c.x, c.y, c.z)
+    c.body.velocity.set(c.vx, c.vy, c.vz)
+    c.body.angularVelocity.set(3.1, 2.2, skew(s + 13) * 2)
+    c.body.quaternion.set(0, 0, 0, 1)
+    c.body.wakeUp()
   }
   for (let i = 0; i < 8; i++) {
     const mesh = new THREE.Mesh(chunkGeos[i % 3], chunkMat)
     mesh.castShadow = true
     chunkGroup.add(mesh)
-    const c = { mesh, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0 }
+    const body = new CANNON.Body({
+      mass: 1,
+      shape: chunkShapes[i % 3],
+      linearDamping: 0.04,
+      angularDamping: 0.08
+    })
+    debrisWorld.addBody(body)
+    const c = { mesh, body, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0 }
     respawnChunk(c)
     // Stagger so they don't arrive as one volley.
     c.life = 0.4 * i
@@ -322,22 +363,43 @@ export function createTimewreckLevel({
   }
 
   // Registered with the time system, so Slow/Freeze visibly bite on the flying
-  // wreckage too. This ballistic integration is also the hand-off point for
-  // Phase 6 — swapping it for a real rigid body changes only this callback.
+  // wreckage too. scaledDelta is the Cannon step so Freeze holds the bodies and
+  // Slow runs the world at 0.2x; meshes copy rigid-body pose each tick.
   unregisters.push(timeSystem.register(chunkGroup, {
     onUpdate(scaledDelta) {
       if (breakupT < 0) return
       for (const c of chunks) {
         c.life -= Math.abs(scaledDelta)
         if (c.life <= 0) { respawnChunk(c) }
-        c.vy -= 6.5 * scaledDelta
-        c.x += c.vx * scaledDelta
-        c.y += c.vy * scaledDelta
-        c.z += c.vz * scaledDelta
-        if (c.y < 0.12) { c.y = 0.12; c.vy = Math.abs(c.vy) * 0.35 }
-        c.mesh.position.set(c.x, c.y, c.z)
-        c.mesh.rotation.x += scaledDelta * 3.1
-        c.mesh.rotation.y += scaledDelta * 2.2
+      }
+      if (scaledDelta !== 0) {
+        const rewinding = scaledDelta < 0
+        const saved = rewinding
+          ? chunks.map((c) => ({
+            v: c.body.velocity.clone(),
+            w: c.body.angularVelocity.clone()
+          }))
+          : null
+        if (rewinding) {
+          for (const c of chunks) {
+            c.body.velocity.scale(-1)
+            c.body.angularVelocity.scale(-1)
+          }
+        }
+        debrisWorld.step(1 / 60, Math.abs(scaledDelta), 3)
+        if (rewinding) {
+          chunks.forEach((c, i) => {
+            c.body.velocity.copy(saved[i].v)
+            c.body.angularVelocity.copy(saved[i].w)
+          })
+        }
+      }
+      for (const c of chunks) {
+        c.mesh.position.copy(c.body.position)
+        c.mesh.quaternion.copy(c.body.quaternion)
+        c.x = c.body.position.x
+        c.y = c.body.position.y
+        c.z = c.body.position.z
       }
     }
   }))
@@ -452,8 +514,8 @@ export function createTimewreckLevel({
       chunkGroup.visible = breakupT >= 0
       chunks.forEach((chunk) => {
         respawnChunk(chunk)
-        chunk.mesh.position.set(chunk.x, chunk.y, chunk.z)
-        chunk.mesh.rotation.set(0, 0, 0)
+        chunk.mesh.position.copy(chunk.body.position)
+        chunk.mesh.quaternion.copy(chunk.body.quaternion)
       })
 
       waveZ = depleted ? DEPLETE_Z + WAVE_LEAD : 0
@@ -473,6 +535,9 @@ export function createTimewreckLevel({
       restore: captureCheckpointRestore(spans.vault.center + 3)
     },
     bounds,
+    supports: slabSupports,
+    voids: gapVoids,
+    getCarriageVolumes: () => listCarriageVolumes(spans),   
     get isCinematic() { return braking },
 
     update(delta) {
@@ -578,7 +643,21 @@ export function createTimewreckLevel({
         slab.rotation.z = THREE.MathUtils.lerp(Math.sin(slabDriftT + seed) * 0.5, 0, slabSettle)
         slab.rotation.x = THREE.MathUtils.lerp(Math.cos(slabDriftT * 0.9 + seed) * 0.4, 0, slabSettle)
       }
+      slabSupports.length = 0
+      if (frozen) {
+        for (const slab of slabs) {
+          slabSupports.push({
+            minX: slab.position.x - SLAB_HALF_X - 0.3,
+            maxX: slab.position.x + SLAB_HALF_X + 0.3,
+            minZ: slab.position.z - SLAB_HALF_Z - 0.12,
+            maxZ: slab.position.z + SLAB_HALF_Z + 0.12,
+            y: slab.position.y + SLAB_HALF_Y
+          })
+        }
+      }
       if (pp.z > gapMinZ && pp.z < gapMaxZ && !frozen) {
+        failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
+      } else if (pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.3) {
         failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
       }
 

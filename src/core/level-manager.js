@@ -190,6 +190,26 @@ export function createLevelManager({
     },
     get obstacles() {
       return current && current.obstacles ? current.obstacles : null
+    },
+    get supports() {
+      return current && current.supports ? current.supports : null
+    },
+    get voids() {
+      return current && current.voids ? current.voids : null
+    },
+    // Live guard list from the current level (Boarding stealth). Other
+    // levels omit getGuards and the minimap simply draws no enemy icons.
+    get guards() {
+      return current && typeof current.getGuards === 'function'
+        ? current.getGuards()
+        : null
+    },
+    // L2/L3 expose one AABB per carriage (see carriages.listCarriageVolumes).
+    // Boarding has none; the minimap stays on its follow-cam frustum there.
+    get carriageVolumes() {
+      return current && typeof current.getCarriageVolumes === 'function'
+        ? current.getCarriageVolumes()
+        : null
     }
   }
 }

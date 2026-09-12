@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
 import { disposeObject } from '../core/dispose.js'
-import { createCarriageEnvironment, CARRIAGE_CEILING_Y } from '../environment/carriages.js'
+import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
@@ -342,7 +342,7 @@ export function createMovingHeistLevel({
     })
     physicsWorld.addBody(body)
 
-    const obstacle = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }
+    const obstacle = { kind: 'crate', minX: 0, maxX: 0, minZ: 0, maxZ: 0 }
     return { mesh, body, obstacle, pushHeld: false }
   })
 
@@ -566,6 +566,7 @@ export function createMovingHeistLevel({
     },
     bounds,
     obstacles: cargoCrates.map((crate) => crate.obstacle),
+    getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return taken },
 
     update(delta) {
