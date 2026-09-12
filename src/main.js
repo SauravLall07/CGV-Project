@@ -18,6 +18,7 @@ import { createTimeSystem } from './systems/time-system.js'
 import { loadTrack, startLevelMusic, stopLevelMusic } from './systems/level-music.js'
 import { MusicSystem } from './systems/music-system.js'
 import { createHud } from './ui/hud.js'
+import { createMinimap } from './ui/minimap.js'
 import { createLoadingScreen } from './ui/loading-screen.js'
 import { createMainMenu } from './ui/main-menu.js'
 import { createSettingsMenu } from './ui/settings-menu.js'
@@ -49,6 +50,18 @@ const loadingScreen = createLoadingScreen(assets)
 // each level's checkpoint on load.
 const player = createPlayer()
 scene.add(player.mesh)
+
+const minimap = createMinimap({
+  scene,
+  hudRoot: hud.root,
+  mainCamera: camera,
+  player,
+  // levelManager is created below; these are only called from the render loop.
+  getObstacles: () => levelManager.obstacles,
+  getGuards: () => levelManager.guards,
+  getLevelState: () => levelManager.getState(),
+  getCarriageVolumes: () => levelManager.carriageVolumes
+})
 
 const keyboard = createKeyboardState()
 // Browser shortcuts (Ctrl+W, Ctrl+T, Ctrl+Tab) fire above the page unless the
@@ -440,7 +453,17 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
   menu.onStart(startGame)
 }))
 
-const loop = createLoop({ renderer, scene, camera, clock })
+const loop = createLoop({
+  renderer,
+  scene,
+  camera,
+  clock,
+  afterRender: (gl) => {
+    const show = gameStarted && !credits.isOpen
+    minimap.setVisible(show)
+    if (show) minimap.render(gl)
+  }
+})
 loop.add((delta) => {
   hud.updateStats(delta)
 
