@@ -5,7 +5,9 @@ import { createClock } from './core/clock.js'
 import { createLoop } from './core/loop.js'
 import { createAssetLoader } from './core/assets.js'
 import { createLevelManager } from './core/level-manager.js'
+import { resolveInputState } from './core/input-state.js'
 import { initAudio, resumeAudio, getContext } from './core/audio.js'
+import { preloadAbilitySfx } from './systems/ability-sfx.js'
 import { createPlayer } from './entities/player.js'
 import { createKeyboardState } from './input/keyboard-state.js'
 import { createKeyboardLock } from './input/keyboard-lock.js'
@@ -14,7 +16,9 @@ import { createInteractionSystem } from './systems/interaction.js'
 import { createRespawnSystem } from './systems/respawn.js'
 import { createTimeSystem } from './systems/time-system.js'
 import { loadTrack, startLevelMusic, stopLevelMusic } from './systems/level-music.js'
+import { MusicSystem } from './systems/music-system.js'
 import { createHud } from './ui/hud.js'
+import { createMinimap } from './ui/minimap.js'
 import { createLoadingScreen } from './ui/loading-screen.js'
 import { createMainMenu } from './ui/main-menu.js'
 import { createSettingsMenu } from './ui/settings-menu.js'
@@ -47,6 +51,18 @@ const loadingScreen = createLoadingScreen(assets)
 const player = createPlayer()
 scene.add(player.mesh)
 
+const minimap = createMinimap({
+  scene,
+  hudRoot: hud.root,
+  mainCamera: camera,
+  player,
+  // levelManager is created below; these are only called from the render loop.
+  getObstacles: () => levelManager.obstacles,
+  getGuards: () => levelManager.guards,
+  getLevelState: () => levelManager.getState(),
+  getCarriageVolumes: () => levelManager.carriageVolumes
+})
+
 const keyboard = createKeyboardState()
 // Browser shortcuts (Ctrl+W, Ctrl+T, Ctrl+Tab) fire above the page unless the
 // document is fullscreen with the keyboard locked, so a run engages both and a
@@ -70,12 +86,37 @@ const LEVEL_TRACKS = {
   Complete: { file: '../assets/audio/music/victory-theme.mp3', loop: false }
 }
 
+let musicSystem = null
+
+function ensureGameplayDrone() {
+  if (musicSystem) return musicSystem
+  if (!getContext()) return null
+  musicSystem = new MusicSystem()
+  musicSystem.setTimeDilation(1)
+  if (import.meta.env.DEV) window.musicSystem = musicSystem
+  return musicSystem
+}
+
+function disposeGameplayDrone() {
+  if (!musicSystem) return
+  musicSystem.dispose()
+  musicSystem = null
+  if (import.meta.env.DEV) window.musicSystem = null
+}
+
 function playMusicForState(state) {
   const spec = LEVEL_TRACKS[state]
+  console.log(
+    `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] playMusicForState("${state}") drone=${musicSystem ? '#' + musicSystem.id : 'none'} spec=${spec ? spec.file : 'none'}`
+  )
   if (!spec) {
     stopLevelMusic()
+    disposeGameplayDrone()
     return
   }
+  // Sampled tracks swap per level; the drone is one bed under L1–L3 only.
+  if (state === 'Complete') disposeGameplayDrone()
+  else ensureGameplayDrone()
   startLevelMusic(loadTrack(spec.file), { loop: spec.loop })
 }
 
@@ -88,6 +129,12 @@ async function playMenuMusic() {
 function unlockAudio() {
   console.log('unlockAudio() called')
   initAudio()
+  const preloading = preloadAbilitySfx()
+  if (preloading && typeof preloading.then === 'function') {
+    preloading.then(() => {
+      console.log('[ability-sfx] unlockAudio preload settled before/during menu')
+    })
+  }
   const ctx = getContext()
   console.log('unlockAudio context before resume: ' + (ctx ? ctx.state : 'none'))
   const unlocking = resumeAudio()
@@ -135,11 +182,21 @@ canvas.addEventListener('click', () => {
 console.log('Audio click listener attached to: ' + canvas.tagName)
 
 const interaction = createInteractionSystem({ camera, input: keyboard })
-const respawn = createRespawnSystem({
-  player, hud, camera: playerView,
-  setControlsEnabled: (enabled) => { if (!paused) keyboard.setEnabled(enabled) }
+const timeSystem = createTimeSystem({
+  scene,
+  player,
+  hud,
+  onTimeScale(scale) {
+    if (musicSystem) musicSystem.setTimeDilation(scale)
+  },
 })
-const timeSystem = createTimeSystem({ scene, player, hud })
+const respawn = createRespawnSystem({
+  player,
+  hud,
+  camera: playerView,
+  timeSystem,
+  onStateChange: () => syncInputState()
+})
 
 // Time abilities. The key codes live in core/settings.js and are rebindable
 // from the settings screen — everything here works in actions, not keys.
@@ -181,8 +238,10 @@ const levelManager = createLevelManager({
   onEnter: (state) => {
     playMusicForState(state)
     if (state === 'Complete') showCompleteCredits()
+    else timeSystem.warmGhost(renderer, camera)
   },
   onLeave: stopLevelMusic,
+  onInputStateChange: () => syncInputState(),
   levels: [
     { state: 'Boarding', create: createBoardingLevel },
     { state: 'MovingHeist', create: createMovingHeistLevel },
@@ -190,7 +249,10 @@ const levelManager = createLevelManager({
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })
-if (import.meta.env.DEV) window.levelManager = levelManager
+if (import.meta.env.DEV) {
+  window.levelManager = levelManager
+  window.musicSystem = musicSystem
+}
 
 // Losing all three lives is a true run reset: rebuild Level 1, restore global
 // run resources/stats and discard every level-owned puzzle/interaction state.
@@ -294,24 +356,40 @@ const pauseMenu = createPauseMenu({
   onPause: () => setPaused(true),
   onResume: () => setPaused(false),
   onRestart: () => {
-    setPaused(false)
     resetCount = 0
     elapsed = 0
     respawn.resetLives()
     timeSystem.resetRun?.()
     levelManager.restart()
+    setPaused(false)
   },
   onQuit: () => quitToTitle()
 })
+
+function getInputState() {
+  return resolveInputState({
+    gameStarted,
+    creditsOpen: credits.isOpen,
+    paused,
+    transitioning: levelManager.isTransitioning(),
+    caught: respawn.isFailing(),
+    cinematic: levelManager.isCinematic()
+  })
+}
+
+function syncInputState() {
+  const enabled = getInputState() === 'PLAYING'
+  keyboard.setEnabled(enabled)
+  interaction.setEnabled(enabled)
+  playerView.setEnabled(enabled)
+}
 
 function setPaused(value) {
   if (paused === value) return
   paused = value
 
-  const controlsEnabled = !value && !hud.isTutorialOpen()
-  keyboard.setEnabled(controlsEnabled)
-  interaction.setEnabled(controlsEnabled)
-  playerView.setEnabled(controlsEnabled)
+  respawn.setPaused(value)
+  syncInputState()
 
   if (value) {
     pauseMenu.open()
@@ -323,10 +401,11 @@ function setPaused(value) {
     // Runs from the Resume click, which is the user gesture a fullscreen
     // request needs; resuming with Esc instead just leaves the lock off.
     keyboardLock.engage()
+
     // Re-grab the mouse straight away; if the browser refuses (it rate-limits
     // a re-lock right after an Escape-driven exit) clicking the canvas still
     // works, which is what the camera's own click handler is for.
-    playerView.requestLock()
+    if (getInputState() === 'PLAYING') playerView.requestLock()
   }
 }
 
@@ -334,17 +413,14 @@ function setPaused(value) {
 // Escape while the mouse was captured — browsers consume that keydown — so it
 // doubles as a pause trigger.
 playerView.onLockLost(() => {
-  if (credits.isOpen) return
-  if (gameStarted && !paused && !settingsMenu.isOpen) setPaused(true)
+  if (getInputState() === 'PLAYING' && !settingsMenu.isOpen) setPaused(true)
 })
 
 function showCompleteCredits() {
   // Open first so the pointer-lock release is not treated as a pause.
   credits.open({ source: 'complete' })
   hud.setVisible(false)
-  keyboard.setEnabled(false)
-  interaction.setEnabled(false)
-  playerView.setEnabled(false)
+  syncInputState()
   keyboardLock.release({ exitFullscreen: false })
 }
 
@@ -357,15 +433,16 @@ function startGame() {
     titleBackdrop = null
   }
 
+  respawn.reset()
+  timeSystem.resetForRun()
   gameStarted = true
+  paused = false
   elapsed = 0
   resetCount = 0
   respawn.resetLives()
   timeSystem.resetRun?.()
   playerView.reset() // every run opens in third person
   hud.setVisible(true)
-  playerView.setEnabled(true)
-  keyboard.setEnabled(true)
   keyboardLock.engage()
   levelManager.enter('Boarding')
 }
@@ -380,9 +457,9 @@ function quitToTitle() {
   resetCount = 0
 
   levelManager.unload()
-  keyboard.setEnabled(false)
+  syncInputState()
   keyboardLock.release()
-  playerView.setEnabled(false)
+
   // Quitting mid-run from first person left the player figure hidden; the
   // title screen's cinematic shot needs it back.
   playerView.reset()
@@ -391,6 +468,7 @@ function quitToTitle() {
   hud.setObjective('')
 
   titleBackdrop = buildTitleBackdrop()
+  disposeGameplayDrone()
   menu.show()
   unlockAudio()
 }
@@ -400,6 +478,10 @@ function quitToTitle() {
 // pattern used by levelManager.enter() — see core/level-manager.js.
 requestAnimationFrame(() => requestAnimationFrame(() => {
   titleBackdrop = buildTitleBackdrop()
+
+  // Compile Ghost materials/lights while the loading overlay still covers
+  // the canvas — first Ghost press must not pay that shader cost in-game.
+  timeSystem.warmGhost(renderer, camera)
 
   // One more frame so the station has rendered behind the loading
   // overlay before it fades away to reveal the menu.
@@ -412,7 +494,22 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
   menu.onStart(startGame)
 }))
 
-const loop = createLoop({ renderer, scene, camera, clock })
+const loop = createLoop({
+  renderer,
+  scene,
+  camera,
+  clock,
+
+  afterRender: (gl) => {
+    const show = gameStarted && !credits.isOpen
+    minimap.setVisible(show)
+
+    if (show) {
+      minimap.render(gl)
+    }
+  }
+})
+
 loop.add((delta) => {
   hud.updateStats(delta)
 
@@ -424,30 +521,53 @@ loop.add((delta) => {
     return
   }
 
-  // Paused or reading a walkthrough: no simulation, but the loop keeps
-  // rendering so the frozen scene stays visible behind the overlay.
-  if (paused || hud.isTutorialOpen()) return
+  // Walkthrough tutorials completely freeze gameplay while the scene remains
+  // rendered behind the overlay. Check this before syncInputState() so the
+  // tutorial's disabled controls cannot accidentally be re-enabled.
+  if (hud.isTutorialOpen()) return
+
+  syncInputState()
+
+  const inputState = getInputState()
+
+  if (
+    inputState === 'PAUSED' ||
+    inputState === 'TRANSITION' ||
+    inputState === 'CAUGHT'
+  ) {
+    return
+  }
 
   elapsed += delta
 
   timeSystem.update(delta)
   levelManager.update(delta)
 
-  // A level update may have just triggered a tutorial zone. Stop here so the
-  // player does not move one extra frame into the hazard under the popup.
+  // A level update may have opened a tutorial this frame. Stop immediately
+  // so the player cannot move one extra frame into a hazard under the popup.
   if (hud.isTutorialOpen()) return
+
+  // Cinematics and other non-playing states may still need level animation,
+  // but movement and interaction must not resume during the same frame.
+  if (getInputState() !== 'PLAYING') {
+    syncInputState()
+    return
+  }
 
   player.update(delta, {
     keyboard: keyboard.state,
     cameraYaw: playerView.getYaw(),
     bounds: levelManager.bounds,
     obstacles: levelManager.obstacles,
-    groundHeightAt: levelManager.groundHeightAt
+    groundHeightAt: levelManager.groundHeightAt,
+    supports: levelManager.supports,
+    voids: levelManager.voids
   })
 
   playerView.update(delta, player.mesh, scene, {
     crouching: Boolean(keyboard.state.duck)
   })
+
   interaction.update(player.mesh, playerView.getYaw())
   respawn.update()
 
@@ -460,4 +580,5 @@ loop.add((delta) => {
     available: timeSystem.getAbilityAvailability()
   })
 })
+
 loop.start()

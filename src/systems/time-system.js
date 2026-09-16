@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createTimeGhost } from '../entities/time-ghost.js'
+import { playAbilitySfx } from './ability-sfx.js'
 
 // Chrono Express — Time-Manipulation Core Engine (Phase 3 foundation).
 // Provides Slow (0.2x), Freeze (0.0x), Rewind (state restoration), and
@@ -15,6 +16,7 @@ export const TIME_MODES = {
 }
 
 const MAX_ENERGY = 100
+const CHECKPOINT_ENERGY_FLOOR = 50
 const RECHARGE_RATE = 15 // energy per second when normal
 const DRAIN_RATES = {
   SLOW: 18,
@@ -33,7 +35,7 @@ const TIME_EPSILON = 1e-7
 // than in a level: the key bindings in main.js and the HUD both read it.
 const ALL_ABILITIES = { SLOW: true, FREEZE: true, REWIND: true, GHOST: true }
 
-export function createTimeSystem({ scene, player, hud }) {
+export function createTimeSystem({ scene, player, hud, onTimeScale }) {
   let mode = TIME_MODES.NORMAL
   let energy = MAX_ENERGY
   let ghost = createTimeGhost()
@@ -111,6 +113,21 @@ export function createTimeSystem({ scene, player, hud }) {
     })
 
     updateUniforms()
+    notifyTimeDilation()
+  }
+
+  function dilationScaleForDrone() {
+    if (mode === TIME_MODES.SLOW) return 0.2
+    if (mode === TIME_MODES.FREEZE) return 0.0
+    // Shader rewind is -1.5; MusicSystem clamps to 0–1, so freeze detune.
+    if (mode === TIME_MODES.REWIND) return 0.0
+    if (ghost.isPlaying()) return 0.55
+    return 1.0
+  }
+
+  function notifyTimeDilation() {
+    if (!onTimeScale) return
+    onTimeScale(dilationScaleForDrone())
   }
 
   function setLevelMultiplier(mult) {
@@ -166,11 +183,34 @@ export function createTimeSystem({ scene, player, hud }) {
 
     ghost.startReplay(trajectory, {
       onComplete: () => {
+        notifyTimeDilation()
         if (hud) hud.showToast('Time Ghost faded', 1000)
       }
     })
 
+    notifyTimeDilation()
+    console.time('ability-sfx:GHOST playback call')
+    playAbilitySfx('GHOST')
+    console.timeEnd('ability-sfx:GHOST playback call')
     if (hud) hud.showToast('Time Ghost summoned!', 1200)
+  }
+
+  function triggerSlow() {
+    const previous = mode
+    setMode(TIME_MODES.SLOW)
+    if (mode === TIME_MODES.SLOW && previous !== TIME_MODES.SLOW) playAbilitySfx('SLOW')
+  }
+
+  function triggerFreeze() {
+    const previous = mode
+    setMode(TIME_MODES.FREEZE)
+    if (mode === TIME_MODES.FREEZE && previous !== TIME_MODES.FREEZE) playAbilitySfx('FREEZE')
+  }
+
+  function triggerRewind() {
+    const previous = mode
+    setMode(TIME_MODES.REWIND)
+    if (mode === TIME_MODES.REWIND && previous !== TIME_MODES.REWIND) playAbilitySfx('REWIND')
   }
 
   function updateUniforms() {
@@ -470,36 +510,99 @@ export function createTimeSystem({ scene, player, hud }) {
 
     updateUniforms()
   }
-
-  function resetRun() {
-    mode = TIME_MODES.NORMAL
-    energy = MAX_ENERGY
+  function clearTransientState() {
+    setMode(TIME_MODES.NORMAL)
+    ghost.cancel()
     ghostCooldown = 0
-    activeTime = 0
-    timelineTime = 0
-    snapshotAccumulator = 0
-    levelMultiplier = 1.0
-    availability = { ...ALL_ABILITIES }
     playerHistory.length = 0
-    ghost.stop()
+    timelineTime = 0
+    activeTime = 0
+    snapshotAccumulator = 0
+    uniforms.uTime.value = 0
+  }
 
-    // A full run reset also discards object histories so Level 1 cannot inherit
-    // rewind state from a previous failed run.
+  function clearRegisteredState() {
     registered.forEach((entry) => {
       entry.snapshots?.splice?.(0)
       entry.accumulator = 0
+
       entry.options?.onSlow?.(false)
       entry.options?.onFreeze?.(false)
       entry.options?.onRewind?.(false)
     })
+  }
+
+  // Normal level progression carries remaining energy, but grants a
+  // checkpoint-energy floor so the next puzzle cannot begin unusable.
+  //
+  // A fresh run/restarter receives the full initial ability kit.
+  function resetForLevel({ preserveEnergy = false } = {}) {
+    clearTransientState()
+
+    // Reset any objects still carrying time-manipulation state before their
+    // level registrations are discarded.
+    clearRegisteredState()
+    registered.clear()
+
+    levelMultiplier = 1.0
+    availability = { ...ALL_ABILITIES }
+
+    energy = preserveEnergy
+      ? Math.max(energy, CHECKPOINT_ENERGY_FLOOR)
+      : MAX_ENERGY
+
+    updateUniforms()
+  }
+
+  function resetForRun() {
+    resetForLevel({
+      preserveEnergy: false
+    })
+  }
+
+  // Compatibility name used by the Level-1 branch/main.js.
+  // Both names now perform exactly the same full-run reset.
+  function resetRun() {
+    resetForRun()
+  }
+
+  function captureCheckpointState() {
+    return {
+      energy,
+      availability: { ...availability },
+      levelMultiplier
+    }
+  }
+
+  // Puzzle/world state is restored by the level-owned checkpoint callback.
+  // Time manipulation history, however, must be discarded so the player
+  // cannot rewind back into the life they just lost.
+  function resetForCheckpoint(snapshot = captureCheckpointState()) {
+    clearTransientState()
+
+    energy = Math.max(
+      snapshot?.energy ?? energy,
+      CHECKPOINT_ENERGY_FLOOR
+    )
+
+    availability = snapshot?.availability
+      ? { ...snapshot.availability }
+      : { ...availability }
+
+    levelMultiplier = snapshot?.levelMultiplier ?? levelMultiplier
+
+    for (const entry of registered) {
+      entry.snapshots?.splice?.(0)
+      entry.accumulator = 0
+    }
+
+    captureAllSnapshots(0)
     updateUniforms()
   }
 
   function dispose() {
-    availability = { ...ALL_ABILITIES }
-    setMode(TIME_MODES.NORMAL)
-    registered.clear()
-    playerHistory.length = 0
+    resetForRun()
+
     if (ghost) {
       scene.remove(ghost.mesh)
       ghost.dispose()
@@ -512,17 +615,31 @@ export function createTimeSystem({ scene, player, hud }) {
     setLevelMultiplier,
     setAbilityAvailability,
     getAbilityAvailability,
+
     resetRun,
+    resetForLevel,
+    resetForRun,
+    resetForCheckpoint,
+    captureCheckpointState,
+
     triggerSlow: () => setMode(TIME_MODES.SLOW),
     triggerFreeze: () => setMode(TIME_MODES.FREEZE),
     triggerRewind: () => setMode(TIME_MODES.REWIND),
     triggerGhost,
+
     getMode: () => mode,
     getEnergy: () => energy,
     getMaxEnergy: () => MAX_ENERGY,
     getGhostCooldown: () => ghostCooldown,
     getGhost: () => ghost,
     getUniforms: () => uniforms,
+
+    warmGhost(renderer, camera) {
+      if (ghost && ghost.warm) {
+        ghost.warm(renderer, scene, camera)
+      }
+    },
+
     update,
     dispose
   }

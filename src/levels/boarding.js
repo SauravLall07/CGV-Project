@@ -26,7 +26,17 @@ import { disposeObject } from '../core/dispose.js'
 // - Suspicion / alert fail-state
 // - Cinematic train departure sequence into Level 2
 
-export function createBoardingLevel({ scene, interaction, assets, hud, player, camera, respawn, advance }) {
+export function createBoardingLevel({
+  scene,
+  interaction,
+  assets,
+  hud,
+  player,
+  camera,
+  respawn,
+  advance,
+  beginCinematic
+}) {
   const { group: station, boardingControl, wallColliders } = createStationBlockout({ includePlaceholders: false })
 
   // Shared finite inventory for throwable guard distractions. Passageways 2
@@ -507,6 +517,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     onInteract: () => {
       if (isBoardingCinematic) return
       isBoardingCinematic = true
+      beginCinematic?.()
       interaction.flashPrompt('Boarding Chrono Express…')
       if (hud) hud.setObjective('Departing station… hold on!')
     }
@@ -566,25 +577,37 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     objective: 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express',
     checkpoint: {
       position: onboardingPassage.spawn.clone(),
-      yaw: Math.PI / 2 // face east through the safe training passage
+      yaw: Math.PI / 2, // face east through the onboarding approach
+      restore: () => stealth.reset()
     },
     bounds: levelBounds,
     obstacles: wallColliders,
     groundHeightAt(x, z, fallback = 0) {
       const bridgeHeight = bridgePassage.getGroundHeight(x, z, Number.NaN)
       if (Number.isFinite(bridgeHeight)) return bridgeHeight
+
       const lowerHeight = guardPassage.getGroundHeight(x, z, Number.NaN)
       if (Number.isFinite(lowerHeight)) return lowerHeight
+
       const tutorialHeight = tutorialPassage.getGroundHeight(x, z, Number.NaN)
       if (Number.isFinite(tutorialHeight)) return tutorialHeight
+
       return onboardingPassage.getGroundHeight(x, z, fallback)
     },
+
     handleAction(action) {
       if (bridgePassage.handleAction(action)) return true
       if (guardPassage.handleAction(action)) return true
       if (action === 'distract') return stationDistraction.throw()
       return false
     },
+
+    getGuards: () => stealth.getGuards(),
+
+    get isCinematic() {
+      return isBoardingCinematic
+    },
+
     update(delta) {
       outdoorEnv.update(delta)
       onboardingPassage.update(delta)
@@ -644,7 +667,9 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
         )
         if (bridgePassage.isComplete() && player.mesh.position.y > -1 && checkpointDistance < 1.4) {
           junctionCheckpointActive = true
-          respawn.setCheckpoint(junctionCheckpointPos, 0)
+          respawn.setCheckpoint(junctionCheckpointPos, 0, {
+            restore: () => stealth.reset()
+          })
           if (hud) hud.showToast('Checkpoint reached — station concourse infiltrated', 2400)
         }
       } else {
@@ -687,9 +712,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
       stealth.dispose()
       outdoorEnv.dispose()
       scene.remove(outdoorEnv.group, station, train, ...lights)
-      disposeObject(station)
-      disposeObject(train)
-      lights.forEach(disposeObject)
+      disposeObject([station, train, ...lights])
     }
   }
 }

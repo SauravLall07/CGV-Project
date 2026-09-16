@@ -25,9 +25,16 @@ import {
 
 const TABS = [
   { id: 'display', label: 'Display' },
+  { id: 'audio', label: 'Audio' },
   { id: 'gameplay', label: 'Gameplay' },
   { id: 'controls', label: 'Controls' }
 ]
+
+const OPTION_TAB_GROUPS = {
+  display: 'Display',
+  audio: 'Audio',
+  gameplay: 'Gameplay'
+}
 
 // Shown at the foot of the Controls tab: the parts of the scheme that are
 // not rebindable, so the list does not look like it is missing entries.
@@ -401,7 +408,7 @@ export function createSettingsMenu() {
       body.appendChild(buildControlsTab())
       resetButton.textContent = 'Reset Key Bindings'
     } else {
-      body.appendChild(buildOptionsTab(activeTab === 'display' ? 'Display' : 'Gameplay'))
+      body.appendChild(buildOptionsTab(OPTION_TAB_GROUPS[activeTab] ?? 'Display'))
       resetButton.textContent = 'Reset to Defaults'
     }
   }

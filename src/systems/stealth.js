@@ -949,6 +949,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     investigate,
     getSuspicion: () => suspicion,
     clearSuspicion,
+    getGuards: () => guards,
     update,
     reset,
     dispose

@@ -107,6 +107,14 @@ function buildRollContent() {
     line('"Take a Chance" — Victory')
   ])
 
+  addBlock(roll, [
+    label('Sound Effects'),
+    line('"Freeze Sound Effect FX" by antonsoederberg (Freesound.org) — CC0'),
+    line('"Quick Zoom Slow Down" by bevibeldesign (Freesound.org) — CC0'),
+    line('"Vinyl Rewind" by tasmanianpower (Freesound.org) — CC0'),
+    line('"Ghost Noise" by whiprealgood (Freesound.org) — CC0')
+  ])
+
   // --- PLACEHOLDER: team credits ---
   // Replace the lines below with names and roles before shipping.
   addBlock(roll, [
@@ -117,12 +125,10 @@ function buildRollContent() {
   // --- PLACEHOLDER: third-party assets ---
   addBlock(roll, [
     label('Additional Assets'),
-    line('[ Placeholder: third-party assets and libraries to credit ]', { italic: true, dim: true })
-  ])
-
-  addBlock(roll, [
+    line('Physics library: cannon-es'),
     line('Built with Three.js', { size: '13px' })
   ])
+
 
   addBlock(roll, [
     spacer(24),

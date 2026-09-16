@@ -109,6 +109,24 @@ export const OPTION_DEFS = [
     max: 7,
     step: 0.1,
     format: (v) => `${v.toFixed(1)} m`
+  },
+  {
+    id: 'masterVolume',
+    label: 'Master Volume',
+    hint: 'Overall mix: music, ability cues and the time-distortion bed.',
+    group: 'Audio',
+    type: 'slider',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    format: (v) => `${Math.round(v * 100)}%`
+  },
+  {
+    id: 'mute',
+    label: 'Mute',
+    hint: 'Silence everything without changing the volume slider.',
+    group: 'Audio',
+    type: 'toggle'
   }
 ]
 
@@ -122,7 +140,9 @@ export const DEFAULT_OPTIONS = {
   captureShortcuts: true,
   mouseSensitivity: 1,
   invertY: false,
-  cameraDistance: 4.8
+  cameraDistance: 4.8,
+  masterVolume: 0.5,
+  mute: false
 }
 
 // ---------------------------------------------------------------
