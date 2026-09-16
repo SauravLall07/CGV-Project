@@ -11,6 +11,7 @@ import {
 } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { createOnboardingPassage } from '../environment/passageways/passage-onboarding.js'
 import { createTutorialPassage } from '../environment/passageways/passage-tutorial.js'
 import { createGuardPassage } from '../environment/passageways/passage-guards.js'
 import { createBridgePassage } from '../environment/passageways/passage-bridge.js'
@@ -32,14 +33,19 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
   // and 3 both read/write this same object, so pickups carry across the vent.
   const distractionInventory = { count: 0, max: 3 }
 
-  // Expansion modules stay self-contained. Passageway 1 opens its lower landing
-  // when Passageway 2 is mounted; Passageway 2 then owns the lower guard hall,
-  // its puzzle, hints, lasers and distraction system.
+  // Passageway 0 is a short safe onboarding gallery. Passageway 1 then opens
+  // into the existing security-training route, followed by the lower guard hall.
+  const onboardingPassage = createOnboardingPassage({
+    interaction,
+    hud,
+    player
+  })
   const tutorialPassage = createTutorialPassage({
     interaction,
     hud,
     player,
     respawn,
+    connectedToPassage0: true,
     connectedToPassage2: true
   })
   const guardPassage = createGuardPassage({
@@ -62,18 +68,19 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     distractionInventory
   })
 
-  station.add(tutorialPassage.group, guardPassage.group, bridgePassage.group)
+  station.add(onboardingPassage.group, tutorialPassage.group, guardPassage.group, bridgePassage.group)
   wallColliders.push(
+    ...onboardingPassage.colliders,
     ...tutorialPassage.colliders,
     ...guardPassage.colliders,
     ...bridgePassage.colliders
   )
 
   const levelBounds = {
-    minX: Math.min(bounds.minX, tutorialPassage.bounds.minX, guardPassage.bounds.minX, bridgePassage.bounds.minX),
-    maxX: Math.max(bounds.maxX, tutorialPassage.bounds.maxX, guardPassage.bounds.maxX, bridgePassage.bounds.maxX),
-    minZ: Math.min(bounds.minZ, tutorialPassage.bounds.minZ, guardPassage.bounds.minZ, bridgePassage.bounds.minZ),
-    maxZ: Math.max(bounds.maxZ, tutorialPassage.bounds.maxZ, guardPassage.bounds.maxZ, bridgePassage.bounds.maxZ)
+    minX: Math.min(bounds.minX, onboardingPassage.bounds.minX, tutorialPassage.bounds.minX, guardPassage.bounds.minX, bridgePassage.bounds.minX),
+    maxX: Math.max(bounds.maxX, onboardingPassage.bounds.maxX, tutorialPassage.bounds.maxX, guardPassage.bounds.maxX, bridgePassage.bounds.maxX),
+    minZ: Math.min(bounds.minZ, onboardingPassage.bounds.minZ, tutorialPassage.bounds.minZ, guardPassage.bounds.minZ, bridgePassage.bounds.minZ),
+    maxZ: Math.max(bounds.maxZ, onboardingPassage.bounds.maxZ, tutorialPassage.bounds.maxZ, guardPassage.bounds.maxZ, bridgePassage.bounds.maxZ)
   }
 
   const { train } = createTrain()
@@ -523,6 +530,12 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
   )
   let junctionCheckpointActive = false
 
+  // Once the player leaves the safe onboarding gallery, make the original
+  // Passageway 1 spawn the checkpoint. A missed laser should not force them to
+  // walk the training corridor and open its door again.
+  const passage1CheckpointPos = tutorialPassage.spawn.clone()
+  let passage1CheckpointActive = false
+
   // Passageway 2 is the first real stealth test. Reaching it becomes a
   // checkpoint so a learning mistake does not force the player to repeat the
   // entire Passageway 1 tutorial and staircase.
@@ -544,8 +557,8 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
   return {
     objective: 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express',
     checkpoint: {
-      position: tutorialPassage.spawn.clone(),
-      yaw: Math.PI / 2 // face east through Passageway 1
+      position: onboardingPassage.spawn.clone(),
+      yaw: Math.PI / 2 // face east through the safe training passage
     },
     bounds: levelBounds,
     obstacles: wallColliders,
@@ -554,7 +567,9 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
       if (Number.isFinite(bridgeHeight)) return bridgeHeight
       const lowerHeight = guardPassage.getGroundHeight(x, z, Number.NaN)
       if (Number.isFinite(lowerHeight)) return lowerHeight
-      return tutorialPassage.getGroundHeight(x, z, fallback)
+      const tutorialHeight = tutorialPassage.getGroundHeight(x, z, Number.NaN)
+      if (Number.isFinite(tutorialHeight)) return tutorialHeight
+      return onboardingPassage.getGroundHeight(x, z, fallback)
     },
     handleAction(action) {
       if (bridgePassage.handleAction(action)) return true
@@ -564,10 +579,17 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     },
     update(delta) {
       outdoorEnv.update(delta)
+      onboardingPassage.update(delta)
       tutorialPassage.update(delta)
       guardPassage.update(delta)
       bridgePassage.update(delta)
       stationDistraction.update(delta)
+
+      if (!passage1CheckpointActive && onboardingPassage.hasExited()) {
+        passage1CheckpointActive = true
+        respawn.setCheckpoint(passage1CheckpointPos, Math.PI / 2)
+        hud?.showToast?.('Checkpoint reached — security training begins', 2000)
+      }
 
       if (!passage2CheckpointActive && guardPassage.isInsidePassage()) {
         passage2CheckpointActive = true
@@ -647,6 +669,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
       unregisterApproachTerminal()
       unregisterTerminal()
       unregisterBoarding()
+      onboardingPassage.dispose()
       tutorialPassage.dispose()
       guardPassage.dispose()
       bridgePassage.dispose()

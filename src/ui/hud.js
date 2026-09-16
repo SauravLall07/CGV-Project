@@ -185,6 +185,236 @@ export function createHud() {
     caughtScreen.style.opacity = '0'
   }
 
+  // ---------------------------------------------------------------------------
+  // Large tutorial walkthrough overlay
+  // ---------------------------------------------------------------------------
+  // This is deliberately part of the HUD instead of a level-specific DOM tree.
+  // Tutorial zones only describe *what* they want to show; the HUD owns the
+  // styling, live key labels and keyboard-to-continue behaviour in one place.
+  const tutorialOverlay = document.createElement('div')
+  tutorialOverlay.id = 'tutorial-overlay'
+  Object.assign(tutorialOverlay.style, {
+    position: 'absolute',
+    inset: '0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'clamp(24px, 5vw, 72px)',
+    background: 'rgba(5, 6, 12, 0.78)',
+    backdropFilter: 'blur(7px)',
+    WebkitBackdropFilter: 'blur(7px)',
+    opacity: '0',
+    visibility: 'hidden',
+    pointerEvents: 'none',
+    transition: 'opacity 180ms ease-out, visibility 180ms ease-out',
+    zIndex: '30'
+  })
+
+  const tutorialPanel = document.createElement('div')
+  Object.assign(tutorialPanel.style, {
+    width: 'min(920px, 86vw)',
+    minHeight: 'min(520px, 68vh)',
+    maxHeight: '78vh',
+    boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: '22px',
+    padding: 'clamp(28px, 5vw, 58px)',
+    background: 'linear-gradient(145deg, rgba(12, 14, 23, 0.97), rgba(23, 17, 16, 0.96))',
+    border: '1px solid rgba(176, 141, 63, 0.7)',
+    boxShadow: '0 28px 80px rgba(0, 0, 0, 0.68), inset 0 0 46px rgba(176, 141, 63, 0.05)',
+    borderRadius: '4px',
+    overflow: 'hidden'
+  })
+
+  const tutorialEyebrow = document.createElement('div')
+  Object.assign(tutorialEyebrow.style, {
+    fontSize: '11px',
+    fontWeight: '800',
+    letterSpacing: '0.34em',
+    textTransform: 'uppercase',
+    color: '#b08d3f'
+  })
+
+  const tutorialTitle = document.createElement('div')
+  Object.assign(tutorialTitle.style, {
+    fontFamily: 'Georgia, "Times New Roman", serif',
+    fontSize: 'clamp(30px, 5vw, 54px)',
+    fontWeight: '700',
+    lineHeight: '1.05',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: '#f0e6cf',
+    textShadow: '0 3px 18px rgba(0, 0, 0, 0.8)'
+  })
+
+  const tutorialRule = document.createElement('div')
+  Object.assign(tutorialRule.style, {
+    width: '100%',
+    height: '1px',
+    background: 'linear-gradient(90deg, rgba(176, 141, 63, 0.9), rgba(176, 141, 63, 0.08))'
+  })
+
+  const tutorialText = document.createElement('div')
+  Object.assign(tutorialText.style, {
+    maxWidth: '760px',
+    fontSize: 'clamp(15px, 2vw, 19px)',
+    fontWeight: '500',
+    lineHeight: '1.7',
+    color: 'rgba(240, 230, 207, 0.82)',
+    letterSpacing: '0.015em'
+  })
+
+  const tutorialControls = document.createElement('div')
+  Object.assign(tutorialControls.style, {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '12px',
+    width: '100%'
+  })
+
+  const tutorialFooter = document.createElement('div')
+  Object.assign(tutorialFooter.style, {
+    marginTop: '8px',
+    paddingTop: '18px',
+    borderTop: '1px solid rgba(240, 230, 207, 0.10)',
+    fontSize: '11px',
+    fontWeight: '800',
+    letterSpacing: '0.25em',
+    textTransform: 'uppercase',
+    color: 'rgba(240, 230, 207, 0.48)',
+    textAlign: 'right'
+  })
+
+  tutorialPanel.append(
+    tutorialEyebrow,
+    tutorialTitle,
+    tutorialRule,
+    tutorialText,
+    tutorialControls,
+    tutorialFooter
+  )
+  tutorialOverlay.appendChild(tutorialPanel)
+  root.appendChild(tutorialOverlay)
+
+  let tutorialOpen = false
+  let tutorialQueue = []
+  const tutorialStateListeners = new Set()
+
+  function notifyTutorialState() {
+    tutorialStateListeners.forEach((listener) => listener(tutorialOpen))
+  }
+
+  function keyForControl(control) {
+    if (control.key) return String(control.key)
+    if (control.action) return bindingLabel(settings.getBinding(control.action))
+    if (Array.isArray(control.actions)) {
+      return control.actions
+        .map((action) => bindingLabel(settings.getBinding(action)))
+        .join(control.separator ?? '  ')
+    }
+    return ''
+  }
+
+  function renderTutorial(spec = {}) {
+    tutorialEyebrow.textContent = spec.eyebrow ?? 'Field Guide'
+    tutorialTitle.textContent = spec.title ?? 'New Mechanic'
+    tutorialText.textContent = spec.text ?? ''
+
+    tutorialControls.replaceChildren()
+    const controls = Array.isArray(spec.controls) ? spec.controls : []
+    tutorialControls.style.display = controls.length ? 'grid' : 'none'
+
+    controls.forEach((control) => {
+      const card = document.createElement('div')
+      Object.assign(card.style, {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '7px',
+        minHeight: '72px',
+        padding: '13px 15px',
+        background: 'rgba(176, 141, 63, 0.07)',
+        border: '1px solid rgba(176, 141, 63, 0.25)',
+        borderRadius: '3px'
+      })
+
+      const key = document.createElement('div')
+      key.textContent = keyForControl(control)
+      Object.assign(key.style, {
+        fontSize: 'clamp(16px, 2.3vw, 22px)',
+        fontWeight: '800',
+        letterSpacing: '0.08em',
+        color: '#fff2cf'
+      })
+
+      const label = document.createElement('div')
+      label.textContent = control.label ?? ''
+      Object.assign(label.style, {
+        fontSize: '11px',
+        fontWeight: '700',
+        letterSpacing: '0.16em',
+        textTransform: 'uppercase',
+        color: 'rgba(240, 230, 207, 0.52)'
+      })
+
+      card.append(key, label)
+      tutorialControls.appendChild(card)
+    })
+
+    tutorialFooter.textContent = spec.footer ?? 'Enter / Space — Continue'
+  }
+
+  function openTutorial(spec) {
+    renderTutorial(spec)
+    tutorialOpen = true
+    tutorialOverlay.style.visibility = 'visible'
+    tutorialOverlay.style.opacity = '1'
+    notifyTutorialState()
+  }
+
+  function showTutorial(spec = {}) {
+    if (tutorialOpen) {
+      tutorialQueue.push(spec)
+      return
+    }
+    openTutorial(spec)
+  }
+
+  function hideTutorial({ clearQueue = false } = {}) {
+    if (clearQueue) tutorialQueue = []
+    if (!tutorialOpen) return
+
+    if (!clearQueue && tutorialQueue.length > 0) {
+      renderTutorial(tutorialQueue.shift())
+      return
+    }
+
+    tutorialOpen = false
+    tutorialOverlay.style.opacity = '0'
+    tutorialOverlay.style.visibility = 'hidden'
+    notifyTutorialState()
+  }
+
+  function onTutorialStateChange(listener) {
+    if (typeof listener !== 'function') return () => {}
+    tutorialStateListeners.add(listener)
+    return () => tutorialStateListeners.delete(listener)
+  }
+
+  function onTutorialKeyDown(event) {
+    if (!tutorialOpen || event.repeat) return
+    if (event.code !== 'Enter' && event.code !== 'Space') return
+
+    // Capture the continue key before gameplay input sees it. Space is often
+    // bound to Jump, and dismissing a tutorial should never also launch the
+    // player into the obstacle being explained.
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    hideTutorial()
+  }
+  window.addEventListener('keydown', onTutorialKeyDown, true)
+
   // Bottom-Center Chrono Core Deck
   const timeDeck = document.createElement('div')
   Object.assign(timeDeck.style, {
@@ -475,11 +705,15 @@ export function createHud() {
   }
 
   function setVisible(visible) {
+    if (!visible) hideTutorial({ clearQueue: true })
     root.style.display = visible ? 'block' : 'none'
   }
 
   function dispose() {
     clearTimeout(toastTimer)
+    hideTutorial({ clearQueue: true })
+    tutorialStateListeners.clear()
+    window.removeEventListener('keydown', onTutorialKeyDown, true)
     unsubscribeSettings()
     root.remove()
   }
@@ -497,6 +731,10 @@ export function createHud() {
     dispose,
     showCaughtScreen,
     hideCaughtScreen,
+    showTutorial,
+    hideTutorial,
+    isTutorialOpen: () => tutorialOpen,
+    onTutorialStateChange,
     getObjective: () => objectiveText,
     getSuspicion: () => suspicionValue
   }

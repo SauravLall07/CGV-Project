@@ -1,68 +1,92 @@
-// Lightweight, non-blocking tutorial hint zones. Each hint fires once when the
-// player enters its volume and delegates presentation to hud.showToast(), so it
-// automatically inherits the existing fade animation and HUD styling.
+// Lightweight position-triggered tutorial hints.
+//
+// By default a zone behaves like the original hint system and uses a small HUD
+// toast. Set `modal: true` on the few mechanics that deserve the large guided
+// walkthrough overlay. This lets Level 1 teach new inputs without interrupting
+// the player every few metres.
+
+function resolveValue(value) {
+  return typeof value === 'function' ? value() : value
+}
+
+function isInside(position, center, size) {
+  if (!position || !center || !size) return false
+
+  const halfX = (size.x ?? 0) / 2
+  const halfY = (size.y ?? Number.POSITIVE_INFINITY) / 2
+  const halfZ = (size.z ?? 0) / 2
+
+  return (
+    Math.abs(position.x - center.x) <= halfX &&
+    Math.abs(position.y - center.y) <= halfY &&
+    Math.abs(position.z - center.z) <= halfZ
+  )
+}
 
 export function createTutorialHintSystem({ player, hud } = {}) {
   const zones = []
-  const fired = new Set()
+  const seen = new Set()
+  let disposed = false
 
-  function addZone({ id, center, size, radius, text, duration = 2600, condition } = {}) {
-    if (!id) throw new Error('tutorial-hints: every hint zone needs a stable id')
-    if (!center) throw new Error(`tutorial-hints: hint "${id}" needs a center`)
-    if (!text) throw new Error(`tutorial-hints: hint "${id}" needs text`)
+  function addZone(zone = {}) {
+    if (!zone.id) throw new Error('tutorial-hints: every zone needs a unique id')
+    if (!zone.center || !zone.size) throw new Error(`tutorial-hints: zone "${zone.id}" needs center and size`)
 
-    const zone = {
-      id,
-      center: { x: center.x, y: center.y ?? 0, z: center.z },
-      size: size ? { x: size.x, y: size.y ?? Infinity, z: size.z } : null,
-      radius: radius ?? null,
-      text,
-      duration,
-      condition
+    zones.push({ ...zone })
+    return () => {
+      const index = zones.findIndex((entry) => entry.id === zone.id)
+      if (index >= 0) zones.splice(index, 1)
+      seen.delete(zone.id)
     }
-
-    zones.push(zone)
-    return zone
   }
 
-  function contains(zone, position) {
-    if (zone.radius != null) {
-      const dx = position.x - zone.center.x
-      const dz = position.z - zone.center.z
-      return dx * dx + dz * dz <= zone.radius * zone.radius
+  function showZone(zone) {
+    const text = resolveValue(zone.text) ?? ''
+
+    if (zone.modal && hud?.showTutorial) {
+      hud.showTutorial({
+        eyebrow: resolveValue(zone.eyebrow) ?? 'Field Guide',
+        title: resolveValue(zone.title) ?? 'New Mechanic',
+        text,
+        controls: resolveValue(zone.controls) ?? [],
+        footer: resolveValue(zone.footer)
+      })
+    } else {
+      hud?.showToast?.(text, zone.duration ?? 3200)
     }
-
-    if (!zone.size) return false
-
-    return (
-      Math.abs(position.x - zone.center.x) <= zone.size.x / 2 &&
-      Math.abs(position.z - zone.center.z) <= zone.size.z / 2 &&
-      Math.abs(position.y - zone.center.y) <= zone.size.y / 2
-    )
   }
 
   function update() {
-    const position = player?.mesh?.position
-    if (!position || !hud?.showToast) return
+    if (disposed) return
+
+    // A modal tutorial freezes gameplay in main.js. Do not queue another one
+    // behind it just because two trigger boxes overlap at a doorway.
+    if (hud?.isTutorialOpen?.()) return
+
+    const position = player?.mesh?.position ?? player?.position
+    if (!position) return
 
     for (const zone of zones) {
-      if (fired.has(zone.id)) continue
+      if (seen.has(zone.id)) continue
       if (zone.condition && !zone.condition()) continue
-      if (!contains(zone, position)) continue
+      if (!isInside(position, zone.center, zone.size)) continue
 
-      fired.add(zone.id)
-      const message = typeof zone.text === 'function' ? zone.text() : zone.text
-      hud.showToast(message, zone.duration)
+      seen.add(zone.id)
+      showZone(zone)
+      // Only one tutorial notification per frame. This also prevents a modal
+      // and a toast firing on the same threshold.
+      break
     }
   }
 
   function reset() {
-    fired.clear()
+    seen.clear()
   }
 
   function dispose() {
+    disposed = true
     zones.length = 0
-    fired.clear()
+    seen.clear()
   }
 
   return {
@@ -70,6 +94,6 @@ export function createTutorialHintSystem({ player, hud } = {}) {
     update,
     reset,
     dispose,
-    hasFired: (id) => fired.has(id)
+    hasSeen: (id) => seen.has(id)
   }
 }

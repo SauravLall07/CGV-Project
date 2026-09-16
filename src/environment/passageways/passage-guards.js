@@ -522,22 +522,33 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     id: 'guards-intro',
     center: { x: worldX(-57.7), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 3.8, y: 3.2, z: 3.0 },
-    text: 'GUARDS — yellow vision cones show where they can see. Watch patrols before committing to a route.',
-    duration: 3400
+    modal: true,
+    eyebrow: 'Passageway 2 · Stealth',
+    title: 'Guards & Crouching',
+    text: 'Yellow vision cones show where guards can see. Watch their patrol before moving. Crouching is slower, but it makes you much harder to detect while crossing exposed ground.',
+    controls: [
+      { label: 'Crouch / Sneak', action: 'duck' }
+    ]
   })
   hints.addZone({
     id: 'crouch-intro',
     center: { x: worldX(-53.4), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 4.0, y: 3.2, z: 6.4 },
-    text: () => `CROUCH — hold ${bindingLabel(settings.getBinding('duck'))}. You move slower, but suspicion rises much more slowly while a guard sees you.`,
-    duration: 4100
+    text: () => `Stay low with ${bindingLabel(settings.getBinding('duck'))} when you need to cross a guard's sightline.`,
+    duration: 3000
   })
   hints.addZone({
     id: 'distract-intro',
     center: { x: worldX(-45.5), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 5.0, y: 3.2, z: 6.4 },
-    text: () => `DISTRACT — collect loose metal with ${bindingLabel(settings.getBinding('interact'))}, then press ${bindingLabel(settings.getBinding('distract'))} to throw one. Each throw consumes a pickup.`,
-    duration: 4700
+    modal: true,
+    eyebrow: 'Passageway 2 · Stealth',
+    title: 'Distractions',
+    text: 'Loose metal can pull guards away from your route. Collect a distractor when you find one, then throw it toward open space. Each throw consumes one pickup, so use them deliberately.',
+    controls: [
+      { label: 'Pick Up', action: 'interact' },
+      { label: 'Throw Distractor', action: 'distract' }
+    ]
   })
   hints.addZone({
     id: 'combine-camera-laser',

@@ -31,7 +31,8 @@ const CORRIDOR_WIDTH = 6
 const FLOOR_Y = 0
 const LOWER_FLOOR_Y = -4
 const ROOM_HEIGHT = 5.2
-const PASSAGE_START_X = worldX(-93)
+export const TUTORIAL_PASSAGE_WEST_ENTRY_X = worldX(-93)
+const PASSAGE_START_X = TUTORIAL_PASSAGE_WEST_ENTRY_X
 const PUZZLE_DOOR_X = worldX(-66)
 const TURN_ROOM_EAST_X = worldX(-60)
 const STAIR_X = worldX(-63)
@@ -251,7 +252,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
   }
 }
 
-export function createTutorialPassage({ interaction, hud, player, respawn, connectedToPassage2 = false } = {}) {
+export function createTutorialPassage({ interaction, hud, player, respawn, connectedToPassage0 = false, connectedToPassage2 = false } = {}) {
   const group = new THREE.Group()
   group.name = 'passage-tutorial'
   const colliders = []
@@ -290,12 +291,16 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   group.add(corridor.group)
   colliders.push(...corridor.colliders)
 
-  // Rear wall behind the spawn.
-  addBox(group, colliders, {
-    size: new THREE.Vector3(0.25, ROOM_HEIGHT, CORRIDOR_WIDTH),
-    position: new THREE.Vector3(PASSAGE_START_X, ROOM_HEIGHT / 2, CORRIDOR_Z),
-    material: wallMat
-  })
+  // When Passageway 0 is mounted this west end stays open so the safe
+  // onboarding gallery joins directly into Passageway 1. Isolated Passageway 1
+  // tests can still request the old sealed rear wall.
+  if (!connectedToPassage0) {
+    addBox(group, colliders, {
+      size: new THREE.Vector3(0.25, ROOM_HEIGHT, CORRIDOR_WIDTH),
+      position: new THREE.Vector3(PASSAGE_START_X, ROOM_HEIGHT / 2, CORRIDOR_Z),
+      material: wallMat
+    })
+  }
 
   // Wainscot and repeating warm lights keep the same station language as the
   // existing passageways while making the new area feel deliberately authored.
@@ -652,29 +657,29 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     stageBulkhead.userData.stageBoundary = true
   }
 
-  // Tutorial hint zones. These are non-blocking, fade using the existing HUD,
-  // and never repeat during the current level instance.
+  // Contextual tutorial zones. Only genuinely new mechanics use the large
+  // walkthrough overlay; reminders remain small HUD toasts.
   const hints = createTutorialHintSystem({ player, hud })
-  hints.addZone({
-    id: 'tutorial-movement',
-    center: { x: worldX(-90.2), y: 0, z: CORRIDOR_Z },
-    size: { x: 4.4, y: 4, z: 5.4 },
-    text: 'Move through the gallery. Run when the route is clear and jump over low hazards.',
-    duration: 3400
-  })
   hints.addZone({
     id: 'tutorial-moving-laser',
     center: { x: worldX(-88), y: 0, z: CORRIDOR_Z },
     size: { x: 3.4, y: 4, z: 5.4 },
-    text: 'MOVING LASER — watch its rhythm, then jump over the low beam as it sweeps past.',
-    duration: 3300
+    modal: true,
+    eyebrow: 'Passageway 1 · Security Training',
+    title: 'Jump',
+    text: 'The first security beam sweeps across the floor. Read its movement, then jump cleanly over the low beam instead of trying to run through it.',
+    controls: [
+      { label: 'Jump', action: 'jump' }
+    ]
   })
   hints.addZone({
     id: 'tutorial-camera',
     center: { x: worldX(-82.2), y: 0, z: CORRIDOR_Z },
     size: { x: 3.5, y: 4, z: 5.4 },
-    text: 'SECURITY CAMERA — blue vision cones raise suspicion. Wait for the sweep or use solid cover.',
-    duration: 3600
+    modal: true,
+    eyebrow: 'Passageway 1 · Security Training',
+    title: 'Security Cameras',
+    text: 'Blue vision cones show where a camera can see. Being watched raises suspicion, so wait for the sweep to move away or keep solid cover between you and the camera.'
   })
   hints.addZone({
     id: 'tutorial-timed-gate',

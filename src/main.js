@@ -202,6 +202,16 @@ let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
 let titleBackdrop = null // the silently-built station behind the title screen
 
+// Large walkthrough popups freeze gameplay and silence actions, but keep the
+// rendered scene visible behind the guide. The HUD captures Enter/Space itself
+// so those keys dismiss the guide without also triggering a gameplay action.
+hud.onTutorialStateChange((open) => {
+  const controlsEnabled = gameStarted && !paused && !open
+  keyboard.setEnabled(controlsEnabled)
+  interaction.setEnabled(controlsEnabled)
+  playerView.setEnabled(controlsEnabled)
+})
+
 // Until NEW GAME is clicked there is no run to drive: the HUD is hidden, the
 // third-person camera and pointer lock are off (the menu owns the camera), and
 // gameplay input is silenced so a stray Q on the title screen cannot fire a
@@ -278,9 +288,10 @@ function setPaused(value) {
   if (paused === value) return
   paused = value
 
-  keyboard.setEnabled(!value)
-  interaction.setEnabled(!value)
-  playerView.setEnabled(!value)
+  const controlsEnabled = !value && !hud.isTutorialOpen()
+  keyboard.setEnabled(controlsEnabled)
+  interaction.setEnabled(controlsEnabled)
+  playerView.setEnabled(controlsEnabled)
 
   if (value) {
     pauseMenu.open()
@@ -391,14 +402,18 @@ loop.add((delta) => {
     return
   }
 
-  // Paused: no simulation, but the loop keeps rendering so the frozen scene
-  // stays behind the overlay.
-  if (paused) return
+  // Paused or reading a walkthrough: no simulation, but the loop keeps
+  // rendering so the frozen scene stays visible behind the overlay.
+  if (paused || hud.isTutorialOpen()) return
 
   elapsed += delta
 
   timeSystem.update(delta)
   levelManager.update(delta)
+
+  // A level update may have just triggered a tutorial zone. Stop here so the
+  // player does not move one extra frame into the hazard under the popup.
+  if (hud.isTutorialOpen()) return
 
   player.update(delta, {
     keyboard: keyboard.state,
