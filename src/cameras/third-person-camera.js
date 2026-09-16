@@ -101,7 +101,7 @@ export function createThirdPersonCamera(camera, domElement) {
   function update(delta, playerMesh, collidables, options = {}) {
     const crouching = Boolean(options.crouching)
     const tightCrouchCamera = crouching && Boolean(playerMesh?.userData?.tightCrouchCamera)
-    const pivotHeight = crouching ? CROUCH_PIVOT_HEIGHT : PIVOT_HEIGHT
+    const pivotHeight = tightCrouchCamera ? CROUCH_PIVOT_HEIGHT : PIVOT_HEIGHT
     const minDistance = tightCrouchCamera ? CROUCH_MIN_DISTANCE : MIN_DISTANCE
     const collisionPadding = tightCrouchCamera ? CROUCH_COLLISION_PADDING : COLLISION_PADDING
 

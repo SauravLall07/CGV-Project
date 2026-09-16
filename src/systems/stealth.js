@@ -901,8 +901,15 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     }
   }
 
-  function reset() {
+  // Clear only the suspicion meter. This is used by checkpoint respawns so
+  // puzzle/interaction state and guard placement are left untouched.
+  function clearSuspicion() {
     suspicion = 0
+    if (hud && hud.setSuspicion) hud.setSuspicion(0)
+  }
+
+  function reset() {
+    clearSuspicion()
     guards.forEach((g) => {
       g.state = 'PATROL'
       g.waitTimer = 0
@@ -941,6 +948,7 @@ export function createStealthSystem({ scene, player, respawn, hud, collidables =
     addLaserGrid,
     investigate,
     getSuspicion: () => suspicion,
+    clearSuspicion,
     update,
     reset,
     dispose

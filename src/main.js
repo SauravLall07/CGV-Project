@@ -149,7 +149,10 @@ keyboard.onAction('rewind', () => timeSystem.triggerRewind())
 keyboard.onAction('ghost', () => timeSystem.triggerGhost())
 
 keyboard.onAction('restart', () => {
-  if (gameStarted && !credits.isOpen) levelManager.restart()
+  if (gameStarted && !credits.isOpen) {
+    respawn.resetLives()
+    levelManager.restart()
+  }
 })
 
 // Passage-specific action routing. Boarding owns the distraction mechanic, but
@@ -188,6 +191,19 @@ const levelManager = createLevelManager({
   ]
 })
 if (import.meta.env.DEV) window.levelManager = levelManager
+
+// Losing all three lives is a true run reset: rebuild Level 1, restore global
+// run resources/stats and discard every level-owned puzzle/interaction state.
+// Tutorial walkthrough memory intentionally lives outside this reset.
+respawn.setGameOverHandler(() => {
+  elapsed = 0
+  resetCount = 0
+  timeSystem.resetRun?.()
+  playerView.reset()
+  hud.setSuspicion(0)
+  respawn.resetLives()
+  levelManager.enter('Boarding')
+})
 
 // ---------------------------------------------------------------
 // Main Menu
@@ -271,6 +287,8 @@ const pauseMenu = createPauseMenu({
     maxEnergy: timeSystem.getMaxEnergy(),
     suspicion: hud.getSuspicion(),
     timeMode: timeSystem.getMode(),
+    lives: respawn.getLives(),
+    maxLives: respawn.getMaxLives(),
     resets: resetCount
   }),
   onPause: () => setPaused(true),
@@ -279,6 +297,8 @@ const pauseMenu = createPauseMenu({
     setPaused(false)
     resetCount = 0
     elapsed = 0
+    respawn.resetLives()
+    timeSystem.resetRun?.()
     levelManager.restart()
   },
   onQuit: () => quitToTitle()
@@ -340,6 +360,8 @@ function startGame() {
   gameStarted = true
   elapsed = 0
   resetCount = 0
+  respawn.resetLives()
+  timeSystem.resetRun?.()
   playerView.reset() // every run opens in third person
   hud.setVisible(true)
   playerView.setEnabled(true)

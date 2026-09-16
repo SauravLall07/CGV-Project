@@ -471,6 +471,30 @@ export function createTimeSystem({ scene, player, hud }) {
     updateUniforms()
   }
 
+  function resetRun() {
+    mode = TIME_MODES.NORMAL
+    energy = MAX_ENERGY
+    ghostCooldown = 0
+    activeTime = 0
+    timelineTime = 0
+    snapshotAccumulator = 0
+    levelMultiplier = 1.0
+    availability = { ...ALL_ABILITIES }
+    playerHistory.length = 0
+    ghost.stop()
+
+    // A full run reset also discards object histories so Level 1 cannot inherit
+    // rewind state from a previous failed run.
+    registered.forEach((entry) => {
+      entry.snapshots?.splice?.(0)
+      entry.accumulator = 0
+      entry.options?.onSlow?.(false)
+      entry.options?.onFreeze?.(false)
+      entry.options?.onRewind?.(false)
+    })
+    updateUniforms()
+  }
+
   function dispose() {
     availability = { ...ALL_ABILITIES }
     setMode(TIME_MODES.NORMAL)
@@ -488,6 +512,7 @@ export function createTimeSystem({ scene, player, hud }) {
     setLevelMultiplier,
     setAbilityAvailability,
     getAbilityAvailability,
+    resetRun,
     triggerSlow: () => setMode(TIME_MODES.SLOW),
     triggerFreeze: () => setMode(TIME_MODES.FREEZE),
     triggerRewind: () => setMode(TIME_MODES.REWIND),

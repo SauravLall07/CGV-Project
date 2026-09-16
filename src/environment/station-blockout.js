@@ -998,6 +998,24 @@ function createExteriorLightFixtures() {
 export function createStationBlockout({ includePlaceholders = false } = {}) {
   const group = new THREE.Group()
   group.name = 'station'
+  const stationPropColliders = []
+
+  function addFloorPropCollider(object, inset = 0.08) {
+    group.updateMatrixWorld(true)
+    object.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(object)
+    if (box.isEmpty()) return
+    const maxInsetX = Math.max(0, (box.max.x - box.min.x) * 0.22)
+    const maxInsetZ = Math.max(0, (box.max.z - box.min.z) * 0.22)
+    const ix = Math.min(inset, maxInsetX)
+    const iz = Math.min(inset, maxInsetZ)
+    stationPropColliders.push({
+      minX: box.min.x + ix,
+      maxX: box.max.x - ix,
+      minZ: box.min.z + iz,
+      maxZ: box.max.z - iz
+    })
+  }
 
   group.add(createConcourse())
   group.add(createTrackBed())
@@ -1008,7 +1026,16 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
   const approachCorridor = createApproachCorridor()
   group.add(approachCorridor.group)
 
-  group.add(createPillars())
+  const stationPillars = createPillars()
+  group.add(stationPillars)
+  for (const z of PILLAR_Z) {
+    stationPropColliders.push({
+      minX: PILLAR_X - 0.36,
+      maxX: PILLAR_X + 0.36,
+      minZ: z - 0.36,
+      maxZ: z + 0.36
+    })
+  }
   const partitionWalls = createPartitionWalls()
   group.add(partitionWalls.group)
   group.add(createTrainShed())
@@ -1016,7 +1043,9 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
   group.add(createDepartureBoard())
   group.add(createPlatformSign())
   group.add(createStationClock())
-  group.add(createLuggage())
+  const stationLuggage = createLuggage()
+  group.add(stationLuggage)
+  addFloorPropCollider(stationLuggage, 0.10)
   group.add(createExteriorLightFixtures())
 
   if (includePlaceholders) {
@@ -1030,7 +1059,9 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
     iron: new THREE.MeshStandardMaterial({ color: 0x2c322f, roughness: 0.6, metalness: 0.6 })
   }
   for (const z of [-12, -4, 4, 12]) {
-    group.add(createBench(z, benchMaterials))
+    const bench = createBench(z, benchMaterials)
+    group.add(bench)
+    addFloorPropCollider(bench, 0.09)
   }
 
   // A red carpet runner leading to the boarding point — luxury cue, and it
@@ -1046,6 +1077,7 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
 
   const boardingControl = createBoardingControl()
   group.add(boardingControl)
+  addFloorPropCollider(boardingControl, 0.08)
 
   return {
     group,
@@ -1054,7 +1086,8 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
     wallColliders: [
       ...rearWall.colliders,
       ...approachCorridor.colliders,
-      ...partitionWalls.colliders
+      ...partitionWalls.colliders,
+      ...stationPropColliders
     ]
   }
 }

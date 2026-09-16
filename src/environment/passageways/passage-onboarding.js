@@ -19,16 +19,18 @@ const CORRIDOR_WIDTH = 6
 const ROOM_HEIGHT = 5.2
 const PASSAGE_END_X = TUTORIAL_PASSAGE_WEST_ENTRY_X
 const PASSAGE_START_X = PASSAGE_END_X - 18
+const EXTERIOR_START_X = PASSAGE_START_X - 11.5
+const EXTERIOR_WIDTH = 4.8
 const EXIT_DOOR_X = PASSAGE_END_X - 2.15
 
 export const ONBOARDING_PASSAGE_SPAWN = new THREE.Vector3(
-  PASSAGE_START_X + 2.6,
+  EXTERIOR_START_X + 1.7,
   FLOOR_Y,
   CORRIDOR_Z
 )
 
 export const ONBOARDING_PASSAGE_BOUNDS = {
-  minX: PASSAGE_START_X - 0.3,
+  minX: EXTERIOR_START_X - 0.4,
   maxX: PASSAGE_END_X + 0.35,
   minZ: CORRIDOR_Z - CORRIDOR_WIDTH / 2 - 0.3,
   maxZ: CORRIDOR_Z + CORRIDOR_WIDTH / 2 + 0.3
@@ -126,9 +128,9 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   group.add(corridor.group)
   colliders.push(...corridor.colliders)
 
-  // Give the spawn room a believable way the player could have arrived. The
-  // west bulkhead is still locked for gameplay, but it now reads as a real
-  // crew/service entrance instead of an arbitrary sealed tutorial box.
+  // The run now begins outside on an elevated service gantry. It gives the
+  // player a believable approach to the infiltration wing and lets the first
+  // movement tutorial happen in open air before they step indoors.
   const serviceDoorWidth = 2.8
   const serviceDoorHeight = 2.75
   const rearSideDepth = (CORRIDOR_WIDTH - serviceDoorWidth) / 2
@@ -141,7 +143,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
         CORRIDOR_Z + side * (serviceDoorWidth / 2 + rearSideDepth / 2)
       ),
       material: wallMat,
-      name: `onboarding-service-wall-${side}`
+      name: `onboarding-entry-wall-${side}`
     })
   }
   addBox(group, colliders, {
@@ -153,57 +155,103 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     ),
     material: wallMat,
     collider: false,
-    name: 'onboarding-service-lintel'
+    name: 'onboarding-entry-lintel'
   })
 
-  const serviceDoor = addBox(group, colliders, {
-    size: new THREE.Vector3(0.18, serviceDoorHeight, serviceDoorWidth),
-    position: new THREE.Vector3(PASSAGE_START_X + 0.04, serviceDoorHeight / 2, CORRIDOR_Z),
-    material: ironMat,
-    name: 'onboarding-locked-service-door'
+  // Exterior steel deck.
+  const exteriorLength = PASSAGE_START_X - EXTERIOR_START_X
+  const deckMat = new THREE.MeshStandardMaterial({
+    color: 0x303942,
+    roughness: 0.58,
+    metalness: 0.68
+  })
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(exteriorLength, 0.28, EXTERIOR_WIDTH),
+    deckMat
+  )
+  deck.position.set((EXTERIOR_START_X + PASSAGE_START_X) / 2, -0.14, CORRIDOR_Z)
+  deck.receiveShadow = true
+  deck.castShadow = true
+  deck.name = 'onboarding-exterior-service-deck'
+  group.add(deck)
+
+  // A pair of rails keeps the playable route readable while leaving the sky,
+  // distant scenery and underside of the gantry visible.
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x78838a, roughness: 0.4, metalness: 0.85 })
+  for (const side of [-1, 1]) {
+    const railZ = CORRIDOR_Z + side * EXTERIOR_WIDTH / 2
+    for (const y of [0.55, 1.05]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(exteriorLength, 0.07, 0.07), railMat)
+      rail.position.set((EXTERIOR_START_X + PASSAGE_START_X) / 2, y, railZ)
+      rail.castShadow = true
+      group.add(rail)
+    }
+    // Rail collision is intentionally thin; the circle-vs-box player
+    // collision keeps the character on the deck without stealing walkway room.
+    colliders.push({
+      minX: EXTERIOR_START_X,
+      maxX: PASSAGE_START_X,
+      minZ: railZ - 0.06,
+      maxZ: railZ + 0.06
+    })
+  }
+
+  // Closed freight-lift gate behind the spawn explains how the thief reached
+  // this otherwise isolated service gantry, while keeping progression one-way.
+  for (const y of [0.55, 1.05]) {
+    const rearRail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, EXTERIOR_WIDTH), railMat)
+    rearRail.position.set(EXTERIOR_START_X, y, CORRIDOR_Z)
+    group.add(rearRail)
+  }
+  colliders.push({
+    minX: EXTERIOR_START_X - 0.06,
+    maxX: EXTERIOR_START_X + 0.06,
+    minZ: CORRIDOR_Z - EXTERIOR_WIDTH / 2,
+    maxZ: CORRIDOR_Z + EXTERIOR_WIDTH / 2
   })
 
-  // Brass trim, centre seam and a red lock lamp make the surface unmistakably
-  // read as a door even though it is intentionally non-interactive.
+  const liftFrameMat = new THREE.MeshStandardMaterial({ color: 0x252c33, roughness: 0.52, metalness: 0.78 })
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 3.0, 0.16), liftFrameMat)
+    post.position.set(EXTERIOR_START_X - 0.15, 1.5, CORRIDOR_Z + side * (EXTERIOR_WIDTH / 2 - 0.18))
+    group.add(post)
+  }
+  const liftHeader = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, EXTERIOR_WIDTH), liftFrameMat)
+  liftHeader.position.set(EXTERIOR_START_X - 0.15, 2.95, CORRIDOR_Z)
+  group.add(liftHeader)
+
+  for (let x = EXTERIOR_START_X + 0.6; x < PASSAGE_START_X; x += 2.2) {
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.15, 0.09), railMat)
+      post.position.set(x, 0.575, CORRIDOR_Z + side * EXTERIOR_WIDTH / 2)
+      group.add(post)
+    }
+  }
+
+  // Heavy portal trim makes the open doorway read as the point where the
+  // player physically enters the building, rather than another arbitrary gap.
   const rearTrimMat = new THREE.MeshStandardMaterial({
     color: 0xb08d3f,
     emissive: 0x2f2108,
-    emissiveIntensity: 0.25,
+    emissiveIntensity: 0.22,
     roughness: 0.3,
     metalness: 0.9
   })
-  for (const zOffset of [-serviceDoorWidth / 2 + 0.08, serviceDoorWidth / 2 - 0.08]) {
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.08, serviceDoorHeight + 0.12, 0.08), rearTrimMat)
-    trim.position.set(PASSAGE_START_X + 0.15, serviceDoorHeight / 2, CORRIDOR_Z + zOffset)
+  for (const zOffset of [-serviceDoorWidth / 2, serviceDoorWidth / 2]) {
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.12, serviceDoorHeight + 0.14, 0.12), rearTrimMat)
+    trim.position.set(PASSAGE_START_X - 0.02, serviceDoorHeight / 2, CORRIDOR_Z + zOffset)
     group.add(trim)
   }
-  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.045, serviceDoorHeight - 0.16, 0.035), rearTrimMat)
-  seam.position.set(PASSAGE_START_X + 0.15, serviceDoorHeight / 2, CORRIDOR_Z)
-  group.add(seam)
+  const topTrim = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, serviceDoorWidth + 0.12), rearTrimMat)
+  topTrim.position.set(PASSAGE_START_X - 0.02, serviceDoorHeight, CORRIDOR_Z)
+  group.add(topTrim)
 
-  const lockMat = new THREE.MeshStandardMaterial({
-    color: 0xef4444,
-    emissive: 0x991b1b,
-    emissiveIntensity: 2.8,
-    roughness: 0.22
-  })
-  const lockLamp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.16), lockMat)
-  lockLamp.position.set(PASSAGE_START_X + 0.16, 1.55, CORRIDOR_Z - 0.92)
-  group.add(lockLamp)
-
-  const servicePlaque = new THREE.Group()
-  servicePlaque.position.set(PASSAGE_START_X + 0.17, 2.18, CORRIDOR_Z)
-  const plaqueBack = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.44, 1.42), rearTrimMat)
-  servicePlaque.add(plaqueBack)
-  const stripeMat = new THREE.MeshStandardMaterial({ color: 0x151a20, roughness: 0.72, metalness: 0.38 })
-  for (let i = -2; i <= 2; i++) {
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.055, 0.22), stripeMat)
-    stripe.position.set(0.03, -0.05, i * 0.25)
-    stripe.rotation.x = 0.5
-    servicePlaque.add(stripe)
+  // Warm exterior utility lamps lead the eye toward the doorway.
+  for (const x of [EXTERIOR_START_X + 2.2, EXTERIOR_START_X + 7.2]) {
+    const lamp = new THREE.PointLight(0xffb66d, 9, 7, 2)
+    lamp.position.set(x, 2.7, CORRIDOR_Z)
+    group.add(lamp)
   }
-  group.add(servicePlaque)
-  serviceDoor.userData.lockedServiceEntry = true
 
   // Match the station's wood-and-brass language so the onboarding space feels
   // like part of the level rather than a separate grey test room.
@@ -280,7 +328,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
 
   const accessPanel = createAccessPanel()
   accessPanel.position.set(EXIT_DOOR_X - 0.65, 1.35, CORRIDOR_Z - 2.64)
-  accessPanel.rotation.y = Math.PI / 2
+  accessPanel.rotation.y = -Math.PI / 2
   group.add(accessPanel)
 
   const unregisterPanel = interaction?.register?.(accessPanel, {
@@ -303,11 +351,11 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   hints.addZone({
     id: 'onboarding-movement',
     center: { x: ONBOARDING_PASSAGE_SPAWN.x, y: FLOOR_Y, z: CORRIDOR_Z },
-    size: { x: 4.4, y: 4.0, z: 5.4 },
+    size: { x: 4.8, y: 4.0, z: 4.4 },
     modal: true,
-    eyebrow: 'Passageway 0 · Training',
+    eyebrow: 'Service Gantry · Approach',
     title: 'Move & Look',
-    text: 'The service access behind you has sealed, so the only route is forward. Get comfortable moving before security hazards begin; movement follows the direction of the camera.',
+    text: 'The freight lift behind you has delivered you to a maintenance gantry outside the station wing. Follow the gantry through the open service doorway; movement follows the direction of the camera.',
     controls: [
       { label: 'Move', actions: ['forward', 'left', 'back', 'right'] },
       { label: 'Look Around', key: 'Mouse' },
@@ -330,13 +378,15 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   })
 
   function getGroundHeight(x, z, fallback = 0) {
-    const inside = (
-      x >= ONBOARDING_PASSAGE_BOUNDS.minX &&
-      x <= ONBOARDING_PASSAGE_BOUNDS.maxX &&
-      z >= ONBOARDING_PASSAGE_BOUNDS.minZ &&
-      z <= ONBOARDING_PASSAGE_BOUNDS.maxZ
+    const inInterior = (
+      x >= PASSAGE_START_X && x <= ONBOARDING_PASSAGE_BOUNDS.maxX &&
+      Math.abs(z - CORRIDOR_Z) <= CORRIDOR_WIDTH / 2 + 0.1
     )
-    return inside ? FLOOR_Y : fallback
+    const onExteriorDeck = (
+      x >= EXTERIOR_START_X && x <= PASSAGE_START_X &&
+      Math.abs(z - CORRIDOR_Z) <= EXTERIOR_WIDTH / 2 + 0.08
+    )
+    return (inInterior || onExteriorDeck) ? FLOOR_Y : fallback
   }
 
   function update(delta) {

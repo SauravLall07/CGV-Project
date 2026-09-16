@@ -69,6 +69,57 @@ export function createHud() {
     transition: 'opacity 160ms ease-out'
   })
 
+  // Top-left run lives. These are attempts for the whole run, not checkpoint
+  // counters: the first two failures respawn at the latest checkpoint, while
+  // the third rebuilds the game from Level 1.
+  const livesContainer = document.createElement('div')
+  Object.assign(livesContainer.style, {
+    position: 'absolute',
+    top: '18px',
+    left: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '8px 12px',
+    background: 'rgba(15, 23, 42, 0.82)',
+    border: '1px solid rgba(239, 68, 68, 0.32)',
+    borderRadius: '6px',
+    backdropFilter: 'blur(6px)'
+  })
+
+  const livesLabel = document.createElement('span')
+  livesLabel.textContent = 'LIVES'
+  Object.assign(livesLabel.style, {
+    fontSize: '11px',
+    fontWeight: '800',
+    letterSpacing: '1.1px',
+    color: '#fca5a5'
+  })
+
+  const livesPips = document.createElement('div')
+  Object.assign(livesPips.style, { display: 'flex', gap: '6px' })
+  livesContainer.append(livesLabel, livesPips)
+  root.appendChild(livesContainer)
+
+  function setLives(current = 3, maximum = 3) {
+    livesPips.replaceChildren()
+    for (let i = 0; i < maximum; i++) {
+      const pip = document.createElement('span')
+      Object.assign(pip.style, {
+        width: '11px',
+        height: '11px',
+        display: 'block',
+        transform: 'rotate(45deg)',
+        borderRadius: '2px',
+        border: '1px solid rgba(252, 165, 165, 0.9)',
+        background: i < current ? '#ef4444' : 'rgba(239, 68, 68, 0.12)',
+        boxShadow: i < current ? '0 0 8px rgba(239, 68, 68, 0.65)' : 'none'
+      })
+      livesPips.appendChild(pip)
+    }
+  }
+  setLives(3, 3)
+
   // Top-Right Suspicion / Alert Meter
   const suspicionContainer = document.createElement('div')
   Object.assign(suspicionContainer.style, {
@@ -174,10 +225,12 @@ export function createHud() {
     'caught': { title: 'CAUGHT!', message: 'Security caught you!' }
   }
 
-  function showCaughtScreen(reason) {
+  function showCaughtScreen(reason, { lives = 2, gameOver = false } = {}) {
     const entry = CAUGHT_MESSAGES[reason] ?? CAUGHT_MESSAGES.caught
-    caughtTitle.textContent = entry.title
-    caughtMessage.textContent = entry.message
+    caughtTitle.textContent = gameOver ? 'RUN FAILED' : entry.title
+    caughtMessage.textContent = gameOver
+      ? 'All 3 lives lost — restarting from the beginning…'
+      : `${entry.message} ${lives} ${lives === 1 ? 'life' : 'lives'} remaining.`
     caughtScreen.style.opacity = '1'
   }
 
@@ -775,6 +828,7 @@ export function createHud() {
     setSuspicion,
     updateTimeState,
     updateStats,
+    setLives,
     setVisible,
     dispose,
     showCaughtScreen,

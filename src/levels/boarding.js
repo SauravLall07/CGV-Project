@@ -118,6 +118,14 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
   guardPassage.setupStealth(stealth)
   bridgePassage.setupStealth(stealth)
 
+  // Losing one of the first two lives keeps the current level instance alive,
+  // but suspicion should start fresh at the checkpoint. The third failure
+  // rebuilds the whole level anyway, so its new stealth system already starts
+  // at zero.
+  const unregisterRespawnSuspicionReset = respawn?.onFail?.((_reason, state) => {
+    if (!state?.gameOver) stealth.clearSuspicion()
+  }) ?? (() => {})
+
   // Passageways 4 and 5 reuse the same finite distraction inventory as P2/P3.
   // Their guards belong to the station-level stealth system, so they need a
   // station-level throw handler rather than one owned by either lower passage.
@@ -664,6 +672,7 @@ export function createBoardingLevel({ scene, interaction, assets, hud, player, c
     },
 
     dispose() {
+      unregisterRespawnSuspicionReset()
       unregisterStationBlocker()
       unregisterTrainBlocker()
       unregisterApproachTerminal()

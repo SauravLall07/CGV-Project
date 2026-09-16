@@ -25,7 +25,7 @@ const GRAVITY = 18
 const JUMP_SPEED = 6.4
 const JUMP_MOMENTUM = 0.8
 const AIR_CONTROL = 8
-const PLAYER_COLLISION_RADIUS = 0.22
+const PLAYER_COLLISION_RADIUS = 0.18
 const MAX_PLANAR_STEP = 0.08
 
 // -----------------------------------------------------------------------------
@@ -41,6 +41,12 @@ const CROUCH_TORSO_LEAN = 0.24
 const CROUCH_STRIDE_SCALE = 0.25
 const CROUCH_ARM_SWING_SCALE = 0.35
 const CROUCH_BLEND_SPEED = 10
+// The maintenance vent is only 1.34 m high. Normal crouching remains the
+// ordinary stealth pose; while actually inside that vent the legs fold much
+// deeper so the hat/head stays visibly below the roof.
+const VENT_CROUCH_HIP_ANGLE = -1.55
+const VENT_CROUCH_KNEE_ANGLE = 2.32
+const VENT_CROUCH_TORSO_LEAN = 0.48
 
 // -----------------------------------------------------------------------------
 // HELPERS FOR THE ARTICULATED LEG REPLACEMENT
@@ -259,9 +265,11 @@ export function createPlayer() {
   // crouch angles. This is the key to the pose: the knees bend while the feet
   // stay close to their standing height instead of the torso separating from
   // the legs.
-  function crouchPelvisDrop(amount) {
-    const hipAngle = CROUCH_HIP_ANGLE * amount
-    const kneeAngle = CROUCH_KNEE_ANGLE * amount
+  function crouchPelvisDrop(amount, deepVent = false) {
+    const hipBase = deepVent ? VENT_CROUCH_HIP_ANGLE : CROUCH_HIP_ANGLE
+    const kneeBase = deepVent ? VENT_CROUCH_KNEE_ANGLE : CROUCH_KNEE_ANGLE
+    const hipAngle = hipBase * amount
+    const kneeAngle = kneeBase * amount
 
     const l1 = (leftRig.thighLength + rightRig.thighLength) * 0.5
     const l2 = (leftRig.shinLength + rightRig.shinLength) * 0.5
@@ -335,6 +343,7 @@ export function createPlayer() {
     wasJumpHeld = jumpHeld
 
     crouching = Boolean(keyboard.duck) && !airborne
+    const deepVentCrouch = crouching && Boolean(group.userData.tightCrouchCamera)
     running = Boolean(keyboard.run) && moving && !crouching
 
     function sampleGroundHeight(fallback) {
@@ -472,8 +481,8 @@ export function createPlayer() {
       const leftWalkKnee = Math.max(0, stride) * 0.38
       const rightWalkKnee = Math.max(0, -stride) * 0.38
 
-      const crouchHip = CROUCH_HIP_ANGLE * crouchAmount
-      const crouchKnee = CROUCH_KNEE_ANGLE * crouchAmount
+      const crouchHip = (deepVentCrouch ? VENT_CROUCH_HIP_ANGLE : CROUCH_HIP_ANGLE) * crouchAmount
+      const crouchKnee = (deepVentCrouch ? VENT_CROUCH_KNEE_ANGLE : CROUCH_KNEE_ANGLE) * crouchAmount
 
       // Reduce the normal walk swing as the character gets deeper into the
       // crouch, but keep enough alternating motion to read as crouch-walking.
@@ -490,7 +499,7 @@ export function createPlayer() {
         rightWalkKnee * (1 - crouchAmount * 0.6) +
         hipSwing * crouchAmount * 0.25
 
-      const hipDrop = crouchPelvisDrop(crouchAmount)
+      const hipDrop = crouchPelvisDrop(crouchAmount, deepVentCrouch)
       const pelvisBob = bob * (1 - crouchAmount * 0.5)
       const pelvisOffset = pelvisBob - hipDrop
 
@@ -504,7 +513,7 @@ export function createPlayer() {
 
       const torsoTarget = running
         ? RUN_LEAN
-        : CROUCH_TORSO_LEAN * crouchAmount
+        : (deepVentCrouch ? VENT_CROUCH_TORSO_LEAN : CROUCH_TORSO_LEAN) * crouchAmount
 
       body.rotation.x += (torsoTarget - body.rotation.x) * Math.min(1, delta * 9)
 
