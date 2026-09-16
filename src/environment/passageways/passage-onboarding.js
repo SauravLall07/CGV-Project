@@ -39,6 +39,7 @@ function addBox(group, colliders, {
   position,
   material,
   collider = true,
+  colliderInset = 0,
   name = ''
 }) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), material)
@@ -49,11 +50,12 @@ function addBox(group, colliders, {
   group.add(mesh)
 
   if (collider) {
+    const inset = Math.max(0, colliderInset)
     colliders.push({
-      minX: position.x - size.x / 2,
-      maxX: position.x + size.x / 2,
-      minZ: position.z - size.z / 2,
-      maxZ: position.z + size.z / 2
+      minX: position.x - size.x / 2 + inset,
+      maxX: position.x + size.x / 2 - inset,
+      minZ: position.z - size.z / 2 + inset,
+      maxZ: position.z + size.z / 2 - inset
     })
   }
 
@@ -124,13 +126,84 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   group.add(corridor.group)
   colliders.push(...corridor.colliders)
 
-  // Seal only the west end. The east end joins directly into Passageway 1.
+  // Give the spawn room a believable way the player could have arrived. The
+  // west bulkhead is still locked for gameplay, but it now reads as a real
+  // crew/service entrance instead of an arbitrary sealed tutorial box.
+  const serviceDoorWidth = 2.8
+  const serviceDoorHeight = 2.75
+  const rearSideDepth = (CORRIDOR_WIDTH - serviceDoorWidth) / 2
+  for (const side of [-1, 1]) {
+    addBox(group, colliders, {
+      size: new THREE.Vector3(0.25, ROOM_HEIGHT, rearSideDepth),
+      position: new THREE.Vector3(
+        PASSAGE_START_X,
+        ROOM_HEIGHT / 2,
+        CORRIDOR_Z + side * (serviceDoorWidth / 2 + rearSideDepth / 2)
+      ),
+      material: wallMat,
+      name: `onboarding-service-wall-${side}`
+    })
+  }
   addBox(group, colliders, {
-    size: new THREE.Vector3(0.25, ROOM_HEIGHT, CORRIDOR_WIDTH),
-    position: new THREE.Vector3(PASSAGE_START_X, ROOM_HEIGHT / 2, CORRIDOR_Z),
+    size: new THREE.Vector3(0.25, ROOM_HEIGHT - serviceDoorHeight, serviceDoorWidth),
+    position: new THREE.Vector3(
+      PASSAGE_START_X,
+      serviceDoorHeight + (ROOM_HEIGHT - serviceDoorHeight) / 2,
+      CORRIDOR_Z
+    ),
     material: wallMat,
-    name: 'onboarding-rear-wall'
+    collider: false,
+    name: 'onboarding-service-lintel'
   })
+
+  const serviceDoor = addBox(group, colliders, {
+    size: new THREE.Vector3(0.18, serviceDoorHeight, serviceDoorWidth),
+    position: new THREE.Vector3(PASSAGE_START_X + 0.04, serviceDoorHeight / 2, CORRIDOR_Z),
+    material: ironMat,
+    name: 'onboarding-locked-service-door'
+  })
+
+  // Brass trim, centre seam and a red lock lamp make the surface unmistakably
+  // read as a door even though it is intentionally non-interactive.
+  const rearTrimMat = new THREE.MeshStandardMaterial({
+    color: 0xb08d3f,
+    emissive: 0x2f2108,
+    emissiveIntensity: 0.25,
+    roughness: 0.3,
+    metalness: 0.9
+  })
+  for (const zOffset of [-serviceDoorWidth / 2 + 0.08, serviceDoorWidth / 2 - 0.08]) {
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.08, serviceDoorHeight + 0.12, 0.08), rearTrimMat)
+    trim.position.set(PASSAGE_START_X + 0.15, serviceDoorHeight / 2, CORRIDOR_Z + zOffset)
+    group.add(trim)
+  }
+  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.045, serviceDoorHeight - 0.16, 0.035), rearTrimMat)
+  seam.position.set(PASSAGE_START_X + 0.15, serviceDoorHeight / 2, CORRIDOR_Z)
+  group.add(seam)
+
+  const lockMat = new THREE.MeshStandardMaterial({
+    color: 0xef4444,
+    emissive: 0x991b1b,
+    emissiveIntensity: 2.8,
+    roughness: 0.22
+  })
+  const lockLamp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.16), lockMat)
+  lockLamp.position.set(PASSAGE_START_X + 0.16, 1.55, CORRIDOR_Z - 0.92)
+  group.add(lockLamp)
+
+  const servicePlaque = new THREE.Group()
+  servicePlaque.position.set(PASSAGE_START_X + 0.17, 2.18, CORRIDOR_Z)
+  const plaqueBack = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.44, 1.42), rearTrimMat)
+  servicePlaque.add(plaqueBack)
+  const stripeMat = new THREE.MeshStandardMaterial({ color: 0x151a20, roughness: 0.72, metalness: 0.38 })
+  for (let i = -2; i <= 2; i++) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.055, 0.22), stripeMat)
+    stripe.position.set(0.03, -0.05, i * 0.25)
+    stripe.rotation.x = 0.5
+    servicePlaque.add(stripe)
+  }
+  group.add(servicePlaque)
+  serviceDoor.userData.lockedServiceEntry = true
 
   // Match the station's wood-and-brass language so the onboarding space feels
   // like part of the level rather than a separate grey test room.
@@ -166,12 +239,14 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     size: new THREE.Vector3(1.25, 1.0, 0.72),
     position: new THREE.Vector3(PASSAGE_START_X + 8.0, 0.5, CORRIDOR_Z - 1.65),
     material: ironMat,
+    colliderInset: 0.06,
     name: 'onboarding-luggage-a'
   })
   addBox(group, colliders, {
     size: new THREE.Vector3(1.0, 0.8, 0.72),
     position: new THREE.Vector3(PASSAGE_START_X + 10.4, 0.4, CORRIDOR_Z + 1.55),
     material: ironMat,
+    colliderInset: 0.06,
     name: 'onboarding-luggage-b'
   })
 
@@ -232,7 +307,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     modal: true,
     eyebrow: 'Passageway 0 · Training',
     title: 'Move & Look',
-    text: 'Get comfortable moving through the carriage before security hazards begin. Movement follows the direction of the camera, so turn your view and move naturally through the space.',
+    text: 'The service access behind you has sealed, so the only route is forward. Get comfortable moving before security hazards begin; movement follows the direction of the camera.',
     controls: [
       { label: 'Move', actions: ['forward', 'left', 'back', 'right'] },
       { label: 'Look Around', key: 'Mouse' },

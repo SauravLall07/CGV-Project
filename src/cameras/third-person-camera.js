@@ -17,6 +17,10 @@ import { settings } from '../core/settings.js'
 const MIN_DISTANCE = 1.2
 const PIVOT_HEIGHT = 1.5 // roughly head height on the 1.85 m figure
 const COLLISION_PADDING = 0.25
+const CROUCH_PIVOT_HEIGHT = 0.92
+const CROUCH_MIN_DISTANCE = 0.12
+const CROUCH_MAX_DISTANCE = 2.35
+const CROUCH_COLLISION_PADDING = 0.12
 const COLLISION_EASE_OUT = 4 // per second, when the obstruction clears
 // Base radians per pixel of mouse movement; the player's sensitivity setting
 // is a multiplier on top of it.
@@ -94,12 +98,20 @@ export function createThirdPersonCamera(camera, domElement) {
   // `collidables` is the scene (or any root) tested for camera obstruction.
   // Anything flagged userData.noCameraCollision is skipped, for decorative
   // scatter — sparks, debris — that would otherwise make the camera twitch.
-  function update(delta, playerMesh, collidables) {
-    pivot.set(playerMesh.position.x, playerMesh.position.y + PIVOT_HEIGHT, playerMesh.position.z)
+  function update(delta, playerMesh, collidables, options = {}) {
+    const crouching = Boolean(options.crouching)
+    const tightCrouchCamera = crouching && Boolean(playerMesh?.userData?.tightCrouchCamera)
+    const pivotHeight = crouching ? CROUCH_PIVOT_HEIGHT : PIVOT_HEIGHT
+    const minDistance = tightCrouchCamera ? CROUCH_MIN_DISTANCE : MIN_DISTANCE
+    const collisionPadding = tightCrouchCamera ? CROUCH_COLLISION_PADDING : COLLISION_PADDING
+
+    pivot.set(playerMesh.position.x, playerMesh.position.y + pivotHeight, playerMesh.position.z)
 
     // The player's preferred follow distance; the collision pass below is
     // free to pull the camera closer than this, never further out.
-    const maxDistance = settings.get('cameraDistance')
+    const maxDistance = tightCrouchCamera
+      ? Math.min(settings.get('cameraDistance'), CROUCH_MAX_DISTANCE)
+      : settings.get('cameraDistance')
 
     if (!hasSnapped) {
       // Avoid a slow pan-in from wherever the camera defaulted to.
@@ -123,7 +135,7 @@ export function createThirdPersonCamera(camera, domElement) {
       for (const hit of hits) {
         if (isDescendantOf(hit.object, playerMesh)) continue
         if (hit.object.userData.noCameraCollision) continue
-        allowed = Math.max(MIN_DISTANCE, hit.distance - COLLISION_PADDING)
+        allowed = Math.max(minDistance, hit.distance - collisionPadding)
         break
       }
     }

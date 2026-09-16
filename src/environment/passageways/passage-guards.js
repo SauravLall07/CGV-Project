@@ -44,6 +44,7 @@ function addBox(group, colliders, {
   position,
   material,
   collider = true,
+  colliderInset = 0,
   name = ''
 }) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), material)
@@ -54,11 +55,12 @@ function addBox(group, colliders, {
   group.add(mesh)
 
   if (collider) {
+    const inset = Math.max(0, colliderInset)
     colliders.push({
-      minX: position.x - size.x / 2,
-      maxX: position.x + size.x / 2,
-      minZ: position.z - size.z / 2,
-      maxZ: position.z + size.z / 2
+      minX: position.x - size.x / 2 + inset,
+      maxX: position.x + size.x / 2 - inset,
+      minZ: position.z - size.z / 2 + inset,
+      maxZ: position.z + size.z / 2 - inset
     })
   }
 
@@ -155,6 +157,14 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   let playbackActive = true
   let playbackTime = 0
   let replayCooldown = 0
+  let inputStarted = false
+
+  const playbackLeadIn = 0.35
+  const playbackStepOn = 0.52
+  const playbackStepGap = 0.16
+  const playbackStepDuration = playbackStepOn + playbackStepGap
+  const playbackLoopPause = 0.9
+  const playbackCycle = playbackLeadIn + target.length * playbackStepDuration + playbackLoopPause
 
   function setPanelStep(activeMarker = -1) {
     panelMarkers.forEach((mesh, index) => {
@@ -163,8 +173,10 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
     })
   }
 
-  function replay() {
+  function replay({ resetInput = false } = {}) {
     if (solved || replayCooldown > 0) return
+    if (resetInput) resetProgress(false)
+    inputStarted = false
     playbackActive = true
     playbackTime = 0
     replayCooldown = 0.35
@@ -175,7 +187,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
     prompt: 'Replay routing sequence',
     range: 2.7,
     onInteract: () => {
-      replay()
+      replay({ resetInput: true })
       interaction?.flashPrompt?.('Sequence replaying')
     }
   })
@@ -200,16 +212,26 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
       return
     }
 
-    const slab = plates[index].slab
-    slab.material.emissive.setHex(0x10b981)
-    slab.material.emissiveIntensity = 2.5
+    // The first committed step ends the automatic demonstration. Correct
+    // intermediate steps deliberately give no green flash or "accepted"
+    // message — the player only learns they were right after completing the
+    // entire remembered route.
+    if (!inputStarted) {
+      inputStarted = true
+      playbackActive = false
+      setPanelStep(-1)
+    }
     progress += 1
-    interaction?.flashPrompt?.(`${markerNames[index]} accepted — ${progress}/4`)
 
     if (progress < target.length) return
 
     solved = true
+    playbackActive = false
     setPanelStep(-1)
+    plates.forEach(({ slab }) => {
+      slab.material.emissive.setHex(0x10b981)
+      slab.material.emissiveIntensity = 2.5
+    })
     panelMarkers.forEach((mesh) => {
       mesh.material.emissive.setHex(0x10b981)
       mesh.material.emissiveIntensity = 2.2
@@ -224,15 +246,24 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
 
     if (playbackActive && !solved) {
       playbackTime += delta
-      const leadIn = 0.35
-      const stepDuration = 0.68
-      const step = Math.floor((playbackTime - leadIn) / stepDuration)
+      const cycleTime = playbackTime % playbackCycle
 
-      if (playbackTime < leadIn) {
+      if (cycleTime < playbackLeadIn) {
         setPanelStep(-1)
-      } else if (step >= 0 && step < target.length) {
-        setPanelStep(target[step])
-      } else if (playbackTime >= leadIn + target.length * stepDuration + 0.25) {
+      } else {
+        const sequenceTime = cycleTime - playbackLeadIn
+        const step = Math.floor(sequenceTime / playbackStepDuration)
+        if (step >= 0 && step < target.length) {
+          const withinStep = sequenceTime - step * playbackStepDuration
+          setPanelStep(withinStep < playbackStepOn ? target[step] : -1)
+        } else {
+          // Clear pause between complete sequence loops so the four-symbol
+          // route has a readable beginning/end rather than becoming a blur.
+          setPanelStep(-1)
+        }
+      }
+
+      if (inputStarted) {
         playbackActive = false
         setPanelStep(-1)
       }
@@ -392,12 +423,14 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     size: new THREE.Vector3(1.45, 1.55, 0.9),
     position: new THREE.Vector3(worldX(-53.0), GUARD_PASSAGE_FLOOR_Y + 0.775, CORRIDOR_Z - 2.35),
     material: ironMat,
+    colliderInset: 0.06,
     name: 'guard-passage-cover-a'
   })
   addBox(group, colliders, {
     size: new THREE.Vector3(1.25, 1.25, 0.85),
     position: new THREE.Vector3(worldX(-48.2), GUARD_PASSAGE_FLOOR_Y + 0.625, CORRIDOR_Z + 2.25),
     material: woodMat,
+    colliderInset: 0.06,
     name: 'guard-passage-cover-b'
   })
 
@@ -438,6 +471,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     size: new THREE.Vector3(1.2, 1.35, 0.82),
     position: new THREE.Vector3(worldX(-35.0), GUARD_PASSAGE_FLOOR_Y + 0.675, CORRIDOR_Z - 2.45),
     material: ironMat,
+    colliderInset: 0.06,
     name: 'guard-passage-camera-cover'
   })
 

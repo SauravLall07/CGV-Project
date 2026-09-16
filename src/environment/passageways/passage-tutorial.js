@@ -46,6 +46,7 @@ function addBox(group, colliders, {
   position,
   material,
   collider = true,
+  colliderInset = 0,
   name = ''
 }) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), material)
@@ -56,11 +57,12 @@ function addBox(group, colliders, {
   group.add(mesh)
 
   if (collider) {
+    const inset = Math.max(0, colliderInset)
     colliders.push({
-      minX: position.x - size.x / 2,
-      maxX: position.x + size.x / 2,
-      minZ: position.z - size.z / 2,
-      maxZ: position.z + size.z / 2
+      minX: position.x - size.x / 2 + inset,
+      maxX: position.x + size.x / 2 - inset,
+      minZ: position.z - size.z / 2 + inset,
+      maxZ: position.z + size.z / 2 - inset
     })
   }
 
@@ -349,12 +351,14 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     size: new THREE.Vector3(1.25, 1.35, 0.85),
     position: new THREE.Vector3(worldX(-81.3), 0.675, -26.25),
     material: ironMat,
+    colliderInset: 0.06,
     name: 'camera-cover-cabinet-a'
   })
   addBox(group, colliders, {
     size: new THREE.Vector3(1.1, 1.2, 0.85),
     position: new THREE.Vector3(worldX(-79.7), 0.6, -22.8),
     material: ironMat,
+    colliderInset: 0.06,
     name: 'camera-cover-cabinet-b'
   })
 

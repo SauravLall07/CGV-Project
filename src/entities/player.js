@@ -25,7 +25,7 @@ const GRAVITY = 18
 const JUMP_SPEED = 6.4
 const JUMP_MOMENTUM = 0.8
 const AIR_CONTROL = 8
-const PLAYER_COLLISION_RADIUS = 0.28
+const PLAYER_COLLISION_RADIUS = 0.22
 const MAX_PLANAR_STEP = 0.08
 
 // -----------------------------------------------------------------------------

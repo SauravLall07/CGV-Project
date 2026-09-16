@@ -73,6 +73,7 @@ function addBox(group, colliders, {
   position,
   material,
   collider = true,
+  colliderInset = 0,
   name = ''
 }) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), material)
@@ -83,11 +84,12 @@ function addBox(group, colliders, {
   group.add(mesh)
 
   if (collider) {
+    const inset = Math.max(0, colliderInset)
     colliders.push({
-      minX: position.x - size.x / 2,
-      maxX: position.x + size.x / 2,
-      minZ: position.z - size.z / 2,
-      maxZ: position.z + size.z / 2
+      minX: position.x - size.x / 2 + inset,
+      maxX: position.x + size.x / 2 - inset,
+      minZ: position.z - size.z / 2 + inset,
+      maxZ: position.z + size.z / 2 - inset
     })
   }
 
@@ -261,8 +263,10 @@ function createCrouchVent({ group, colliders, floorMat, wallMat, ironMat, player
     clearanceGates.forEach((gate) => { gate.enabled = !crouched })
 
     const p = player?.mesh?.position
-    if (!p || crouched || warnedStanding) return
+    if (!p) return
     const insideMouth = p.x > startX - 0.4 && p.x < endX + 0.2 && Math.abs(p.z - z) < width / 2 + 0.2
+    player.mesh.userData.tightCrouchCamera = insideMouth
+    if (crouched || warnedStanding) return
     if (insideMouth) {
       warnedStanding = true
       hud?.showToast?.(`Too low to stand — hold ${bindingLabel(settings.getBinding('duck'))} and crouch through the vent.`, 2500)
@@ -640,6 +644,13 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
     roughness: 0.38,
     metalness: 0.7
   })
+  const focusFrameGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.88, 0.055, 0.88))
+  const focusFrameMaterial = new THREE.LineBasicMaterial({
+    color: 0xfde68a,
+    transparent: true,
+    opacity: 0.95,
+    toneMapped: false
+  })
 
   const tiles = []
   const tileSpacing = 0.92
@@ -689,7 +700,8 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
           roughness: 0.22,
           metalness: 0.48
         }),
-        fuseMaterial: null
+        fuseMaterial: null,
+        focusFrame: null
       }
 
       tile.group.name = `bridge-router-tile-${row}-${col}`
@@ -717,6 +729,14 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
       hub.position.y = 0.085
       tile.group.add(hub)
 
+      if (!tile.fixed) {
+        tile.focusFrame = new THREE.LineSegments(focusFrameGeometry, focusFrameMaterial)
+        tile.focusFrame.position.y = 0.115
+        tile.focusFrame.visible = false
+        tile.focusFrame.renderOrder = 8
+        tile.group.add(tile.focusFrame)
+      }
+
       if (fuseCells.has(`${row},${col}`)) {
         tile.fuseMaterial = new THREE.MeshStandardMaterial({
           color: 0xf59e0b,
@@ -742,8 +762,13 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
 
       if (!tile.fixed) {
         unregisters.push(interaction.register(tile.group, {
-          prompt: 'Rotate relay tile',
-          range: 2.85,
+          prompt: 'Rotate highlighted relay tile',
+          range: 3.25,
+          selectionMode: 'aim',
+          aimMin: 0.78,
+          onFocusChange: (focused) => {
+            tile.focusFrame.visible = focused && !solved
+          },
           onInteract: () => {
             if (solved) return
             tile.rotation = (tile.rotation + 1) % 4
@@ -885,6 +910,8 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
       deckMaterial.dispose()
       tileBaseMaterial.dispose()
       fixedBaseMaterial.dispose()
+      focusFrameGeometry.dispose()
+      focusFrameMaterial.dispose()
       sourceMaterial.dispose()
       exitMaterial.dispose()
       for (const row of tiles) {
@@ -1165,18 +1192,21 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     size: new THREE.Vector3(1.1, 1.45, 0.85),
     position: new THREE.Vector3(SOUTH_ROOM_X - 1.35, BRIDGE_PASSAGE_FLOOR_Y + 0.725, -42.25),
     material: ironMat,
+    colliderInset: 0.06,
     name: 'bridge-cover-a'
   })
   addBox(group, colliders, {
     size: new THREE.Vector3(1.15, 1.2, 0.8),
     position: new THREE.Vector3(SOUTH_ROOM_X + 1.3, BRIDGE_PASSAGE_FLOOR_Y + 0.6, -44.7),
     material: woodMat,
+    colliderInset: 0.06,
     name: 'bridge-cover-b'
   })
   addBox(group, colliders, {
     size: new THREE.Vector3(1.0, 1.4, 0.9),
     position: new THREE.Vector3(LASER_ROOM_X - 1.45, BRIDGE_PASSAGE_FLOOR_Y + 0.7, LASER_ROOM_Z + 1.35),
     material: ironMat,
+    colliderInset: 0.06,
     name: 'bridge-cover-c'
   })
 

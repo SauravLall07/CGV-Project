@@ -200,9 +200,9 @@ export function createHud() {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 'clamp(24px, 5vw, 72px)',
-    background: 'rgba(5, 6, 12, 0.78)',
-    backdropFilter: 'blur(7px)',
-    WebkitBackdropFilter: 'blur(7px)',
+    background: 'radial-gradient(circle at 50% 40%, rgba(55, 42, 28, 0.30), rgba(5, 6, 12, 0.88) 58%, rgba(3, 4, 8, 0.95))',
+    backdropFilter: 'blur(9px) saturate(0.82)',
+    WebkitBackdropFilter: 'blur(9px) saturate(0.82)',
     opacity: '0',
     visibility: 'hidden',
     pointerEvents: 'none',
@@ -212,27 +212,60 @@ export function createHud() {
 
   const tutorialPanel = document.createElement('div')
   Object.assign(tutorialPanel.style, {
-    width: 'min(920px, 86vw)',
-    minHeight: 'min(520px, 68vh)',
-    maxHeight: '78vh',
+    position: 'relative',
+    width: 'min(940px, 88vw)',
+    minHeight: 'min(500px, 66vh)',
+    maxHeight: '80vh',
     boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
-    gap: '22px',
-    padding: 'clamp(28px, 5vw, 58px)',
-    background: 'linear-gradient(145deg, rgba(12, 14, 23, 0.97), rgba(23, 17, 16, 0.96))',
-    border: '1px solid rgba(176, 141, 63, 0.7)',
-    boxShadow: '0 28px 80px rgba(0, 0, 0, 0.68), inset 0 0 46px rgba(176, 141, 63, 0.05)',
-    borderRadius: '4px',
+    gap: '20px',
+    padding: 'clamp(30px, 5vw, 60px)',
+    background: 'linear-gradient(145deg, rgba(11, 15, 23, 0.985), rgba(29, 22, 18, 0.98))',
+    border: '1px solid rgba(211, 171, 82, 0.66)',
+    boxShadow: '0 34px 100px rgba(0, 0, 0, 0.76), 0 0 0 1px rgba(255, 238, 190, 0.035) inset, inset 0 0 70px rgba(176, 141, 63, 0.055)',
+    borderRadius: '16px',
+    transform: 'translateY(12px) scale(0.985)',
+    transition: 'transform 190ms ease-out',
     overflow: 'hidden'
+  })
+
+  const tutorialTopRail = document.createElement('div')
+  Object.assign(tutorialTopRail.style, {
+    position: 'absolute',
+    top: '0',
+    left: '0',
+    right: '0',
+    height: '4px',
+    background: 'linear-gradient(90deg, transparent 3%, #8b6a31 18%, #f0cf7a 50%, #8b6a31 82%, transparent 97%)',
+    boxShadow: '0 0 24px rgba(240, 207, 122, 0.28)'
+  })
+
+  const tutorialCornerMark = document.createElement('div')
+  Object.assign(tutorialCornerMark.style, {
+    position: 'absolute',
+    right: '22px',
+    top: '20px',
+    width: '62px',
+    height: '62px',
+    borderTop: '1px solid rgba(240, 207, 122, 0.32)',
+    borderRight: '1px solid rgba(240, 207, 122, 0.32)',
+    borderRadius: '0 10px 0 0',
+    opacity: '0.75'
   })
 
   const tutorialEyebrow = document.createElement('div')
   Object.assign(tutorialEyebrow.style, {
-    fontSize: '11px',
+    display: 'inline-flex',
+    alignSelf: 'flex-start',
+    padding: '6px 10px',
+    border: '1px solid rgba(211, 171, 82, 0.32)',
+    borderRadius: '999px',
+    background: 'rgba(176, 141, 63, 0.08)',
+    fontSize: '10px',
     fontWeight: '800',
-    letterSpacing: '0.34em',
+    letterSpacing: '0.28em',
     textTransform: 'uppercase',
     color: '#b08d3f'
   })
@@ -243,7 +276,7 @@ export function createHud() {
     fontSize: 'clamp(30px, 5vw, 54px)',
     fontWeight: '700',
     lineHeight: '1.05',
-    letterSpacing: '0.08em',
+    letterSpacing: '0.055em',
     textTransform: 'uppercase',
     color: '#f0e6cf',
     textShadow: '0 3px 18px rgba(0, 0, 0, 0.8)'
@@ -253,7 +286,7 @@ export function createHud() {
   Object.assign(tutorialRule.style, {
     width: '100%',
     height: '1px',
-    background: 'linear-gradient(90deg, rgba(176, 141, 63, 0.9), rgba(176, 141, 63, 0.08))'
+    background: 'linear-gradient(90deg, rgba(240, 207, 122, 0.9), rgba(176, 141, 63, 0.22) 55%, transparent)'
   })
 
   const tutorialText = document.createElement('div')
@@ -262,7 +295,7 @@ export function createHud() {
     fontSize: 'clamp(15px, 2vw, 19px)',
     fontWeight: '500',
     lineHeight: '1.7',
-    color: 'rgba(240, 230, 207, 0.82)',
+    color: 'rgba(244, 235, 216, 0.86)',
     letterSpacing: '0.015em'
   })
 
@@ -276,17 +309,21 @@ export function createHud() {
 
   const tutorialFooter = document.createElement('div')
   Object.assign(tutorialFooter.style, {
-    marginTop: '8px',
-    paddingTop: '18px',
-    borderTop: '1px solid rgba(240, 230, 207, 0.10)',
+    alignSelf: 'flex-end',
+    marginTop: '10px',
+    padding: '9px 12px',
+    border: '1px solid rgba(240, 230, 207, 0.11)',
+    borderRadius: '999px',
+    background: 'rgba(255, 255, 255, 0.025)',
     fontSize: '11px',
     fontWeight: '800',
     letterSpacing: '0.25em',
     textTransform: 'uppercase',
-    color: 'rgba(240, 230, 207, 0.48)',
+    color: 'rgba(240, 230, 207, 0.55)',
     textAlign: 'right'
   })
 
+  tutorialPanel.append(tutorialTopRail, tutorialCornerMark)
   tutorialPanel.append(
     tutorialEyebrow,
     tutorialTitle,
@@ -332,16 +369,25 @@ export function createHud() {
         display: 'flex',
         flexDirection: 'column',
         gap: '7px',
-        minHeight: '72px',
-        padding: '13px 15px',
-        background: 'rgba(176, 141, 63, 0.07)',
-        border: '1px solid rgba(176, 141, 63, 0.25)',
-        borderRadius: '3px'
+        minHeight: '82px',
+        padding: '14px 16px',
+        background: 'linear-gradient(145deg, rgba(176, 141, 63, 0.10), rgba(255, 255, 255, 0.018))',
+        border: '1px solid rgba(211, 171, 82, 0.22)',
+        borderRadius: '10px',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.035), 0 8px 24px rgba(0,0,0,0.18)'
       })
 
       const key = document.createElement('div')
       key.textContent = keyForControl(control)
       Object.assign(key.style, {
+        alignSelf: 'flex-start',
+        minWidth: '34px',
+        padding: '5px 9px',
+        background: 'rgba(7, 10, 15, 0.78)',
+        border: '1px solid rgba(240, 207, 122, 0.42)',
+        borderBottomColor: 'rgba(240, 207, 122, 0.72)',
+        borderRadius: '7px',
+        boxShadow: 'inset 0 -2px 0 rgba(176, 141, 63, 0.22)',
         fontSize: 'clamp(16px, 2.3vw, 22px)',
         fontWeight: '800',
         letterSpacing: '0.08em',
@@ -370,6 +416,7 @@ export function createHud() {
     tutorialOpen = true
     tutorialOverlay.style.visibility = 'visible'
     tutorialOverlay.style.opacity = '1'
+    tutorialPanel.style.transform = 'translateY(0) scale(1)'
     notifyTutorialState()
   }
 
@@ -393,6 +440,7 @@ export function createHud() {
     tutorialOpen = false
     tutorialOverlay.style.opacity = '0'
     tutorialOverlay.style.visibility = 'hidden'
+    tutorialPanel.style.transform = 'translateY(12px) scale(0.985)'
     notifyTutorialState()
   }
 
