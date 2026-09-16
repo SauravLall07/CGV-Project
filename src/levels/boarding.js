@@ -378,8 +378,11 @@ export function createBoardingLevel({
   // -------------------------------------------------------------
   stealth.addGuard({
     waypoints: [
-      new THREE.Vector3(-2.8, 0, -13),
-      new THREE.Vector3(-2.8, 0, 3),
+      // Keep the west leg clear of the luggage trolley at (-3.4, -13).
+      // The old x = -2.8 waypoint sat inside that prop's collider, so the
+      // guard was pushed out every frame and could never reach the waypoint.
+      new THREE.Vector3(-2.2, 0, -13),
+      new THREE.Vector3(-2.2, 0, 3),
       new THREE.Vector3(-0.6, 0, 3),
       new THREE.Vector3(-0.6, 0, -13)
     ],
