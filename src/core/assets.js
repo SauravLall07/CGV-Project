@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 
 // Asset loading pipeline (Phase 1 foundation): one shared THREE.LoadingManager
-// feeding a GLTFLoader, with Draco decompression available on demand, plus
-// progress callbacks the loading screen subscribes to. Nothing loads models
-// yet — this is the plumbing every later phase's assets go through.
+// feeding GLTFLoader and FBXLoader, with Draco decompression available on
+// demand, plus progress callbacks the loading screen subscribes to.
 //
 // DRACOLoader is imported lazily on the first model load, not at module top:
 // it pulls in a ~1.5 MB decoder, and importing it eagerly makes Vite emit
@@ -17,6 +17,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 export function createAssetLoader() {
   const manager = new THREE.LoadingManager()
   const gltf = new GLTFLoader(manager)
+  const fbx = new FBXLoader(manager)
 
   let draco = null
   let dracoWiring = null
@@ -61,6 +62,12 @@ export function createAssetLoader() {
     })
   }
 
+  function loadFbx(url) {
+    return new Promise((resolve, reject) => {
+      fbx.load(url, resolve, undefined, reject)
+    })
+  }
+
   function dispose() {
     if (draco) draco.dispose()
     progressListeners.clear()
@@ -71,6 +78,7 @@ export function createAssetLoader() {
   return {
     manager,
     loadModel,
+    loadFbx,
     onProgress: (fn) => subscribe(progressListeners, fn),
     onLoad: (fn) => subscribe(loadListeners, fn),
     onError: (fn) => subscribe(errorListeners, fn),

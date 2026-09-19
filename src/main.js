@@ -50,6 +50,7 @@ const loadingScreen = createLoadingScreen(assets)
 // each level's checkpoint on load.
 const player = createPlayer()
 scene.add(player.mesh)
+const detectiveReady = player.loadVisual(assets)
 
 const minimap = createMinimap({
   scene,
@@ -435,12 +436,14 @@ function quitToTitle() {
 // Defer by two animation frames: the first paints the loading screen,
 // the second runs the synchronous station build. This matches the
 // pattern used by levelManager.enter() — see core/level-manager.js.
-requestAnimationFrame(() => requestAnimationFrame(() => {
+requestAnimationFrame(() => requestAnimationFrame(async () => {
   titleBackdrop = buildTitleBackdrop()
 
   // Compile Ghost materials/lights while the loading overlay still covers
   // the canvas — first Ghost press must not pay that shader cost in-game.
   timeSystem.warmGhost(renderer, camera)
+
+  await detectiveReady
 
   // One more frame so the station has rendered behind the loading
   // overlay before it fades away to reveal the menu.
@@ -465,6 +468,11 @@ const loop = createLoop({
   }
 })
 loop.add((delta) => {
+  // Mixer tick is independent of gameplay input state. Title / transition /
+  // cinematic / credits all used to return before player.update(), which
+  // left the detective frozen in bind pose after the first frame.
+  player.updateVisual(delta)
+
   hud.updateStats(delta)
 
   if (credits.isOpen) return

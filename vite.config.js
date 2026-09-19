@@ -2,5 +2,6 @@
 // served from a subdirectory (e.g. https://<server>/<group-folder>/) on the
 // department LAMP server, not from the domain root.
 export default {
-  base: './'
+  base: './',
+  assetsInclude: ['**/*.fbx']
 }
