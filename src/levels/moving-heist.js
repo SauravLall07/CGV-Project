@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { disposeObject } from '../core/dispose.js'
-import { createCarriageEnvironment, CARRIAGE_CEILING_Y, CARRIAGE_ROOF_Y } from '../environment/carriages.js'
+import { createCarriageEnvironment, CARRIAGE_CEILING_Y, CARRIAGE_ROOF_Y, listCarriageVolumes } from '../environment/carriages.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
@@ -212,6 +212,10 @@ function makeChronoPickup(
       beacon.visible = false
     },
 
+    setCollected(collected) {
+      beacon.visible = !collected
+    },
+
     update(delta) {
       if (!beacon.visible) return
 
@@ -392,7 +396,9 @@ function rotorBlocks({
   return false
 }
 
-export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, player, camera, respawn, advance }) {
+export function createMovingHeistLevel({
+  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic
+}) {
 
   const powerPickups = []
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.0)
@@ -423,8 +429,14 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     }
   })
 
-  const unregisters = []
-  const bounds = { ...env.interiorBounds }
+  const unregisters = [] // interaction + time-system unregister callbacks
+  const checkpointHazards = []
+  function registerHazard(object, options) {
+    checkpointHazards.push(options)
+    return timeSystem.register(object, options)
+  }
+  unregisters.push(interaction.registerBlocker(root))
+  const bounds = { ...env.interiorBounds } // mutated on section transitions
 
   // The level manager exposes one obstacle array to player.js. Keep the array
   // identity stable and swap its contents when changing interior/roof/vault.
@@ -521,10 +533,13 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   }
 
   let failCooldown = 0
+
   function failSoft(message, reason = 'caught') {
     if (failCooldown > 0) return
+
     failCooldown = 1.2
     respawn.fail(reason)
+
     if (message) hud.showToast(message, 1800)
   }
 
@@ -538,6 +553,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const hintsShown = new Set()
   function hint(key, playerZ, enterZ, lines) {
     if (hintsShown.has(key) || playerZ < enterZ) return
+
     hintsShown.add(key)
     hud.showBriefing?.(lines)
   }
@@ -808,7 +824,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   addProp(scanner, scannerZ)
 
   let scanT = 0
-  unregisters.push(timeSystem.register(scanner, {
+  unregisters.push(registerHazard(scanner, {
     onUpdate(scaledDelta) {
       scanT += scaledDelta
 
@@ -830,7 +846,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const secRotorZ = spans.security.center + 3.7
   addProp(secRotor, secRotorZ, 0, ROTOR_HUB_Y)
   let secRotorA = 0
-  unregisters.push(timeSystem.register(secRotor, {
+  unregisters.push(registerHazard(secRotor, {
     onUpdate(scaledDelta) {
       secRotorA += scaledDelta * 11.0
       secRotor.rotation.z = secRotorA
@@ -863,7 +879,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   let shutterT = 0
   let shutterOpen = 1
-  unregisters.push(timeSystem.register(secShutter, {
+  unregisters.push(registerHazard(secShutter, {
     onUpdate(scaledDelta) {
       shutterT += scaledDelta
       shutterOpen = (Math.sin(shutterT * 5.5) + 1) / 2
@@ -872,7 +888,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     getSnapshot: () => ({ shutterT }),
     restoreSnapshot: (s) => {
       shutterT = s.shutterT
-      shutterOpen = (Math.sin(shutterT * 2.0) + 1) / 2
+      shutterOpen = (Math.sin(shutterT * 5.5) + 1) / 2
       secShutter.position.y = 0.35 + shutterOpen * 2.75
     }
   }))
@@ -1253,7 +1269,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   addProp(crane, craneZ, 0, CARRIAGE_CEILING_Y - 0.05)
 
   let craneT = 0
-  unregisters.push(timeSystem.register(crane, {
+  unregisters.push(registerHazard(crane, {
     onUpdate(scaledDelta) {
       craneT += scaledDelta
       crane.position.x = Math.sin(craneT * 2.1) * 0.82
@@ -1274,7 +1290,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   addProp(pallet, palletZ, 0, 0.21)
 
   let palletT = 0
-  unregisters.push(timeSystem.register(pallet, {
+  unregisters.push(registerHazard(pallet, {
     onUpdate(scaledDelta) {
       palletT += scaledDelta
       pallet.position.x = Math.sin(palletT * 2.8) * 0.78
@@ -1295,7 +1311,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   let crusherT = 0
   let crusherOpen = 1
-  unregisters.push(timeSystem.register(cargoCrusher, {
+  unregisters.push(registerHazard(cargoCrusher, {
     onUpdate(scaledDelta) {
       crusherT += scaledDelta
       crusherOpen = (Math.sin(crusherT * 2.5) + 1) / 2
@@ -1322,7 +1338,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const CARGO_GRID_PERIOD = 4.2
   const CARGO_GRID_DOWN = 1.25
   let cargoGridT = 0
-  unregisters.push(timeSystem.register(cargoGrid.gridGroup, {
+  unregisters.push(registerHazard(cargoGrid.gridGroup, {
     onUpdate(scaledDelta) {
       cargoGridT = (cargoGridT + Math.max(0, scaledDelta)) % CARGO_GRID_PERIOD
       cargoGrid.setActive(cargoGridT > CARGO_GRID_DOWN)
@@ -1443,7 +1459,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const mechBladeZ = spans.mechanical.maxZ - 6.0
   addProp(mechBlade, mechBladeZ, 0, ROTOR_HUB_Y)
   let mechBladeA = 0
-  unregisters.push(timeSystem.register(mechBlade, {
+  unregisters.push(registerHazard(mechBlade, {
     onUpdate(scaledDelta) {
       mechBladeA += scaledDelta * 6.4
       mechBlade.rotation.z = mechBladeA
@@ -1518,7 +1534,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   // Start the hatch visually open. It slams shut as the player approaches;
   // Rewind restores the earlier open state from the time-system snapshot buffer.
   hatchCover.position.x = -1.15
-  unregisters.push(timeSystem.register(hatchCover, {
+  unregisters.push(registerHazard(hatchCover, {
     recordWhen: () => hatchBroken && hatchOpen > 0,
     onUpdate(scaledDelta, timeScale) {
       if (timeScale > 0 && hatchBroken) hatchOpen = Math.max(0, hatchOpen - scaledDelta * 2.8)
@@ -1535,6 +1551,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   unregisters.push(interaction.register(ladder, {
     prompt: 'Climb to the carriage roof',
+    isEligible: () => section === 'interior',
     onInteract: () => {
       if (!clampReleased) {
         interaction.flashPrompt('The drive clamp is still locked — sync both plates at once.')
@@ -1561,7 +1578,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   roof.group.add(roofArc)
 
   let roofArcT = 0
-  unregisters.push(timeSystem.register(roofArc, {
+  unregisters.push(registerHazard(roofArc, {
     onUpdate(scaledDelta) {
       roofArcT += scaledDelta
       roofArc.rotation.z = roofArcT * 4.8
@@ -1588,7 +1605,8 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
     // The roof starts over Mechanical and ends over the forward Vault car.
     const start = new THREE.Vector3(0, CARRIAGE_ROOF_Y, roof.zStart + 0.8)
     player.setPose(start, 0)
-    respawn.setCheckpoint(start, 0)
+    respawn.setCheckpoint(start, 0, { restore: captureCheckpointRestore() })
+    camera.setYaw?.(0)
     camera.snap()
 
     gustPhase = 0
@@ -1602,6 +1620,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   unregisters.push(interaction.register(roof.dropHatch, {
     prompt: 'Drop into the forward Vault car',
+    isEligible: () => section === 'roof',
     onInteract: () => enterVault()
   }))
 
@@ -1634,7 +1653,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const vaultLatticeZ = spans.vault.center - 0.4
   addProp(vaultLattice, vaultLatticeZ, 0, ROTOR_HUB_Y)
   let latticeA = 0
-  unregisters.push(timeSystem.register(vaultLattice, {
+  unregisters.push(registerHazard(vaultLattice, {
     onUpdate(scaledDelta) {
       latticeA += scaledDelta * 5.4
       vaultLattice.rotation.z = latticeA
@@ -1667,7 +1686,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   vaultPit.userData.noCameraCollision = true
   root.add(vaultPit)
 
-  unregisters.push(timeSystem.register(vaultBridge, {
+  unregisters.push(registerHazard(vaultBridge, {
     recordWhen: () => vaultBridgeTriggered && vaultBridgeY > -3.0,
     onUpdate(scaledDelta, timeScale) {
       if (timeScale > 0) {
@@ -1723,7 +1742,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   addProp(cage, coreZ)
 
   let lockA = 0
-  unregisters.push(timeSystem.register(lockRing, {
+  unregisters.push(registerHazard(lockRing, {
     onUpdate(scaledDelta) {
       lockA += scaledDelta * 3.4
       lockRing.rotation.z = lockA
@@ -1744,6 +1763,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   const unregisterCage = interaction.register(cage, {
     prompt: 'Breach the Chrono Core cage',
+    isEligible: () => section === 'vault' && !breached,
     onInteract: () => {
       if (timeSystem.getMode() !== 'FREEZE') {
         interaction.flashPrompt('The lock ring is spinning — FREEZE it, then breach the cage.')
@@ -1751,7 +1771,6 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       }
       breached = true
       cage.visible = false
-      unregisterCage()
       hud.showToast('Cage breached — take the Chrono Core!', 2600)
     }
   })
@@ -1759,6 +1778,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
   unregisters.push(interaction.register(core, {
     prompt: 'STEAL CHRONO CORE',
+    isEligible: () => section === 'vault',
     onInteract: () => {
       if (taken) return
       if (!breached) {
@@ -1766,6 +1786,7 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         return
       }
       taken = true
+      beginCinematic?.()
       interaction.flashPrompt('Chrono Core secured!')
       hud.setObjective('TEMPORAL CONTAINMENT LOST — the train is destabilising')
       hud.showBriefing?.([
@@ -1781,7 +1802,8 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
 
     const p = new THREE.Vector3(0, 0, spans.vault.minZ + 1.1)
     player.setPose(p, 0)
-    respawn.setCheckpoint(p, 0)
+    respawn.setCheckpoint(p, 0, { restore: captureCheckpointRestore() })
+    camera.setYaw?.(0)
     camera.snap()
 
     hud.setObjective('Breach the Vault — you will need every Chrono ability at once')
@@ -1818,11 +1840,89 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
   const halo = core.getObjectByName('chrono-core-halo')
   let elapsed = 0
 
+  // The level owns puzzle restoration. Transient hazards return to a known,
+  // solvable phase while durable progress captured at the checkpoint remains.
+  function captureCheckpointRestore() {
+    const saved = {
+      section, bounds: { ...bounds }, lastCheckpointZ, breached,
+      abilityState: { ...abilityState }, interfaceTaken, ghostTaken, freezeTaken, rewindTaken,
+      relayLogged, relaySolved, relaySeen: [...relaySeen], relayInput: [...relayInput],
+      bridgeY, bridgeRepaired, clampReleased, hatchRepaired, vaultBridgeRepaired,
+      hazards: checkpointHazards.map((hazard) => hazard.getSnapshot())
+    }
+    return () => {
+      section = saved.section
+      setBounds(saved.bounds)
+      useObstacles(section === 'roof' ? [] :
+        section === 'vault' ? vaultObstacles : corridorObstacles)
+      lastCheckpointZ = saved.lastCheckpointZ
+      corridorStealth.reset()
+      checkpointHazards.forEach((hazard, index) => hazard.restoreSnapshot(saved.hazards[index]))
+      Object.assign(abilityState, saved.abilityState)
+      interfaceTaken = saved.interfaceTaken
+      ghostTaken = saved.ghostTaken
+      freezeTaken = saved.freezeTaken
+      rewindTaken = saved.rewindTaken
+      interfaceBeacon.visible = !interfaceTaken
+      ghostPickup.setCollected(ghostTaken)
+      freezePickup.setCollected(freezeTaken)
+      rewindPickup.setCollected(rewindTaken)
+      hud.setChronoVisible?.(interfaceTaken)
+      timeSystem.setStrainEnabled(freezeTaken)
+      relayLogged = saved.relayLogged
+      relaySolved = saved.relaySolved
+      relaySeen.splice(0, relaySeen.length, ...saved.relaySeen)
+      relayInput.splice(0, relayInput.length, ...saved.relayInput)
+      relayPlayT = 0
+      relayActiveStep = -1
+      relayRejectFlash = 0
+      relayGateOpen = relaySolved ? 1 : 0
+      relayGate.position.y = 1.05 + relayGateOpen * 2.2
+      bridgeY = saved.bridgeY
+      bridgeRepaired = saved.bridgeRepaired
+      mechBridge.position.y = bridgeY
+      clampReleased = saved.clampReleased
+      clampDoorOpen = clampReleased ? 1 : 0
+      clampDoor.position.y = 1.05 + clampDoorOpen * 2.2
+      clampLampMat.color.setHex(clampReleased ? 0x10b981 : 0xef4444)
+      clampLampMat.emissive.copy(clampLampMat.color)
+      slamGateY = clampReleased ? 3 : 0.75
+      slamGate.position.y = slamGateY
+      const blockDepth = clampReleased ? 0 : 0.48
+      padBlockObstacle.minZ = slamGateZ - blockDepth
+      padBlockObstacle.maxZ = slamGateZ + blockDepth
+      hatchRepaired = saved.hatchRepaired
+      vaultBridgeRepaired = saved.vaultBridgeRepaired
+      rearmTimers.hatch = rearmTimers.vaultBridge = 0
+      breached = saved.breached
+      cage.visible = !breached
+      taken = false
+      destabT = 0
+      failCooldown = 0
+      ghostGateOpen = 0
+      ghostGate.position.y = 1.05
+      vaultPlate.position.y = 0.03
+      plateMat.emissive.setHex(0xf59e0b)
+      gustPhase = 0
+      sweptTime = 0
+      lockA = 0
+      lockRing.rotation.z = 0
+      root.rotation.z = 0
+      root.position.y = 0
+    }
+  }
+
   return {
     objective: 'Move toward the FRONT of the train — reach Security and acquire the glowing blue Chrono Interface.',
-    checkpoint: { position: new THREE.Vector3(0, 0, spans.passenger.minZ + 2.2), yaw: 0 },
+    checkpoint: {
+      position: new THREE.Vector3(0, 0, spans.passenger.minZ + 2.2),
+      yaw: 0,
+      restore: captureCheckpointRestore()
+    },
     bounds,
     obstacles: activeObstacles,
+    getCarriageVolumes: () => listCarriageVolumes(spans),
+    get isCinematic() { return taken },
 
     update(delta) {
       outdoorEnv.update(delta)
@@ -2050,11 +2150,12 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
       halo.position.y = orb.position.y
       for (const m of core.userData.shaderMats) {
         if (!m.customUniforms) continue
+
         m.customUniforms.uTime.value += delta
         m.customUniforms.uMode.value = MODE_INT[mode] ?? 0
-        m.customUniforms.uIntensity.value = mode === 'NORMAL' ? 0.25 : 0.9
+        m.customUniforms.uIntensity.value =
+          mode === 'NORMAL' ? 0.25 : 0.9
       }
-
       // Removing the Core is the Level 2 ending, not the emergency brake.
       if (taken) {
         destabT += delta
@@ -2122,7 +2223,9 @@ export function createMovingHeistLevel({ scene, interaction, timeSystem, hud, pl
         for (const z of corridorCheckpoints) {
           if (pp.z > z && z > lastCheckpointZ) {
             lastCheckpointZ = z
-            respawn.setCheckpoint(new THREE.Vector3(0, 0, z), 0)
+            respawn.setCheckpoint(new THREE.Vector3(0, 0, z), 0, {
+              restore: captureCheckpointRestore()
+            })
           }
         }
 

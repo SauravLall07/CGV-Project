@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createTimeGhost } from '../entities/time-ghost.js'
+import { playAbilitySfx } from './ability-sfx.js'
 
 // Chrono Express — Time-Manipulation Core Engine (Phase 3 foundation).
 // Provides Slow (0.2x), Freeze (0.0x), Rewind (state restoration), and
@@ -15,6 +16,7 @@ export const TIME_MODES = {
 }
 
 const MAX_ENERGY = 100
+const CHECKPOINT_ENERGY_FLOOR = 50
 const RECHARGE_RATE = 15 // energy per second when normal
 const DRAIN_RATES = {
   SLOW: 18,
@@ -49,7 +51,7 @@ const MAX_SNAPSHOT_HISTORY = 10.0
 // than in a level: the key bindings in main.js and the HUD both read it.
 const ALL_ABILITIES = { SLOW: true, FREEZE: true, REWIND: true, GHOST: true }
 
-export function createTimeSystem({ scene, player, hud }) {
+export function createTimeSystem({ scene, player, hud, onTimeScale }) {
   let mode = TIME_MODES.NORMAL
   let energy = MAX_ENERGY
   let ghost = createTimeGhost()
@@ -63,6 +65,9 @@ export function createTimeSystem({ scene, player, hud }) {
   const registered = new Set()
   const ghostPads = new Set()
 
+  // activeTime only advances while update() is called, so opening a menu or
+  // pausing cannot insert a wall-clock hole into a Time Ghost recording.
+  let activeTime = 0
   let snapshotTimer = 0
   let rewindPlaybackTime = 0
   let ghostCooldown = 0
@@ -120,6 +125,21 @@ export function createTimeSystem({ scene, player, hud }) {
     })
 
     updateUniforms()
+    notifyTimeDilation()
+  }
+
+  function dilationScaleForDrone() {
+    if (mode === TIME_MODES.SLOW) return 0.2
+    if (mode === TIME_MODES.FREEZE) return 0.0
+    // Shader rewind is -1.5; MusicSystem clamps to 0–1, so freeze detune.
+    if (mode === TIME_MODES.REWIND) return 0.0
+    if (ghost.isPlaying()) return 0.55
+    return 1.0
+  }
+
+  function notifyTimeDilation() {
+    if (!onTimeScale) return
+    onTimeScale(dilationScaleForDrone())
   }
 
   // Levels that want the anti-Freeze-spam pressure turn this on; everything
@@ -151,9 +171,10 @@ export function createTimeSystem({ scene, player, hud }) {
   }
 
   function resetGhost() {
-    ghost.stop()
+    ghost.cancel()
     playerHistory.length = 0
     ghostCooldown = 0
+    notifyTimeDilation()
   }
 
   function registerGhostPad(center, halfSize) {
@@ -216,11 +237,32 @@ export function createTimeSystem({ scene, player, hud }) {
 
     ghost.startReplay(trajectory, {
       onComplete: () => {
+        notifyTimeDilation()
         if (hud) hud.showToast('Time Ghost faded', 1000)
       }
     })
 
+    notifyTimeDilation()
+    playAbilitySfx('GHOST')
     if (hud) hud.showToast(onPad ? 'Ghost holding pad — move ahead! (8 seconds)' : 'Time Ghost summoned!', 1800)
+  }
+
+  function triggerSlow() {
+    const previous = mode
+    setMode(TIME_MODES.SLOW)
+    if (mode === TIME_MODES.SLOW && previous !== TIME_MODES.SLOW) playAbilitySfx('SLOW')
+  }
+
+  function triggerFreeze() {
+    const previous = mode
+    setMode(TIME_MODES.FREEZE)
+    if (mode === TIME_MODES.FREEZE && previous !== TIME_MODES.FREEZE) playAbilitySfx('FREEZE')
+  }
+
+  function triggerRewind() {
+    const previous = mode
+    setMode(TIME_MODES.REWIND)
+    if (mode === TIME_MODES.REWIND && previous !== TIME_MODES.REWIND) playAbilitySfx('REWIND')
   }
 
   function updateUniforms() {
@@ -283,6 +325,7 @@ export function createTimeSystem({ scene, player, hud }) {
 
   function update(delta, now = performance.now() / 1000) {
     uniforms.uTime.value += delta
+    activeTime += delta
 
     if (ghostCooldown > 0) {
       ghostCooldown = Math.max(0, ghostCooldown - delta)
@@ -314,7 +357,7 @@ export function createTimeSystem({ scene, player, hud }) {
     // Energy drain & recharge
     if (mode === TIME_MODES.NORMAL) {
       energy = Math.min(MAX_ENERGY, energy + RECHARGE_RATE * delta)
-    } else {
+    } else if (mode !== TIME_MODES.REWIND) {
       const drain = (DRAIN_RATES[mode] || 20) * delta
       energy -= drain
       if (energy <= 0) {
@@ -327,14 +370,14 @@ export function createTimeSystem({ scene, player, hud }) {
     // Record player trajectory for Ghost
     if (player && player.mesh) {
       playerHistory.push({
-        time: now,
+        time: activeTime,
         position: player.mesh.position.clone(),
         rotationY: player.mesh.rotation.y,
-        stridePhase: now * 4
+        stridePhase: activeTime * 4
       })
 
       // Trim player history to max duration
-      const cutoff = now - GHOST_BUFFER_SECONDS
+      const cutoff = activeTime - GHOST_BUFFER_SECONDS
       while (playerHistory.length > 0 && playerHistory[0].time < cutoff) {
         playerHistory.shift()
       }
@@ -346,14 +389,22 @@ export function createTimeSystem({ scene, player, hud }) {
     else if (mode === TIME_MODES.FREEZE) timeScale = 0.0
     else if (mode === TIME_MODES.REWIND) timeScale = -REWIND_SPEED
 
-    const scaledDelta = delta * timeScale
-
     // Update Ghost
     ghost.update(delta)
 
     if (mode === TIME_MODES.REWIND) {
       snapshotTimer = 0
-      rewindPlaybackTime += delta * REWIND_SPEED
+      // Scripted repairs (such as the already-fallen Mechanical plank) have
+      // no snapshots and must keep receiving reverse updates after buffers end.
+      const proceduralRewind = [...registered].some((entry) =>
+        entry.snapshots.length === 0 && entry.options.onUpdate)
+      const historyTime = Math.max(0, ...[...registered].map((entry) =>
+        (entry.snapshots.length - 1) * SNAPSHOT_INTERVAL))
+      const remainingTime = proceduralRewind ? Infinity :
+        Math.max(0, historyTime - rewindPlaybackTime) / REWIND_SPEED
+      const rewindDelta = Math.min(delta, energy / DRAIN_RATES.REWIND, remainingTime)
+      energy = Math.max(0, energy - rewindDelta * DRAIN_RATES.REWIND)
+      rewindPlaybackTime += rewindDelta * REWIND_SPEED
       const stepsToPop = Math.floor((rewindPlaybackTime + 1e-9) / SNAPSHOT_INTERVAL)
       rewindPlaybackTime -= stepsToPop * SNAPSHOT_INTERVAL
       // Replay registered snapshots backwards
@@ -373,9 +424,17 @@ export function createTimeSystem({ scene, player, hud }) {
         } else if (entry.options.onUpdate) {
           // Snapshot-driven objects must not also integrate backwards after
           // restoration; doing both applies rewind twice.
-          entry.options.onUpdate(scaledDelta, timeScale, delta)
+          entry.options.onUpdate(-rewindDelta * REWIND_SPEED, timeScale, rewindDelta)
         }
       })
+      if (energy <= 1e-9) {
+        energy = 0
+        setMode(TIME_MODES.NORMAL)
+        hud?.showToast('Chrono energy depleted — time normalized', 1500)
+      } else if (remainingTime <= delta + 1e-9) {
+        setMode(TIME_MODES.NORMAL)
+        hud?.showToast('Rewind history exhausted', 1200)
+      }
     } else {
       // Split slow frames at sample boundaries so recording stays at 20 Hz
       // even below 20 FPS. Each callback still receives elapsed real time.
@@ -408,15 +467,64 @@ export function createTimeSystem({ scene, player, hud }) {
     updateUniforms()
   }
 
-  function dispose() {
-    availability = { ...ALL_ABILITIES }
-    strainEnabled = false
-    strain = 0
-    freezeLockout = 0
+  function clearTransientState() {
     setMode(TIME_MODES.NORMAL)
+    ghost.cancel()
+    notifyTimeDilation()
+    ghostCooldown = 0
+    playerHistory.length = 0
+    activeTime = 0
+    snapshotTimer = 0
+    rewindPlaybackTime = 0
+    uniforms.uTime.value = 0
+  }
+
+  // Normal level progression carries remaining energy, but grants a 50-point
+  // floor so the next puzzle cannot begin in an unusable state. Restarts and
+  // new runs use the default and receive the complete initial kit.
+  function resetForLevel({ preserveEnergy = false } = {}) {
+    clearTransientState()
     registered.clear()
     ghostPads.clear()
-    playerHistory.length = 0
+    setStrainEnabled(false)
+    levelMultiplier = 1.0
+    availability = { ...ALL_ABILITIES }
+    energy = preserveEnergy ? Math.max(energy, CHECKPOINT_ENERGY_FLOOR) : MAX_ENERGY
+    updateUniforms()
+  }
+
+  function resetForRun() {
+    resetForLevel()
+  }
+
+  function captureCheckpointState() {
+    return {
+      energy,
+      availability: { ...availability },
+      levelMultiplier
+    }
+  }
+
+  // Puzzle state is restored by the level-owned checkpoint callback. Once it
+  // has done so, discard every pre-death recording and seed a fresh rewind
+  // timeline from the safe checkpoint state.
+  function resetForCheckpoint(snapshot = captureCheckpointState()) {
+    clearTransientState()
+    strain = 0
+    freezeLockout = 0
+    energy = Math.max(snapshot.energy, CHECKPOINT_ENERGY_FLOOR)
+    availability = { ...snapshot.availability }
+    levelMultiplier = snapshot.levelMultiplier
+    for (const entry of registered) {
+      entry.snapshots.length = 0
+      const snap = captureSnapshot(entry)
+      if (snap) entry.snapshots.push(snap)
+    }
+    updateUniforms()
+  }
+
+  function dispose() {
+    resetForRun()
     if (ghost) {
       scene.remove(ghost.mesh)
       ghost.dispose()
@@ -431,9 +539,13 @@ export function createTimeSystem({ scene, player, hud }) {
     setAbilityAvailability,
     getAbilityAvailability,
     setStrainEnabled,
-    triggerSlow: () => setMode(TIME_MODES.SLOW),
-    triggerFreeze: () => setMode(TIME_MODES.FREEZE),
-    triggerRewind: () => setMode(TIME_MODES.REWIND),
+    resetForLevel,
+    resetForRun,
+    resetForCheckpoint,
+    captureCheckpointState,
+    triggerSlow,
+    triggerFreeze,
+    triggerRewind,
     triggerGhost,
     resetGhost,
     getMode: () => mode,
@@ -446,6 +558,9 @@ export function createTimeSystem({ scene, player, hud }) {
     getFreezeLockout: () => freezeLockout,
     getGhost: () => ghost,
     getUniforms: () => uniforms,
+    warmGhost(renderer, camera) {
+      if (ghost && ghost.warm) ghost.warm(renderer, scene, camera)
+    },
     update,
     dispose
   }

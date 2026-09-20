@@ -49,7 +49,7 @@ export function createOutdoorEnvironment(options = {}) {
   const group = new THREE.Group()
   group.name = 'outdoor-environment'
 
-  const disposables = []
+  let disposed = false
 
   // -------------------------------------------------------------
   // 1. Sky Dome & Atmosphere Setup
@@ -71,14 +71,12 @@ export function createOutdoorEnvironment(options = {}) {
     cloudColor: isStormy ? new THREE.Color(0x24080a) : new THREE.Color(0x2b2236),
     hazeDensity: isStormy ? 0.9 : 0.6
   })
-  disposables.push(skyMaterial)
 
   const skyDome = new THREE.Mesh(
     new THREE.SphereGeometry(650, 24, 16),
     skyMaterial
   )
   group.add(skyDome)
-  disposables.push(skyDome.geometry)
 
   // -------------------------------------------------------------
   // 2. Procedural 3D Terrain (Hills & Mountains)
@@ -95,7 +93,6 @@ export function createOutdoorEnvironment(options = {}) {
     fogNear: isStormy ? 15.0 : 35.0,
     fogFar: isStormy ? 120.0 : 260.0
   })
-  disposables.push(terrainMaterial)
 
   // Trigonometric procedural height calculation
   function getTerrainHeight(x, z) {
@@ -147,7 +144,6 @@ export function createOutdoorEnvironment(options = {}) {
     posAttr.setY(i, y)
   }
   terrainGeo.computeVertexNormals()
-  disposables.push(terrainGeo)
 
   const terrainMesh = new THREE.Mesh(terrainGeo, terrainMaterial)
   terrainMesh.receiveShadow = true
@@ -168,11 +164,9 @@ export function createOutdoorEnvironment(options = {}) {
     fogNear: isStormy ? 15.0 : 35.0,
     fogFar: isStormy ? 120.0 : 260.0
   })
-  disposables.push(vegMaterial)
 
   // Low-poly Pine Tree Geometry
   function createPineTreeGeometry() {
-    const geo = new THREE.BufferGeometry()
     const parts = []
     
     // Trunk
@@ -232,7 +226,6 @@ export function createOutdoorEnvironment(options = {}) {
   const bushGeo = createBushGeometry()
   const rockGeo = createRockGeometry()
 
-  disposables.push(pineGeo, decGeo, bushGeo, rockGeo)
 
   // Tree distribution & instance count based on Quality
   const treeCount = quality === 'HIGH' ? 900 : (quality === 'MEDIUM' ? 500 : 250)
@@ -244,7 +237,6 @@ export function createOutdoorEnvironment(options = {}) {
   const bushMesh = new THREE.InstancedMesh(bushGeo, vegMaterial, bushCount)
   
   const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x484440, roughness: 0.8, metalness: 0.2 })
-  disposables.push(rockMaterial)
   const rockMesh = new THREE.InstancedMesh(rockGeo, rockMaterial, rockCount)
 
   pineMesh.castShadow = true
@@ -357,7 +349,6 @@ export function createOutdoorEnvironment(options = {}) {
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3d2717, roughness: 0.9 })
   const metalMat = new THREE.MeshStandardMaterial({ color: 0x22262a, metalness: 0.8, roughness: 0.4 })
   const wireMat = new THREE.LineBasicMaterial({ color: 0x111115 })
-  disposables.push(woodMat, metalMat, wireMat)
 
   const poleZSpacing = 28.0
   const poleCount = Math.floor(rangeZ / poleZSpacing) * 2
@@ -424,7 +415,6 @@ export function createOutdoorEnvironment(options = {}) {
       const wireGeo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(points.length * 4))
       const wireLine = new THREE.Line(wireGeo, wireMat)
       tracksideGroup.add(wireLine)
-      disposables.push(wireGeo)
     }
   }
 
@@ -432,7 +422,6 @@ export function createOutdoorEnvironment(options = {}) {
   const fencePostsCount = 80
   const fencePostGeo = new THREE.BoxGeometry(0.1, 1.2, 0.1)
   const fenceRailGeo = new THREE.BoxGeometry(0.06, 0.08, 3.8)
-  disposables.push(fencePostGeo, fenceRailGeo)
 
   const fencePostsMesh = new THREE.InstancedMesh(fencePostGeo, woodMat, fencePostsCount * 2)
   const fenceRailsMesh = new THREE.InstancedMesh(fenceRailGeo, woodMat, fencePostsCount * 2)
@@ -556,45 +545,56 @@ export function createOutdoorEnvironment(options = {}) {
     },
 
     dispose() {
-      group.traverse(obj => {
-        if (obj.geometry) obj.geometry.dispose()
-      })
-      disposables.forEach(d => {
-        if (d.dispose) d.dispose()
-      })
+      if (disposed) return
+      disposed = true
       disposeObject(group)
     }
   }
 }
 
 /**
- * Utility helper to merge BufferGeometries for low draw calls
+ * Utility helper to merge BufferGeometries without changing their topology.
  */
-function mergeBufferGeometries(geometries) {
+export function mergeBufferGeometries(geometries) {
+  if (!geometries?.length) return new THREE.BufferGeometry()
+
+  const indexed = geometries.some((geometry) => geometry.index !== null)
   let totalVerts = 0
   let totalIndices = 0
 
   geometries.forEach(g => {
     totalVerts += g.attributes.position.count
-    if (g.index) totalIndices += g.index.count
+    totalIndices += g.index ? g.index.count : g.attributes.position.count
   })
 
   const mergedPos = new Float32Array(totalVerts * 3)
   const mergedNorm = new Float32Array(totalVerts * 3)
+  const IndexArray = totalVerts > 65535 ? Uint32Array : Uint16Array
+  const mergedIndices = indexed ? new IndexArray(totalIndices) : null
 
   let vertOffset = 0
+  let indexOffset = 0
   geometries.forEach(g => {
     const p = g.attributes.position.array
     const n = g.attributes.normal ? g.attributes.normal.array : null
 
     mergedPos.set(p, vertOffset * 3)
     if (n) mergedNorm.set(n, vertOffset * 3)
+
+    if (indexed) {
+      const count = g.index ? g.index.count : g.attributes.position.count
+      for (let i = 0; i < count; i += 1) {
+        mergedIndices[indexOffset + i] = (g.index ? g.index.getX(i) : i) + vertOffset
+      }
+      indexOffset += count
+    }
     vertOffset += g.attributes.position.count
   })
 
   const merged = new THREE.BufferGeometry()
   merged.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3))
   merged.setAttribute('normal', new THREE.BufferAttribute(mergedNorm, 3))
+  if (mergedIndices) merged.setIndex(new THREE.BufferAttribute(mergedIndices, 1))
 
   return merged
 }

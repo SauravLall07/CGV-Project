@@ -90,14 +90,34 @@ export function createTimeGhost() {
     group.visible = true
   }
 
+  // Programs for these emissive/transparent materials (and the beacon light)
+  // compile on first draw. The mesh exists from boot, but visible=false skips
+  // it — so the hitch lands on the first Ghost press unless we compile now.
+  function warm(renderer, scene, camera) {
+    if (!renderer || !camera) return
+    const previous = group.visible
+    group.visible = true
+    renderer.compile(scene, camera)
+    group.visible = previous
+  }
+
   function stop() {
+    const callback = onCompleteCallback
+    cancel()
+    if (callback) callback()
+  }
+
+  // Lifecycle resets must not run the gameplay completion callback from an
+  // outgoing level or leave the old trajectory available to a new level.
+  function cancel() {
     isPlaying = false
     group.visible = false
-    if (onCompleteCallback) {
-      const cb = onCompleteCallback
-      onCompleteCallback = null
-      cb()
-    }
+    trajectory = []
+    playbackTime = 0
+    onCompleteCallback = null
+    onTriggerCallback = null
+    elapsed = 0
+    ring.rotation.y = 0
   }
 
   function update(delta) {
@@ -175,7 +195,7 @@ export function createTimeGhost() {
   }
 
   function dispose() {
-    stop()
+    cancel()
     disposeObject(group)
   }
 
@@ -185,6 +205,8 @@ export function createTimeGhost() {
     mesh: group,
     startReplay,
     stop,
+    warm,
+    cancel,
     update,
     isOccupying,
     isPlaying: () => isPlaying,

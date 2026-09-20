@@ -6,6 +6,14 @@ import {
   plasterMaterial,
   woodMaterial
 } from './textures.js'
+import { WALL_X, DOOR_W, CAB_LENGTH, LAYOUT } from './carriage-bounds.js'
+
+export {
+  listCarriageVolumes,
+  carriageVolumeAt,
+  listCarriageWallBoxes,
+  listCarriageInteriorBoxes
+} from './carriage-bounds.js'
 
 // The train's interior playspace: the five carriages the concept doc calls for
 // — Passenger -> Security -> Cargo -> Mechanical -> Vault — built end to end as
@@ -33,22 +41,9 @@ import {
 
 export const CARRIAGE_CEILING_Y = 3.5
 
-const WALL_X = 1.7 // wider gameplay aisle; player can weave around multiple carriage obstacles
-const DOOR_W = 1.12
 const DOOR_H = 2.7
 export const CARRIAGE_ROOF_Y = 4.2 // top surface of the roof catwalk; clears the taller interior shell
 const ROOF_Y = CARRIAGE_ROOF_Y
-const CAB_LENGTH = 8
-
-// key, interior length (m). Order is the concept doc's progression.
-const LAYOUT = [
-  { key: 'passenger', length: 20 },
-  { key: 'security', length: 20 },
-  { key: 'relay', length: 18 },
-  { key: 'cargo', length: 20 },
-  { key: 'mechanical', length: 22 },
-  { key: 'vault', length: 18 }
-]
 
 // Deterministic scatter so a rebuilt level looks identical to the first build.
 const skew = (n) => (Math.sin(n * 12.9898) * 43758.5453) % 1

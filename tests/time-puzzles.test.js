@@ -5,6 +5,7 @@ import { createTimeSystem } from '../src/systems/time-system.js'
 import { createTimeGhost } from '../src/entities/time-ghost.js'
 import { createMovingHeistLevel } from '../src/levels/moving-heist.js'
 import { createPlayer } from '../src/entities/player.js'
+import { createRespawnSystem } from '../src/systems/respawn.js'
 
 function setup() {
   const scene = new THREE.Scene()
@@ -119,7 +120,7 @@ test('Mechanical: plank starts fallen, rollback repairs it, and an anchored ghos
   const failures = []
   const level = createMovingHeistLevel({
     scene, player, hud, timeSystem: time,
-    interaction: { register: () => () => {}, flashPrompt() {} },
+    interaction: { register: () => () => {}, registerBlocker: () => () => {}, flashPrompt() {} },
     camera: { snap() {} },
     respawn: { setCheckpoint() {}, fail: (reason) => failures.push(reason) },
     advance() {}
@@ -197,4 +198,72 @@ test('Mechanical: plank starts fallen, rollback repairs it, and an anchored ghos
   time.dispose()
   delete globalThis.document
   delete globalThis.window
+})
+
+test('Level 2 checkpoints restore collectible abilities and the active section repeatedly', () => {
+  installCanvasStub()
+  const { scene, player, hud, time, tick } = setup()
+  const interactions = new Map()
+  const camera = { snap() {}, setYaw() {} }
+  const respawn = createRespawnSystem({ player, hud, camera, timeSystem: time })
+  const level = createMovingHeistLevel({
+    scene, player, hud, timeSystem: time, camera, respawn, advance() {},
+    interaction: {
+      register(_object, options) {
+        interactions.set(options.prompt, options)
+        return () => {}
+      },
+      registerBlocker: () => () => {}, flashPrompt() {}
+    }
+  })
+  try {
+    const initial = level.checkpoint
+    const initialTime = time.captureCheckpointState()
+    const initialBounds = { ...level.bounds }
+    const initialObstacles = [...level.obstacles]
+    respawn.setCheckpoint(initial.position, initial.yaw, initial)
+    const acquire = interactions.get('Acquire Chrono Interface')
+    acquire.onInteract()
+    assert.equal(time.getAbilityAvailability().SLOW, true)
+    respawn.respawn()
+    assert.equal(time.getAbilityAvailability().SLOW, false)
+    acquire.onInteract()
+    assert.equal(time.getAbilityAvailability().SLOW, true, 'restored pickup must be collectible again')
+
+    // Crossing into the relay car saves the acquired interface in a new checkpoint.
+    const relay = level.getCarriageVolumes().find((volume) => volume.key === 'relay')
+    player.mesh.position.set(0, 0, relay.minZ + 1.1)
+    tick(1 / 60, 60, level)
+    respawn.respawn()
+    assert.equal(time.getAbilityAvailability().SLOW, true)
+    interactions.get('Install Echo Synchronizer').onInteract()
+    assert.equal(time.getAbilityAvailability().GHOST, true)
+    respawn.respawn()
+    assert.equal(time.getAbilityAvailability().GHOST, false)
+    interactions.get('Install Echo Synchronizer').onInteract()
+    assert.equal(time.getAbilityAvailability().GHOST, true)
+
+    // Exercise a section change, then restore an earlier checkpoint's collision set.
+    interactions.get('Drop into the forward Vault car').onInteract()
+    const vaultBounds = { ...level.bounds }
+    const vaultObstacles = [...level.obstacles]
+    respawn.respawn()
+    assert.deepEqual(level.bounds, vaultBounds)
+    assert.deepEqual(level.obstacles, vaultObstacles)
+    time.resetForCheckpoint(initialTime)
+    respawn.setCheckpoint(initial.position, initial.yaw, initial)
+    respawn.respawn()
+    assert.deepEqual(level.bounds, initialBounds)
+    assert.deepEqual(level.obstacles, initialObstacles)
+    assert.equal(time.getAbilityAvailability().SLOW, false)
+    assert.equal(scene.getObjectByName('mechanical-rewind-plank').position.y, -3.2)
+    respawn.respawn()
+    assert.deepEqual(level.bounds, initialBounds)
+  } finally {
+    respawn.dispose()
+    level.dispose()
+    time.dispose()
+    delete globalThis.document
+    delete globalThis.window
+  }
 })

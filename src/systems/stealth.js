@@ -1019,6 +1019,7 @@ export function createStealthSystem({
     addLaserGrid,
     setDistraction,
     getSuspicion: () => suspicion,
+    getGuards: () => guards,
     update,
     reset,
     dispose
