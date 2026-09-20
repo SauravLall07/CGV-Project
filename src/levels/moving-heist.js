@@ -1755,6 +1755,9 @@ export function createMovingHeistLevel({
   }))
 
   const core = createChronoCore()
+  // The Core is displayed inside the cage. It must not occlude the cage's
+  // interaction ray before the cage is breached.
+  core.userData.noInteractionBlocker = true
   addProp(core, coreZ)
 
   let breached = false

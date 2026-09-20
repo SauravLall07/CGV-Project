@@ -130,3 +130,25 @@ test('small switches remain selectable and transparent effects do not block them
   assert.equal(system.getFocused(), target)
   system.dispose()
 })
+
+test('a solid decorative object marked non-blocking does not hide its container interaction', () => {
+  const scene = new THREE.Scene()
+  const player = new THREE.Group()
+  const cage = new THREE.Group()
+  cage.position.set(0, 0, 2)
+  const core = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x38bdf8 })
+  )
+  core.position.set(0, 0.75, 2)
+  core.userData.noInteractionBlocker = true
+  scene.add(player, cage, core)
+
+  const system = createInteractionSystem()
+  system.register(cage, { prompt: 'Breach cage', onInteract() {} })
+  system.registerBlocker(scene)
+
+  system.update(player, 0)
+  assert.equal(system.getFocused(), cage)
+  system.dispose()
+})
