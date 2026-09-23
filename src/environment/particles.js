@@ -106,3 +106,179 @@ export function createParticleField({
 
   return { points, update, material }
 }
+
+// Sparse Chrono motes for Level 3: orbital drift around home points so Slow
+// dampens, Freeze holds, and Rewind visibly reverses without extra meshes.
+export function createChronoMoteField({
+  ambient = { count: 70, halfX: 1.15, minY: 0.35, maxY: 2.2, minZ: -20, maxZ: 20 },
+  loop = { count: 26, z: 0, halfZ: 4, halfX: 1.2 },
+  walkway = { count: 20, minZ: -3, maxZ: 3, halfX: 1.1 },
+  wave = { count: 32, halfZ: 3.2, halfX: 1.2 },
+  seed = 47
+} = {}) {
+  const random = createRandom(seed)
+  const total = ambient.count + loop.count + walkway.count + wave.count
+  const positions = new Float32Array(total * 3)
+  const colors = new Float32Array(total * 3)
+  const homes = new Float32Array(total * 3)
+  const phases = new Float32Array(total)
+  const amps = new Float32Array(total)
+  const speeds = new Float32Array(total)
+  const zones = new Uint8Array(total) // 0 ambient, 1 loop, 2 walkway, 3 wave
+  const waveOff = new Float32Array(wave.count)
+
+  const tint = {
+    ambient: [0.45, 0.78, 1.0],
+    loop: [0.72, 0.38, 0.98],
+    walkway: [0.42, 0.78, 0.98],
+    wave: [0.78, 0.42, 1.0]
+  }
+
+  let i = 0
+  function addMote(zone, x, y, z, amp, speed, rgb) {
+    const p = i * 3
+    homes[p] = x
+    homes[p + 1] = y
+    homes[p + 2] = z
+    positions[p] = x
+    positions[p + 1] = y
+    positions[p + 2] = z
+    colors[p] = rgb[0]
+    colors[p + 1] = rgb[1]
+    colors[p + 2] = rgb[2]
+    phases[i] = random() * Math.PI * 2
+    amps[i] = amp
+    speeds[i] = speed
+    zones[i] = zone
+    i++
+  }
+
+  for (let n = 0; n < ambient.count; n++) {
+    addMote(
+      0,
+      (random() * 2 - 1) * ambient.halfX,
+      ambient.minY + random() * (ambient.maxY - ambient.minY),
+      ambient.minZ + random() * (ambient.maxZ - ambient.minZ),
+      0.07 + random() * 0.11,
+      0.55 + random() * 0.7,
+      tint.ambient
+    )
+  }
+  for (let n = 0; n < loop.count; n++) {
+    addMote(
+      1,
+      (random() * 2 - 1) * loop.halfX,
+      0.4 + random() * 1.7,
+      loop.z + (random() * 2 - 1) * loop.halfZ,
+      0.1 + random() * 0.14,
+      0.7 + random() * 0.9,
+      tint.loop
+    )
+  }
+  for (let n = 0; n < walkway.count; n++) {
+    addMote(
+      2,
+      (random() * 2 - 1) * walkway.halfX,
+      0.25 + random() * 1.4,
+      walkway.minZ + random() * (walkway.maxZ - walkway.minZ),
+      0.08 + random() * 0.1,
+      0.45 + random() * 0.5,
+      tint.walkway
+    )
+  }
+  for (let n = 0; n < wave.count; n++) {
+    waveOff[n] = (random() * 2 - 1) * wave.halfZ
+    addMote(
+      3,
+      (random() * 2 - 1) * wave.halfX,
+      0.3 + random() * 1.8,
+      80,
+      0.12 + random() * 0.16,
+      0.9 + random() * 1.1,
+      tint.wave
+    )
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.2, 0), 80)
+
+  const material = new THREE.PointsMaterial({
+    size: 0.038,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    sizeAttenuation: true,
+    vertexColors: true,
+    blending: THREE.AdditiveBlending
+  })
+
+  const points = new THREE.Points(geometry, material)
+  points.name = 'chrono-motes'
+  points.frustumCulled = false
+  points.userData.noCameraCollision = true
+
+  const posAttr = geometry.attributes.position
+  const tintColor = new THREE.Color(1, 1, 1)
+  const slowTint = new THREE.Color(0.75, 0.9, 1)
+  const freezeTint = new THREE.Color(0.55, 0.82, 1)
+  const rewindTint = new THREE.Color(0.92, 0.7, 1)
+  const normalTint = new THREE.Color(1, 1, 1)
+  let clock = 0
+  let loopClock = 0
+
+  function update(delta, {
+    motionScale = 1,
+    mode = 'NORMAL',
+    loopPeriod = 9,
+    loopTime = 0,
+    waveZ = null,
+    depleted = false,
+    walkwaySettle = 0,
+    fade = 1
+  } = {}) {
+    const freezeHold = mode === 'FREEZE'
+    const rewindBoost = mode === 'REWIND' ? 1.4 : 1
+    const loopPhase = ((loopTime % loopPeriod) + loopPeriod) % loopPeriod
+    const loopRewind = loopPhase >= 7.5
+    const loopDanger = loopPhase >= 3 && loopPhase < 7.5
+
+    clock += delta * motionScale
+    let loopMotion = motionScale
+    if (!freezeHold) {
+      if (loopRewind) loopMotion = -Math.max(0.45, Math.abs(motionScale) || 1)
+      else if (loopDanger) loopMotion = (motionScale === 0 ? 0 : motionScale * 1.75)
+    }
+    loopClock += delta * loopMotion
+
+    let waveI = 0
+    for (let n = 0; n < total; n++) {
+      const p = n * 3
+      const t = (zones[n] === 1 ? loopClock : clock) * speeds[n] + phases[n]
+      const ampScale = rewindBoost * (zones[n] === 2 ? 1 - walkwaySettle * 0.55 : 1)
+      const a = amps[n] * ampScale
+      let hx = homes[p]
+      const hy = homes[p + 1]
+      let hz = homes[p + 2]
+      if (zones[n] === 3) {
+        hz = depleted && waveZ != null ? waveZ + waveOff[waveI] : 90
+        waveI++
+      }
+      positions[p] = hx + Math.sin(t * 1.3) * a
+      positions[p + 1] = hy + Math.cos(t * 0.9) * a * 0.7
+      positions[p + 2] = hz + Math.sin(t * 0.7 + 1.1) * a * 1.15
+    }
+    posAttr.needsUpdate = true
+
+    if (mode === 'SLOW') tintColor.copy(slowTint)
+    else if (mode === 'FREEZE') tintColor.copy(freezeTint)
+    else if (mode === 'REWIND') tintColor.copy(rewindTint)
+    else tintColor.copy(normalTint)
+    material.color.copy(tintColor)
+    material.opacity = (freezeHold ? 0.55 : mode === 'SLOW' ? 0.3 : mode === 'REWIND' ? 0.5 : 0.38) * fade
+    material.size = freezeHold ? 0.055 : depleted ? 0.052 : 0.045
+  }
+
+  return { points, update, material }
+}

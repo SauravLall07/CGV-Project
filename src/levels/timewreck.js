@@ -3,7 +3,7 @@ import * as CANNON from 'cannon-es'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
-import { createParticleField } from '../environment/particles.js'
+import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
 // Level 3 — "The Timewreck". The escape run: the player now sprints BACK down
@@ -265,12 +265,25 @@ export function createTimewreckLevel({
   const SLAB_HALF_X = 1.15 / 2
   const SLAB_HALF_Y = 0.16 / 2
   const SLAB_HALF_Z = 1.05 / 2
+  const slabSteel = new THREE.MeshStandardMaterial({
+    color: 0x4a515a, metalness: 0.78, roughness: 0.42
+  })
   const slabs = []
   const slabSupports = []
   const gapVoids = [{ minX: -2, maxX: 2, minZ: gapMinZ, maxZ: gapMaxZ }]
   for (let i = 0; i < 5; i++) {
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
+    const slab = new THREE.Group()
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
+    deck.castShadow = true
+    slab.add(deck)
+    const joist = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 1.0), slabSteel)
+    joist.position.set(i % 2 ? -0.38 : 0.38, -0.12, 0)
+    slab.add(joist)
+    const flange = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.03, 1.1), slabSteel)
+    flange.position.set(0, -0.1, 0)
+    slab.add(flange)
     slab.userData.seed = i * 1.7
+    slab.traverse((o) => { o.userData.noCameraCollision = true })
     slab.position.set(0, 0.06, gapMinZ + 0.6 + i * 1.2)
     slab.userData.restZ = slab.position.z
     root.add(slab)
@@ -284,6 +297,11 @@ export function createTimewreckLevel({
     getSnapshot: () => ({ slabDriftT }),
     restoreSnapshot: (s) => { slabDriftT = s.slabDriftT }
   }))
+
+  const walkwayGlow = new THREE.PointLight(0x7dd3fc, 0, 5.5, 2)
+  walkwayGlow.position.set(0, 0.55, spans.security.center)
+  walkwayGlow.userData.noCameraCollision = true
+  root.add(walkwayGlow)
 
   // ============================================================
   // PASSENGER — BREAKING TRAIN: carriages tear away, debris streaks past
@@ -300,9 +318,9 @@ export function createTimewreckLevel({
     color: 0x39332c, roughness: 0.9, metalness: 0.15, emissive: 0x2a0c04, emissiveIntensity: 0.6
   })
   const chunkGeos = [
-    new THREE.BoxGeometry(0.34, 0.22, 0.28),
-    new THREE.DodecahedronGeometry(0.2, 0),
-    new THREE.BoxGeometry(0.5, 0.12, 0.16)
+    new THREE.BoxGeometry(0.42, 0.06, 0.55),
+    new THREE.BoxGeometry(0.08, 0.08, 0.48),
+    new THREE.BoxGeometry(0.5, 0.03, 0.32)
   ]
   const chunks = []
   let chunkSeed = 0
@@ -463,11 +481,25 @@ export function createTimewreckLevel({
     color: 0xff8a3c, size: 0.055, opacity: 0.75, gravity: 0.32, drift: 0.22, seed: 13
   })
   const sparks = createParticleField({
-    count: 160,
+    count: 90,
     area: { halfX: 1.45, minY: 0.05, maxY: 2.55, minZ: spans.cab.minZ, maxZ: spans.vault.maxZ },
-    color: 0xffd9a0, size: 0.03, opacity: 0.6, gravity: -0.9, drift: 0.35, seed: 29
+    color: 0xffd9a0, size: 0.028, opacity: 0.4, gravity: -0.9, drift: 0.35, seed: 29
   })
-  root.add(embers.points, sparks.points)
+  const chronoMotes = createChronoMoteField({
+    seed: 47,
+    ambient: {
+      count: 40,
+      halfX: 1.15,
+      minY: 0.4,
+      maxY: 2.15,
+      minZ: spans.cab.minZ + 1,
+      maxZ: spans.vault.maxZ - 1
+    },
+    loop: { count: 16, z: spans.cargo.center, halfZ: 4.2, halfX: 1.15 },
+    walkway: { count: 12, minZ: gapMinZ, maxZ: gapMaxZ, halfX: 1.1 },
+    wave: { count: 22, halfZ: 3.4, halfX: 1.15 }
+  })
+  root.add(embers.points, sparks.points, chronoMotes.points)
 
   // ============================================================
   const lever = brake.getObjectByName('brake-lever')
@@ -551,14 +583,34 @@ export function createTimewreckLevel({
       const pp = player.mesh.position
       const mode = timeSystem.getMode()
       const modeInt = MODE_INT[mode] ?? 0
+      let motionScale = 1
+      if (mode === 'SLOW') motionScale = 0.2
+      else if (mode === 'FREEZE') motionScale = 0
+      else if (mode === 'REWIND') motionScale = -1.25
+
+      const chronoFade = braking ? Math.max(0, 1 - brakeT * 0.9) : 1
+      chronoMotes.update(delta, {
+        motionScale,
+        mode,
+        loopPeriod: LOOP_PERIOD,
+        loopTime: loopT,
+        waveZ,
+        depleted,
+        walkwaySettle: slabSettle,
+        fade: chronoFade
+      })
 
       // Shader uniforms for the frozen-walkway slabs and the time wave.
+      const freezePulse = mode === 'FREEZE' ? 0.1 * (0.5 + 0.5 * Math.sin(elapsed * 3.4)) : 0
       slabMat.customUniforms.uTime.value += delta
       slabMat.customUniforms.uMode.value = modeInt
-      slabMat.customUniforms.uIntensity.value = 0.35 + slabSettle * 0.65
+      slabMat.customUniforms.uIntensity.value = 0.35 + slabSettle * 0.65 + freezePulse
       waveMat.customUniforms.uTime.value += delta
       waveMat.customUniforms.uMode.value = 3
-      waveMat.customUniforms.uIntensity.value = 1.0
+      waveMat.customUniforms.uIntensity.value = depleted
+        ? 1.12 + Math.sin(elapsed * 5.5) * 0.12
+        : 1.0
+      walkwayGlow.intensity = slabSettle * (mode === 'FREEZE' ? 4.2 : 1.6)
 
       lever.rotation.x = -0.4 + Math.sin(elapsed * 2.2) * 0.05
 
@@ -573,6 +625,7 @@ export function createTimewreckLevel({
           const s = Math.max(0, 1 - brakeT * 0.9)
           wave.scale.set(1, s, 1)
           waveLight.intensity = 14 * s
+          waveMat.customUniforms.uIntensity.value = 1.15 * s
           if (s <= 0.01) { wave.visible = false; waveLight.intensity = 0 }
         }
 
@@ -707,7 +760,7 @@ export function createTimewreckLevel({
         if (!holding && !respawn.isFailing()) waveZ -= WAVE_SPEED * delta
         wave.position.z = waveZ
         waveLight.position.z = waveZ
-        waveLight.intensity = 12 + Math.sin(elapsed * 9) * 3
+        waveLight.intensity = (mode === 'FREEZE' ? 16 : 13) + Math.sin(elapsed * 9) * 3
 
         if (waveZ <= pp.z + 0.35 && failCooldown <= 0) {
           failSoft('Time caught up with you!')
