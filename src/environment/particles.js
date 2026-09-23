@@ -26,6 +26,7 @@ export function createParticleField({
   opacity = 0.8,
   gravity = -0.4, // negative falls, positive rises
   drift = 0.25, // lateral wander speed
+  streamZ = 0, // along-track drift (0 keeps the original wander)
   seed = 7
 } = {}) {
   const random = createRandom(seed)
@@ -36,20 +37,30 @@ export function createParticleField({
 
   const spanY = area.maxY - area.minY
   const spanZ = area.maxZ - area.minZ
+  const minAbsX = Math.max(0, Math.min(area.minAbsX || 0, area.halfX * 0.95))
 
-  function seedParticle(i, initial) {
+  function seedParticle(i, initial, fromZWrap = false) {
     const p = i * 3
-    positions[p] = (random() * 2 - 1) * area.halfX
+    if (minAbsX > 0) {
+      const side = random() < 0.5 ? -1 : 1
+      positions[p] = side * (minAbsX + random() * (area.halfX - minAbsX))
+    } else {
+      positions[p] = (random() * 2 - 1) * area.halfX
+    }
     // On the first fill spread through the volume; on recycle, re-enter from
     // the edge the particle is drifting away from.
     positions[p + 1] = initial
       ? area.minY + random() * spanY
       : (gravity < 0 ? area.maxY : area.minY)
-    positions[p + 2] = area.minZ + random() * spanZ
+    if (fromZWrap) {
+      positions[p + 2] = streamZ >= 0 ? area.minZ : area.maxZ
+    } else {
+      positions[p + 2] = area.minZ + random() * spanZ
+    }
 
     velocities[p] = (random() * 2 - 1) * drift
     velocities[p + 1] = gravity * (0.5 + random())
-    velocities[p + 2] = (random() * 2 - 1) * drift
+    velocities[p + 2] = streamZ * (0.72 + random() * 0.5) + (random() * 2 - 1) * drift
     phases[i] = random() * Math.PI * 2
   }
 
@@ -61,7 +72,7 @@ export function createParticleField({
   // sphere just makes it pop out of view.
   geometry.boundingSphere = new THREE.Sphere(
     new THREE.Vector3(0, (area.minY + area.maxY) / 2, (area.minZ + area.maxZ) / 2),
-    Math.max(spanZ, spanY) * 0.75
+    Math.max(spanZ, spanY, area.halfX) * 0.75
   )
 
   const material = new THREE.PointsMaterial({
@@ -97,8 +108,15 @@ export function createParticleField({
       const outOfRange = gravity < 0
         ? positions[p + 1] < area.minY
         : positions[p + 1] > area.maxY
-      if (outOfRange || Math.abs(positions[p]) > area.halfX * 1.6) {
-        seedParticle(i, false)
+      const wrapZ = streamZ > 0
+        ? positions[p + 2] > area.maxZ
+        : streamZ < 0
+          ? positions[p + 2] < area.minZ
+          : false
+      const outX = Math.abs(positions[p]) > area.halfX * 1.6
+        || (minAbsX > 0 && Math.abs(positions[p]) < minAbsX * 0.72)
+      if (outOfRange || wrapZ || outX) {
+        seedParticle(i, false, wrapZ)
       }
     }
     attribute.needsUpdate = true

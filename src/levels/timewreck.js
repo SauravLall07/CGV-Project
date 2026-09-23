@@ -4,6 +4,7 @@ import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
+import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
 // Level 3 — "The Timewreck". The escape run: the player now sprints BACK down
@@ -103,7 +104,12 @@ export function createTimewreckLevel({
   const env = createCarriageEnvironment({ damaged: true })
   const { root, spans, carriages } = env
   const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 45.0, stormy: true })
-  scene.add(outdoorEnv.group, root)
+  const wreckExterior = createTimewreckExterior({
+    minZ: spans.cab.minZ - 10,
+    maxZ: spans.vault.maxZ + 12,
+    speed: 45
+  })
+  scene.add(outdoorEnv.group, wreckExterior.group, root)
   scene.background = new THREE.Color().copy(NIGHT_COLOR)
   // Wide enough to keep the storm-lit scenery outside readable.
   scene.fog = new THREE.Fog(0x1a0708, 10, 120)
@@ -377,6 +383,9 @@ export function createTimewreckLevel({
     respawnChunk(c)
     // Stagger so they don't arrive as one volley.
     c.life = 0.4 * i
+    c.body.velocity.set(0, 0, 0)
+    c.body.angularVelocity.set(0, 0, 0)
+    c.body.sleep()
     chunks.push(c)
   }
 
@@ -385,41 +394,210 @@ export function createTimewreckLevel({
   // Slow runs the world at 0.2x; meshes copy rigid-body pose each tick.
   unregisters.push(timeSystem.register(chunkGroup, {
     onUpdate(scaledDelta) {
-      if (breakupT < 0) return
-      for (const c of chunks) {
-        c.life -= Math.abs(scaledDelta)
-        if (c.life <= 0) { respawnChunk(c) }
+      const burstLive = failBurstT >= 0 && failBurstT < 2.8
+      if (breakupT < 0 && !burstLive) return
+      if (breakupT >= 0) {
+        for (const c of chunks) {
+          c.life -= Math.abs(scaledDelta)
+          if (c.life <= 0) { respawnChunk(c) }
+        }
       }
       if (scaledDelta !== 0) {
+        const simBodies = breakupT >= 0 ? chunks : burstDebris
         const rewinding = scaledDelta < 0
         const saved = rewinding
-          ? chunks.map((c) => ({
+          ? simBodies.map((c) => ({
             v: c.body.velocity.clone(),
             w: c.body.angularVelocity.clone()
           }))
           : null
         if (rewinding) {
-          for (const c of chunks) {
+          for (const c of simBodies) {
             c.body.velocity.scale(-1)
             c.body.angularVelocity.scale(-1)
           }
         }
         debrisWorld.step(1 / 60, Math.abs(scaledDelta), 3)
         if (rewinding) {
-          chunks.forEach((c, i) => {
+          simBodies.forEach((c, i) => {
             c.body.velocity.copy(saved[i].v)
             c.body.angularVelocity.copy(saved[i].w)
           })
         }
       }
-      for (const c of chunks) {
+      if (breakupT >= 0) {
+        for (const c of chunks) {
+          c.mesh.position.copy(c.body.position)
+          c.mesh.quaternion.copy(c.body.quaternion)
+          c.x = c.body.position.x
+          c.y = c.body.position.y
+          c.z = c.body.position.z
+        }
+      }
+      for (const c of burstDebris) {
+        if (!c.mesh.visible) continue
         c.mesh.position.copy(c.body.position)
         c.mesh.quaternion.copy(c.body.quaternion)
-        c.x = c.body.position.x
-        c.y = c.body.position.y
-        c.z = c.body.position.z
       }
     }
+  }))
+
+  // One-shot structural failure as the player comes through Security into
+  // Passenger. Placed a few metres inside the car so the third-person camera
+  // (behind the player, looking forward) sees it drop instead of already
+  // having it behind the lens. Hinges from just outside the aisle toward the
+  // wall so the walkable ±0.58 path stays clear.
+  const FAIL_BURST_Z = spans.passenger.maxZ - 2.6
+  const FAIL_BURST_TRIGGER_Z = spans.passenger.maxZ + 0.85
+  let failBurstArmed = true
+  let failBurstT = -1
+
+  const burstGroup = new THREE.Group()
+  burstGroup.name = 'passenger-fail-burst'
+  burstGroup.visible = false
+  burstGroup.userData.noCameraCollision = true
+  root.add(burstGroup)
+
+  const burstPanelMat = new THREE.MeshStandardMaterial({
+    color: 0x4a5058, roughness: 0.62, metalness: 0.7,
+    emissive: 0x2a1810, emissiveIntensity: 0.35
+  })
+  const burstSteel = new THREE.MeshStandardMaterial({
+    color: 0x6b727c, roughness: 0.4, metalness: 0.85
+  })
+  // Pivot on the aisle-side of the overhead slab so it trapdoors DOWN
+  // along the seats, not across the path.
+  const panelPivot = new THREE.Group()
+  panelPivot.position.set(0.92, CARRIAGE_CEILING_Y - 0.04, FAIL_BURST_Z)
+  const burstPanel = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.07, 1.85), burstPanelMat)
+  burstPanel.position.set(0.39, 0, 0)
+  burstPanel.castShadow = true
+  burstPanel.userData.noCameraCollision = true
+  panelPivot.add(burstPanel)
+  const panelRib = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.7), burstSteel)
+  panelRib.position.set(0.08, -0.06, 0)
+  panelRib.userData.noCameraCollision = true
+  panelPivot.add(panelRib)
+  burstGroup.add(panelPivot)
+
+  const beamPivot = new THREE.Group()
+  beamPivot.position.set(1.22, CARRIAGE_CEILING_Y - 0.14, FAIL_BURST_Z + 0.55)
+  const burstBeam = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 1.35), burstSteel)
+  burstBeam.castShadow = true
+  burstBeam.userData.noCameraCollision = true
+  beamPivot.add(burstBeam)
+  burstGroup.add(beamPivot)
+
+  const burstLight = new THREE.PointLight(0xffb060, 0, 11, 1.35)
+  burstLight.position.set(0.55, 1.85, FAIL_BURST_Z)
+  burstLight.userData.noCameraCollision = true
+  burstGroup.add(burstLight)
+  const burstFill = new THREE.PointLight(0xff6a3c, 0, 7, 1.6)
+  burstFill.position.set(-0.2, 1.55, FAIL_BURST_Z - 0.4)
+  burstFill.userData.noCameraCollision = true
+  burstGroup.add(burstFill)
+
+  const burstSparkMat = new THREE.MeshStandardMaterial({
+    color: 0xffe8c0, emissive: 0xffc078, emissiveIntensity: 6,
+    transparent: true, opacity: 1
+  })
+  const burstSparks = []
+  for (let i = 0; i < 14; i++) {
+    const spark = new THREE.Mesh(
+      i % 3 === 0
+        ? new THREE.SphereGeometry(0.045, 6, 5)
+        : new THREE.CylinderGeometry(0.028, 0.02, 0.22, 5),
+      burstSparkMat
+    )
+    spark.userData.noCameraCollision = true
+    spark.userData.ox = 0.85 + skew(i + 2) * 0.35
+    spark.userData.oy = 2.15 + Math.abs(skew(i + 9)) * 0.25
+    spark.userData.oz = FAIL_BURST_Z + skew(i + 5) * 0.55
+    spark.userData.vx = skew(i + 11) * 0.55
+    spark.userData.vz = skew(i + 13) * 0.4
+    burstGroup.add(spark)
+    burstSparks.push(spark)
+  }
+
+  const burstDebris = []
+  const luggageMat = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.82, metalness: 0.05 })
+  const luggageGeo = new THREE.BoxGeometry(0.52, 0.3, 0.68)
+  const luggageShape = new CANNON.Box(new CANNON.Vec3(0.26, 0.15, 0.34))
+  for (let i = 0; i < 2; i++) {
+    const mesh = new THREE.Mesh(luggageGeo, luggageMat)
+    mesh.castShadow = true
+    mesh.visible = false
+    mesh.userData.noCameraCollision = true
+    burstGroup.add(mesh)
+    const body = new CANNON.Body({
+      mass: 1.4,
+      shape: luggageShape,
+      linearDamping: 0.05,
+      angularDamping: 0.06
+    })
+    body.sleep()
+    debrisWorld.addBody(body)
+    burstDebris.push({ mesh, body })
+  }
+
+  function applyFailBurst() {
+    if (failBurstT < 0) {
+      burstGroup.visible = false
+      return
+    }
+    burstGroup.visible = true
+    const t = failBurstT
+    const drop = Math.min(1, Math.max(0, t) / 0.55)
+    // Fast, obvious trapdoor: nearly 90° down beside the aisle.
+    panelPivot.rotation.z = -1.48 * drop * drop * (3 - 2 * drop)
+    const beamDrop = Math.min(1, Math.max(0, t) / 0.7)
+    beamPivot.position.y = (CARRIAGE_CEILING_Y - 0.14) - 0.55 * beamDrop * beamDrop
+    beamPivot.rotation.x = 0.55 * beamDrop
+    beamPivot.rotation.z = 0.18 * beamDrop
+
+    const flicker = t < 1.7 ? (0.45 + 0.55 * Math.abs(Math.sin(t * 38))) : 1
+    const lightFade = Math.max(0, 1 - t / 2.0)
+    burstLight.intensity = 26 * lightFade * flicker
+    burstFill.intensity = 10 * lightFade * flicker
+
+    for (let i = 0; i < burstSparks.length; i++) {
+      const spark = burstSparks[i]
+      const alive = t >= 0 && t < 1.65
+      spark.visible = alive
+      if (!alive) continue
+      spark.position.set(
+        spark.userData.ox + spark.userData.vx * t,
+        spark.userData.oy - t * 1.7 - i * 0.03,
+        spark.userData.oz + spark.userData.vz * t
+      )
+      spark.rotation.set(t * 5 + i, 0.4, t * 6 + i * 0.5)
+    }
+    burstSparkMat.opacity = Math.max(0, 1 - t / 1.7)
+    burstSparkMat.emissiveIntensity = Math.max(0, 7 * (1 - t / 1.55))
+  }
+
+  function startFailBurst() {
+    failBurstArmed = false
+    failBurstT = 0
+    burstDebris.forEach((c, i) => {
+      c.mesh.visible = true
+      c.body.wakeUp()
+      c.body.position.set(1.18 + i * 0.12, 1.45 + i * 0.2, FAIL_BURST_Z + 0.15 - i * 0.4)
+      c.body.velocity.set(0.55 + i * 0.2, 3.2, -1.6 - i * 0.4)
+      c.body.angularVelocity.set(5.5, 3.4 * (i ? -1 : 1), 4.8)
+      c.body.quaternion.set(0, 0, 0, 1)
+    })
+    applyFailBurst()
+  }
+
+  unregisters.push(timeSystem.register(burstGroup, {
+    onUpdate(scaledDelta) {
+      if (failBurstT < 0) return
+      failBurstT = THREE.MathUtils.clamp(failBurstT + scaledDelta, 0, 2.2)
+      applyFailBurst()
+    },
+    getSnapshot: () => ({ failBurstT }),
+    restoreSnapshot: (s) => { failBurstT = s.failBurstT; applyFailBurst() }
   }))
 
   function detachCarriage(group, delay, dir) {
@@ -574,6 +752,7 @@ export function createTimewreckLevel({
 
     update(delta) {
       outdoorEnv.update(delta)
+      wreckExterior.update(delta, braking ? Math.max(0, 1 - brakeT / 2.5) : 1)
       env.update(delta)
       embers.update(delta)
       sparks.update(delta)
@@ -667,6 +846,8 @@ export function createTimewreckLevel({
         'Security car — the floor is gone. [2]/F FREEZE the suspended wreckage into a walkway.')
       hint('passenger', pp.z, spans.passenger.maxZ,
         'The train is coming apart behind you — do not stop.')
+
+      if (failBurstArmed && pp.z < FAIL_BURST_TRIGGER_Z) startFailBurst()
 
       // --- FAST-TIME CAR: runaway pistons ---------------------------------
       for (const r of rams) {
@@ -774,7 +955,8 @@ export function createTimewreckLevel({
       // outdoorEnv.dispose() only frees GPU resources — the group still has to
       // come out of the scene here or it survives every level teardown.
       outdoorEnv.dispose()
-      scene.remove(outdoorEnv.group, root)
+      wreckExterior.dispose()
+      scene.remove(outdoorEnv.group, wreckExterior.group, root)
       disposeObject(root)
     }
   }

@@ -142,12 +142,17 @@ function buildShell(key, length, shared, damaged, seals = {}) {
   g.add(floor)
 
   const wallMat = wallMaterialFor(key, length, damaged)
-  const wallGeo = new THREE.BoxGeometry(0.12, CARRIAGE_CEILING_Y, length)
-  for (const s of [-1, 1]) {
-    const w = new THREE.Mesh(wallGeo, wallMat)
-    w.position.set(s * WALL_X, CARRIAGE_CEILING_Y / 2, 0)
-    w.receiveShadow = true
-    g.add(w)
+  // Level 3 passenger/cab: omit the solid side walls so blown viewports can
+  // look through to the rushing exterior. Other cars keep a continuous hull.
+  const openSides = damaged && (key === 'passenger' || key === 'cab')
+  if (!openSides) {
+    const wallGeo = new THREE.BoxGeometry(0.12, CARRIAGE_CEILING_Y, length)
+    for (const s of [-1, 1]) {
+      const w = new THREE.Mesh(wallGeo, wallMat)
+      w.position.set(s * WALL_X, CARRIAGE_CEILING_Y / 2, 0)
+      w.receiveShadow = true
+      g.add(w)
+    }
   }
 
   const ceiling = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, length), wallMat)
@@ -174,16 +179,93 @@ function nearSite(sites, z, side, span = 1.35) {
   return sites.some((c) => Math.abs(z - c.z) < span && c.side === side)
 }
 
-function addWreckage(g, half, shared, fx) {
+// Level-3 passenger/cab: wall bands + pillars leave real openings so the
+// storm and exterior wreckage read through the windows. Frames only — glass
+// is gone. Player collision still uses carriage-bounds, not these meshes.
+function addBlownViewports(g, half, key, shared) {
+  const wallMat = wallMaterialFor(key, half * 2, true)
+  const paneH = key === 'cab' ? 0.84 : 0.96
+  const paneD = key === 'cab' ? 1.34 : 1.52
+  const paneY = key === 'cab' ? 1.6 : 1.5
+  const zs = []
+  if (key === 'cab') {
+    zs.push(0.6)
+  } else {
+    for (let z = -half + 2.4; z <= half - 2.4 + 0.01; z += 3.4) zs.push(z)
+  }
+
+  const sillY = paneY - paneH / 2
+  const lintelY = paneY + paneH / 2
+  const lowerH = Math.max(0.2, sillY)
+  const upperH = Math.max(0.2, CARRIAGE_CEILING_Y - lintelY)
+  const shardMat = new THREE.MeshStandardMaterial({
+    color: 0x5a6570, roughness: 0.08, metalness: 0.18,
+    transparent: true, opacity: 0.22, depthWrite: false
+  })
+  const shardCount = zs.length * 2
+  const shards = new THREE.InstancedMesh(new THREE.BoxGeometry(0.02, 0.28, 0.22), shardMat, shardCount)
+  const dummy = new THREE.Object3D()
+  let shardI = 0
+
+  for (const s of [-1, 1]) {
+    const x = s * WALL_X
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.12, lowerH, half * 2), wallMat)
+    lower.position.set(x, lowerH / 2, 0)
+    lower.receiveShadow = true
+    g.add(lower)
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.12, upperH, half * 2), wallMat)
+    upper.position.set(x, lintelY + upperH / 2, 0)
+    upper.receiveShadow = true
+    g.add(upper)
+
+    let cursor = -half
+    for (const z of zs) {
+      const a = z - paneD / 2
+      const span = a - cursor
+      if (span > 0.06) {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.12, paneH, span), wallMat)
+        pillar.position.set(x, paneY, cursor + span / 2)
+        pillar.receiveShadow = true
+        g.add(pillar)
+      }
+      const frame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, paneH + 0.1, paneD + 0.12),
+        shared.brass
+      )
+      frame.position.set(s * (WALL_X - 0.01), paneY, z)
+      g.add(frame)
+      dummy.position.set(s * (WALL_X - 0.03), paneY - 0.12, z + 0.28)
+      dummy.rotation.set(0.15, 0, s * 0.4)
+      dummy.updateMatrix()
+      shards.setMatrixAt(shardI++, dummy.matrix)
+      cursor = z + paneD / 2
+    }
+    const tail = half - cursor
+    if (tail > 0.06) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.12, paneH, tail), wallMat)
+      pillar.position.set(x, paneY, cursor + tail / 2)
+      pillar.receiveShadow = true
+      g.add(pillar)
+    }
+  }
+  shards.count = shardI
+  shards.instanceMatrix.needsUpdate = true
+  noCam(shards)
+  g.add(shards)
+}
+
+function addWreckage(g, half, shared, fx, key) {
   const panelMat = new THREE.MeshStandardMaterial({ color: 0x3a3e45, roughness: 0.72, metalness: 0.58 })
   const sites = damageSites(half)
   const n = sites.length
+  const openView = key === 'passenger' || key === 'cab'
 
   // Torn lining hinged off the wall at the ceiling joint — still wall-aligned.
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 1.45, 1.45), panelMat, n), n, (d, i) => {
+  // On cars with blown viewports, hang it inside the opening instead of filling it.
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, openView ? 1.15 : 1.45, openView ? 1.15 : 1.45), panelMat, n), n, (d, i) => {
     const c = sites[i]
-    d.position.set(c.side * (WALL_X - 0.06), 1.45, c.z)
-    d.rotation.set(0, 0, c.side * 0.14)
+    d.position.set(c.side * (WALL_X - (openView ? 0.28 : 0.06)), openView ? 1.95 : 1.45, c.z)
+    d.rotation.set(0, 0, c.side * (openView ? 0.22 : 0.14))
   }))
 
   // Ceiling tile still attached at the wall-roof corner, sagging inward a little.
@@ -442,17 +524,21 @@ function dressDamagedVault(g, half, shared, fx) {
 // --- Per-carriage dressing -------------------------------------------------
 
 function dressPassenger(g, half, shared, damaged, fx) {
-  const windowMat = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: damaged ? 0.3 : 0.95 })
-  const winGeo = new THREE.BoxGeometry(0.05, 0.9, 1.5)
-  const frameGeo = new THREE.BoxGeometry(0.05, 1.04, 1.66)
-  for (let z = -half + 2.4; z <= half - 2.4; z += 3.4) {
-    for (const s of [-1, 1]) {
-      const f = new THREE.Mesh(frameGeo, shared.brass)
-      f.position.set(s * (WALL_X - 0.05), 1.5, z)
-      g.add(f)
-      const p = new THREE.Mesh(winGeo, windowMat)
-      p.position.set(s * (WALL_X - 0.045), 1.5, z)
-      g.add(p)
+  if (damaged) {
+    addBlownViewports(g, half, 'passenger', shared)
+  } else {
+    const windowMat = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: 0.95 })
+    const winGeo = new THREE.BoxGeometry(0.05, 0.9, 1.5)
+    const frameGeo = new THREE.BoxGeometry(0.05, 1.04, 1.66)
+    for (let z = -half + 2.4; z <= half - 2.4; z += 3.4) {
+      for (const s of [-1, 1]) {
+        const f = new THREE.Mesh(frameGeo, shared.brass)
+        f.position.set(s * (WALL_X - 0.05), 1.5, z)
+        g.add(f)
+        const p = new THREE.Mesh(winGeo, windowMat)
+        p.position.set(s * (WALL_X - 0.045), 1.5, z)
+        g.add(p)
+      }
     }
   }
 
@@ -807,16 +893,8 @@ function buildLocomotiveCab(shared, fx) {
     group.add(lever)
   }
 
-  // Side windows onto the night rushing past.
-  const nightMat = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: 0.55 })
-  for (const s of [-1, 1]) {
-    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.8, 1.3), nightMat)
-    pane.position.set(s * (WALL_X - 0.045), 1.6, 0.6)
-    group.add(pane)
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.94, 1.46), shared.brass)
-    frame.position.set(s * (WALL_X - 0.05), 1.6, 0.6)
-    group.add(frame)
-  }
+  // Blown side openings onto the night rushing past.
+  addBlownViewports(group, half, 'cab', shared)
 
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.3, 0.05, CAB_LENGTH - 2),
@@ -825,7 +903,7 @@ function buildLocomotiveCab(shared, fx) {
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   group.add(strip)
 
-  addWreckage(group, half, shared, fx)
+  addWreckage(group, half, shared, fx, 'cab')
   return { group, half }
 }
 
@@ -952,7 +1030,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     else if (cfg.key === 'mechanical') parts.mechanical = dressMechanical(group, half, shared, damaged, fx)
     else if (cfg.key === 'vault') parts.vault = dressVault(group, half, shared, damaged, fx)
 
-    if (damaged) addWreckage(group, half, shared, fx)
+    if (damaged) addWreckage(group, half, shared, fx, cfg.key)
 
     cursor += cfg.length
   })
