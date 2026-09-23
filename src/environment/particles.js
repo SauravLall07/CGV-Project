@@ -254,7 +254,9 @@ export function createChronoMoteField({
     waveZ = null,
     depleted = false,
     walkwaySettle = 0,
-    fade = 1
+    fade = 1,
+    stasis = false,
+    playerZ = null
   } = {}) {
     const freezeHold = mode === 'FREEZE'
     const rewindBoost = mode === 'REWIND' ? 1.4 : 1
@@ -280,7 +282,12 @@ export function createChronoMoteField({
       const hy = homes[p + 1]
       let hz = homes[p + 2]
       if (zones[n] === 3) {
-        hz = depleted && waveZ != null ? waveZ + waveOff[waveI] : 90
+        if (stasis && playerZ != null && waveZ != null) {
+          const along = wave.count > 1 ? waveI / (wave.count - 1) : 0.5
+          hz = waveZ + (playerZ - waveZ) * (0.08 + along * 0.72)
+        } else {
+          hz = depleted && waveZ != null ? waveZ + waveOff[waveI] : 90
+        }
         waveI++
       }
       positions[p] = hx + Math.sin(t * 1.3) * a
@@ -296,6 +303,11 @@ export function createChronoMoteField({
     material.color.copy(tintColor)
     material.opacity = (freezeHold ? 0.55 : mode === 'SLOW' ? 0.3 : mode === 'REWIND' ? 0.5 : 0.38) * fade
     material.size = freezeHold ? 0.055 : depleted ? 0.052 : 0.045
+    if (stasis) {
+      material.color.setRGB(0.85, 0.94, 1)
+      material.opacity = 0.95 * fade
+      material.size = 0.11
+    }
   }
 
   return { points, update, material }

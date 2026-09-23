@@ -241,8 +241,13 @@ export function createTimewreckExterior({ minZ = -50, maxZ = 40, speed = 45 } = 
   return {
     group,
     update(delta, speedScale = 1) {
-      elapsed += delta
       const travel = delta * Math.max(0, speedScale)
+      if (travel <= 0) {
+        sparks.update(0)
+        embers.update(0)
+        return
+      }
+      elapsed += travel
 
       streakScroll += travel * speed * 1.55
       smearScroll += travel * speed * 2.1
@@ -271,7 +276,7 @@ export function createTimewreckExterior({ minZ = -50, maxZ = 40, speed = 45 } = 
       }
 
       for (const g of glitches) {
-        g.next -= delta
+        g.next -= travel
         if (g.next <= 0) {
           g.mode = (g.mode + 1) % 3
           g.hold = g.mode === 1 ? 0.7 + Math.abs(skew(elapsed * 3)) * 0.6 : 0
@@ -293,6 +298,20 @@ export function createTimewreckExterior({ minZ = -50, maxZ = 40, speed = 45 } = 
     },
     dispose() {
       disposeObject(group)
+    },
+    setFrozenLook(on) {
+      steelMat.emissive.setHex(on ? 0x7dd3fc : 0x080605)
+      steelMat.emissiveIntensity = on ? 1.1 : 0.15
+      panelMat.emissive.setHex(on ? 0x93c5fd : 0x1a0a06)
+      panelMat.emissiveIntensity = on ? 1.25 : 0.22
+      rustMat.emissive.setHex(on ? 0xdbeafe : 0x120804)
+      rustMat.emissiveIntensity = on ? 1.35 : 0.18
+      sparks.material.color.setHex(on ? 0xe0f2fe : 0xc44a22)
+      sparks.material.size = on ? 0.1 : 0.042
+      sparks.material.opacity = on ? 0.85 : 0.32
+      embers.material.color.setHex(on ? 0xbfdbfe : 0xa03818)
+      embers.material.size = on ? 0.13 : 0.07
+      embers.material.opacity = on ? 0.7 : 0.2
     }
   }
 }

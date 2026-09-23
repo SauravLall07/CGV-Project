@@ -34,6 +34,7 @@ import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
 const NIGHT_COLOR = new THREE.Color(0x140708)
 const DAWN_COLOR = new THREE.Color(0x2c3a56)
+const FINALE_FREEZE_COLOR = new THREE.Color(0x1a3358)
 const INTERIOR_HALF_WIDTH = 1.6
 
 // Deterministic scatter, matching the environment modules.
@@ -625,6 +626,24 @@ export function createTimewreckLevel({
   waveLight.position.y = 1.4
   root.add(waveLight)
 
+  const stasisLight = new THREE.PointLight(0x93c5fd, 0, 16, 2)
+  stasisLight.position.y = 1.35
+  stasisLight.userData.noCameraCollision = true
+  root.add(stasisLight)
+
+  const stasisPulseMat = createChronoFieldMaterial({
+    baseColor: 0x1e3a5f, glowColor: 0xbfdbfe, opacity: 0.0, doubleSided: true, depthWrite: false
+  })
+  const stasisPulse = new THREE.Mesh(new THREE.SphereGeometry(0.55, 18, 14), stasisPulseMat)
+  stasisPulse.name = 'finale-stasis-pulse'
+  stasisPulse.visible = false
+  stasisPulse.userData.noCameraCollision = true
+  root.add(stasisPulse)
+
+  let wasFinaleFreeze = false
+  let finalePulseT = -1
+  let resumeFlashT = -1
+
   const DEPLETE_Z = spans.passenger.center
   const WAVE_SPEED = 6.2 // just under the player's 7.2 m/s sprint
   const WAVE_LEAD = 6
@@ -728,6 +747,31 @@ export function createTimewreckLevel({
         chunk.mesh.quaternion.copy(chunk.body.quaternion)
       })
 
+      wasFinaleFreeze = false
+      finalePulseT = -1
+      resumeFlashT = -1
+      stasisPulse.visible = false
+      stasisLight.intensity = 0
+      wreckExterior.setFrozenLook(false)
+      embers.material.color.setHex(0xff8a3c)
+      embers.material.size = 0.055
+      embers.material.opacity = 0.75
+      sparks.material.color.setHex(0xffd9a0)
+      sparks.material.size = 0.028
+      sparks.material.opacity = 0.4
+      chunkMat.color.setHex(0x39332c)
+      chunkMat.emissive.setHex(0x2a0c04)
+      chunkMat.emissiveIntensity = 0.6
+      burstPanelMat.emissive.setHex(0x2a1810)
+      burstPanelMat.emissiveIntensity = 0.35
+      waveLight.color.setHex(0xa855f7)
+      waveLight.distance = 8
+      waveMat.customUniforms.uOpacity.value = 0.6
+      burstSteel.emissive.setHex(0x000000)
+      burstSteel.emissiveIntensity = 0
+      luggageMat.emissive.setHex(0x000000)
+      luggageMat.emissiveIntensity = 0
+
       waveZ = depleted ? DEPLETE_Z + WAVE_LEAD : 0
       wave.position.z = waveZ
       wave.scale.set(1, 1, 1)
@@ -751,16 +795,35 @@ export function createTimewreckLevel({
     get isCinematic() { return braking },
 
     update(delta) {
-      outdoorEnv.update(delta)
-      wreckExterior.update(delta, braking ? Math.max(0, 1 - brakeT / 2.5) : 1)
-      env.update(delta)
-      embers.update(delta)
-      sparks.update(delta)
+      const mode = timeSystem.getMode()
+      const finaleFreeze = depleted && mode === 'FREEZE' && !braking
+      if (finaleFreeze && !wasFinaleFreeze) {
+        finalePulseT = 0
+        resumeFlashT = -1
+      }
+      if (wasFinaleFreeze && !finaleFreeze && depleted && !braking) {
+        resumeFlashT = 0
+        finalePulseT = -1
+      }
+      wasFinaleFreeze = finaleFreeze
+      if (finalePulseT >= 0) finalePulseT += delta
+      if (resumeFlashT >= 0) resumeFlashT += delta
+      if (resumeFlashT > 0.5) resumeFlashT = -1
+      if (finalePulseT > 0.5) finalePulseT = -1
+
+      const resumeBoost = resumeFlashT >= 0 && resumeFlashT < 0.22 ? 1.4 : 1
+      const exteriorScale = braking
+        ? Math.max(0, 1 - brakeT / 2.5)
+        : finaleFreeze ? 0 : resumeBoost
+      outdoorEnv.update(finaleFreeze ? 0 : delta)
+      wreckExterior.update(delta, exteriorScale)
+      env.update(finaleFreeze ? 0 : delta)
+      embers.update(finaleFreeze ? 0 : delta)
+      sparks.update(finaleFreeze ? 0 : delta)
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
 
       const pp = player.mesh.position
-      const mode = timeSystem.getMode()
       const modeInt = MODE_INT[mode] ?? 0
       let motionScale = 1
       if (mode === 'SLOW') motionScale = 0.2
@@ -776,22 +839,96 @@ export function createTimewreckLevel({
         waveZ,
         depleted,
         walkwaySettle: slabSettle,
-        fade: chronoFade
+        fade: chronoFade,
+        stasis: finaleFreeze,
+        playerZ: pp.z
       })
 
       // Shader uniforms for the frozen-walkway slabs and the time wave.
       const freezePulse = mode === 'FREEZE' ? 0.1 * (0.5 + 0.5 * Math.sin(elapsed * 3.4)) : 0
-      slabMat.customUniforms.uTime.value += delta
+      slabMat.customUniforms.uTime.value += finaleFreeze ? 0 : delta
       slabMat.customUniforms.uMode.value = modeInt
       slabMat.customUniforms.uIntensity.value = 0.35 + slabSettle * 0.65 + freezePulse
-      waveMat.customUniforms.uTime.value += delta
-      waveMat.customUniforms.uMode.value = 3
+      if (!finaleFreeze) waveMat.customUniforms.uTime.value += delta
+      waveMat.customUniforms.uMode.value = finaleFreeze ? 2 : 3
+      const resumeWave = resumeFlashT >= 0 ? Math.max(0, 1 - resumeFlashT / 0.4) * 0.7 : 0
       waveMat.customUniforms.uIntensity.value = depleted
-        ? 1.12 + Math.sin(elapsed * 5.5) * 0.12
+        ? (finaleFreeze ? 1.55 + Math.sin(elapsed * 2.2) * 0.12 : 1.12 + Math.sin(elapsed * 5.5) * 0.12) + resumeWave
         : 1.0
+      waveMat.customUniforms.uOpacity.value = finaleFreeze ? 0.92 : 0.6
+      wave.scale.set(finaleFreeze ? 1.14 : 1, finaleFreeze ? 1.18 : 1, 1)
       walkwayGlow.intensity = slabSettle * (mode === 'FREEZE' ? 4.2 : 1.6)
 
-      lever.rotation.x = -0.4 + Math.sin(elapsed * 2.2) * 0.05
+      if (!finaleFreeze) lever.rotation.x = -0.4 + Math.sin(elapsed * 2.2) * 0.05
+
+      wreckExterior.setFrozenLook(finaleFreeze)
+
+      const resumeWarm = resumeFlashT >= 0 ? Math.max(0, 1 - resumeFlashT / 0.45) : 0
+      stasisLight.position.set(pp.x, 1.45, pp.z)
+      stasisLight.distance = finaleFreeze ? 24 : 16
+      stasisLight.intensity = finaleFreeze ? 12 : resumeWarm * 16
+      stasisLight.color.setHex(finaleFreeze ? 0xdbeafe : 0xff6a32)
+
+      if (finalePulseT >= 0 && finalePulseT < 0.48) {
+        const u = finalePulseT / 0.48
+        stasisPulse.visible = true
+        stasisPulse.position.set(pp.x, 1.15, pp.z)
+        stasisPulse.scale.setScalar(0.45 + u * 9.5)
+        stasisPulseMat.customUniforms.uTime.value += delta
+        stasisPulseMat.customUniforms.uMode.value = 2
+        stasisPulseMat.customUniforms.uIntensity.value = 1.15 * (1 - u)
+        stasisPulseMat.customUniforms.uOpacity.value = 0.22 * (1 - u) * (1 - u)
+      } else {
+        stasisPulse.visible = false
+        stasisPulseMat.customUniforms.uOpacity.value = 0
+      }
+
+      if (finaleFreeze) {
+        scene.background.copy(FINALE_FREEZE_COLOR)
+        scene.fog.color.copy(FINALE_FREEZE_COLOR)
+        scene.fog.near = 6
+        scene.fog.far = 88
+        chunkMat.color.setHex(0x64748b)
+        chunkMat.emissive.setHex(0xbfdbfe)
+        chunkMat.emissiveIntensity = 1.85
+        burstPanelMat.emissive.setHex(0x93c5fd)
+        burstPanelMat.emissiveIntensity = 1.35
+        burstSteel.emissive.setHex(0xdbeafe)
+        burstSteel.emissiveIntensity = 1.1
+        luggageMat.emissive.setHex(0x7dd3fc)
+        luggageMat.emissiveIntensity = 0.95
+        burstSparkMat.color.setHex(0xf0f9ff)
+        burstSparkMat.emissive.setHex(0xe0f2fe)
+        burstSparkMat.emissiveIntensity = 8
+        embers.material.color.setHex(0xdbeafe)
+        embers.material.size = 0.12
+        embers.material.opacity = 0.95
+        sparks.material.color.setHex(0xffffff)
+        sparks.material.size = 0.085
+        sparks.material.opacity = 1
+      } else if (!braking) {
+        scene.background.setHex(resumeWarm > 0.08 ? 0x2c1008 : NIGHT_COLOR.getHex())
+        scene.fog.color.set(resumeWarm > 0.08 ? 0x3a1408 : 0x1a0708)
+        scene.fog.near = 10
+        scene.fog.far = resumeWarm > 0 ? 55 + (1 - resumeWarm) * 65 : 120
+        chunkMat.color.setHex(0x39332c)
+        chunkMat.emissive.setHex(resumeWarm > 0.08 ? 0xff4a18 : 0x2a0c04)
+        chunkMat.emissiveIntensity = 0.6 + resumeWarm * 2.6
+        burstPanelMat.emissive.setHex(resumeWarm > 0.08 ? 0xff5318 : 0x2a1810)
+        burstPanelMat.emissiveIntensity = 0.35 + resumeWarm * 1.8
+        burstSteel.emissive.setHex(0x000000)
+        burstSteel.emissiveIntensity = 0
+        luggageMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a28 : 0x000000)
+        luggageMat.emissiveIntensity = resumeWarm * 1.2
+        burstSparkMat.color.setHex(0xffe8c0)
+        burstSparkMat.emissive.setHex(0xffc078)
+        embers.material.color.setHex(resumeWarm > 0.08 ? 0xff5a20 : 0xff8a3c)
+        embers.material.size = 0.055 + resumeWarm * 0.05
+        embers.material.opacity = 0.75 + resumeWarm * 0.2
+        sparks.material.color.setHex(resumeWarm > 0.08 ? 0xffd9a0 : 0xffd9a0)
+        sparks.material.size = 0.028 + resumeWarm * 0.04
+        sparks.material.opacity = 0.4 + resumeWarm * 0.45
+      }
 
       // --- Brake pulled: the stop-on-the-bridge cinematic -----------------
       if (braking) {
@@ -824,9 +961,11 @@ export function createTimewreckLevel({
       }
 
       // --- Ambient instability: the whole train lurches, worse over time ---
-      const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
-      root.rotation.z = (Math.sin(elapsed * 1.7) * 0.012 + Math.sin(elapsed * 4.3) * 0.004) * unrest
-      root.position.y = Math.sin(elapsed * 6.1) * 0.012 * unrest
+      if (!finaleFreeze) {
+        const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
+        root.rotation.z = (Math.sin(elapsed * 1.7) * 0.012 + Math.sin(elapsed * 4.3) * 0.004) * unrest
+        root.position.y = Math.sin(elapsed * 6.1) * 0.012 * unrest
+      }
 
       // --- Rolling checkpoints (descending z) -----------------------------
       for (const z of checkpointZs) {
@@ -901,7 +1040,7 @@ export function createTimewreckLevel({
         chunkGroup.visible = true
         hud.showToast('The couplings are letting go — RUN!', 2600)
       }
-      if (breakupT >= 0) {
+      if (breakupT >= 0 && !finaleFreeze) {
         breakupT += delta
         // Each carriage yaws, rolls and drops independently of its siblings —
         // the Train/Carriage hierarchy doing real work.
@@ -940,8 +1079,12 @@ export function createTimewreckLevel({
         const holding = mode === 'FREEZE'
         if (!holding && !respawn.isFailing()) waveZ -= WAVE_SPEED * delta
         wave.position.z = waveZ
-        waveLight.position.z = waveZ
-        waveLight.intensity = (mode === 'FREEZE' ? 16 : 13) + Math.sin(elapsed * 9) * 3
+        waveLight.position.z = finaleFreeze ? THREE.MathUtils.lerp(waveZ, pp.z, 0.32) : waveZ
+        waveLight.distance = finaleFreeze ? 22 : 8
+        waveLight.color.setHex(finaleFreeze ? 0xbfdbfe : 0xa855f7)
+        waveLight.intensity = finaleFreeze
+          ? 26 + Math.sin(elapsed * 2.3) * 2
+          : 13 + Math.sin(elapsed * 9) * 3 + resumeWarm * 10
 
         if (waveZ <= pp.z + 0.35 && failCooldown <= 0) {
           failSoft('Time caught up with you!')
