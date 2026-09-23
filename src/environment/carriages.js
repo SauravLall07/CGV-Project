@@ -184,9 +184,9 @@ function nearSite(sites, z, side, span = 1.35) {
 // is gone. Player collision still uses carriage-bounds, not these meshes.
 function addBlownViewports(g, half, key, shared) {
   const wallMat = wallMaterialFor(key, half * 2, true)
-  const paneH = key === 'cab' ? 0.84 : 0.96
-  const paneD = key === 'cab' ? 1.34 : 1.52
-  const paneY = key === 'cab' ? 1.6 : 1.5
+  const paneH = key === 'cab' ? 0.92 : 1.12
+  const paneD = key === 'cab' ? 1.48 : 1.68
+  const paneY = key === 'cab' ? 1.58 : 1.48
   const zs = []
   if (key === 'cab') {
     zs.push(0.6)
@@ -199,11 +199,11 @@ function addBlownViewports(g, half, key, shared) {
   const lowerH = Math.max(0.2, sillY)
   const upperH = Math.max(0.2, CARRIAGE_CEILING_Y - lintelY)
   const shardMat = new THREE.MeshStandardMaterial({
-    color: 0x5a6570, roughness: 0.08, metalness: 0.18,
-    transparent: true, opacity: 0.22, depthWrite: false
+    color: 0x4a5560, roughness: 0.08, metalness: 0.18,
+    transparent: true, opacity: 0.07, depthWrite: false
   })
   const shardCount = zs.length * 2
-  const shards = new THREE.InstancedMesh(new THREE.BoxGeometry(0.02, 0.28, 0.22), shardMat, shardCount)
+  const shards = new THREE.InstancedMesh(new THREE.BoxGeometry(0.016, 0.14, 0.12), shardMat, shardCount)
   const dummy = new THREE.Object3D()
   let shardI = 0
 
@@ -234,8 +234,8 @@ function addBlownViewports(g, half, key, shared) {
       )
       frame.position.set(s * (WALL_X - 0.01), paneY, z)
       g.add(frame)
-      dummy.position.set(s * (WALL_X - 0.03), paneY - 0.12, z + 0.28)
-      dummy.rotation.set(0.15, 0, s * 0.4)
+      dummy.position.set(s * (WALL_X - 0.02), paneY - 0.28, z + paneD * 0.28)
+      dummy.rotation.set(0.2, 0, s * 0.55)
       dummy.updateMatrix()
       shards.setMatrixAt(shardI++, dummy.matrix)
       cursor = z + paneD / 2
@@ -262,10 +262,10 @@ function addWreckage(g, half, shared, fx, key) {
 
   // Torn lining hinged off the wall at the ceiling joint — still wall-aligned.
   // On cars with blown viewports, hang it inside the opening instead of filling it.
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, openView ? 1.15 : 1.45, openView ? 1.15 : 1.45), panelMat, n), n, (d, i) => {
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, openView ? 0.82 : 1.45, openView ? 0.7 : 1.45), panelMat, n), n, (d, i) => {
     const c = sites[i]
-    d.position.set(c.side * (WALL_X - (openView ? 0.28 : 0.06)), openView ? 1.95 : 1.45, c.z)
-    d.rotation.set(0, 0, c.side * (openView ? 0.22 : 0.14))
+    d.position.set(c.side * (WALL_X - (openView ? 0.48 : 0.06)), openView ? 2.08 : 1.45, c.z)
+    d.rotation.set(0, 0, c.side * (openView ? 0.18 : 0.14))
   }))
 
   // Ceiling tile still attached at the wall-roof corner, sagging inward a little.
@@ -313,7 +313,18 @@ function addWreckage(g, half, shared, fx, key) {
 // Registers a point light for the emergency-lighting flicker in update().
 function addLight(g, fx, light, damaged) {
   g.add(light)
-  if (damaged) fx.lights.push({ light, base: light.intensity, seed: fx.lights.length * 3.7 })
+  if (!damaged) return
+  const i = fx.lights.length
+  fx.lights.push({
+    light,
+    base: light.intensity,
+    seed: i * 3.7,
+    pattern: i % 4,
+    car: fx.car || '',
+    dead: false,
+    pendingKill: false,
+    surge: 0
+  })
 }
 
 // Level-3-only dressing: wall-hugging wreckage so the ±0.58 aisle stays clear.
@@ -1024,6 +1035,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     carriages[cfg.key] = group
     spans[cfg.key] = { minZ: cursor, maxZ: cursor + cfg.length, center }
 
+    if (damaged) fx.car = cfg.key
     if (cfg.key === 'passenger') dressPassenger(group, half, shared, damaged, fx)
     else if (cfg.key === 'security') dressSecurity(group, half, shared, damaged, fx)
     else if (cfg.key === 'cargo') dressCargo(group, half, shared, damaged, fx)
@@ -1041,6 +1053,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     roof = buildRoof(spans, shared)
     root.add(roof.group)
   } else {
+    fx.car = 'cab'
     const cab = buildLocomotiveCab(shared, fx)
     const cabCenter = spans.passenger.minZ - cab.half
     cab.group.position.z = cabCenter
@@ -1075,19 +1088,91 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   // Emergency lighting flickers and severed cables spark; Level 2's steady
   // interior lighting makes this a no-op, so levels can call it unconditionally.
   let elapsed = 0
+  function passengerLightWorldZ(entry) {
+    return (entry.light.parent?.position.z || 0) + entry.light.position.z
+  }
+
   function update(delta) {
     if (!damaged) return
+    if (delta === 0) return
     elapsed += delta
+    const t = elapsed
     for (const entry of fx.lights) {
-      const flicker = 0.6 + 0.4 * Math.abs(
-        Math.sin(elapsed * 9 + entry.seed) * Math.sin(elapsed * 3.1 + entry.seed)
-      )
-      entry.light.intensity = entry.base * flicker
+      if (entry.dead) {
+        entry.light.intensity = 0
+        continue
+      }
+      if (entry.surge > 0) {
+        entry.surge = Math.max(0, entry.surge - Math.abs(delta))
+        entry.light.intensity = entry.base * (0.05 + 0.95 * Math.abs(Math.sin(t * 46 + entry.seed)))
+        if (entry.surge === 0 && entry.pendingKill) {
+          entry.dead = true
+          entry.light.intensity = 0
+        }
+        continue
+      }
+      const seed = entry.seed
+      let mul = 1
+      if (entry.pattern === 0) {
+        const a = Math.sin(t * 11.3 + seed)
+        const b = Math.sin(t * 2.7 + seed * 1.4)
+        const c = Math.sin(t * 0.83 + seed)
+        mul = 0.42 + 0.58 * Math.abs(a * b)
+        if (c > 0.78) mul *= 0.12
+      } else if (entry.pattern === 1) {
+        const drop = Math.sin(t * 0.55 + seed) * Math.sin(t * 1.21 + seed * 2)
+        mul = drop > 0.84 ? 0.08 : drop > 0.62 ? 0.38 : 0.88 + 0.12 * Math.sin(t * 4.2 + seed)
+      } else if (entry.pattern === 2) {
+        mul = 0.55 + 0.45 * Math.abs(Math.sin(t * 8.4 + seed) * Math.sin(t * 3.05 + seed))
+      } else {
+        mul = 0.9 + 0.1 * Math.sin(t * 2.2 + seed)
+      }
+      entry.light.intensity = entry.base * mul
     }
     for (const mat of fx.sparkMats) {
-      mat.emissiveIntensity = 0.7 + Math.abs(Math.sin(elapsed * 17)) * 2.4
+      mat.emissiveIntensity = 0.7 + Math.abs(Math.sin(t * 17)) * 2.4
     }
   }
 
-  return { root, carriages, spans, roof, parts, interiorBounds, roofBounds, vaultBounds, update }
+  function shockPassengerLights() {
+    if (!damaged) return
+    let kill = null
+    let killZ = -Infinity
+    for (const entry of fx.lights) {
+      if (entry.car !== 'passenger' || entry.dead) continue
+      entry.surge = 0.85
+      const wz = passengerLightWorldZ(entry)
+      if (wz > killZ) {
+        killZ = wz
+        kill = entry
+      }
+    }
+    if (kill) kill.pendingKill = true
+  }
+
+  function restorePassengerLights(collapsed) {
+    if (!damaged) return
+    let kill = null
+    let killZ = -Infinity
+    for (const entry of fx.lights) {
+      if (entry.car !== 'passenger') continue
+      const wz = passengerLightWorldZ(entry)
+      if (wz > killZ) {
+        killZ = wz
+        kill = entry
+      }
+    }
+    for (const entry of fx.lights) {
+      if (entry.car !== 'passenger') continue
+      entry.surge = 0
+      entry.pendingKill = false
+      entry.dead = Boolean(collapsed && entry === kill)
+      entry.light.intensity = entry.dead ? 0 : entry.base
+    }
+  }
+
+  return {
+    root, carriages, spans, roof, parts, interiorBounds, roofBounds, vaultBounds,
+    update, shockPassengerLights, restorePassengerLights
+  }
 }

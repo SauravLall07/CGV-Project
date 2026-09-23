@@ -566,6 +566,7 @@ export function createTimewreckLevel({
     collapseFloorT = 0
     setCollapseVoid(true)
     applyCollapseMotion()
+    env.shockPassengerLights?.()
     collapseHintHoldUntil = elapsed + COLLAPSE_HINT_S
     pendingToast = null
     hud.showToast(COLLAPSE_HINT, COLLAPSE_HINT_S * 1000)
@@ -961,6 +962,24 @@ export function createTimewreckLevel({
     area: { halfX: 1.45, minY: 0.05, maxY: 2.55, minZ: spans.cab.minZ, maxZ: spans.vault.maxZ },
     color: 0xffd9a0, size: 0.028, opacity: 0.4, gravity: -0.9, drift: 0.35, seed: 29
   })
+  const openingWind = createParticleField({
+    count: 48,
+    area: {
+      halfX: 1.62, minAbsX: 1.18,
+      minY: 0.85, maxY: 2.15,
+      minZ: spans.cab.minZ + 0.4, maxZ: spans.passenger.maxZ - 0.4
+    },
+    color: 0x9aa8b8, size: 0.032, opacity: 0.28, gravity: 0.08, drift: 0.55, streamZ: 6.5, seed: 61
+  })
+  const openingSparks = createParticleField({
+    count: 28,
+    area: {
+      halfX: 1.58, minAbsX: 1.2,
+      minY: 1.05, maxY: 2.35,
+      minZ: spans.cab.minZ + 0.4, maxZ: spans.passenger.maxZ - 0.4
+    },
+    color: 0xffd9a0, size: 0.024, opacity: 0.38, gravity: -0.55, drift: 0.4, streamZ: 4.2, seed: 73
+  })
   const chronoMotes = createChronoMoteField({
     seed: 47,
     ambient: {
@@ -975,7 +994,7 @@ export function createTimewreckLevel({
     walkway: { count: 12, minZ: gapMinZ, maxZ: gapMaxZ, halfX: 1.1 },
     wave: { count: 22, halfZ: 3.4, halfX: 1.15 }
   })
-  root.add(embers.points, sparks.points, chronoMotes.points)
+  root.add(embers.points, sparks.points, openingWind.points, openingSparks.points, chronoMotes.points)
 
   // ============================================================
   const lever = brake.getObjectByName('brake-lever')
@@ -1023,6 +1042,7 @@ export function createTimewreckLevel({
       collapseSettle = 0
       setCollapseVoid(collapseLive)
       applyCollapseMotion()
+      env.restorePassengerLights?.(collapseLive)
       failCooldown = 0
       braking = false
       brakeT = 0
@@ -1100,14 +1120,21 @@ export function createTimewreckLevel({
       if (finalePulseT > 0.5) finalePulseT = -1
 
       const resumeBoost = resumeFlashT >= 0 && resumeFlashT < 0.22 ? 1.4 : 1
+      let motionScale = 1
+      if (mode === 'SLOW') motionScale = 0.2
+      else if (mode === 'FREEZE') motionScale = 0
+      else if (mode === 'REWIND') motionScale = -1.25
+      const envDt = motionScale * delta
       const exteriorScale = braking
         ? Math.max(0, 1 - brakeT / 2.5)
-        : finaleFreeze ? 0 : resumeBoost
-      outdoorEnv.update(finaleFreeze ? 0 : delta)
+        : mode === 'FREEZE' ? 0 : resumeBoost * (mode === 'SLOW' ? 0.2 : 1)
+      outdoorEnv.update(envDt)
       wreckExterior.update(delta, exteriorScale)
-      env.update(finaleFreeze ? 0 : delta)
-      embers.update(finaleFreeze ? 0 : delta)
-      sparks.update(finaleFreeze ? 0 : delta)
+      env.update(envDt)
+      embers.update(envDt)
+      sparks.update(envDt)
+      openingWind.update(envDt)
+      openingSparks.update(envDt)
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
       if (collapseHintHoldUntil > 0 && elapsed >= collapseHintHoldUntil) {
@@ -1125,10 +1152,6 @@ export function createTimewreckLevel({
 
       const pp = player.mesh.position
       const modeInt = MODE_INT[mode] ?? 0
-      let motionScale = 1
-      if (mode === 'SLOW') motionScale = 0.2
-      else if (mode === 'FREEZE') motionScale = 0
-      else if (mode === 'REWIND') motionScale = -1.25
 
       const chronoFade = braking ? Math.max(0, 1 - brakeT * 0.9) : 1
       chronoMotes.update(delta, {
