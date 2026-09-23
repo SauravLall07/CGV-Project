@@ -920,6 +920,92 @@ export function createTimewreckLevel({
   stasisPulse.userData.noCameraCollision = true
   root.add(stasisPulse)
 
+  const FRACTURE_S = 2
+  const FRACTURE_Z = spans.vault.center
+  let fractureArmed = true
+  let fractureT = -1
+  const vaultFx = env.getVaultFracture?.() || { lights: [], mats: [], pieces: [] }
+  const vaultMatRest = vaultFx.mats.map((m) => ({
+    color: m.color.clone(),
+    emissive: m.emissive.clone(),
+    ei: m.emissiveIntensity
+  }))
+  const vaultLightRest = vaultFx.lights.map((e) => ({
+    hex: e.light.color.getHex(),
+    base: e.base
+  }))
+  const fractureMat = createChronoFieldMaterial({
+    baseColor: 0x1e1033, glowColor: 0xa855f7, opacity: 0, doubleSided: true, depthWrite: false
+  })
+  const fracturePulse = new THREE.Mesh(new THREE.SphereGeometry(0.48, 16, 12), fractureMat)
+  fracturePulse.name = 'vault-temporal-fracture'
+  fracturePulse.visible = false
+  fracturePulse.userData.noCameraCollision = true
+  const vaultHalf = (spans.vault.maxZ - spans.vault.minZ) / 2
+  fracturePulse.position.set(0, 1.38, vaultHalf - 1.2)
+  carriages.vault.add(fracturePulse)
+  const fractureFill = new THREE.PointLight(0xa855f7, 0, 7, 2)
+  fractureFill.position.copy(fracturePulse.position)
+  carriages.vault.add(fractureFill)
+
+  function applyVaultFracture(state) {
+    for (let i = 0; i < vaultFx.mats.length; i++) {
+      const m = vaultFx.mats[i]
+      const rest = vaultMatRest[i]
+      if (!m || !rest) continue
+      if (state === 1) {
+        m.color.setHex(0x334155)
+        m.emissive.setHex(0x7dd3fc)
+        m.emissiveIntensity = rest.ei * 1.15 + 0.45
+      } else if (state === 2) {
+        m.color.setHex(0x2e1064)
+        m.emissive.setHex(0xc084fc)
+        m.emissiveIntensity = rest.ei * 1.7 + 0.8
+      } else {
+        m.color.copy(rest.color)
+        m.emissive.copy(rest.emissive)
+        m.emissiveIntensity = rest.ei
+      }
+    }
+    for (let i = 0; i < vaultFx.lights.length; i++) {
+      const e = vaultFx.lights[i]
+      const rest = vaultLightRest[i]
+      if (!e || !rest) continue
+      if (state === 1) {
+        e.light.color.setHex(0x7dd3fc)
+        e.light.intensity = rest.base * 1.25
+      } else if (state === 2) {
+        e.light.color.setHex(0xd946ef)
+        e.light.intensity = rest.base * 1.85
+      } else {
+        e.light.color.setHex(rest.hex)
+        e.light.intensity = rest.base
+      }
+    }
+    for (let i = 0; i < vaultFx.pieces.length; i++) {
+      const p = vaultFx.pieces[i]
+      const k = (i % 2) ? 1 : -1
+      if (state === 1) {
+        p.mesh.position.set(p.x, p.y + 0.07, p.z - 0.1)
+        p.mesh.rotation.set(p.rx, p.ry + 0.08 * k, p.rz)
+      } else if (state === 2) {
+        p.mesh.position.set(p.x + 0.05 * k, p.y - 0.04, p.z + 0.08)
+        p.mesh.rotation.set(p.rx + 0.12, p.ry, p.rz - 0.1 * k)
+      } else {
+        p.mesh.position.set(p.x, p.y, p.z)
+        p.mesh.rotation.set(p.rx, p.ry, p.rz)
+      }
+    }
+  }
+
+  function endVaultFracture() {
+    fractureT = -2
+    applyVaultFracture(0)
+    fracturePulse.visible = false
+    fractureFill.intensity = 0
+    fractureMat.customUniforms.uOpacity.value = 0
+  }
+
   let wasFinaleFreeze = false
   let finalePulseT = -1
   let resumeFlashT = -1
@@ -1010,6 +1096,8 @@ export function createTimewreckLevel({
       lastCheckpointZ,
       collapseArmed,
       collapseLive,
+      fractureArmed,
+      fractureT,
       bounds: { ...bounds },
       carriages: Object.values(carriages).map((group) => ({
         group,
@@ -1043,6 +1131,12 @@ export function createTimewreckLevel({
       setCollapseVoid(collapseLive)
       applyCollapseMotion()
       env.restorePassengerLights?.(collapseLive)
+      fractureArmed = saved.fractureArmed
+      fractureT = saved.fractureT
+      applyVaultFracture(0)
+      fracturePulse.visible = false
+      fractureFill.intensity = 0
+      fractureMat.customUniforms.uOpacity.value = 0
       failCooldown = 0
       braking = false
       brakeT = 0
@@ -1152,6 +1246,30 @@ export function createTimewreckLevel({
 
       const pp = player.mesh.position
       const modeInt = MODE_INT[mode] ?? 0
+
+      if (fractureArmed && pp.z > FRACTURE_Z) {
+        fractureArmed = false
+        fractureT = 0
+      }
+      if (fractureT >= 0) {
+        if (mode !== 'FREEZE') fractureT += delta
+        if (fractureT >= FRACTURE_S) {
+          endVaultFracture()
+        } else {
+          const state = Math.floor(fractureT * 10) % 3
+          applyVaultFracture(state)
+          fracturePulse.visible = true
+          const pulse = 0.35 + 0.65 * Math.abs(Math.sin(fractureT * 16))
+          fracturePulse.scale.setScalar(1.15 + state * 0.85 + pulse * 0.35)
+          fractureMat.customUniforms.uTime.value += mode === 'FREEZE' ? 0 : delta
+          fractureMat.customUniforms.uMode.value = state === 1 ? 2 : 3
+          fractureMat.customUniforms.uIntensity.value = 0.65 + pulse * 0.55
+          fractureMat.customUniforms.uOpacity.value = 0.16 + pulse * 0.14
+          fractureMat.customUniforms.uGlowColor.value.setHex(state === 1 ? 0x7dd3fc : 0xc084fc)
+          fractureFill.color.setHex(state === 1 ? 0x7dd3fc : 0xa855f7)
+          fractureFill.intensity = 3.5 + pulse * 7
+        }
+      }
 
       const chronoFade = braking ? Math.max(0, 1 - brakeT * 0.9) : 1
       chronoMotes.update(delta, {

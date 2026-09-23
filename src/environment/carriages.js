@@ -493,24 +493,49 @@ function dressDamagedPassenger(g, half, shared, fx) {
   }))
 }
 
+function rememberVaultPiece(fx, mesh) {
+  if (!fx.vaultPieces) fx.vaultPieces = []
+  if (fx.vaultPieces.length >= 4) return
+  fx.vaultPieces.push({
+    mesh,
+    x: mesh.position.x,
+    y: mesh.position.y,
+    z: mesh.position.z,
+    rx: mesh.rotation.x,
+    ry: mesh.rotation.y,
+    rz: mesh.rotation.z
+  })
+}
+
+function rememberVaultMat(fx, mat) {
+  if (!fx.vaultMats) fx.vaultMats = []
+  fx.vaultMats.push(mat)
+}
+
 function dressDamagedVault(g, half, shared, fx) {
   const sites = [{ z: half - 1.8, side: -1 }, { z: half - 1.8, side: 1 }]
   const plateMat = metalMaterial({ repeat: [1, 1], base: 0x252830, roughness: 0.48, metalness: 0.82 })
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.04, 1.2, 1.15), plateMat, 2), 2, (d, i) => {
+  rememberVaultMat(fx, plateMat)
+  const plates = scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.04, 1.2, 1.15), plateMat, 2), 2, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * (WALL_X - 0.08), 1.15, c.z)
     d.rotation.set(0, 0, c.side * 0.08)
-  }))
+  })
+  g.add(plates)
+  rememberVaultPiece(fx, plates)
 
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.2), shared.steel, 2), 2, (d, i) => {
+  const rails = scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.2), shared.steel, 2), 2, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * 1.18, 0.14, c.z)
     d.rotation.set(0, 0, c.side * 0.05)
-  }))
+  })
+  g.add(rails)
+  rememberVaultPiece(fx, rails)
 
   const scorch = new THREE.MeshStandardMaterial({
     color: 0x1e1b4b, emissive: 0x6d28d9, emissiveIntensity: 0.85, roughness: 0.7
   })
+  rememberVaultMat(fx, scorch)
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.38, 0.015, 1.05), scorch, 2), 2, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * 1.18, 0.02, c.z)
@@ -520,11 +545,13 @@ function dressDamagedVault(g, half, shared, fx) {
   const vein = new THREE.MeshStandardMaterial({
     color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 1.35, roughness: 0.35
   })
+  rememberVaultMat(fx, vein)
   for (const c of sites) {
     const streak = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.5, 0.08), vein)
     streak.position.set(c.side * (WALL_X - 0.07), 1.15, c.z)
     noCam(streak)
     g.add(streak)
+    rememberVaultPiece(fx, streak)
     addSagCable(g, vein, c.side * (WALL_X - 0.1), 2.18, c.z - 0.3, c.side * 1.12, 0.7, c.z + 0.25, 0.24)
   }
 
@@ -825,6 +852,7 @@ function dressVault(g, half, shared, damaged, fx) {
   )
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
+  if (damaged) rememberVaultMat(fx, strip.material)
   const l = new THREE.PointLight(damaged ? 0x8b6cff : 0x7cc4ff, damaged ? 9 : 16, damaged ? 8 : 12, 2)
   l.position.set(0, CARRIAGE_CEILING_Y - 0.3, 0)
   addLight(g, fx, l, damaged)
@@ -1173,6 +1201,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
 
   return {
     root, carriages, spans, roof, parts, interiorBounds, roofBounds, vaultBounds,
-    update, shockPassengerLights, restorePassengerLights
+    update, shockPassengerLights, restorePassengerLights,
+    getVaultFracture: () => ({
+      lights: fx.lights.filter((e) => e.car === 'vault'),
+      mats: fx.vaultMats || [],
+      pieces: fx.vaultPieces || []
+    })
   }
 }
