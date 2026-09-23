@@ -322,7 +322,6 @@ const pauseMenu = createPauseMenu({
   onResume: () => setPaused(false),
   onRestart: () => {
     resetCount = 0
-    elapsed = 0
     levelManager.restart()
     setPaused(false)
   },
@@ -380,7 +379,7 @@ playerView.onLockLost(() => {
 
 function showCompleteCredits() {
   // Open first so the pointer-lock release is not treated as a pause.
-  credits.open({ source: 'complete' })
+  credits.open({ source: 'complete', completionTime: elapsed })
   hud.setVisible(false)
   syncInputState()
   keyboardLock.release({ exitFullscreen: false })
@@ -402,6 +401,7 @@ function startGame() {
   elapsed = 0
   resetCount = 0
   playerView.reset() // every run opens in third person
+  hud.resetRunTimer()
   hud.setVisible(true)
   keyboardLock.engage()
   levelManager.enter('Boarding')
@@ -425,6 +425,7 @@ function quitToTitle() {
   hud.setVisible(false)
   hud.setSuspicion(0)
   hud.setObjective('')
+  hud.resetRunTimer()
 
   titleBackdrop = buildTitleBackdrop()
   disposeGameplayDrone()
@@ -479,7 +480,16 @@ loop.add((delta) => {
   const inputState = getInputState()
   if (inputState === 'PAUSED' || inputState === 'TRANSITION' || inputState === 'CAUGHT') return
 
-  elapsed += delta
+  const heistComplete = levelManager.getState() === 'Complete'
+  if (!heistComplete) elapsed += delta
+
+  hud.updateRunTimer({
+    elapsed,
+    delta,
+    mode: timeSystem.getMode(),
+    ghostActive: timeSystem.getGhost().isPlaying(),
+    running: !heistComplete
+  })
 
   timeSystem.update(delta)
   levelManager.update(delta)
