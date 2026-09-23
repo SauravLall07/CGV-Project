@@ -121,11 +121,25 @@ export function createTimewreckLevel({
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
 
   let failCooldown = 0
+  const LEVEL_OBJECTIVE = 'The Chrono Core is tearing the train apart — escape to the locomotive'
+  const COLLAPSE_HINT = 'Freeze the collapse — Hold W + SPACE to jump forward'
+  const COLLAPSE_HINT_S = 4.6
+  let collapseHintHoldUntil = -1
+  let pendingToast = null
+
+  function showLevelToast(message, duration) {
+    if (elapsed < collapseHintHoldUntil) {
+      pendingToast = { message, duration }
+      return
+    }
+    hud.showToast(message, duration)
+  }
+
   function failSoft(message, reason = 'caught') {
     if (failCooldown > 0) return false
     failCooldown = 1.3
     respawn.fail(reason)
-    if (message) hud.showToast(message, 1900)
+    if (message) showLevelToast(message, 1900)
     return true
   }
   // Hints fire on a DESCENDING z, since the escape runs the other way.
@@ -133,7 +147,7 @@ export function createTimewreckLevel({
   function hint(key, playerZ, enterZ, message) {
     if (hintsShown.has(key) || playerZ > enterZ) return
     hintsShown.add(key)
-    hud.showToast(message, 3400)
+    showLevelToast(message, 3400)
   }
 
   let lastCheckpointZ = Infinity
@@ -309,6 +323,271 @@ export function createTimewreckLevel({
   walkwayGlow.position.set(0, 0.55, spans.security.center)
   walkwayGlow.userData.noCameraCollision = true
   root.add(walkwayGlow)
+
+  // ============================================================
+  // PASSENGER — collapsing floor Freeze crossing (after Security)
+  // ============================================================
+  // Player travels −Z. Security ends at passenger.maxZ; Core depletion is
+  // passenger.center. This hole sits between the fail-burst and that beat.
+  const collapseMaxZ = spans.passenger.maxZ - 2.4
+  const collapseMinZ = spans.passenger.center + 0.15
+  const collapseTriggerZ = collapseMaxZ + 1.15
+  const collapseVoid = { minX: -2, maxX: 2, minZ: collapseMinZ, maxZ: collapseMaxZ }
+
+  const collapsePit = new THREE.Mesh(
+    new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.28, 3.5, collapseMaxZ - collapseMinZ),
+    new THREE.MeshStandardMaterial({ color: 0x05060a, roughness: 1 })
+  )
+  collapsePit.position.set(0, -1.72, (collapseMinZ + collapseMaxZ) / 2)
+  collapsePit.visible = false
+  collapsePit.userData.noCameraCollision = true
+  root.add(collapsePit)
+
+  const collapseLipMat = new THREE.MeshStandardMaterial({
+    color: 0x3a4048, metalness: 0.72, roughness: 0.58
+  })
+  const collapseLips = []
+  for (const z of [collapseMinZ, collapseMaxZ]) {
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.18, 0.13, 0.42), collapseLipMat)
+    lip.position.set(0, 0.03, z)
+    lip.rotation.x = (z === collapseMinZ ? 1 : -1) * 0.2
+    lip.visible = false
+    collapseLips.push(lip)
+    root.add(lip)
+  }
+
+  const collapseChronoMat = createChronoFieldMaterial({
+    baseColor: 0x3a424c, glowColor: 0x7dd3fc, opacity: 0.9, doubleSided: true
+  })
+  const collapseSteel = new THREE.MeshStandardMaterial({
+    color: 0x4a515a, metalness: 0.82, roughness: 0.38, emissive: 0x1e3a4a, emissiveIntensity: 0.22
+  })
+  const collapsePaint = new THREE.MeshStandardMaterial({
+    color: 0x3d4450, metalness: 0.45, roughness: 0.62, emissive: 0x163044, emissiveIntensity: 0.18
+  })
+
+  function markNoCam(rootObj) {
+    rootObj.traverse((o) => { o.userData.noCameraCollision = true })
+    return rootObj
+  }
+
+  function makeCollapseDeck() {
+    const g = new THREE.Group()
+    g.name = 'collapse-deck'
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.1, 1.52), collapseChronoMat)
+    deck.castShadow = true
+    g.add(deck)
+    for (const x of [-0.51, -0.17, 0.17, 0.51]) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 1.46), collapsePaint)
+      plank.position.set(x, 0.065, 0)
+      g.add(plank)
+    }
+    for (const s of [-1, 1]) {
+      const channel = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 1.54), collapseSteel)
+      channel.position.set(s * 0.64, -0.07, 0)
+      g.add(channel)
+    }
+    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.05, 0.22), collapseSteel)
+    tear.position.set(-0.28, -0.02, 0.68)
+    tear.rotation.set(0.15, 0.2, 0.08)
+    g.add(tear)
+    return markNoCam(g)
+  }
+
+  function makeCollapseBeam() {
+    const g = new THREE.Group()
+    g.name = 'collapse-beam'
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.09, 1.48), collapseChronoMat)
+    top.position.y = 0.1
+    top.castShadow = true
+    g.add(top)
+    const web = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 1.42), collapseSteel)
+    web.position.y = -0.04
+    g.add(web)
+    const bot = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.07, 1.48), collapseSteel)
+    bot.position.y = -0.18
+    g.add(bot)
+    for (const z of [-0.5, 0, 0.5]) {
+      const stiff = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.04, 0.07), collapseSteel)
+      stiff.position.set(0, -0.04, z)
+      g.add(stiff)
+    }
+    return markNoCam(g)
+  }
+
+  function makeCollapsePanel() {
+    const g = new THREE.Group()
+    g.name = 'collapse-panel'
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.09, 1.5), collapseChronoMat)
+    plate.castShadow = true
+    g.add(plate)
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.5), collapseSteel)
+    frame.position.set(0.12, 0.06, 0)
+    g.add(frame)
+    const pane = new THREE.Mesh(
+      new THREE.BoxGeometry(0.58, 0.02, 0.38),
+      new THREE.MeshStandardMaterial({
+        color: 0x1a2430, metalness: 0.2, roughness: 0.2, emissive: 0x3b82f6, emissiveIntensity: 0.35
+      })
+    )
+    pane.position.set(0.12, 0.08, 0)
+    g.add(pane)
+    for (const x of [-0.56, 0.56]) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 1.46), collapseSteel)
+      rib.position.set(x, -0.07, 0)
+      g.add(rib)
+    }
+    const header = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.12), collapsePaint)
+    header.position.set(0, 0.03, -0.68)
+    g.add(header)
+    return markNoCam(g)
+  }
+
+  const COLLAPSE_PAD_X = 0.42
+  const COLLAPSE_PAD_Z = 0.4
+  const collapsePieces = [
+    {
+      mesh: makeCollapseDeck(),
+      restX: 0, restY: 0.05, restZ: collapseMaxZ - 0.82,
+      hx: 1.36 / 2, hy: 0.1 / 2, hz: 1.52 / 2,
+      phase: 0.2, spin: 0.55
+    },
+    {
+      mesh: makeCollapseBeam(),
+      restX: 0, restY: 0.06, restZ: (collapseMinZ + collapseMaxZ) * 0.5,
+      hx: 1.18 / 2, hy: 0.145, hz: 1.48 / 2,
+      phase: 1.4, spin: -0.4
+    },
+    {
+      mesh: makeCollapsePanel(),
+      restX: 0, restY: 0.05, restZ: collapseMinZ + 0.82,
+      hx: 1.34 / 2, hy: 0.09 / 2, hz: 1.5 / 2,
+      phase: 2.5, spin: 0.7
+    }
+  ]
+  for (const p of collapsePieces) {
+    p.mesh.position.set(p.restX, 0.04, p.restZ)
+    p.mesh.visible = false
+    root.add(p.mesh)
+  }
+
+  const collapseFloor = new THREE.Group()
+  collapseFloor.name = 'collapse-floor-slab'
+  const floorSlab = new THREE.Mesh(
+    new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.35, 0.08, collapseMaxZ - collapseMinZ - 0.15),
+    new THREE.MeshStandardMaterial({ color: 0x2c3036, metalness: 0.55, roughness: 0.7 })
+  )
+  collapseFloor.add(floorSlab)
+  const floorCrack = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.04, collapseMaxZ - collapseMinZ - 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.9 })
+  )
+  floorCrack.position.y = 0.05
+  collapseFloor.add(floorCrack)
+  collapseFloor.position.set(0, 0.02, (collapseMinZ + collapseMaxZ) / 2)
+  markNoCam(collapseFloor)
+  root.add(collapseFloor)
+
+  const collapseSparks = []
+  const collapseSparkMat = new THREE.MeshStandardMaterial({
+    color: 0xffe4b8, emissive: 0xffb060, emissiveIntensity: 4, transparent: true, opacity: 0.9
+  })
+  for (let i = 0; i < 8; i++) {
+    const sp = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), collapseSparkMat)
+    sp.visible = false
+    sp.userData.noCameraCollision = true
+    sp.userData.ox = (i % 2 ? -0.35 : 0.4) + skew(i + 3) * 0.2
+    sp.userData.oz = collapseMaxZ - 0.4 - (i * 0.45)
+    root.add(sp)
+    collapseSparks.push(sp)
+  }
+
+  const collapseGlow = new THREE.PointLight(0x7dd3fc, 0, 6.5, 2)
+  collapseGlow.position.set(0, 0.7, (collapseMinZ + collapseMaxZ) / 2)
+  collapseGlow.userData.noCameraCollision = true
+  root.add(collapseGlow)
+
+  let collapseArmed = true
+  let collapseLive = false
+  let collapseFallT = 0
+  let collapseFloorT = 0
+  let collapseSettle = 0
+
+  function setCollapseVoid(on) {
+    const i = gapVoids.indexOf(collapseVoid)
+    if (on && i < 0) gapVoids.push(collapseVoid)
+    if (!on && i >= 0) gapVoids.splice(i, 1)
+  }
+
+  function applyCollapseMotion() {
+    collapseFloor.rotation.x = collapseFloorT * 1.15
+    collapseFloor.position.y = 0.02 - collapseFloorT * 1.35
+    collapseFloor.visible = collapseFloorT < 1.05
+    collapsePit.visible = collapseLive
+    for (const lip of collapseLips) lip.visible = collapseLive
+
+    const sparkLife = collapseLive && collapseFloorT < 0.85
+    collapseSparkMat.opacity = sparkLife ? Math.max(0, 1 - collapseFloorT / 0.85) : 0
+    collapseSparkMat.emissiveIntensity = sparkLife ? 5 * (1 - collapseFloorT) : 0
+    for (let i = 0; i < collapseSparks.length; i++) {
+      const sp = collapseSparks[i]
+      sp.visible = sparkLife
+      if (!sparkLife) continue
+      const t = collapseFloorT
+      sp.position.set(
+        sp.userData.ox + Math.sin(t * 9 + i) * 0.12,
+        0.35 - t * 1.4,
+        sp.userData.oz + Math.cos(t * 6 + i) * 0.08
+      )
+    }
+
+    for (const p of collapsePieces) {
+      p.mesh.visible = collapseLive
+      if (!collapseLive) continue
+      const t = collapseFallT + p.phase
+      const loop = ((t % 2.6) + 2.6) % 2.6
+      const fallY = 1.55 - loop * 1.15
+      const driftX = Math.sin(t * 0.9) * 0.1
+      const tumble = loop * p.spin
+      p.mesh.position.x = THREE.MathUtils.lerp(p.restX + driftX, p.restX, collapseSettle)
+      p.mesh.position.y = THREE.MathUtils.lerp(fallY, p.restY, collapseSettle)
+      p.mesh.position.z = THREE.MathUtils.lerp(p.restZ + Math.sin(t * 0.55) * 0.08, p.restZ, collapseSettle)
+      p.mesh.rotation.x = THREE.MathUtils.lerp(tumble * 0.7, 0, collapseSettle)
+      p.mesh.rotation.z = THREE.MathUtils.lerp(Math.sin(t * 1.1) * 0.45, 0, collapseSettle)
+      p.mesh.rotation.y = THREE.MathUtils.lerp(Math.sin(t * 0.4) * 0.2, 0, collapseSettle)
+    }
+  }
+
+  function startCollapse() {
+    if (!collapseArmed) return
+    collapseArmed = false
+    collapseLive = true
+    collapseFallT = 0
+    collapseFloorT = 0
+    setCollapseVoid(true)
+    applyCollapseMotion()
+    collapseHintHoldUntil = elapsed + COLLAPSE_HINT_S
+    pendingToast = null
+    hud.showToast(COLLAPSE_HINT, COLLAPSE_HINT_S * 1000)
+    hud.setObjective(COLLAPSE_HINT)
+  }
+
+  unregisters.push(timeSystem.register(collapseFloor, {
+    onUpdate(scaledDelta) {
+      if (!collapseLive) return
+      collapseFallT += scaledDelta
+      collapseFloorT = THREE.MathUtils.clamp(collapseFloorT + Math.abs(scaledDelta), 0, 1.15)
+    },
+    getSnapshot: () => ({ collapseFallT, collapseFloorT, collapseLive, collapseArmed }),
+    restoreSnapshot: (s) => {
+      collapseFallT = s.collapseFallT
+      collapseFloorT = s.collapseFloorT
+      collapseLive = s.collapseLive
+      collapseArmed = s.collapseArmed
+      setCollapseVoid(collapseLive)
+      applyCollapseMotion()
+    }
+  }))
 
   // ============================================================
   // PASSENGER — BREAKING TRAIN: carriages tear away, debris streaks past
@@ -710,6 +989,8 @@ export function createTimewreckLevel({
       depleted,
       breakupT,
       lastCheckpointZ,
+      collapseArmed,
+      collapseLive,
       bounds: { ...bounds },
       carriages: Object.values(carriages).map((group) => ({
         group,
@@ -735,6 +1016,13 @@ export function createTimewreckLevel({
       applyLoop()
       slabDriftT = 0
       slabSettle = 0
+      collapseArmed = saved.collapseArmed
+      collapseLive = saved.collapseLive
+      collapseFallT = 0
+      collapseFloorT = saved.collapseLive ? 1.15 : 0
+      collapseSettle = 0
+      setCollapseVoid(collapseLive)
+      applyCollapseMotion()
       failCooldown = 0
       braking = false
       brakeT = 0
@@ -822,6 +1110,18 @@ export function createTimewreckLevel({
       sparks.update(finaleFreeze ? 0 : delta)
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
+      if (collapseHintHoldUntil > 0 && elapsed >= collapseHintHoldUntil) {
+        collapseHintHoldUntil = -1
+        if (!braking && hud.getObjective() === COLLAPSE_HINT) {
+          hud.setObjective(depleted
+            ? 'Sprint to the locomotive (hold Shift) — pull the emergency brake!'
+            : LEVEL_OBJECTIVE)
+        }
+        if (pendingToast) {
+          hud.showToast(pendingToast.message, pendingToast.duration)
+          pendingToast = null
+        }
+      }
 
       const pp = player.mesh.position
       const modeInt = MODE_INT[mode] ?? 0
@@ -849,6 +1149,11 @@ export function createTimewreckLevel({
       slabMat.customUniforms.uTime.value += finaleFreeze ? 0 : delta
       slabMat.customUniforms.uMode.value = modeInt
       slabMat.customUniforms.uIntensity.value = 0.35 + slabSettle * 0.65 + freezePulse
+      collapseChronoMat.customUniforms.uTime.value += finaleFreeze ? 0 : delta
+      collapseChronoMat.customUniforms.uMode.value = modeInt
+      collapseChronoMat.customUniforms.uIntensity.value = collapseLive
+        ? (mode === 'FREEZE' ? 1.05 + freezePulse : 0.42 + 0.12 * Math.sin(elapsed * 2.4))
+        : 0.28
       if (!finaleFreeze) waveMat.customUniforms.uTime.value += delta
       waveMat.customUniforms.uMode.value = finaleFreeze ? 2 : 3
       const resumeWave = resumeFlashT >= 0 ? Math.max(0, 1 - resumeFlashT / 0.4) * 0.7 : 0
@@ -1034,11 +1339,56 @@ export function createTimewreckLevel({
         failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
       }
 
+      // --- PASSENGER collapse: Freeze stepping-stones across the hole ------
+      if (collapseArmed && pp.z < collapseTriggerZ) startCollapse()
+      collapseSettle += ((frozen && collapseLive ? 1 : 0) - collapseSettle) * Math.min(1, delta * 9)
+      if (collapseLive) applyCollapseMotion()
+      collapseGlow.intensity = collapseLive
+        ? (frozen ? 5.5 : 1.3 + Math.sin(elapsed * 3.2) * 0.4)
+        : 0
+      collapseSteel.emissiveIntensity = frozen && collapseLive ? 0.55 : 0.22
+      collapsePaint.emissiveIntensity = frozen && collapseLive ? 0.42 : 0.18
+      if (frozen && collapseLive) {
+        for (const p of collapsePieces) {
+          slabSupports.push({
+            minX: p.mesh.position.x - p.hx - COLLAPSE_PAD_X,
+            maxX: p.mesh.position.x + p.hx + COLLAPSE_PAD_X,
+            minZ: p.mesh.position.z - p.hz - COLLAPSE_PAD_Z,
+            maxZ: p.mesh.position.z + p.hz + COLLAPSE_PAD_Z,
+            y: p.mesh.position.y + p.hy + 0.02
+          })
+        }
+      }
+      const inCollapse = collapseLive && pp.z > collapseMinZ && pp.z < collapseMaxZ
+      const onFarLip = pp.z <= collapseMinZ + 1.9
+      let onCollapseSupport = false
+      if (frozen && collapseLive) {
+        for (const p of collapsePieces) {
+          if (
+            pp.x >= p.mesh.position.x - p.hx - COLLAPSE_PAD_X &&
+            pp.x <= p.mesh.position.x + p.hx + COLLAPSE_PAD_X &&
+            pp.z >= p.mesh.position.z - p.hz - COLLAPSE_PAD_Z &&
+            pp.z <= p.mesh.position.z + p.hz + COLLAPSE_PAD_Z &&
+            pp.y >= p.mesh.position.y + p.hy - 1.0
+          ) {
+            onCollapseSupport = true
+            break
+          }
+        }
+      }
+      if (inCollapse && onCollapseSupport) {
+        // Landing on/over an active Freeze pad — do not treat the void as a fail.
+      } else if (inCollapse && pp.y < -0.3) {
+        failSoft('The floor collapsed — FREEZE the wreckage and cross!', 'fell')
+      } else if (inCollapse && !frozen && !onFarLip && collapseSettle < 0.18) {
+        failSoft('The floor collapsed — FREEZE the wreckage and cross!', 'fell')
+      }
+
       // --- BREAKING TRAIN --------------------------------------------------
       if (breakupT < 0 && pp.z < spans.passenger.maxZ - 1) {
         breakupT = 0
         chunkGroup.visible = true
-        hud.showToast('The couplings are letting go — RUN!', 2600)
+        showLevelToast('The couplings are letting go — RUN!', 2600)
       }
       if (breakupT >= 0 && !finaleFreeze) {
         breakupT += delta
@@ -1070,7 +1420,7 @@ export function createTimewreckLevel({
         respawn.setCheckpoint(new THREE.Vector3(0, 0, DEPLETE_Z), Math.PI, {
           restore: captureCheckpointRestore(DEPLETE_Z)
         })
-        hud.showToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
+        showLevelToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
         hud.setObjective('Sprint to the locomotive (hold Shift) — pull the emergency brake!')
       }
 
