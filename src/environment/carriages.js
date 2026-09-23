@@ -54,9 +54,9 @@ function makeShared(damaged) {
     brass: new THREE.MeshStandardMaterial({ color: damaged ? 0x6d5628 : 0xb08d3f, roughness: damaged ? 0.62 : 0.3, metalness: 0.9 }),
     rivet: new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 0.5, metalness: 0.7 }),
     warmGlass: new THREE.MeshStandardMaterial({
-      color: damaged ? 0x40201c : 0xffe0ac,
-      emissive: damaged ? 0xa02418 : 0xffce8a,
-      emissiveIntensity: damaged ? 1.5 : 1.3,
+      color: damaged ? 0x5a2a22 : 0xffe0ac,
+      emissive: damaged ? 0xc43a22 : 0xffce8a,
+      emissiveIntensity: damaged ? 1.15 : 1.3,
       roughness: 0.25
     })
   }
@@ -66,11 +66,11 @@ function wallMaterialFor(key, length, damaged) {
   const r = [Math.max(1, Math.round(length / 4)), 1]
   switch (key) {
     case 'passenger':
-      return woodMaterial({ repeat: r, light: damaged ? 0x4d3620 : 0x8a5c33, dark: damaged ? 0x1e1409 : 0x452a16 })
+      return woodMaterial({ repeat: r, light: damaged ? 0x3a3938 : 0x8a5c33, dark: damaged ? 0x1a1b1d : 0x452a16 })
     case 'security':
-      return metalMaterial({ repeat: r, base: damaged ? 0x2f343c : 0x474d57, roughness: damaged ? 0.7 : 0.45, metalness: 0.8 })
+      return metalMaterial({ repeat: r, base: damaged ? 0x2a3038 : 0x474d57, roughness: damaged ? 0.7 : 0.45, metalness: 0.8 })
     case 'cargo':
-      return woodMaterial({ repeat: r, light: damaged ? 0x3e2b18 : 0x6a4a2c, dark: damaged ? 0x1b1209 : 0x33210f })
+      return woodMaterial({ repeat: r, light: damaged ? 0x323230 : 0x6a4a2c, dark: damaged ? 0x161616 : 0x33210f })
     case 'mechanical':
       return metalMaterial({ repeat: r, base: damaged ? 0x282c33 : 0x3c4149, roughness: 0.6, metalness: 0.75 })
     case 'vault':
@@ -125,8 +125,8 @@ function buildShell(key, length, shared, damaged, seals = {}) {
   if (key === 'passenger') {
     floorMat = carpetMaterial({
       repeat: [2, Math.round(length / 2)],
-      base: damaged ? 0x2e1418 : 0x5e1f28,
-      accent: damaged ? 0x4a3520 : 0x9a7238
+      base: damaged ? 0x2a2428 : 0x5e1f28,
+      accent: damaged ? 0x3c3a38 : 0x9a7238
     })
   } else {
     floorMat = metalMaterial({
@@ -365,7 +365,7 @@ function dressDamagedMechanical(g, half, shared, fx) {
   }
 
   const panelMat = new THREE.MeshStandardMaterial({
-    color: 0x3a3f47, roughness: 0.5, metalness: 0.72, emissive: 0x4a1808, emissiveIntensity: 0.22
+    color: 0x3a3f47, roughness: 0.5, metalness: 0.72, emissive: 0x1a1816, emissiveIntensity: 0.08
   })
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.85, 1.05), panelMat, sites.length), sites.length, (d, i) => {
     const c = sites[i]
@@ -380,28 +380,28 @@ function dressDamagedMechanical(g, half, shared, fx) {
     d.rotation.set(0.06, 0, c.side * 0.55)
   }))
 
-  const burstMat = metalMaterial({ repeat: [1, 1], base: 0x6a3a22, roughness: 0.55, metalness: 0.8 })
+  const burstMat = metalMaterial({ repeat: [1, 1], base: 0x4a4e55, roughness: 0.55, metalness: 0.8 })
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.045, 0.05, 1.15, 8), burstMat, sites.length * 2), sites.length * 2, (d, i) => {
     const c = sites[i >> 1]
     d.position.set(c.side * (WALL_X - 0.16), 1.05 + (i % 2) * 0.32, c.z)
     d.rotation.set(Math.PI / 2, 0, c.side * 0.08)
   }))
 
-  const glow = new THREE.PointLight(0xff5a1e, 8, 7, 2)
+  const glow = new THREE.PointLight(0xff5a1e, 5.5, 5, 2)
   glow.position.set(sites[0].side * 0.95, 1.1, sites[0].z)
   addLight(g, fx, glow, true)
 }
 
 function dressDamagedCargo(g, half, shared, fx) {
   const sites = damageSites(half)
-  const lidMat = woodMaterial({ repeat: [1, 1], light: 0x6a4e28, dark: 0x2a1a0c })
+  const lidMat = woodMaterial({ repeat: [1, 1], light: 0x4a463c, dark: 0x1c1b18 })
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.62, 0.04, 0.58), lidMat, sites.length), sites.length, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * 1.12, 0.88, c.z)
     d.rotation.set(0.05, 0.12 * c.side, c.side * 0.18)
   }))
 
-  const slatMat = woodMaterial({ repeat: [1, 1], light: 0x5c4320, dark: 0x241608 })
+  const slatMat = woodMaterial({ repeat: [1, 1], light: 0x3e3c36, dark: 0x181714 })
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.035, 0.62), slatMat, sites.length * 2), sites.length * 2, (d, i) => {
     const c = sites[i >> 1]
     d.position.set(c.side * 1.12, 0.06, c.z + (i % 2 ? 0.2 : -0.16))
@@ -468,7 +468,7 @@ function dressDamagedPassenger(g, half, shared, fx) {
     d.rotation.set(0.04, 0.12 * c.side, 0)
   }))
 
-  const seatFrag = new THREE.MeshStandardMaterial({ color: 0x2a262c, roughness: 0.88, metalness: 0.04 })
+  const seatFrag = new THREE.MeshStandardMaterial({ color: 0x3a4552, roughness: 0.88, metalness: 0.04 })
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.1, 0.4), seatFrag, sites.length), sites.length, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * 1.12, 0.12, c.z - 0.35)
@@ -546,7 +546,7 @@ function dressPassenger(g, half, shared, damaged, fx) {
   // tilted and dropped so the same instanced set reads as thrown about.
   const bays = Math.max(1, Math.floor((half * 2 - 4) / 3.4))
   const seatMat = new THREE.MeshStandardMaterial({
-    color: damaged ? 0x2f2a30 : 0x4a5c74, roughness: 0.88, metalness: 0.03
+    color: damaged ? 0x3d4a58 : 0x4a5c74, roughness: 0.88, metalness: 0.03
   })
   const bases = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.16, 0.95), seatMat, bays * 2)
   const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.8, 0.16), seatMat, bays * 2)
@@ -573,15 +573,15 @@ function dressPassenger(g, half, shared, damaged, fx) {
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.4, 0.05, half * 2 - 2),
     new THREE.MeshStandardMaterial({
-      color: damaged ? 0x5a1712 : 0xfff2d6,
-      emissive: damaged ? 0xcc2a18 : 0xffe0ae,
-      emissiveIntensity: damaged ? 2 : 2.3
+      color: damaged ? 0x6a2218 : 0xfff2d6,
+      emissive: damaged ? 0xc42818 : 0xffe0ae,
+      emissiveIntensity: damaged ? 1.35 : 2.3
     })
   )
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(damaged ? 0xff5a3c : 0xffcf96, damaged ? 15 : 22, damaged ? 9 : 12, 2)
+    const l = new THREE.PointLight(damaged ? 0xff6a48 : 0xffcf96, damaged ? 8.5 : 22, damaged ? 6.5 : 12, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, damaged)
   }
@@ -590,7 +590,7 @@ function dressPassenger(g, half, shared, damaged, fx) {
 
 function dressSecurity(g, half, shared, damaged, fx) {
   const slitMat = new THREE.MeshStandardMaterial({
-    color: 0x1b2733, emissive: damaged ? 0x3a1410 : 0x22405a, emissiveIntensity: 0.5, roughness: 0.4
+    color: 0x1b2733, emissive: damaged ? 0x1e3a5f : 0x22405a, emissiveIntensity: 0.5, roughness: 0.4
   })
   for (let z = -half + 2; z <= half - 2; z += 2.6) {
     for (const s of [-1, 1]) {
@@ -629,14 +629,14 @@ function dressSecurity(g, half, shared, damaged, fx) {
     const cage = new THREE.Mesh(
       new THREE.BoxGeometry(0.5, 0.08, 0.5),
       new THREE.MeshStandardMaterial({
-        color: damaged ? 0x4a1a14 : 0xbfe4ff,
-        emissive: damaged ? 0xd03018 : 0x7fd0ff,
-        emissiveIntensity: 2.2
+        color: damaged ? 0x1e3a4a : 0xbfe4ff,
+        emissive: damaged ? 0x3b82f6 : 0x7fd0ff,
+        emissiveIntensity: 1.6
       })
     )
     cage.position.set(0, CARRIAGE_CEILING_Y - 0.07, z)
     g.add(cage)
-    const l = new THREE.PointLight(damaged ? 0xff5030 : 0x9fd0ff, damaged ? 12 : 14, damaged ? 8 : 10, 2)
+    const l = new THREE.PointLight(damaged ? 0x8fb4d4 : 0x9fd0ff, damaged ? 8 : 14, damaged ? 7 : 10, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, damaged)
   }
@@ -645,7 +645,7 @@ function dressSecurity(g, half, shared, damaged, fx) {
 
 function dressCargo(g, half, shared, damaged, fx) {
   const crateMat = woodMaterial({
-    repeat: [1, 1], light: damaged ? 0x54401f : 0x8a6a40, dark: damaged ? 0x2a1d0e : 0x4c3620
+    repeat: [1, 1], light: damaged ? 0x4a463c : 0x8a6a40, dark: damaged ? 0x1c1b18 : 0x4c3620
   })
   const spots = []
   for (let z = -half + 2; z <= half - 2; z += 2.2) {
@@ -685,15 +685,15 @@ function dressCargo(g, half, shared, damaged, fx) {
   const work = new THREE.Mesh(
     new THREE.BoxGeometry(0.4, 0.06, 0.4),
     new THREE.MeshStandardMaterial({
-      color: damaged ? 0x5a2410 : 0xffdca0,
-      emissive: damaged ? 0xd83c14 : 0xffb454,
-      emissiveIntensity: 2.4
+      color: damaged ? 0x6a2818 : 0xffdca0,
+      emissive: damaged ? 0xc43414 : 0xffb454,
+      emissiveIntensity: 1.6
     })
   )
   work.position.set(0, CARRIAGE_CEILING_Y - 0.09, 0)
   g.add(work)
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(damaged ? 0xff6438 : 0xffb264, damaged ? 13 : 16, damaged ? 8 : 11, 2)
+    const l = new THREE.PointLight(damaged ? 0xff7048 : 0xffb264, damaged ? 7.5 : 16, damaged ? 6 : 11, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, l, damaged)
   }
@@ -726,20 +726,20 @@ function dressMechanical(g, half, shared, damaged, fx) {
     g.add(spoke)
   }
 
-  const boilerLight = new THREE.PointLight(damaged ? 0xff4a1e : 0xff7a3c, damaged ? 22 : 18, 12, 2)
+  const boilerLight = new THREE.PointLight(damaged ? 0xff6a32 : 0xff7a3c, damaged ? 14 : 18, damaged ? 8 : 12, 2)
   boilerLight.position.set(0, 1.4, half - 4)
   addLight(g, fx, boilerLight, damaged)
 
   const grate = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 0.7, 0.1),
     new THREE.MeshStandardMaterial({
-      color: 0x2a1508, emissive: 0xff5a1e, emissiveIntensity: damaged ? 3.4 : 2.6, roughness: 0.7
+      color: 0x2a1508, emissive: 0xff5a1e, emissiveIntensity: damaged ? 2.6 : 2.6, roughness: 0.7
     })
   )
   grate.position.set(0, 0.6, half - 0.3)
   g.add(grate)
 
-  const ceil = new THREE.PointLight(damaged ? 0xff6030 : 0xffb066, 12, 10, 2)
+  const ceil = new THREE.PointLight(damaged ? 0xd8c8b8 : 0xffb066, damaged ? 7 : 12, damaged ? 8 : 10, 2)
   ceil.position.set(0, CARRIAGE_CEILING_Y - 0.3, -half * 0.4)
   addLight(g, fx, ceil, damaged)
 
@@ -807,14 +807,14 @@ function dressVault(g, half, shared, damaged, fx) {
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.35, 0.05, half * 2 - 2),
     new THREE.MeshStandardMaterial({
-      color: damaged ? 0x4a1a14 : 0xbfe0ff,
-      emissive: damaged ? 0xd83018 : 0x5ab6ff,
-      emissiveIntensity: 2.0
+      color: damaged ? 0x2a1848 : 0xbfe0ff,
+      emissive: damaged ? 0x7c3aed : 0x5ab6ff,
+      emissiveIntensity: 1.6
     })
   )
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
-  const l = new THREE.PointLight(damaged ? 0xff5030 : 0x7cc4ff, damaged ? 13 : 16, damaged ? 9 : 12, 2)
+  const l = new THREE.PointLight(damaged ? 0x8b6cff : 0x7cc4ff, damaged ? 9 : 16, damaged ? 8 : 12, 2)
   l.position.set(0, CARRIAGE_CEILING_Y - 0.3, 0)
   addLight(g, fx, l, damaged)
 
@@ -877,7 +877,7 @@ function buildLocomotiveCab(shared, fx) {
   )
   firebox.position.set(0, 0.42, -half + 0.72)
   group.add(firebox)
-  const fireLight = new THREE.PointLight(0xff6a24, 26, 9, 2)
+  const fireLight = new THREE.PointLight(0xff6a24, 16, 7, 2)
   fireLight.position.set(0, 0.6, -half + 1.1)
   addLight(group, fx, fireLight, true)
 
@@ -898,7 +898,7 @@ function buildLocomotiveCab(shared, fx) {
 
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.3, 0.05, CAB_LENGTH - 2),
-    new THREE.MeshStandardMaterial({ color: 0x5a1712, emissive: 0xcc2a18, emissiveIntensity: 1.8 })
+    new THREE.MeshStandardMaterial({ color: 0x4a1c16, emissive: 0xc42818, emissiveIntensity: 1.35 })
   )
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   group.add(strip)
@@ -1050,11 +1050,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   }
 
   // Base exposure so no corner falls to pure black between the point lights.
-  const ambient = new THREE.AmbientLight(damaged ? 0x4a2620 : 0x5b5750, damaged ? 0.45 : 0.5)
+  const ambient = new THREE.AmbientLight(damaged ? 0x2a323c : 0x5b5750, damaged ? 0.28 : 0.5)
   const hemi = new THREE.HemisphereLight(
-    damaged ? 0x7a3428 : 0x8a8272,
-    damaged ? 0x2a1210 : 0x2a2620,
-    damaged ? 0.4 : 0.55
+    damaged ? 0x5a6e88 : 0x8a8272,
+    damaged ? 0x12151a : 0x2a2620,
+    damaged ? 0.32 : 0.55
   )
   root.add(ambient, hemi)
 

@@ -32,7 +32,7 @@ import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 // car" test is a descending-Z comparison.
 
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
-const NIGHT_COLOR = new THREE.Color(0x140708)
+const NIGHT_COLOR = new THREE.Color(0x0d1218)
 const DAWN_COLOR = new THREE.Color(0x2c3a56)
 const FINALE_FREEZE_COLOR = new THREE.Color(0x1a3358)
 const INTERIOR_HALF_WIDTH = 1.6
@@ -113,7 +113,7 @@ export function createTimewreckLevel({
   scene.add(outdoorEnv.group, wreckExterior.group, root)
   scene.background = new THREE.Color().copy(NIGHT_COLOR)
   // Wide enough to keep the storm-lit scenery outside readable.
-  scene.fog = new THREE.Fog(0x1a0708, 10, 120)
+  scene.fog = new THREE.Fog(0x10141c, 10, 120)
 
   const unregisters = []
   unregisters.push(interaction.registerBlocker(root))
@@ -150,7 +150,7 @@ export function createTimewreckLevel({
   const ramBank = new THREE.Group()
   ramBank.name = 'runaway-pistons'
   const ramHeadMat = new THREE.MeshStandardMaterial({
-    color: 0x6b7078, metalness: 0.9, roughness: 0.35, emissive: 0x330d05, emissiveIntensity: 1.2
+    color: 0x6b7078, metalness: 0.9, roughness: 0.35, emissive: 0x2a1810, emissiveIntensity: 0.45
   })
   const ramRailMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, metalness: 0.8, roughness: 0.5 })
   const rams = []
@@ -189,7 +189,7 @@ export function createTimewreckLevel({
   const loopDoor = new THREE.Mesh(
     new THREE.BoxGeometry(1.15, 2.3, 0.18),
     new THREE.MeshStandardMaterial({
-      color: 0x33383f, metalness: 0.85, roughness: 0.35, emissive: 0x1a0d06, emissiveIntensity: 1
+      color: 0x33383f, metalness: 0.85, roughness: 0.35, emissive: 0x141618, emissiveIntensity: 0.25
     })
   )
   loopDoor.castShadow = true
@@ -322,7 +322,7 @@ export function createTimewreckLevel({
   root.add(chunkGroup)
 
   const chunkMat = new THREE.MeshStandardMaterial({
-    color: 0x39332c, roughness: 0.9, metalness: 0.15, emissive: 0x2a0c04, emissiveIntensity: 0.6
+    color: 0x3d4248, roughness: 0.55, metalness: 0.62, emissive: 0x141618, emissiveIntensity: 0.22
   })
   const chunkGeos = [
     new THREE.BoxGeometry(0.42, 0.06, 0.55),
@@ -461,7 +461,7 @@ export function createTimewreckLevel({
 
   const burstPanelMat = new THREE.MeshStandardMaterial({
     color: 0x4a5058, roughness: 0.62, metalness: 0.7,
-    emissive: 0x2a1810, emissiveIntensity: 0.35
+    emissive: 0x121416, emissiveIntensity: 0.12
   })
   const burstSteel = new THREE.MeshStandardMaterial({
     color: 0x6b727c, roughness: 0.4, metalness: 0.85
@@ -759,11 +759,11 @@ export function createTimewreckLevel({
       sparks.material.color.setHex(0xffd9a0)
       sparks.material.size = 0.028
       sparks.material.opacity = 0.4
-      chunkMat.color.setHex(0x39332c)
-      chunkMat.emissive.setHex(0x2a0c04)
-      chunkMat.emissiveIntensity = 0.6
-      burstPanelMat.emissive.setHex(0x2a1810)
-      burstPanelMat.emissiveIntensity = 0.35
+      chunkMat.color.setHex(0x3d4248)
+      chunkMat.emissive.setHex(0x141618)
+      chunkMat.emissiveIntensity = 0.22
+      burstPanelMat.emissive.setHex(0x121416)
+      burstPanelMat.emissiveIntensity = 0.12
       waveLight.color.setHex(0xa855f7)
       waveLight.distance = 8
       waveMat.customUniforms.uOpacity.value = 0.6
@@ -907,15 +907,15 @@ export function createTimewreckLevel({
         sparks.material.size = 0.085
         sparks.material.opacity = 1
       } else if (!braking) {
-        scene.background.setHex(resumeWarm > 0.08 ? 0x2c1008 : NIGHT_COLOR.getHex())
-        scene.fog.color.set(resumeWarm > 0.08 ? 0x3a1408 : 0x1a0708)
+        scene.background.setHex(resumeWarm > 0.08 ? 0x1a1412 : NIGHT_COLOR.getHex())
+        scene.fog.color.set(resumeWarm > 0.08 ? 0x241814 : 0x10141c)
         scene.fog.near = 10
         scene.fog.far = resumeWarm > 0 ? 55 + (1 - resumeWarm) * 65 : 120
-        chunkMat.color.setHex(0x39332c)
-        chunkMat.emissive.setHex(resumeWarm > 0.08 ? 0xff4a18 : 0x2a0c04)
-        chunkMat.emissiveIntensity = 0.6 + resumeWarm * 2.6
-        burstPanelMat.emissive.setHex(resumeWarm > 0.08 ? 0xff5318 : 0x2a1810)
-        burstPanelMat.emissiveIntensity = 0.35 + resumeWarm * 1.8
+        chunkMat.color.setHex(0x3d4248)
+        chunkMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a40 : 0x141618)
+        chunkMat.emissiveIntensity = 0.22 + resumeWarm * 1.6
+        burstPanelMat.emissive.setHex(resumeWarm > 0.08 ? 0xff7048 : 0x121416)
+        burstPanelMat.emissiveIntensity = 0.12 + resumeWarm * 1.1
         burstSteel.emissive.setHex(0x000000)
         burstSteel.emissiveIntensity = 0
         luggageMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a28 : 0x000000)
