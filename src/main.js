@@ -28,6 +28,7 @@ import { createBoardingLevel } from './levels/boarding.js'
 import { createMovingHeistLevel } from './levels/moving-heist.js'
 import { createTimewreckLevel } from './levels/timewreck.js'
 import { createCompleteLevel } from './levels/complete.js'
+import { createModelEditor } from './dev/model-editor.js'
 
 // Composition root. Everything persistent (renderer, camera, loop, input,
 // HUD, menus, asset loader, interaction/respawn/time systems) is created here
@@ -227,6 +228,10 @@ const levelManager = createLevelManager({
   loadingScreen,
   onEnter: (state) => {
     playMusicForState(state)
+    // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
+    // Workshop remaps its stable scene keys here so saved dev-layout overrides
+    // are reapplied before the loading overlay hands control back to the player.
+    modelEditor?.sceneChanged?.()
     if (state === 'Complete') showCompleteCredits()
     else timeSystem.warmGhost(renderer, camera)
   },
@@ -256,6 +261,7 @@ let gameStarted = false
 let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
 let titleBackdrop = null // the silently-built station behind the title screen
+let modelEditor = null // DEV-only live scene/model workshop (F2)
 
 // Until NEW GAME is clicked there is no run to drive: the HUD is hidden, the
 // third-person camera and pointer lock are off (the menu owns the camera), and
@@ -307,7 +313,7 @@ const menu = createMainMenu({
 
 const pauseMenu = createPauseMenu({
   settingsMenu,
-  canPause: () => gameStarted && !credits.isOpen,
+  canPause: () => gameStarted && !credits.isOpen && !modelEditor?.isOpen(),
   getStatus: () => ({
     level: levelManager.getState(),
     objective: hud.getObjective(),
@@ -322,12 +328,53 @@ const pauseMenu = createPauseMenu({
   onResume: () => setPaused(false),
   onRestart: () => {
     resetCount = 0
-    elapsed = 0
     levelManager.restart()
     setPaused(false)
   },
   onQuit: () => quitToTitle()
 })
+
+// ---------------------------------------------------------------
+// Development Model Workshop (F2)
+// ---------------------------------------------------------------
+// This is deliberately DEV-only. Phase 2 edits the live Three.js scene, pauses
+// gameplay while open, and can persist transforms, names, materials, lights and
+// camera bookmarks to .model-workshop/layout.json through the Vite dev server.
+if (import.meta.env.DEV) {
+  modelEditor = createModelEditor({
+    scene,
+    camera,
+    renderer,
+    player,
+    getObstacles: () => levelManager.obstacles,
+    getContextLabel: () => levelManager.getState() ?? 'Scene',
+    canOpen: () => (
+      gameStarted &&
+      !paused &&
+      !credits.isOpen &&
+      !levelManager.isTransitioning() &&
+      !levelManager.isCinematic() &&
+      !respawn.isFailing()
+    ),
+    onOpen: () => {
+      // Hiding the HUD makes the scene easier to inspect and, more
+      // importantly, syncInputState() disables movement, interactions and the
+      // pointer-lock player camera before OrbitControls takes over.
+      hud.setVisible(false)
+      syncInputState()
+    },
+    onClose: () => {
+      // The PlayerView object still owns exactly the same first/third-person
+      // mode and yaw/pitch as before. snap() simply puts the physical camera
+      // back onto that mode after the editor has moved it around.
+      syncInputState()
+      playerView.snap()
+      hud.setVisible(gameStarted && !credits.isOpen)
+      if (getInputState() === 'PLAYING') playerView.requestLock()
+    }
+  })
+  window.modelEditor = modelEditor
+}
 
 function getInputState() {
   return resolveInputState({
@@ -336,7 +383,8 @@ function getInputState() {
     paused,
     transitioning: levelManager.isTransitioning(),
     caught: respawn.isFailing(),
-    cinematic: levelManager.isCinematic()
+    cinematic: levelManager.isCinematic(),
+    editor: Boolean(modelEditor?.isOpen())
   })
 }
 
@@ -380,7 +428,7 @@ playerView.onLockLost(() => {
 
 function showCompleteCredits() {
   // Open first so the pointer-lock release is not treated as a pause.
-  credits.open({ source: 'complete' })
+  credits.open({ source: 'complete', completionTime: elapsed })
   hud.setVisible(false)
   syncInputState()
   keyboardLock.release({ exitFullscreen: false })
@@ -402,6 +450,7 @@ function startGame() {
   elapsed = 0
   resetCount = 0
   playerView.reset() // every run opens in third person
+  hud.resetRunTimer()
   hud.setVisible(true)
   keyboardLock.engage()
   levelManager.enter('Boarding')
@@ -425,6 +474,7 @@ function quitToTitle() {
   hud.setVisible(false)
   hud.setSuspicion(0)
   hud.setObjective('')
+  hud.resetRunTimer()
 
   titleBackdrop = buildTitleBackdrop()
   disposeGameplayDrone()
@@ -467,6 +517,14 @@ const loop = createLoop({
 loop.add((delta) => {
   hud.updateStats(delta)
 
+  // The model workshop owns the same render camera while open. Gameplay is
+  // frozen, but the normal renderer keeps drawing the live level behind its
+  // editor UI so transforms and light changes are immediate.
+  if (modelEditor?.isOpen()) {
+    modelEditor.update(delta)
+    return
+  }
+
   if (credits.isOpen) return
 
   // While the menu is visible, drift the camera and skip gameplay.
@@ -479,7 +537,16 @@ loop.add((delta) => {
   const inputState = getInputState()
   if (inputState === 'PAUSED' || inputState === 'TRANSITION' || inputState === 'CAUGHT') return
 
-  elapsed += delta
+  const heistComplete = levelManager.getState() === 'Complete'
+  if (!heistComplete) elapsed += delta
+
+  hud.updateRunTimer({
+    elapsed,
+    delta,
+    mode: timeSystem.getMode(),
+    ghostActive: timeSystem.getGhost().isPlaying(),
+    running: !heistComplete
+  })
 
   timeSystem.update(delta)
   levelManager.update(delta)

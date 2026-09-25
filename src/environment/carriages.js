@@ -55,9 +55,9 @@ function makeShared(damaged) {
     brass: new THREE.MeshStandardMaterial({ color: damaged ? 0x6d5628 : 0xb08d3f, roughness: damaged ? 0.62 : 0.3, metalness: 0.9 }),
     rivet: new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 0.5, metalness: 0.7 }),
     warmGlass: new THREE.MeshStandardMaterial({
-      color: damaged ? 0x40201c : 0xffe0ac,
-      emissive: damaged ? 0xa02418 : 0xffce8a,
-      emissiveIntensity: damaged ? 1.5 : 1.3,
+      color: damaged ? 0x5a2a22 : 0xffe0ac,
+      emissive: damaged ? 0xc43a22 : 0xffce8a,
+      emissiveIntensity: damaged ? 1.15 : 1.3,
       roughness: 0.25
     })
   }
@@ -67,13 +67,13 @@ function wallMaterialFor(key, length, damaged) {
   const r = [Math.max(1, Math.round(length / 4)), 1]
   switch (key) {
     case 'passenger':
-      return woodMaterial({ repeat: r, light: damaged ? 0x4d3620 : 0x8a5c33, dark: damaged ? 0x1e1409 : 0x452a16 })
+      return woodMaterial({ repeat: r, light: damaged ? 0x3a3938 : 0x8a5c33, dark: damaged ? 0x1a1b1d : 0x452a16 })
     case 'security':
       return metalMaterial({ repeat: r, base: damaged ? 0x2f343c : 0x474d57, roughness: damaged ? 0.7 : 0.45, metalness: 0.8 })
     case 'relay':
       return metalMaterial({ repeat: r, base: damaged ? 0x293138 : 0x344957, roughness: damaged ? 0.72 : 0.48, metalness: 0.8 })
     case 'cargo':
-      return woodMaterial({ repeat: r, light: damaged ? 0x3e2b18 : 0x6a4a2c, dark: damaged ? 0x1b1209 : 0x33210f })
+      return woodMaterial({ repeat: r, light: damaged ? 0x323230 : 0x6a4a2c, dark: damaged ? 0x161616 : 0x33210f })
     case 'mechanical':
       return metalMaterial({ repeat: r, base: damaged ? 0x282c33 : 0x3c4149, roughness: 0.6, metalness: 0.75 })
     case 'vault':
@@ -128,8 +128,8 @@ function buildShell(key, length, shared, damaged, seals = {}) {
   if (key === 'passenger') {
     floorMat = carpetMaterial({
       repeat: [2, Math.round(length / 2)],
-      base: damaged ? 0x2e1418 : 0x5e1f28,
-      accent: damaged ? 0x4a3520 : 0x9a7238
+      base: damaged ? 0x2a2428 : 0x5e1f28,
+      accent: damaged ? 0x3c3a38 : 0x9a7238
     })
   } else {
     floorMat = metalMaterial({
@@ -172,12 +172,17 @@ function buildShell(key, length, shared, damaged, seals = {}) {
   g.add(floor)
 
   const wallMat = wallMaterialFor(key, length, damaged)
-  const wallGeo = new THREE.BoxGeometry(0.12, CARRIAGE_CEILING_Y, length)
-  for (const s of [-1, 1]) {
-    const w = new THREE.Mesh(wallGeo, wallMat)
-    w.position.set(s * WALL_X, CARRIAGE_CEILING_Y / 2, 0)
-    w.receiveShadow = true
-    g.add(w)
+  // Level 3 passenger/cab: omit the solid side walls so blown viewports can
+  // look through to the rushing exterior. Other cars keep a continuous hull.
+  const openSides = damaged && (key === 'passenger' || key === 'cab')
+  if (!openSides) {
+    const wallGeo = new THREE.BoxGeometry(0.12, CARRIAGE_CEILING_Y, length)
+    for (const s of [-1, 1]) {
+      const w = new THREE.Mesh(wallGeo, wallMat)
+      w.position.set(s * WALL_X, CARRIAGE_CEILING_Y / 2, 0)
+      w.receiveShadow = true
+      g.add(w)
+    }
   }
 
   const ceiling = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, length), wallMat)
@@ -191,76 +196,417 @@ function buildShell(key, length, shared, damaged, seals = {}) {
 }
 
 // Shared damage pass applied on top of every dressed carriage in Level 3:
-// floor debris, torn ceiling panels exposing structure, and sparking cables.
-function addWreckage(g, half, shared, fx) {
-  const dummy = new THREE.Object3D()
+// recognisable torn-train pieces, exposed ceiling ribs, and sparking cables.
+function damageSites(half) {
+  if (half < 5) return [{ z: 0.4, side: -1 }]
+  return [
+    { z: -half + 2.4, side: -1 },
+    { z: half - 2.4, side: 1 }
+  ]
+}
 
-  const debrisMat = new THREE.MeshStandardMaterial({ color: 0x2b2724, roughness: 0.95 })
-  const debrisCount = Math.round(half * 2)
-  const debris = new THREE.InstancedMesh(new THREE.BoxGeometry(0.3, 0.16, 0.34), debrisMat, debrisCount)
-  for (let i = 0; i < debrisCount; i++) {
-    dummy.position.set(
-      skew(i + 11) * 1.25,
-      0.08 + Math.abs(skew(i + 5)) * 0.1,
-      skew(i + 2) * (half - 1.5)
-    )
-    dummy.rotation.set(skew(i) * 2, skew(i + 4) * 3, skew(i + 8) * 2)
-    dummy.updateMatrix()
-    debris.setMatrixAt(i, dummy.matrix)
+function nearSite(sites, z, side, span = 1.35) {
+  return sites.some((c) => Math.abs(z - c.z) < span && c.side === side)
+}
+
+// Level-3 passenger/cab: wall bands + pillars leave real openings so the
+// storm and exterior wreckage read through the windows. Frames only — glass
+// is gone. Player collision still uses carriage-bounds, not these meshes.
+function addBlownViewports(g, half, key, shared) {
+  const wallMat = wallMaterialFor(key, half * 2, true)
+  const paneH = key === 'cab' ? 0.92 : 1.12
+  const paneD = key === 'cab' ? 1.48 : 1.68
+  const paneY = key === 'cab' ? 1.58 : 1.48
+  const zs = []
+  if (key === 'cab') {
+    zs.push(0.6)
+  } else {
+    for (let z = -half + 2.4; z <= half - 2.4 + 0.01; z += 3.4) zs.push(z)
   }
-  debris.instanceMatrix.needsUpdate = true
-  debris.castShadow = true
-  // Loose scatter at floor level — colliding the camera against it would make
-  // it twitch every time the player walked past a piece.
-  debris.userData.noCameraCollision = true
-  g.add(debris)
 
-  // Torn ceiling panels exposing bare structural ribs.
-  const ribGeo = new THREE.BoxGeometry(WALL_X * 2 - 0.5, 0.08, 0.12)
-  for (let z = -half + 2; z < half - 2; z += 2.4) {
+  const sillY = paneY - paneH / 2
+  const lintelY = paneY + paneH / 2
+  const lowerH = Math.max(0.2, sillY)
+  const upperH = Math.max(0.2, CARRIAGE_CEILING_Y - lintelY)
+  const shardMat = new THREE.MeshStandardMaterial({
+    color: 0x4a5560, roughness: 0.08, metalness: 0.18,
+    transparent: true, opacity: 0.07, depthWrite: false
+  })
+  const shardCount = zs.length * 2
+  const shards = new THREE.InstancedMesh(new THREE.BoxGeometry(0.016, 0.14, 0.12), shardMat, shardCount)
+  const dummy = new THREE.Object3D()
+  let shardI = 0
+
+  for (const s of [-1, 1]) {
+    const x = s * WALL_X
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.12, lowerH, half * 2), wallMat)
+    lower.position.set(x, lowerH / 2, 0)
+    lower.receiveShadow = true
+    g.add(lower)
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.12, upperH, half * 2), wallMat)
+    upper.position.set(x, lintelY + upperH / 2, 0)
+    upper.receiveShadow = true
+    g.add(upper)
+
+    let cursor = -half
+    for (const z of zs) {
+      const a = z - paneD / 2
+      const span = a - cursor
+      if (span > 0.06) {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.12, paneH, span), wallMat)
+        pillar.position.set(x, paneY, cursor + span / 2)
+        pillar.receiveShadow = true
+        g.add(pillar)
+      }
+      const frame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, paneH + 0.1, paneD + 0.12),
+        shared.brass
+      )
+      frame.position.set(s * (WALL_X - 0.01), paneY, z)
+      g.add(frame)
+      dummy.position.set(s * (WALL_X - 0.02), paneY - 0.28, z + paneD * 0.28)
+      dummy.rotation.set(0.2, 0, s * 0.55)
+      dummy.updateMatrix()
+      shards.setMatrixAt(shardI++, dummy.matrix)
+      cursor = z + paneD / 2
+    }
+    const tail = half - cursor
+    if (tail > 0.06) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.12, paneH, tail), wallMat)
+      pillar.position.set(x, paneY, cursor + tail / 2)
+      pillar.receiveShadow = true
+      g.add(pillar)
+    }
+  }
+  shards.count = shardI
+  shards.instanceMatrix.needsUpdate = true
+  noCam(shards)
+  g.add(shards)
+}
+
+function addWreckage(g, half, shared, fx, key) {
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x3a3e45, roughness: 0.72, metalness: 0.58 })
+  const sites = damageSites(half)
+  const n = sites.length
+  const openView = key === 'passenger' || key === 'cab'
+
+  // Torn lining hinged off the wall at the ceiling joint — still wall-aligned.
+  // On cars with blown viewports, hang it inside the opening instead of filling it.
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, openView ? 0.82 : 1.45, openView ? 0.7 : 1.45), panelMat, n), n, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * (WALL_X - (openView ? 0.48 : 0.06)), openView ? 2.08 : 1.45, c.z)
+    d.rotation.set(0, 0, c.side * (openView ? 0.18 : 0.14))
+  }))
+
+  // Ceiling tile still attached at the wall-roof corner, sagging inward a little.
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.03, 1.15), panelMat, n), n, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.2, CARRIAGE_CEILING_Y - 0.06, c.z)
+    d.rotation.set(0, 0, c.side * 0.22)
+  }))
+
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.35), shared.steel, n), n, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * (WALL_X - 0.16), CARRIAGE_CEILING_Y - 0.12, c.z)
+    d.rotation.set(0, 0, c.side * 0.05)
+  }))
+
+  const ribGeo = new THREE.BoxGeometry(WALL_X * 2 - 0.55, 0.08, 0.12)
+  for (const c of sites) {
     const rib = new THREE.Mesh(ribGeo, shared.steel)
-    rib.position.set(0, CARRIAGE_CEILING_Y - 0.02, z)
+    rib.position.set(0, CARRIAGE_CEILING_Y - 0.02, c.z)
     g.add(rib)
   }
 
-  // Sparking severed cables — emissive specks the env update() flickers.
   const sparkMat = new THREE.MeshStandardMaterial({
-    color: 0xffd9a0, emissive: 0xffb054, emissiveIntensity: 4
+    color: 0xffd9a0, emissive: 0xffb054, emissiveIntensity: 2.2
   })
-  const sparkCount = Math.max(6, Math.round(half))
-  const sparks = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), sparkMat, sparkCount)
-  for (let i = 0; i < sparkCount; i++) {
-    dummy.position.set(skew(i + 21) * 1.3, 1.9 + skew(i + 13) * 0.4, skew(i + 6) * (half - 1.5))
-    dummy.rotation.set(0, 0, 0)
-    dummy.updateMatrix()
-    sparks.setMatrixAt(i, dummy.matrix)
-  }
-  sparks.instanceMatrix.needsUpdate = true
-  sparks.userData.noCameraCollision = true
-  g.add(sparks)
+  const sparkCount = n * 2
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.016, 0.016, 0.06, 5), sparkMat, sparkCount), sparkCount, (d, i) => {
+    const c = sites[i >> 1]
+    d.position.set(c.side * (WALL_X - 0.14), CARRIAGE_CEILING_Y - 0.16, c.z + (i % 2 ? 0.16 : -0.1))
+    d.rotation.set(0.25, 0, c.side * 0.15)
+  }))
   fx.sparkMats.push(sparkMat)
+
+  const cableMat = new THREE.MeshStandardMaterial({ color: 0x2a2d32, roughness: 0.72, metalness: 0.3 })
+  for (const c of sites) {
+    addSagCable(
+      g, cableMat,
+      c.side * (WALL_X - 0.1), CARRIAGE_CEILING_Y - 0.08, c.z - 0.2,
+      c.side * (WALL_X - 0.12), 1.15, c.z + 0.5,
+      0.22
+    )
+  }
 }
 
 // Registers a point light for the emergency-lighting flicker in update().
 function addLight(g, fx, light, damaged) {
   g.add(light)
-  if (damaged) fx.lights.push({ light, base: light.intensity, seed: fx.lights.length * 3.7 })
+  if (!damaged) return
+  const i = fx.lights.length
+  fx.lights.push({
+    light,
+    base: light.intensity,
+    seed: i * 3.7,
+    pattern: i % 4,
+    car: fx.car || '',
+    dead: false,
+    pendingKill: false,
+    surge: 0
+  })
 }
 
+// Level-3-only dressing: wall-hugging wreckage so the ±0.58 aisle stays clear.
+function noCam(obj) {
+  obj.userData.noCameraCollision = true
+  return obj
+}
+
+function scatterInstances(mesh, count, place) {
+  const dummy = new THREE.Object3D()
+  for (let i = 0; i < count; i++) {
+    place(dummy, i)
+    dummy.updateMatrix()
+    mesh.setMatrixAt(i, dummy.matrix)
+  }
+  mesh.instanceMatrix.needsUpdate = true
+  mesh.castShadow = true
+  noCam(mesh)
+  return mesh
+}
+
+function addSagCable(g, mat, ax, ay, az, bx, by, bz, sag = 0.32) {
+  const a = new THREE.Vector3(ax, ay, az)
+  const b = new THREE.Vector3(bx, by, bz)
+  const mid = a.clone().lerp(b, 0.5)
+  mid.y -= sag
+  const mesh = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 7, 0.015, 5, false),
+    mat
+  )
+  noCam(mesh)
+  g.add(mesh)
+}
+
+function dressDamagedMechanical(g, half, shared, fx) {
+  const sites = damageSites(half)
+  const stripeYel = new THREE.MeshStandardMaterial({
+    color: 0xd97706, emissive: 0x7c2d12, emissiveIntensity: 0.7, roughness: 0.55
+  })
+  const stripeBlk = new THREE.MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.85, metalness: 0.2 })
+  const stripeGeo = new THREE.BoxGeometry(0.06, 0.11, 0.48)
+  const stripeCount = sites.length * 2
+  for (const [mat, offset] of [[stripeYel, -0.24], [stripeBlk, 0.24]]) {
+    g.add(scatterInstances(new THREE.InstancedMesh(stripeGeo, mat, stripeCount), stripeCount, (d, i) => {
+      const c = sites[i >> 1]
+      d.position.set(c.side * (WALL_X - 0.18), 0.07, c.z + offset)
+      d.rotation.set(0, 0, 0)
+    }))
+  }
+
+  const panelMat = new THREE.MeshStandardMaterial({
+    color: 0x3a3f47, roughness: 0.5, metalness: 0.72, emissive: 0x1a1816, emissiveIntensity: 0.08
+  })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.85, 1.05), panelMat, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * (WALL_X - 0.14), 0.7, c.z)
+    d.rotation.set(0, 0, c.side * 0.1)
+  }))
+
+  const grateMat = metalMaterial({ repeat: [1, 1], base: 0x4b515a, roughness: 0.6, metalness: 0.8 })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.04, 0.7), grateMat, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.12, 0.28, c.z + 0.2)
+    d.rotation.set(0.06, 0, c.side * 0.55)
+  }))
+
+  const burstMat = metalMaterial({ repeat: [1, 1], base: 0x4a4e55, roughness: 0.55, metalness: 0.8 })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.045, 0.05, 1.15, 8), burstMat, sites.length * 2), sites.length * 2, (d, i) => {
+    const c = sites[i >> 1]
+    d.position.set(c.side * (WALL_X - 0.16), 1.05 + (i % 2) * 0.32, c.z)
+    d.rotation.set(Math.PI / 2, 0, c.side * 0.08)
+  }))
+
+  const glow = new THREE.PointLight(0xff5a1e, 5.5, 5, 2)
+  glow.position.set(sites[0].side * 0.95, 1.1, sites[0].z)
+  addLight(g, fx, glow, true)
+}
+
+function dressDamagedCargo(g, half, shared, fx) {
+  const sites = damageSites(half)
+  const lidMat = woodMaterial({ repeat: [1, 1], light: 0x4a463c, dark: 0x1c1b18 })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.62, 0.04, 0.58), lidMat, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.12, 0.88, c.z)
+    d.rotation.set(0.05, 0.12 * c.side, c.side * 0.18)
+  }))
+
+  const slatMat = woodMaterial({ repeat: [1, 1], light: 0x3e3c36, dark: 0x181714 })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.035, 0.62), slatMat, sites.length * 2), sites.length * 2, (d, i) => {
+    const c = sites[i >> 1]
+    d.position.set(c.side * 1.12, 0.06, c.z + (i % 2 ? 0.2 : -0.16))
+    d.rotation.set(0, 0.08 * c.side, 0)
+  }))
+
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.TorusGeometry(0.07, 0.016, 6, 10), shared.steel, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.15, CARRIAGE_CEILING_Y - 0.55, c.z)
+    d.rotation.set(1.15, 0, 0)
+  }))
+
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.15), shared.darkSteel, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.15, CARRIAGE_CEILING_Y - 0.2, c.z)
+    d.rotation.set(0, 0, c.side * 0.08)
+  }))
+
+  const purple = new THREE.MeshStandardMaterial({
+    color: 0x3b0764, emissive: 0xa855f7, emissiveIntensity: 1.15, roughness: 0.4
+  })
+  for (const c of sites) {
+    const mark = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.95, 0.18), purple)
+    mark.position.set(c.side * (WALL_X - 0.08), 1.35, c.z)
+    noCam(mark)
+    g.add(mark)
+  }
+  const loopGlow = new THREE.PointLight(0xa855f7, 3.6, 5, 2)
+  loopGlow.position.set(sites[0].side * 0.95, 1.5, sites[0].z)
+  addLight(g, fx, loopGlow, true)
+}
+
+function dressDamagedSecurity(g, half, shared, fx) {
+  const sites = damageSites(half)
+  const doorMat = metalMaterial({ repeat: [1, 1], base: 0x2a3140, roughness: 0.5, metalness: 0.75 })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 1.15, 0.48), doorMat, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * (WALL_X - 0.08), 0.95, c.z)
+    d.rotation.set(0.04, c.side * -0.45, c.side * 0.06)
+  }))
+
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.028, 0.028, 1.35, 6), shared.darkSteel, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * (WALL_X - 0.12), 1.55, c.z)
+    d.rotation.set(Math.PI / 2, 0, c.side * 0.04)
+  }))
+
+  const fixtureMat = new THREE.MeshStandardMaterial({
+    color: 0x1e293b, emissive: 0x1d4ed8, emissiveIntensity: 0.45, roughness: 0.45, metalness: 0.6
+  })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.05, 0.5), fixtureMat, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.18, CARRIAGE_CEILING_Y - 0.12, c.z)
+    d.rotation.set(0, 0, c.side * 0.18)
+  }))
+}
+
+function dressDamagedPassenger(g, half, shared, fx) {
+  const sites = damageSites(half)
+  const luggageMat = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 0.82, metalness: 0.05 })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.38, 0.2, 0.5), luggageMat, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.08, 0.58, c.z + 0.55)
+    d.rotation.set(0.04, 0.12 * c.side, 0)
+  }))
+
+  const seatFrag = new THREE.MeshStandardMaterial({ color: 0x3a4552, roughness: 0.88, metalness: 0.04 })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.1, 0.4), seatFrag, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.12, 0.12, c.z - 0.35)
+    d.rotation.set(0.05, 0.08 * c.side, c.side * 0.12)
+  }))
+
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.04, 0.9, 0.08), shared.brass, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * (WALL_X - 0.05), 1.45, c.z + 0.72)
+    d.rotation.set(0.04, 0, c.side * 0.12)
+  }))
+}
+
+function rememberVaultPiece(fx, mesh) {
+  if (!fx.vaultPieces) fx.vaultPieces = []
+  if (fx.vaultPieces.length >= 4) return
+  fx.vaultPieces.push({
+    mesh,
+    x: mesh.position.x,
+    y: mesh.position.y,
+    z: mesh.position.z,
+    rx: mesh.rotation.x,
+    ry: mesh.rotation.y,
+    rz: mesh.rotation.z
+  })
+}
+
+function rememberVaultMat(fx, mat) {
+  if (!fx.vaultMats) fx.vaultMats = []
+  fx.vaultMats.push(mat)
+}
+
+function dressDamagedVault(g, half, shared, fx) {
+  const sites = [{ z: half - 1.8, side: -1 }, { z: half - 1.8, side: 1 }]
+  const plateMat = metalMaterial({ repeat: [1, 1], base: 0x252830, roughness: 0.48, metalness: 0.82 })
+  rememberVaultMat(fx, plateMat)
+  const plates = scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.04, 1.2, 1.15), plateMat, 2), 2, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * (WALL_X - 0.08), 1.15, c.z)
+    d.rotation.set(0, 0, c.side * 0.08)
+  })
+  g.add(plates)
+  rememberVaultPiece(fx, plates)
+
+  const rails = scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.2), shared.steel, 2), 2, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.18, 0.14, c.z)
+    d.rotation.set(0, 0, c.side * 0.05)
+  })
+  g.add(rails)
+  rememberVaultPiece(fx, rails)
+
+  const scorch = new THREE.MeshStandardMaterial({
+    color: 0x1e1b4b, emissive: 0x6d28d9, emissiveIntensity: 0.85, roughness: 0.7
+  })
+  rememberVaultMat(fx, scorch)
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.38, 0.015, 1.05), scorch, 2), 2, (d, i) => {
+    const c = sites[i]
+    d.position.set(c.side * 1.18, 0.02, c.z)
+    d.rotation.set(0, 0, 0)
+  }))
+
+  const vein = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 1.35, roughness: 0.35
+  })
+  rememberVaultMat(fx, vein)
+  for (const c of sites) {
+    const streak = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.5, 0.08), vein)
+    streak.position.set(c.side * (WALL_X - 0.07), 1.15, c.z)
+    noCam(streak)
+    g.add(streak)
+    rememberVaultPiece(fx, streak)
+    addSagCable(g, vein, c.side * (WALL_X - 0.1), 2.18, c.z - 0.3, c.side * 1.12, 0.7, c.z + 0.25, 0.24)
+  }
+
+  const coreGlow = new THREE.PointLight(0x7c3aed, 5, 6, 2)
+  coreGlow.position.set(0, 1.4, half - 1.2)
+  addLight(g, fx, coreGlow, true)
+}
 // --- Per-carriage dressing -------------------------------------------------
 
 function dressPassenger(g, half, shared, damaged, fx) {
-  const windowMat = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: damaged ? 0.3 : 0.95 })
-  const winGeo = new THREE.BoxGeometry(0.05, 0.9, 1.5)
-  const frameGeo = new THREE.BoxGeometry(0.05, 1.04, 1.66)
-  for (let z = -half + 2.4; z <= half - 2.4; z += 3.4) {
-    for (const s of [-1, 1]) {
-      const f = new THREE.Mesh(frameGeo, shared.brass)
-      f.position.set(s * (WALL_X - 0.05), 1.5, z)
-      g.add(f)
-      const p = new THREE.Mesh(winGeo, windowMat)
-      p.position.set(s * (WALL_X - 0.045), 1.5, z)
-      g.add(p)
+  if (damaged) {
+    addBlownViewports(g, half, 'passenger', shared)
+  } else {
+    const windowMat = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: 0.95 })
+    const winGeo = new THREE.BoxGeometry(0.05, 0.9, 1.5)
+    const frameGeo = new THREE.BoxGeometry(0.05, 1.04, 1.66)
+    for (let z = -half + 2.4; z <= half - 2.4; z += 3.4) {
+      for (const s of [-1, 1]) {
+        const f = new THREE.Mesh(frameGeo, shared.brass)
+        f.position.set(s * (WALL_X - 0.05), 1.5, z)
+        g.add(f)
+        const p = new THREE.Mesh(winGeo, windowMat)
+        p.position.set(s * (WALL_X - 0.045), 1.5, z)
+        g.add(p)
+      }
     }
   }
 
@@ -268,18 +614,21 @@ function dressPassenger(g, half, shared, damaged, fx) {
   // tilted and dropped so the same instanced set reads as thrown about.
   const bays = Math.max(1, Math.floor((half * 2 - 4) / 3.4))
   const seatMat = new THREE.MeshStandardMaterial({
-    color: damaged ? 0x2f2a30 : 0x4a5c74, roughness: 0.88, metalness: 0.03
+    color: damaged ? 0x3d4a58 : 0x4a5c74, roughness: 0.88, metalness: 0.03
   })
   const bases = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.16, 0.95), seatMat, bays * 2)
   const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.8, 0.16), seatMat, bays * 2)
   const dummy = new THREE.Object3D()
+  const sites = damaged ? damageSites(half) : []
   let i = 0
   for (let b = 0; b < bays; b++) {
     const z = -half + 3 + b * 3.4
     for (const s of [-1, 1]) {
-      const tilt = damaged ? skew(i + 1) * 0.5 : 0
-      const drop = damaged ? Math.abs(skew(i + 7)) * 0.12 : 0
-      dummy.rotation.set(0, 0, tilt)
+      const wrecked = damaged && nearSite(sites, z, s, 1.8)
+      const tilt = wrecked ? skew(i + 1) * 0.18 : 0
+      const yaw = wrecked ? skew(i + 4) * 0.08 : 0
+      const drop = wrecked ? Math.abs(skew(i + 7)) * 0.05 : 0
+      dummy.rotation.set(wrecked ? Math.abs(skew(i + 2)) * 0.08 : 0, yaw, tilt)
       dummy.position.set(s * 1.02, 0.42 - drop, z); dummy.updateMatrix()
       bases.setMatrixAt(i, dummy.matrix)
       dummy.position.set(s * 1.24, 0.82 - drop, z); dummy.updateMatrix()
@@ -292,23 +641,24 @@ function dressPassenger(g, half, shared, damaged, fx) {
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.4, 0.05, half * 2 - 2),
     new THREE.MeshStandardMaterial({
-      color: damaged ? 0x5a1712 : 0xfff2d6,
-      emissive: damaged ? 0xcc2a18 : 0xffe0ae,
-      emissiveIntensity: damaged ? 2 : 2.3
+      color: damaged ? 0x6a2218 : 0xfff2d6,
+      emissive: damaged ? 0xc42818 : 0xffe0ae,
+      emissiveIntensity: damaged ? 1.35 : 2.3
     })
   )
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(damaged ? 0xff5a3c : 0xffcf96, damaged ? 15 : 22, damaged ? 9 : 12, 2)
+    const l = new THREE.PointLight(damaged ? 0xff6a48 : 0xffcf96, damaged ? 8.5 : 22, damaged ? 6.5 : 12, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, damaged)
   }
+  if (damaged) dressDamagedPassenger(g, half, shared, fx)
 }
 
 function dressSecurity(g, half, shared, damaged, fx) {
   const slitMat = new THREE.MeshStandardMaterial({
-    color: 0x1b2733, emissive: damaged ? 0x3a1410 : 0x22405a, emissiveIntensity: 0.5, roughness: 0.4
+    color: 0x1b2733, emissive: damaged ? 0x1e3a5f : 0x22405a, emissiveIntensity: 0.5, roughness: 0.4
   })
   for (let z = -half + 2; z <= half - 2; z += 2.6) {
     for (const s of [-1, 1]) {
@@ -329,11 +679,12 @@ function dressSecurity(g, half, shared, damaged, fx) {
   const cols = Math.max(2, Math.floor((half * 2 - 5) / 0.62))
   const lockers = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 1.7, 0.5), lockerMat, cols * 2)
   const dummy = new THREE.Object3D()
+  const sites = damaged ? damageSites(half) : []
   let i = 0
   for (let c = 0; c < cols; c++) {
     const z = -half + 2.5 + c * 0.62
     for (const s of [-1, 1]) {
-      dummy.rotation.set(0, 0, damaged ? skew(i + 3) * 0.18 : 0)
+      dummy.rotation.set(0, damaged && nearSite(sites, z, s, 0.9) ? s * -0.18 : 0, 0)
       dummy.position.set(s * (WALL_X - 0.32), 0.86, z); dummy.updateMatrix()
       lockers.setMatrixAt(i++, dummy.matrix)
     }
@@ -346,17 +697,18 @@ function dressSecurity(g, half, shared, damaged, fx) {
     const cage = new THREE.Mesh(
       new THREE.BoxGeometry(0.5, 0.08, 0.5),
       new THREE.MeshStandardMaterial({
-        color: damaged ? 0x4a1a14 : 0xbfe4ff,
-        emissive: damaged ? 0xd03018 : 0x7fd0ff,
-        emissiveIntensity: 2.2
+        color: damaged ? 0x1e3a4a : 0xbfe4ff,
+        emissive: damaged ? 0x3b82f6 : 0x7fd0ff,
+        emissiveIntensity: 1.6
       })
     )
     cage.position.set(0, CARRIAGE_CEILING_Y - 0.07, z)
     g.add(cage)
-    const l = new THREE.PointLight(damaged ? 0xff5030 : 0x9fd0ff, damaged ? 12 : 14, damaged ? 8 : 10, 2)
+    const l = new THREE.PointLight(damaged ? 0x8fb4d4 : 0x9fd0ff, damaged ? 8 : 14, damaged ? 7 : 10, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, damaged)
   }
+  if (damaged) dressDamagedSecurity(g, half, shared, fx)
 }
 
 function dressRelay(g, half, shared, damaged, fx) {
@@ -430,7 +782,7 @@ function dressRelay(g, half, shared, damaged, fx) {
 
 function dressCargo(g, half, shared, damaged, fx) {
   const crateMat = woodMaterial({
-    repeat: [1, 1], light: damaged ? 0x54401f : 0x8a6a40, dark: damaged ? 0x2a1d0e : 0x4c3620
+    repeat: [1, 1], light: damaged ? 0x4a463c : 0x8a6a40, dark: damaged ? 0x1c1b18 : 0x4c3620
   })
   const spots = []
   for (let z = -half + 2; z <= half - 2; z += 2.2) {
@@ -440,12 +792,14 @@ function dressCargo(g, half, shared, damaged, fx) {
   }
   const crates = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), crateMat, spots.length)
   const dummy = new THREE.Object3D()
+  const sites = damaged ? damageSites(half) : []
   spots.forEach(([x, y, z, seed], k) => {
-    dummy.position.set(x, damaged ? y - Math.abs(skew(k + 2)) * 0.12 : y, z)
+    const wrecked = damaged && nearSite(sites, z, Math.sign(x) || -1, 1.6)
+    dummy.position.set(x, wrecked ? y - 0.05 : y, z)
     dummy.rotation.set(
-      damaged ? skew(k + 5) * 0.35 : 0,
+      wrecked ? 0.08 : 0,
       skew(seed + k) * 0.4,
-      damaged ? skew(k + 9) * 0.4 : 0
+      wrecked ? Math.sign(x) * 0.1 : 0
     )
     dummy.updateMatrix()
     crates.setMatrixAt(k, dummy.matrix)
@@ -468,21 +822,20 @@ function dressCargo(g, half, shared, damaged, fx) {
   const work = new THREE.Mesh(
     new THREE.BoxGeometry(0.4, 0.06, 0.4),
     new THREE.MeshStandardMaterial({
-      color: damaged ? 0x5a2410 : 0xffdca0,
-      emissive: damaged ? 0xd83c14 : 0xffb454,
-      emissiveIntensity: 2.4
+      color: damaged ? 0x6a2818 : 0xffdca0,
+      emissive: damaged ? 0xc43414 : 0xffb454,
+      emissiveIntensity: 1.6
     })
   )
   work.position.set(0, CARRIAGE_CEILING_Y - 0.09, 0)
   g.add(work)
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(damaged ? 0xff6438 : 0xffb264, damaged ? 13 : 16, damaged ? 8 : 11, 2)
+    const l = new THREE.PointLight(damaged ? 0xff7048 : 0xffb264, damaged ? 7.5 : 16, damaged ? 6 : 11, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, l, damaged)
   }
+  if (damaged) dressDamagedCargo(g, half, shared, fx)
 }
-
-// Returns the roof-hatch cover and the ladder up to it (Level 2 only uses them).
 function dressMechanical(g, half, shared, damaged, fx) {
   const pipeMat = metalMaterial({
     repeat: [1, 4], base: damaged ? 0x555b63 : 0x707781, roughness: damaged ? 0.7 : 0.45, metalness: 0.85
@@ -510,20 +863,20 @@ function dressMechanical(g, half, shared, damaged, fx) {
     g.add(spoke)
   }
 
-  const boilerLight = new THREE.PointLight(damaged ? 0xff4a1e : 0xff7a3c, damaged ? 22 : 18, 12, 2)
+  const boilerLight = new THREE.PointLight(damaged ? 0xff6a32 : 0xff7a3c, damaged ? 14 : 18, damaged ? 8 : 12, 2)
   boilerLight.position.set(0, 1.4, half - 4)
   addLight(g, fx, boilerLight, damaged)
 
   const grate = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 0.7, 0.1),
     new THREE.MeshStandardMaterial({
-      color: 0x2a1508, emissive: 0xff5a1e, emissiveIntensity: damaged ? 3.4 : 2.6, roughness: 0.7
+      color: 0x2a1508, emissive: 0xff5a1e, emissiveIntensity: damaged ? 2.6 : 2.6, roughness: 0.7
     })
   )
   grate.position.set(0, 0.6, half - 0.3)
   g.add(grate)
 
-  const ceil = new THREE.PointLight(damaged ? 0xff6030 : 0xffb066, 12, 10, 2)
+  const ceil = new THREE.PointLight(damaged ? 0xd8c8b8 : 0xffb066, damaged ? 7 : 12, damaged ? 8 : 10, 2)
   ceil.position.set(0, CARRIAGE_CEILING_Y - 0.3, -half * 0.4)
   addLight(g, fx, ceil, damaged)
 
@@ -560,6 +913,8 @@ function dressMechanical(g, half, shared, damaged, fx) {
   ladder.position.set(0.0, 0, hatchZ - 0.55)
   g.add(ladder)
 
+  if (damaged) dressDamagedMechanical(g, half, shared, fx)
+
   return { hatchCover, hatchRim: rim, ladder }
 }
 
@@ -589,14 +944,15 @@ function dressVault(g, half, shared, damaged, fx) {
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.35, 0.05, half * 2 - 2),
     new THREE.MeshStandardMaterial({
-      color: damaged ? 0x4a1a14 : 0xbfe0ff,
-      emissive: damaged ? 0xd83018 : 0x5ab6ff,
-      emissiveIntensity: 2.0
+      color: damaged ? 0x2a1848 : 0xbfe0ff,
+      emissive: damaged ? 0x7c3aed : 0x5ab6ff,
+      emissiveIntensity: 1.6
     })
   )
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
-  const l = new THREE.PointLight(damaged ? 0xff5030 : 0x7cc4ff, damaged ? 13 : 16, damaged ? 9 : 12, 2)
+  if (damaged) rememberVaultMat(fx, strip.material)
+  const l = new THREE.PointLight(damaged ? 0x8b6cff : 0x7cc4ff, damaged ? 9 : 16, damaged ? 8 : 12, 2)
   l.position.set(0, CARRIAGE_CEILING_Y - 0.3, 0)
   addLight(g, fx, l, damaged)
 
@@ -607,6 +963,8 @@ function dressVault(g, half, shared, damaged, fx) {
   hatch.position.set(0, CARRIAGE_CEILING_Y - 0.03, -half + 2.5)
   hatch.userData.noCameraCollision = true
   g.add(hatch)
+
+  if (damaged) dressDamagedVault(g, half, shared, fx)
 
   return { door }
 }
@@ -648,7 +1006,7 @@ function buildLocomotiveCab(shared, fx) {
   )
   firebox.position.set(0, 0.42, -half + 0.72)
   group.add(firebox)
-  const fireLight = new THREE.PointLight(0xff6a24, 26, 9, 2)
+  const fireLight = new THREE.PointLight(0xff6a24, 16, 7, 2)
   fireLight.position.set(0, 0.6, -half + 1.1)
   addLight(group, fx, fireLight, true)
 
@@ -664,25 +1022,17 @@ function buildLocomotiveCab(shared, fx) {
     group.add(lever)
   }
 
-  // Side windows onto the night rushing past.
-  const nightMat = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: 0.55 })
-  for (const s of [-1, 1]) {
-    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.8, 1.3), nightMat)
-    pane.position.set(s * (WALL_X - 0.045), 1.6, 0.6)
-    group.add(pane)
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.94, 1.46), shared.brass)
-    frame.position.set(s * (WALL_X - 0.05), 1.6, 0.6)
-    group.add(frame)
-  }
+  // Blown side openings onto the night rushing past.
+  addBlownViewports(group, half, 'cab', shared)
 
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.3, 0.05, CAB_LENGTH - 2),
-    new THREE.MeshStandardMaterial({ color: 0x5a1712, emissive: 0xcc2a18, emissiveIntensity: 1.8 })
+    new THREE.MeshStandardMaterial({ color: 0x4a1c16, emissive: 0xc42818, emissiveIntensity: 1.35 })
   )
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   group.add(strip)
 
-  addWreckage(group, half, shared, fx)
+  addWreckage(group, half, shared, fx, 'cab')
   return { group, half }
 }
 
@@ -803,6 +1153,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     carriages[cfg.key] = group
     spans[cfg.key] = { minZ: cursor, maxZ: cursor + cfg.length, center }
 
+    if (damaged) fx.car = cfg.key
     if (cfg.key === 'passenger') dressPassenger(group, half, shared, damaged, fx)
     else if (cfg.key === 'security') dressSecurity(group, half, shared, damaged, fx)
     else if (cfg.key === 'relay') dressRelay(group, half, shared, damaged, fx)
@@ -811,7 +1162,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     else if (cfg.key === 'convergence') parts.convergence = dressMechanical(group, half, shared, damaged, fx)
     else if (cfg.key === 'vault') parts.vault = dressVault(group, half, shared, damaged, fx)
 
-    if (damaged) addWreckage(group, half, shared, fx)
+    if (damaged) addWreckage(group, half, shared, fx, cfg.key)
 
     cursor += cfg.length
   })
@@ -822,6 +1173,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     roof = buildRoof(spans, shared)
     root.add(roof.group)
   } else {
+    fx.car = 'cab'
     const cab = buildLocomotiveCab(shared, fx)
     const cabCenter = spans.passenger.minZ - cab.half
     cab.group.position.z = cabCenter
@@ -831,11 +1183,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   }
 
   // Base exposure so no corner falls to pure black between the point lights.
-  const ambient = new THREE.AmbientLight(damaged ? 0x4a2620 : 0x5b5750, damaged ? 0.45 : 0.5)
+  const ambient = new THREE.AmbientLight(damaged ? 0x2a323c : 0x5b5750, damaged ? 0.28 : 0.5)
   const hemi = new THREE.HemisphereLight(
-    damaged ? 0x7a3428 : 0x8a8272,
-    damaged ? 0x2a1210 : 0x2a2620,
-    damaged ? 0.4 : 0.55
+    damaged ? 0x5a6e88 : 0x8a8272,
+    damaged ? 0x12151a : 0x2a2620,
+    damaged ? 0.32 : 0.55
   )
   root.add(ambient, hemi)
 
@@ -856,19 +1208,96 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   // Emergency lighting flickers and severed cables spark; Level 2's steady
   // interior lighting makes this a no-op, so levels can call it unconditionally.
   let elapsed = 0
+  function passengerLightWorldZ(entry) {
+    return (entry.light.parent?.position.z || 0) + entry.light.position.z
+  }
+
   function update(delta) {
     if (!damaged) return
+    if (delta === 0) return
     elapsed += delta
+    const t = elapsed
     for (const entry of fx.lights) {
-      const flicker = 0.6 + 0.4 * Math.abs(
-        Math.sin(elapsed * 9 + entry.seed) * Math.sin(elapsed * 3.1 + entry.seed)
-      )
-      entry.light.intensity = entry.base * flicker
+      if (entry.dead) {
+        entry.light.intensity = 0
+        continue
+      }
+      if (entry.surge > 0) {
+        entry.surge = Math.max(0, entry.surge - Math.abs(delta))
+        entry.light.intensity = entry.base * (0.05 + 0.95 * Math.abs(Math.sin(t * 46 + entry.seed)))
+        if (entry.surge === 0 && entry.pendingKill) {
+          entry.dead = true
+          entry.light.intensity = 0
+        }
+        continue
+      }
+      const seed = entry.seed
+      let mul = 1
+      if (entry.pattern === 0) {
+        const a = Math.sin(t * 11.3 + seed)
+        const b = Math.sin(t * 2.7 + seed * 1.4)
+        const c = Math.sin(t * 0.83 + seed)
+        mul = 0.42 + 0.58 * Math.abs(a * b)
+        if (c > 0.78) mul *= 0.12
+      } else if (entry.pattern === 1) {
+        const drop = Math.sin(t * 0.55 + seed) * Math.sin(t * 1.21 + seed * 2)
+        mul = drop > 0.84 ? 0.08 : drop > 0.62 ? 0.38 : 0.88 + 0.12 * Math.sin(t * 4.2 + seed)
+      } else if (entry.pattern === 2) {
+        mul = 0.55 + 0.45 * Math.abs(Math.sin(t * 8.4 + seed) * Math.sin(t * 3.05 + seed))
+      } else {
+        mul = 0.9 + 0.1 * Math.sin(t * 2.2 + seed)
+      }
+      entry.light.intensity = entry.base * mul
     }
     for (const mat of fx.sparkMats) {
-      mat.emissiveIntensity = 1 + Math.abs(Math.sin(elapsed * 17)) * 6
+      mat.emissiveIntensity = 0.7 + Math.abs(Math.sin(t * 17)) * 2.4
     }
   }
 
-  return { root, carriages, spans, roof, parts, interiorBounds, roofBounds, vaultBounds, update }
+  function shockPassengerLights() {
+    if (!damaged) return
+    let kill = null
+    let killZ = -Infinity
+    for (const entry of fx.lights) {
+      if (entry.car !== 'passenger' || entry.dead) continue
+      entry.surge = 0.85
+      const wz = passengerLightWorldZ(entry)
+      if (wz > killZ) {
+        killZ = wz
+        kill = entry
+      }
+    }
+    if (kill) kill.pendingKill = true
+  }
+
+  function restorePassengerLights(collapsed) {
+    if (!damaged) return
+    let kill = null
+    let killZ = -Infinity
+    for (const entry of fx.lights) {
+      if (entry.car !== 'passenger') continue
+      const wz = passengerLightWorldZ(entry)
+      if (wz > killZ) {
+        killZ = wz
+        kill = entry
+      }
+    }
+    for (const entry of fx.lights) {
+      if (entry.car !== 'passenger') continue
+      entry.surge = 0
+      entry.pendingKill = false
+      entry.dead = Boolean(collapsed && entry === kill)
+      entry.light.intensity = entry.dead ? 0 : entry.base
+    }
+  }
+
+  return {
+    root, carriages, spans, roof, parts, interiorBounds, roofBounds, vaultBounds,
+    update, shockPassengerLights, restorePassengerLights,
+    getVaultFracture: () => ({
+      lights: fx.lights.filter((e) => e.car === 'vault'),
+      mats: fx.vaultMats || [],
+      pieces: fx.vaultPieces || []
+    })
+  }
 }

@@ -191,12 +191,13 @@ test('pausing suspends a pending failure until gameplay resumes', async () => {
 test('input state keeps caught, transition, and cinematic controls explicit', () => {
   const base = {
     gameStarted: true, creditsOpen: false, paused: false,
-    transitioning: false, caught: false, cinematic: false
+    transitioning: false, caught: false, cinematic: false, editor: false
   }
   assert.equal(resolveInputState(base), 'PLAYING')
   assert.equal(resolveInputState({ ...base, caught: true }), 'CAUGHT')
   assert.equal(resolveInputState({ ...base, transitioning: true }), 'TRANSITION')
   assert.equal(resolveInputState({ ...base, cinematic: true }), 'CINEMATIC')
+  assert.equal(resolveInputState({ ...base, editor: true }), 'EDITOR')
   assert.equal(resolveInputState({ ...base, paused: true, caught: true }), 'PAUSED')
   assert.equal(resolveInputState({ ...base, gameStarted: false }), 'TITLE')
 })

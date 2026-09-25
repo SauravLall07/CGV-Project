@@ -429,12 +429,53 @@ export function createHud() {
 
   timeDeck.append(energyRow, strainRow, abilitySlots)
 
-  // Optional FPS counter (Settings → Display → Performance Counter). Top-left
-  // is the one corner nothing else on the HUD claims.
+  // Heist completion timer — real elapsed time; Chrono modes only restyle
+  // or hold the digits, they never change the underlying clock.
+  const runTimer = document.createElement('div')
+  Object.assign(runTimer.style, {
+    position: 'absolute',
+    top: '18px',
+    left: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: '2px',
+    padding: '6px 12px',
+    background: 'rgba(9, 13, 22, 0.78)',
+    border: '1px solid rgba(0, 212, 255, 0.22)',
+    borderRadius: '6px',
+    backdropFilter: 'blur(6px)',
+    transition: 'border-color 200ms ease, box-shadow 200ms ease, opacity 200ms ease'
+  })
+
+  const runTimerLabel = document.createElement('div')
+  runTimerLabel.textContent = 'TIME'
+  Object.assign(runTimerLabel.style, {
+    fontSize: '10px',
+    fontWeight: '700',
+    letterSpacing: '1.4px',
+    color: '#38bdf8',
+    transition: 'color 200ms ease'
+  })
+
+  const runTimerDigits = document.createElement('div')
+  runTimerDigits.textContent = '00:00.0'
+  Object.assign(runTimerDigits.style, {
+    fontSize: '18px',
+    fontWeight: '700',
+    fontVariantNumeric: 'tabular-nums',
+    letterSpacing: '0.08em',
+    color: '#f1f5f9',
+    textShadow: '0 1px 4px rgba(0, 0, 0, 0.7)',
+    transition: 'color 200ms ease, opacity 200ms ease, text-shadow 200ms ease'
+  })
+  runTimer.append(runTimerLabel, runTimerDigits)
+
+  // Optional FPS counter (Settings → Display → Performance Counter).
   const stats = document.createElement('div')
   Object.assign(stats.style, {
     position: 'absolute',
-    top: '18px',
+    top: '78px',
     left: '20px',
     padding: '4px 9px',
     background: 'rgba(9, 13, 22, 0.7)',
@@ -448,7 +489,7 @@ export function createHud() {
   })
   stats.textContent = '-- FPS'
 
-  root.append(objective, toast, briefing, suspicionContainer, timeDeck, stats)
+  root.append(objective, toast, briefing, suspicionContainer, timeDeck, runTimer, stats)
   document.body.appendChild(root)
 
   // Re-label the ability slots when the player rebinds a time ability.
@@ -485,6 +526,101 @@ export function createHud() {
   let toastTimer = null
   let objectiveText = ''
   let suspicionValue = 0
+  let displaySeconds = 0
+  let timerMode = 'NORMAL'
+  let timerFrozenAt = null
+
+  function formatRunClock(seconds) {
+    const tenths = Math.max(0, Math.floor(seconds * 10 + 1e-6))
+    const minutes = Math.floor(tenths / 600)
+    const secs = Math.floor((tenths % 600) / 10)
+    const tenth = tenths % 10
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${tenth}`
+  }
+
+  function styleRunTimer(mode, ghostActive) {
+    const ghostLook = ghostActive && mode === 'NORMAL'
+    if (mode === 'SLOW') {
+      runTimer.style.borderColor = 'rgba(56, 189, 248, 0.55)'
+      runTimer.style.boxShadow = '0 0 10px rgba(56, 189, 248, 0.18)'
+      runTimer.style.opacity = '1'
+      runTimerLabel.style.color = '#7dd3fc'
+      runTimerDigits.style.color = '#bae6fd'
+      runTimerDigits.style.opacity = '0.88'
+      runTimerDigits.style.textShadow = '0 0 8px rgba(56, 189, 248, 0.45)'
+    } else if (mode === 'FREEZE') {
+      runTimer.style.borderColor = 'rgba(96, 165, 250, 0.65)'
+      runTimer.style.boxShadow = '0 0 12px rgba(96, 165, 250, 0.22)'
+      runTimer.style.opacity = '1'
+      runTimerLabel.style.color = '#93c5fd'
+      runTimerDigits.style.color = '#dbeafe'
+      runTimerDigits.style.opacity = '0.92'
+      runTimerDigits.style.textShadow = '0 0 10px rgba(147, 197, 253, 0.5)'
+    } else if (mode === 'REWIND') {
+      runTimer.style.borderColor = 'rgba(168, 85, 247, 0.55)'
+      runTimer.style.boxShadow = '0 0 10px rgba(168, 85, 247, 0.2)'
+      runTimer.style.opacity = '1'
+      runTimerLabel.style.color = '#d8b4fe'
+      runTimerDigits.style.color = '#e9d5ff'
+      runTimerDigits.style.opacity = '0.9'
+      runTimerDigits.style.textShadow = '0 0 8px rgba(168, 85, 247, 0.45)'
+    } else if (ghostLook) {
+      runTimer.style.borderColor = 'rgba(168, 85, 247, 0.32)'
+      runTimer.style.boxShadow = 'none'
+      runTimer.style.opacity = '0.72'
+      runTimerLabel.style.color = '#c4b5fd'
+      runTimerDigits.style.color = '#ddd6fe'
+      runTimerDigits.style.opacity = '0.7'
+      runTimerDigits.style.textShadow = '0 0 6px rgba(139, 92, 246, 0.35)'
+    } else {
+      runTimer.style.borderColor = 'rgba(0, 212, 255, 0.22)'
+      runTimer.style.boxShadow = 'none'
+      runTimer.style.opacity = '1'
+      runTimerLabel.style.color = '#38bdf8'
+      runTimerDigits.style.color = '#f1f5f9'
+      runTimerDigits.style.opacity = '1'
+      runTimerDigits.style.textShadow = '0 1px 4px rgba(0, 0, 0, 0.7)'
+    }
+  }
+
+  function resetRunTimer() {
+    displaySeconds = 0
+    timerMode = 'NORMAL'
+    timerFrozenAt = null
+    runTimerDigits.textContent = formatRunClock(0)
+    styleRunTimer('NORMAL', false)
+  }
+
+  function updateRunTimer({ elapsed, delta = 0, mode = 'NORMAL', ghostActive = false, running = true }) {
+    const trueElapsed = Math.max(0, elapsed)
+    if (!running) {
+      displaySeconds = trueElapsed
+      timerFrozenAt = null
+      timerMode = 'NORMAL'
+      runTimerDigits.textContent = formatRunClock(displaySeconds)
+      styleRunTimer('NORMAL', false)
+      return
+    }
+
+    if (mode === 'FREEZE') {
+      if (timerMode !== 'FREEZE') timerFrozenAt = displaySeconds
+      displaySeconds = timerFrozenAt ?? displaySeconds
+    } else if (mode === 'REWIND') {
+      timerFrozenAt = null
+      displaySeconds = Math.max(0, displaySeconds - delta * 1.5)
+    } else {
+      timerFrozenAt = null
+      if (displaySeconds + 0.02 < trueElapsed) {
+        displaySeconds = Math.min(trueElapsed, displaySeconds + delta * 10)
+      } else {
+        displaySeconds = trueElapsed
+      }
+    }
+
+    timerMode = mode
+    runTimerDigits.textContent = formatRunClock(displaySeconds)
+    styleRunTimer(mode, ghostActive)
+  }
 
   function setObjective(text) {
     objectiveText = text ?? ''
@@ -665,6 +801,9 @@ export function createHud() {
     setSuspicion,
     updateTimeState,
     setChronoVisible,
+    updateRunTimer,
+    resetRunTimer,
+    formatRunClock,
     updateStats,
     setVisible,
     dispose,

@@ -3,7 +3,8 @@ import * as CANNON from 'cannon-es'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
-import { createParticleField } from '../environment/particles.js'
+import { createParticleField, createChronoMoteField } from '../environment/particles.js'
+import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 
 // Level 3 — "The Timewreck". The escape run: the player now sprints BACK down
@@ -31,8 +32,9 @@ import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 // car" test is a descending-Z comparison.
 
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
-const NIGHT_COLOR = new THREE.Color(0x140708)
+const NIGHT_COLOR = new THREE.Color(0x0d1218)
 const DAWN_COLOR = new THREE.Color(0x2c3a56)
+const FINALE_FREEZE_COLOR = new THREE.Color(0x1a3358)
 const INTERIOR_HALF_WIDTH = 1.6
 
 // Deterministic scatter, matching the environment modules.
@@ -103,10 +105,15 @@ export function createTimewreckLevel({
   const env = createCarriageEnvironment({ damaged: true })
   const { root, spans, carriages } = env
   const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 45.0, stormy: true })
-  scene.add(outdoorEnv.group, root)
+  const wreckExterior = createTimewreckExterior({
+    minZ: spans.cab.minZ - 10,
+    maxZ: spans.vault.maxZ + 12,
+    speed: 45
+  })
+  scene.add(outdoorEnv.group, wreckExterior.group, root)
   scene.background = new THREE.Color().copy(NIGHT_COLOR)
   // Wide enough to keep the storm-lit scenery outside readable.
-  scene.fog = new THREE.Fog(0x1a0708, 10, 120)
+  scene.fog = new THREE.Fog(0x10141c, 10, 120)
 
   const unregisters = []
   unregisters.push(interaction.registerBlocker(root))
@@ -114,11 +121,25 @@ export function createTimewreckLevel({
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
 
   let failCooldown = 0
+  const LEVEL_OBJECTIVE = 'The Chrono Core is tearing the train apart — escape to the locomotive'
+  const COLLAPSE_HINT = 'Freeze the collapse — Hold W + SPACE to jump forward'
+  const COLLAPSE_HINT_S = 4.6
+  let collapseHintHoldUntil = -1
+  let pendingToast = null
+
+  function showLevelToast(message, duration) {
+    if (elapsed < collapseHintHoldUntil) {
+      pendingToast = { message, duration }
+      return
+    }
+    hud.showToast(message, duration)
+  }
+
   function failSoft(message, reason = 'caught') {
     if (failCooldown > 0) return false
     failCooldown = 1.3
     respawn.fail(reason)
-    if (message) hud.showToast(message, 1900)
+    if (message) showLevelToast(message, 1900)
     return true
   }
   // Hints fire on a DESCENDING z, since the escape runs the other way.
@@ -126,7 +147,7 @@ export function createTimewreckLevel({
   function hint(key, playerZ, enterZ, message) {
     if (hintsShown.has(key) || playerZ > enterZ) return
     hintsShown.add(key)
-    hud.showToast(message, 3400)
+    showLevelToast(message, 3400)
   }
 
   let lastCheckpointZ = Infinity
@@ -143,7 +164,7 @@ export function createTimewreckLevel({
   const ramBank = new THREE.Group()
   ramBank.name = 'runaway-pistons'
   const ramHeadMat = new THREE.MeshStandardMaterial({
-    color: 0x6b7078, metalness: 0.9, roughness: 0.35, emissive: 0x330d05, emissiveIntensity: 1.2
+    color: 0x6b7078, metalness: 0.9, roughness: 0.35, emissive: 0x2a1810, emissiveIntensity: 0.45
   })
   const ramRailMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, metalness: 0.8, roughness: 0.5 })
   const rams = []
@@ -182,7 +203,7 @@ export function createTimewreckLevel({
   const loopDoor = new THREE.Mesh(
     new THREE.BoxGeometry(1.15, 2.3, 0.18),
     new THREE.MeshStandardMaterial({
-      color: 0x33383f, metalness: 0.85, roughness: 0.35, emissive: 0x1a0d06, emissiveIntensity: 1
+      color: 0x33383f, metalness: 0.85, roughness: 0.35, emissive: 0x141618, emissiveIntensity: 0.25
     })
   )
   loopDoor.castShadow = true
@@ -265,12 +286,25 @@ export function createTimewreckLevel({
   const SLAB_HALF_X = 1.15 / 2
   const SLAB_HALF_Y = 0.16 / 2
   const SLAB_HALF_Z = 1.05 / 2
+  const slabSteel = new THREE.MeshStandardMaterial({
+    color: 0x4a515a, metalness: 0.78, roughness: 0.42
+  })
   const slabs = []
   const slabSupports = []
   const gapVoids = [{ minX: -2, maxX: 2, minZ: gapMinZ, maxZ: gapMaxZ }]
   for (let i = 0; i < 5; i++) {
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
+    const slab = new THREE.Group()
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
+    deck.castShadow = true
+    slab.add(deck)
+    const joist = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 1.0), slabSteel)
+    joist.position.set(i % 2 ? -0.38 : 0.38, -0.12, 0)
+    slab.add(joist)
+    const flange = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.03, 1.1), slabSteel)
+    flange.position.set(0, -0.1, 0)
+    slab.add(flange)
     slab.userData.seed = i * 1.7
+    slab.traverse((o) => { o.userData.noCameraCollision = true })
     slab.position.set(0, 0.06, gapMinZ + 0.6 + i * 1.2)
     slab.userData.restZ = slab.position.z
     root.add(slab)
@@ -285,6 +319,277 @@ export function createTimewreckLevel({
     restoreSnapshot: (s) => { slabDriftT = s.slabDriftT }
   }))
 
+  const walkwayGlow = new THREE.PointLight(0x7dd3fc, 0, 5.5, 2)
+  walkwayGlow.position.set(0, 0.55, spans.security.center)
+  walkwayGlow.userData.noCameraCollision = true
+  root.add(walkwayGlow)
+
+  // ============================================================
+  // PASSENGER — collapsing floor Freeze crossing (after Security)
+  // ============================================================
+  // Player travels −Z. Security ends at passenger.maxZ; Core depletion is
+  // passenger.center. This hole sits between the fail-burst and that beat.
+  const collapseMaxZ = spans.passenger.maxZ - 2.4
+  const collapseMinZ = spans.passenger.center + 0.15
+  const collapseTriggerZ = collapseMaxZ + 1.15
+  const collapseVoid = { minX: -2, maxX: 2, minZ: collapseMinZ, maxZ: collapseMaxZ }
+
+  const collapsePit = new THREE.Mesh(
+    new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.28, 3.5, collapseMaxZ - collapseMinZ),
+    new THREE.MeshStandardMaterial({ color: 0x05060a, roughness: 1 })
+  )
+  collapsePit.position.set(0, -1.72, (collapseMinZ + collapseMaxZ) / 2)
+  collapsePit.visible = false
+  collapsePit.userData.noCameraCollision = true
+  root.add(collapsePit)
+
+  const collapseLipMat = new THREE.MeshStandardMaterial({
+    color: 0x3a4048, metalness: 0.72, roughness: 0.58
+  })
+  const collapseLips = []
+  for (const z of [collapseMinZ, collapseMaxZ]) {
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.18, 0.13, 0.42), collapseLipMat)
+    lip.position.set(0, 0.03, z)
+    lip.rotation.x = (z === collapseMinZ ? 1 : -1) * 0.2
+    lip.visible = false
+    collapseLips.push(lip)
+    root.add(lip)
+  }
+
+  const collapseChronoMat = createChronoFieldMaterial({
+    baseColor: 0x3a424c, glowColor: 0x7dd3fc, opacity: 0.9, doubleSided: true
+  })
+  const collapseSteel = new THREE.MeshStandardMaterial({
+    color: 0x4a515a, metalness: 0.82, roughness: 0.38, emissive: 0x1e3a4a, emissiveIntensity: 0.22
+  })
+  const collapsePaint = new THREE.MeshStandardMaterial({
+    color: 0x3d4450, metalness: 0.45, roughness: 0.62, emissive: 0x163044, emissiveIntensity: 0.18
+  })
+
+  function markNoCam(rootObj) {
+    rootObj.traverse((o) => { o.userData.noCameraCollision = true })
+    return rootObj
+  }
+
+  function makeCollapseDeck() {
+    const g = new THREE.Group()
+    g.name = 'collapse-deck'
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.1, 1.52), collapseChronoMat)
+    deck.castShadow = true
+    g.add(deck)
+    for (const x of [-0.51, -0.17, 0.17, 0.51]) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 1.46), collapsePaint)
+      plank.position.set(x, 0.065, 0)
+      g.add(plank)
+    }
+    for (const s of [-1, 1]) {
+      const channel = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 1.54), collapseSteel)
+      channel.position.set(s * 0.64, -0.07, 0)
+      g.add(channel)
+    }
+    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.05, 0.22), collapseSteel)
+    tear.position.set(-0.28, -0.02, 0.68)
+    tear.rotation.set(0.15, 0.2, 0.08)
+    g.add(tear)
+    return markNoCam(g)
+  }
+
+  function makeCollapseBeam() {
+    const g = new THREE.Group()
+    g.name = 'collapse-beam'
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.09, 1.48), collapseChronoMat)
+    top.position.y = 0.1
+    top.castShadow = true
+    g.add(top)
+    const web = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 1.42), collapseSteel)
+    web.position.y = -0.04
+    g.add(web)
+    const bot = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.07, 1.48), collapseSteel)
+    bot.position.y = -0.18
+    g.add(bot)
+    for (const z of [-0.5, 0, 0.5]) {
+      const stiff = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.04, 0.07), collapseSteel)
+      stiff.position.set(0, -0.04, z)
+      g.add(stiff)
+    }
+    return markNoCam(g)
+  }
+
+  function makeCollapsePanel() {
+    const g = new THREE.Group()
+    g.name = 'collapse-panel'
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.09, 1.5), collapseChronoMat)
+    plate.castShadow = true
+    g.add(plate)
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.5), collapseSteel)
+    frame.position.set(0.12, 0.06, 0)
+    g.add(frame)
+    const pane = new THREE.Mesh(
+      new THREE.BoxGeometry(0.58, 0.02, 0.38),
+      new THREE.MeshStandardMaterial({
+        color: 0x1a2430, metalness: 0.2, roughness: 0.2, emissive: 0x3b82f6, emissiveIntensity: 0.35
+      })
+    )
+    pane.position.set(0.12, 0.08, 0)
+    g.add(pane)
+    for (const x of [-0.56, 0.56]) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 1.46), collapseSteel)
+      rib.position.set(x, -0.07, 0)
+      g.add(rib)
+    }
+    const header = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.12), collapsePaint)
+    header.position.set(0, 0.03, -0.68)
+    g.add(header)
+    return markNoCam(g)
+  }
+
+  const COLLAPSE_PAD_X = 0.42
+  const COLLAPSE_PAD_Z = 0.4
+  const collapsePieces = [
+    {
+      mesh: makeCollapseDeck(),
+      restX: 0, restY: 0.05, restZ: collapseMaxZ - 0.82,
+      hx: 1.36 / 2, hy: 0.1 / 2, hz: 1.52 / 2,
+      phase: 0.2, spin: 0.55
+    },
+    {
+      mesh: makeCollapseBeam(),
+      restX: 0, restY: 0.06, restZ: (collapseMinZ + collapseMaxZ) * 0.5,
+      hx: 1.18 / 2, hy: 0.145, hz: 1.48 / 2,
+      phase: 1.4, spin: -0.4
+    },
+    {
+      mesh: makeCollapsePanel(),
+      restX: 0, restY: 0.05, restZ: collapseMinZ + 0.82,
+      hx: 1.34 / 2, hy: 0.09 / 2, hz: 1.5 / 2,
+      phase: 2.5, spin: 0.7
+    }
+  ]
+  for (const p of collapsePieces) {
+    p.mesh.position.set(p.restX, 0.04, p.restZ)
+    p.mesh.visible = false
+    root.add(p.mesh)
+  }
+
+  const collapseFloor = new THREE.Group()
+  collapseFloor.name = 'collapse-floor-slab'
+  const floorSlab = new THREE.Mesh(
+    new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.35, 0.08, collapseMaxZ - collapseMinZ - 0.15),
+    new THREE.MeshStandardMaterial({ color: 0x2c3036, metalness: 0.55, roughness: 0.7 })
+  )
+  collapseFloor.add(floorSlab)
+  const floorCrack = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.04, collapseMaxZ - collapseMinZ - 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.9 })
+  )
+  floorCrack.position.y = 0.05
+  collapseFloor.add(floorCrack)
+  collapseFloor.position.set(0, 0.02, (collapseMinZ + collapseMaxZ) / 2)
+  markNoCam(collapseFloor)
+  root.add(collapseFloor)
+
+  const collapseSparks = []
+  const collapseSparkMat = new THREE.MeshStandardMaterial({
+    color: 0xffe4b8, emissive: 0xffb060, emissiveIntensity: 4, transparent: true, opacity: 0.9
+  })
+  for (let i = 0; i < 8; i++) {
+    const sp = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), collapseSparkMat)
+    sp.visible = false
+    sp.userData.noCameraCollision = true
+    sp.userData.ox = (i % 2 ? -0.35 : 0.4) + skew(i + 3) * 0.2
+    sp.userData.oz = collapseMaxZ - 0.4 - (i * 0.45)
+    root.add(sp)
+    collapseSparks.push(sp)
+  }
+
+  const collapseGlow = new THREE.PointLight(0x7dd3fc, 0, 6.5, 2)
+  collapseGlow.position.set(0, 0.7, (collapseMinZ + collapseMaxZ) / 2)
+  collapseGlow.userData.noCameraCollision = true
+  root.add(collapseGlow)
+
+  let collapseArmed = true
+  let collapseLive = false
+  let collapseFallT = 0
+  let collapseFloorT = 0
+  let collapseSettle = 0
+
+  function setCollapseVoid(on) {
+    const i = gapVoids.indexOf(collapseVoid)
+    if (on && i < 0) gapVoids.push(collapseVoid)
+    if (!on && i >= 0) gapVoids.splice(i, 1)
+  }
+
+  function applyCollapseMotion() {
+    collapseFloor.rotation.x = collapseFloorT * 1.15
+    collapseFloor.position.y = 0.02 - collapseFloorT * 1.35
+    collapseFloor.visible = collapseFloorT < 1.05
+    collapsePit.visible = collapseLive
+    for (const lip of collapseLips) lip.visible = collapseLive
+
+    const sparkLife = collapseLive && collapseFloorT < 0.85
+    collapseSparkMat.opacity = sparkLife ? Math.max(0, 1 - collapseFloorT / 0.85) : 0
+    collapseSparkMat.emissiveIntensity = sparkLife ? 5 * (1 - collapseFloorT) : 0
+    for (let i = 0; i < collapseSparks.length; i++) {
+      const sp = collapseSparks[i]
+      sp.visible = sparkLife
+      if (!sparkLife) continue
+      const t = collapseFloorT
+      sp.position.set(
+        sp.userData.ox + Math.sin(t * 9 + i) * 0.12,
+        0.35 - t * 1.4,
+        sp.userData.oz + Math.cos(t * 6 + i) * 0.08
+      )
+    }
+
+    for (const p of collapsePieces) {
+      p.mesh.visible = collapseLive
+      if (!collapseLive) continue
+      const t = collapseFallT + p.phase
+      const loop = ((t % 2.6) + 2.6) % 2.6
+      const fallY = 1.55 - loop * 1.15
+      const driftX = Math.sin(t * 0.9) * 0.1
+      const tumble = loop * p.spin
+      p.mesh.position.x = THREE.MathUtils.lerp(p.restX + driftX, p.restX, collapseSettle)
+      p.mesh.position.y = THREE.MathUtils.lerp(fallY, p.restY, collapseSettle)
+      p.mesh.position.z = THREE.MathUtils.lerp(p.restZ + Math.sin(t * 0.55) * 0.08, p.restZ, collapseSettle)
+      p.mesh.rotation.x = THREE.MathUtils.lerp(tumble * 0.7, 0, collapseSettle)
+      p.mesh.rotation.z = THREE.MathUtils.lerp(Math.sin(t * 1.1) * 0.45, 0, collapseSettle)
+      p.mesh.rotation.y = THREE.MathUtils.lerp(Math.sin(t * 0.4) * 0.2, 0, collapseSettle)
+    }
+  }
+
+  function startCollapse() {
+    if (!collapseArmed) return
+    collapseArmed = false
+    collapseLive = true
+    collapseFallT = 0
+    collapseFloorT = 0
+    setCollapseVoid(true)
+    applyCollapseMotion()
+    env.shockPassengerLights?.()
+    collapseHintHoldUntil = elapsed + COLLAPSE_HINT_S
+    pendingToast = null
+    hud.showToast(COLLAPSE_HINT, COLLAPSE_HINT_S * 1000)
+    hud.setObjective(COLLAPSE_HINT)
+  }
+
+  unregisters.push(timeSystem.register(collapseFloor, {
+    onUpdate(scaledDelta) {
+      if (!collapseLive) return
+      collapseFallT += scaledDelta
+      collapseFloorT = THREE.MathUtils.clamp(collapseFloorT + Math.abs(scaledDelta), 0, 1.15)
+    },
+    getSnapshot: () => ({ collapseFallT, collapseFloorT, collapseLive, collapseArmed }),
+    restoreSnapshot: (s) => {
+      collapseFallT = s.collapseFallT
+      collapseFloorT = s.collapseFloorT
+      collapseLive = s.collapseLive
+      collapseArmed = s.collapseArmed
+      setCollapseVoid(collapseLive)
+      applyCollapseMotion()
+    }
+  }))
+
   // ============================================================
   // PASSENGER — BREAKING TRAIN: carriages tear away, debris streaks past
   // ============================================================
@@ -297,12 +602,12 @@ export function createTimewreckLevel({
   root.add(chunkGroup)
 
   const chunkMat = new THREE.MeshStandardMaterial({
-    color: 0x39332c, roughness: 0.9, metalness: 0.15, emissive: 0x2a0c04, emissiveIntensity: 0.6
+    color: 0x3d4248, roughness: 0.55, metalness: 0.62, emissive: 0x141618, emissiveIntensity: 0.22
   })
   const chunkGeos = [
-    new THREE.BoxGeometry(0.34, 0.22, 0.28),
-    new THREE.DodecahedronGeometry(0.2, 0),
-    new THREE.BoxGeometry(0.5, 0.12, 0.16)
+    new THREE.BoxGeometry(0.42, 0.06, 0.55),
+    new THREE.BoxGeometry(0.08, 0.08, 0.48),
+    new THREE.BoxGeometry(0.5, 0.03, 0.32)
   ]
   const chunks = []
   let chunkSeed = 0
@@ -359,6 +664,9 @@ export function createTimewreckLevel({
     respawnChunk(c)
     // Stagger so they don't arrive as one volley.
     c.life = 0.4 * i
+    c.body.velocity.set(0, 0, 0)
+    c.body.angularVelocity.set(0, 0, 0)
+    c.body.sleep()
     chunks.push(c)
   }
 
@@ -367,41 +675,210 @@ export function createTimewreckLevel({
   // Slow runs the world at 0.2x; meshes copy rigid-body pose each tick.
   unregisters.push(timeSystem.register(chunkGroup, {
     onUpdate(scaledDelta) {
-      if (breakupT < 0) return
-      for (const c of chunks) {
-        c.life -= Math.abs(scaledDelta)
-        if (c.life <= 0) { respawnChunk(c) }
+      const burstLive = failBurstT >= 0 && failBurstT < 2.8
+      if (breakupT < 0 && !burstLive) return
+      if (breakupT >= 0) {
+        for (const c of chunks) {
+          c.life -= Math.abs(scaledDelta)
+          if (c.life <= 0) { respawnChunk(c) }
+        }
       }
       if (scaledDelta !== 0) {
+        const simBodies = breakupT >= 0 ? chunks : burstDebris
         const rewinding = scaledDelta < 0
         const saved = rewinding
-          ? chunks.map((c) => ({
+          ? simBodies.map((c) => ({
             v: c.body.velocity.clone(),
             w: c.body.angularVelocity.clone()
           }))
           : null
         if (rewinding) {
-          for (const c of chunks) {
+          for (const c of simBodies) {
             c.body.velocity.scale(-1)
             c.body.angularVelocity.scale(-1)
           }
         }
         debrisWorld.step(1 / 60, Math.abs(scaledDelta), 3)
         if (rewinding) {
-          chunks.forEach((c, i) => {
+          simBodies.forEach((c, i) => {
             c.body.velocity.copy(saved[i].v)
             c.body.angularVelocity.copy(saved[i].w)
           })
         }
       }
-      for (const c of chunks) {
+      if (breakupT >= 0) {
+        for (const c of chunks) {
+          c.mesh.position.copy(c.body.position)
+          c.mesh.quaternion.copy(c.body.quaternion)
+          c.x = c.body.position.x
+          c.y = c.body.position.y
+          c.z = c.body.position.z
+        }
+      }
+      for (const c of burstDebris) {
+        if (!c.mesh.visible) continue
         c.mesh.position.copy(c.body.position)
         c.mesh.quaternion.copy(c.body.quaternion)
-        c.x = c.body.position.x
-        c.y = c.body.position.y
-        c.z = c.body.position.z
       }
     }
+  }))
+
+  // One-shot structural failure as the player comes through Security into
+  // Passenger. Placed a few metres inside the car so the third-person camera
+  // (behind the player, looking forward) sees it drop instead of already
+  // having it behind the lens. Hinges from just outside the aisle toward the
+  // wall so the walkable ±0.58 path stays clear.
+  const FAIL_BURST_Z = spans.passenger.maxZ - 2.6
+  const FAIL_BURST_TRIGGER_Z = spans.passenger.maxZ + 0.85
+  let failBurstArmed = true
+  let failBurstT = -1
+
+  const burstGroup = new THREE.Group()
+  burstGroup.name = 'passenger-fail-burst'
+  burstGroup.visible = false
+  burstGroup.userData.noCameraCollision = true
+  root.add(burstGroup)
+
+  const burstPanelMat = new THREE.MeshStandardMaterial({
+    color: 0x4a5058, roughness: 0.62, metalness: 0.7,
+    emissive: 0x121416, emissiveIntensity: 0.12
+  })
+  const burstSteel = new THREE.MeshStandardMaterial({
+    color: 0x6b727c, roughness: 0.4, metalness: 0.85
+  })
+  // Pivot on the aisle-side of the overhead slab so it trapdoors DOWN
+  // along the seats, not across the path.
+  const panelPivot = new THREE.Group()
+  panelPivot.position.set(0.92, CARRIAGE_CEILING_Y - 0.04, FAIL_BURST_Z)
+  const burstPanel = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.07, 1.85), burstPanelMat)
+  burstPanel.position.set(0.39, 0, 0)
+  burstPanel.castShadow = true
+  burstPanel.userData.noCameraCollision = true
+  panelPivot.add(burstPanel)
+  const panelRib = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.7), burstSteel)
+  panelRib.position.set(0.08, -0.06, 0)
+  panelRib.userData.noCameraCollision = true
+  panelPivot.add(panelRib)
+  burstGroup.add(panelPivot)
+
+  const beamPivot = new THREE.Group()
+  beamPivot.position.set(1.22, CARRIAGE_CEILING_Y - 0.14, FAIL_BURST_Z + 0.55)
+  const burstBeam = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 1.35), burstSteel)
+  burstBeam.castShadow = true
+  burstBeam.userData.noCameraCollision = true
+  beamPivot.add(burstBeam)
+  burstGroup.add(beamPivot)
+
+  const burstLight = new THREE.PointLight(0xffb060, 0, 11, 1.35)
+  burstLight.position.set(0.55, 1.85, FAIL_BURST_Z)
+  burstLight.userData.noCameraCollision = true
+  burstGroup.add(burstLight)
+  const burstFill = new THREE.PointLight(0xff6a3c, 0, 7, 1.6)
+  burstFill.position.set(-0.2, 1.55, FAIL_BURST_Z - 0.4)
+  burstFill.userData.noCameraCollision = true
+  burstGroup.add(burstFill)
+
+  const burstSparkMat = new THREE.MeshStandardMaterial({
+    color: 0xffe8c0, emissive: 0xffc078, emissiveIntensity: 6,
+    transparent: true, opacity: 1
+  })
+  const burstSparks = []
+  for (let i = 0; i < 14; i++) {
+    const spark = new THREE.Mesh(
+      i % 3 === 0
+        ? new THREE.SphereGeometry(0.045, 6, 5)
+        : new THREE.CylinderGeometry(0.028, 0.02, 0.22, 5),
+      burstSparkMat
+    )
+    spark.userData.noCameraCollision = true
+    spark.userData.ox = 0.85 + skew(i + 2) * 0.35
+    spark.userData.oy = 2.15 + Math.abs(skew(i + 9)) * 0.25
+    spark.userData.oz = FAIL_BURST_Z + skew(i + 5) * 0.55
+    spark.userData.vx = skew(i + 11) * 0.55
+    spark.userData.vz = skew(i + 13) * 0.4
+    burstGroup.add(spark)
+    burstSparks.push(spark)
+  }
+
+  const burstDebris = []
+  const luggageMat = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.82, metalness: 0.05 })
+  const luggageGeo = new THREE.BoxGeometry(0.52, 0.3, 0.68)
+  const luggageShape = new CANNON.Box(new CANNON.Vec3(0.26, 0.15, 0.34))
+  for (let i = 0; i < 2; i++) {
+    const mesh = new THREE.Mesh(luggageGeo, luggageMat)
+    mesh.castShadow = true
+    mesh.visible = false
+    mesh.userData.noCameraCollision = true
+    burstGroup.add(mesh)
+    const body = new CANNON.Body({
+      mass: 1.4,
+      shape: luggageShape,
+      linearDamping: 0.05,
+      angularDamping: 0.06
+    })
+    body.sleep()
+    debrisWorld.addBody(body)
+    burstDebris.push({ mesh, body })
+  }
+
+  function applyFailBurst() {
+    if (failBurstT < 0) {
+      burstGroup.visible = false
+      return
+    }
+    burstGroup.visible = true
+    const t = failBurstT
+    const drop = Math.min(1, Math.max(0, t) / 0.55)
+    // Fast, obvious trapdoor: nearly 90° down beside the aisle.
+    panelPivot.rotation.z = -1.48 * drop * drop * (3 - 2 * drop)
+    const beamDrop = Math.min(1, Math.max(0, t) / 0.7)
+    beamPivot.position.y = (CARRIAGE_CEILING_Y - 0.14) - 0.55 * beamDrop * beamDrop
+    beamPivot.rotation.x = 0.55 * beamDrop
+    beamPivot.rotation.z = 0.18 * beamDrop
+
+    const flicker = t < 1.7 ? (0.45 + 0.55 * Math.abs(Math.sin(t * 38))) : 1
+    const lightFade = Math.max(0, 1 - t / 2.0)
+    burstLight.intensity = 26 * lightFade * flicker
+    burstFill.intensity = 10 * lightFade * flicker
+
+    for (let i = 0; i < burstSparks.length; i++) {
+      const spark = burstSparks[i]
+      const alive = t >= 0 && t < 1.65
+      spark.visible = alive
+      if (!alive) continue
+      spark.position.set(
+        spark.userData.ox + spark.userData.vx * t,
+        spark.userData.oy - t * 1.7 - i * 0.03,
+        spark.userData.oz + spark.userData.vz * t
+      )
+      spark.rotation.set(t * 5 + i, 0.4, t * 6 + i * 0.5)
+    }
+    burstSparkMat.opacity = Math.max(0, 1 - t / 1.7)
+    burstSparkMat.emissiveIntensity = Math.max(0, 7 * (1 - t / 1.55))
+  }
+
+  function startFailBurst() {
+    failBurstArmed = false
+    failBurstT = 0
+    burstDebris.forEach((c, i) => {
+      c.mesh.visible = true
+      c.body.wakeUp()
+      c.body.position.set(1.18 + i * 0.12, 1.45 + i * 0.2, FAIL_BURST_Z + 0.15 - i * 0.4)
+      c.body.velocity.set(0.55 + i * 0.2, 3.2, -1.6 - i * 0.4)
+      c.body.angularVelocity.set(5.5, 3.4 * (i ? -1 : 1), 4.8)
+      c.body.quaternion.set(0, 0, 0, 1)
+    })
+    applyFailBurst()
+  }
+
+  unregisters.push(timeSystem.register(burstGroup, {
+    onUpdate(scaledDelta) {
+      if (failBurstT < 0) return
+      failBurstT = THREE.MathUtils.clamp(failBurstT + scaledDelta, 0, 2.2)
+      applyFailBurst()
+    },
+    getSnapshot: () => ({ failBurstT }),
+    restoreSnapshot: (s) => { failBurstT = s.failBurstT; applyFailBurst() }
   }))
 
   function detachCarriage(group, delay, dir) {
@@ -428,6 +905,110 @@ export function createTimewreckLevel({
   const waveLight = new THREE.PointLight(0xa855f7, 0, 8, 2)
   waveLight.position.y = 1.4
   root.add(waveLight)
+
+  const stasisLight = new THREE.PointLight(0x93c5fd, 0, 16, 2)
+  stasisLight.position.y = 1.35
+  stasisLight.userData.noCameraCollision = true
+  root.add(stasisLight)
+
+  const stasisPulseMat = createChronoFieldMaterial({
+    baseColor: 0x1e3a5f, glowColor: 0xbfdbfe, opacity: 0.0, doubleSided: true, depthWrite: false
+  })
+  const stasisPulse = new THREE.Mesh(new THREE.SphereGeometry(0.55, 18, 14), stasisPulseMat)
+  stasisPulse.name = 'finale-stasis-pulse'
+  stasisPulse.visible = false
+  stasisPulse.userData.noCameraCollision = true
+  root.add(stasisPulse)
+
+  const FRACTURE_S = 2
+  const FRACTURE_Z = spans.vault.center
+  let fractureArmed = true
+  let fractureT = -1
+  const vaultFx = env.getVaultFracture?.() || { lights: [], mats: [], pieces: [] }
+  const vaultMatRest = vaultFx.mats.map((m) => ({
+    color: m.color.clone(),
+    emissive: m.emissive.clone(),
+    ei: m.emissiveIntensity
+  }))
+  const vaultLightRest = vaultFx.lights.map((e) => ({
+    hex: e.light.color.getHex(),
+    base: e.base
+  }))
+  const fractureMat = createChronoFieldMaterial({
+    baseColor: 0x1e1033, glowColor: 0xa855f7, opacity: 0, doubleSided: true, depthWrite: false
+  })
+  const fracturePulse = new THREE.Mesh(new THREE.SphereGeometry(0.48, 16, 12), fractureMat)
+  fracturePulse.name = 'vault-temporal-fracture'
+  fracturePulse.visible = false
+  fracturePulse.userData.noCameraCollision = true
+  const vaultHalf = (spans.vault.maxZ - spans.vault.minZ) / 2
+  fracturePulse.position.set(0, 1.38, vaultHalf - 1.2)
+  carriages.vault.add(fracturePulse)
+  const fractureFill = new THREE.PointLight(0xa855f7, 0, 7, 2)
+  fractureFill.position.copy(fracturePulse.position)
+  carriages.vault.add(fractureFill)
+
+  function applyVaultFracture(state) {
+    for (let i = 0; i < vaultFx.mats.length; i++) {
+      const m = vaultFx.mats[i]
+      const rest = vaultMatRest[i]
+      if (!m || !rest) continue
+      if (state === 1) {
+        m.color.setHex(0x334155)
+        m.emissive.setHex(0x7dd3fc)
+        m.emissiveIntensity = rest.ei * 1.15 + 0.45
+      } else if (state === 2) {
+        m.color.setHex(0x2e1064)
+        m.emissive.setHex(0xc084fc)
+        m.emissiveIntensity = rest.ei * 1.7 + 0.8
+      } else {
+        m.color.copy(rest.color)
+        m.emissive.copy(rest.emissive)
+        m.emissiveIntensity = rest.ei
+      }
+    }
+    for (let i = 0; i < vaultFx.lights.length; i++) {
+      const e = vaultFx.lights[i]
+      const rest = vaultLightRest[i]
+      if (!e || !rest) continue
+      if (state === 1) {
+        e.light.color.setHex(0x7dd3fc)
+        e.light.intensity = rest.base * 1.25
+      } else if (state === 2) {
+        e.light.color.setHex(0xd946ef)
+        e.light.intensity = rest.base * 1.85
+      } else {
+        e.light.color.setHex(rest.hex)
+        e.light.intensity = rest.base
+      }
+    }
+    for (let i = 0; i < vaultFx.pieces.length; i++) {
+      const p = vaultFx.pieces[i]
+      const k = (i % 2) ? 1 : -1
+      if (state === 1) {
+        p.mesh.position.set(p.x, p.y + 0.07, p.z - 0.1)
+        p.mesh.rotation.set(p.rx, p.ry + 0.08 * k, p.rz)
+      } else if (state === 2) {
+        p.mesh.position.set(p.x + 0.05 * k, p.y - 0.04, p.z + 0.08)
+        p.mesh.rotation.set(p.rx + 0.12, p.ry, p.rz - 0.1 * k)
+      } else {
+        p.mesh.position.set(p.x, p.y, p.z)
+        p.mesh.rotation.set(p.rx, p.ry, p.rz)
+      }
+    }
+  }
+
+  function endVaultFracture() {
+    fractureT = -2
+    applyVaultFracture(0)
+    fracturePulse.visible = false
+    fractureFill.intensity = 0
+    fractureMat.customUniforms.uOpacity.value = 0
+  }
+
+  let wasFinaleFreeze = false
+  let finalePulseT = -1
+  let resumeFlashT = -1
 
   const DEPLETE_Z = spans.passenger.center
   const WAVE_SPEED = 6.2 // just under the player's 7.2 m/s sprint
@@ -463,11 +1044,43 @@ export function createTimewreckLevel({
     color: 0xff8a3c, size: 0.055, opacity: 0.75, gravity: 0.32, drift: 0.22, seed: 13
   })
   const sparks = createParticleField({
-    count: 160,
+    count: 90,
     area: { halfX: 1.45, minY: 0.05, maxY: 2.55, minZ: spans.cab.minZ, maxZ: spans.vault.maxZ },
-    color: 0xffd9a0, size: 0.03, opacity: 0.6, gravity: -0.9, drift: 0.35, seed: 29
+    color: 0xffd9a0, size: 0.028, opacity: 0.4, gravity: -0.9, drift: 0.35, seed: 29
   })
-  root.add(embers.points, sparks.points)
+  const openingWind = createParticleField({
+    count: 48,
+    area: {
+      halfX: 1.62, minAbsX: 1.18,
+      minY: 0.85, maxY: 2.15,
+      minZ: spans.cab.minZ + 0.4, maxZ: spans.passenger.maxZ - 0.4
+    },
+    color: 0x9aa8b8, size: 0.032, opacity: 0.28, gravity: 0.08, drift: 0.55, streamZ: 6.5, seed: 61
+  })
+  const openingSparks = createParticleField({
+    count: 28,
+    area: {
+      halfX: 1.58, minAbsX: 1.2,
+      minY: 1.05, maxY: 2.35,
+      minZ: spans.cab.minZ + 0.4, maxZ: spans.passenger.maxZ - 0.4
+    },
+    color: 0xffd9a0, size: 0.024, opacity: 0.38, gravity: -0.55, drift: 0.4, streamZ: 4.2, seed: 73
+  })
+  const chronoMotes = createChronoMoteField({
+    seed: 47,
+    ambient: {
+      count: 40,
+      halfX: 1.15,
+      minY: 0.4,
+      maxY: 2.15,
+      minZ: spans.cab.minZ + 1,
+      maxZ: spans.vault.maxZ - 1
+    },
+    loop: { count: 16, z: spans.cargo.center, halfZ: 4.2, halfX: 1.15 },
+    walkway: { count: 12, minZ: gapMinZ, maxZ: gapMaxZ, halfX: 1.1 },
+    wave: { count: 22, halfZ: 3.4, halfX: 1.15 }
+  })
+  root.add(embers.points, sparks.points, openingWind.points, openingSparks.points, chronoMotes.points)
 
   // ============================================================
   const lever = brake.getObjectByName('brake-lever')
@@ -481,6 +1094,10 @@ export function createTimewreckLevel({
       depleted,
       breakupT,
       lastCheckpointZ,
+      collapseArmed,
+      collapseLive,
+      fractureArmed,
+      fractureT,
       bounds: { ...bounds },
       carriages: Object.values(carriages).map((group) => ({
         group,
@@ -506,6 +1123,20 @@ export function createTimewreckLevel({
       applyLoop()
       slabDriftT = 0
       slabSettle = 0
+      collapseArmed = saved.collapseArmed
+      collapseLive = saved.collapseLive
+      collapseFallT = 0
+      collapseFloorT = saved.collapseLive ? 1.15 : 0
+      collapseSettle = 0
+      setCollapseVoid(collapseLive)
+      applyCollapseMotion()
+      env.restorePassengerLights?.(collapseLive)
+      fractureArmed = saved.fractureArmed
+      fractureT = saved.fractureT
+      applyVaultFracture(0)
+      fracturePulse.visible = false
+      fractureFill.intensity = 0
+      fractureMat.customUniforms.uOpacity.value = 0
       failCooldown = 0
       braking = false
       brakeT = 0
@@ -517,6 +1148,31 @@ export function createTimewreckLevel({
         chunk.mesh.position.copy(chunk.body.position)
         chunk.mesh.quaternion.copy(chunk.body.quaternion)
       })
+
+      wasFinaleFreeze = false
+      finalePulseT = -1
+      resumeFlashT = -1
+      stasisPulse.visible = false
+      stasisLight.intensity = 0
+      wreckExterior.setFrozenLook(false)
+      embers.material.color.setHex(0xff8a3c)
+      embers.material.size = 0.055
+      embers.material.opacity = 0.75
+      sparks.material.color.setHex(0xffd9a0)
+      sparks.material.size = 0.028
+      sparks.material.opacity = 0.4
+      chunkMat.color.setHex(0x3d4248)
+      chunkMat.emissive.setHex(0x141618)
+      chunkMat.emissiveIntensity = 0.22
+      burstPanelMat.emissive.setHex(0x121416)
+      burstPanelMat.emissiveIntensity = 0.12
+      waveLight.color.setHex(0xa855f7)
+      waveLight.distance = 8
+      waveMat.customUniforms.uOpacity.value = 0.6
+      burstSteel.emissive.setHex(0x000000)
+      burstSteel.emissiveIntensity = 0
+      luggageMat.emissive.setHex(0x000000)
+      luggageMat.emissiveIntensity = 0
 
       waveZ = depleted ? DEPLETE_Z + WAVE_LEAD : 0
       wave.position.z = waveZ
@@ -541,26 +1197,184 @@ export function createTimewreckLevel({
     get isCinematic() { return braking },
 
     update(delta) {
-      outdoorEnv.update(delta)
-      env.update(delta)
-      embers.update(delta)
-      sparks.update(delta)
+      const mode = timeSystem.getMode()
+      const finaleFreeze = depleted && mode === 'FREEZE' && !braking
+      if (finaleFreeze && !wasFinaleFreeze) {
+        finalePulseT = 0
+        resumeFlashT = -1
+      }
+      if (wasFinaleFreeze && !finaleFreeze && depleted && !braking) {
+        resumeFlashT = 0
+        finalePulseT = -1
+      }
+      wasFinaleFreeze = finaleFreeze
+      if (finalePulseT >= 0) finalePulseT += delta
+      if (resumeFlashT >= 0) resumeFlashT += delta
+      if (resumeFlashT > 0.5) resumeFlashT = -1
+      if (finalePulseT > 0.5) finalePulseT = -1
+
+      const resumeBoost = resumeFlashT >= 0 && resumeFlashT < 0.22 ? 1.4 : 1
+      let motionScale = 1
+      if (mode === 'SLOW') motionScale = 0.2
+      else if (mode === 'FREEZE') motionScale = 0
+      else if (mode === 'REWIND') motionScale = -1.25
+      const envDt = motionScale * delta
+      const exteriorScale = braking
+        ? Math.max(0, 1 - brakeT / 2.5)
+        : mode === 'FREEZE' ? 0 : resumeBoost * (mode === 'SLOW' ? 0.2 : 1)
+      outdoorEnv.update(envDt)
+      wreckExterior.update(delta, exteriorScale)
+      env.update(envDt)
+      embers.update(envDt)
+      sparks.update(envDt)
+      openingWind.update(envDt)
+      openingSparks.update(envDt)
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
+      if (collapseHintHoldUntil > 0 && elapsed >= collapseHintHoldUntil) {
+        collapseHintHoldUntil = -1
+        if (!braking && hud.getObjective() === COLLAPSE_HINT) {
+          hud.setObjective(depleted
+            ? 'Sprint to the locomotive (hold Shift) — pull the emergency brake!'
+            : LEVEL_OBJECTIVE)
+        }
+        if (pendingToast) {
+          hud.showToast(pendingToast.message, pendingToast.duration)
+          pendingToast = null
+        }
+      }
 
       const pp = player.mesh.position
-      const mode = timeSystem.getMode()
       const modeInt = MODE_INT[mode] ?? 0
 
-      // Shader uniforms for the frozen-walkway slabs and the time wave.
-      slabMat.customUniforms.uTime.value += delta
-      slabMat.customUniforms.uMode.value = modeInt
-      slabMat.customUniforms.uIntensity.value = 0.35 + slabSettle * 0.65
-      waveMat.customUniforms.uTime.value += delta
-      waveMat.customUniforms.uMode.value = 3
-      waveMat.customUniforms.uIntensity.value = 1.0
+      if (fractureArmed && pp.z > FRACTURE_Z) {
+        fractureArmed = false
+        fractureT = 0
+      }
+      if (fractureT >= 0) {
+        if (mode !== 'FREEZE') fractureT += delta
+        if (fractureT >= FRACTURE_S) {
+          endVaultFracture()
+        } else {
+          const state = Math.floor(fractureT * 10) % 3
+          applyVaultFracture(state)
+          fracturePulse.visible = true
+          const pulse = 0.35 + 0.65 * Math.abs(Math.sin(fractureT * 16))
+          fracturePulse.scale.setScalar(1.15 + state * 0.85 + pulse * 0.35)
+          fractureMat.customUniforms.uTime.value += mode === 'FREEZE' ? 0 : delta
+          fractureMat.customUniforms.uMode.value = state === 1 ? 2 : 3
+          fractureMat.customUniforms.uIntensity.value = 0.65 + pulse * 0.55
+          fractureMat.customUniforms.uOpacity.value = 0.16 + pulse * 0.14
+          fractureMat.customUniforms.uGlowColor.value.setHex(state === 1 ? 0x7dd3fc : 0xc084fc)
+          fractureFill.color.setHex(state === 1 ? 0x7dd3fc : 0xa855f7)
+          fractureFill.intensity = 3.5 + pulse * 7
+        }
+      }
 
-      lever.rotation.x = -0.4 + Math.sin(elapsed * 2.2) * 0.05
+      const chronoFade = braking ? Math.max(0, 1 - brakeT * 0.9) : 1
+      chronoMotes.update(delta, {
+        motionScale,
+        mode,
+        loopPeriod: LOOP_PERIOD,
+        loopTime: loopT,
+        waveZ,
+        depleted,
+        walkwaySettle: slabSettle,
+        fade: chronoFade,
+        stasis: finaleFreeze,
+        playerZ: pp.z
+      })
+
+      // Shader uniforms for the frozen-walkway slabs and the time wave.
+      const freezePulse = mode === 'FREEZE' ? 0.1 * (0.5 + 0.5 * Math.sin(elapsed * 3.4)) : 0
+      slabMat.customUniforms.uTime.value += finaleFreeze ? 0 : delta
+      slabMat.customUniforms.uMode.value = modeInt
+      slabMat.customUniforms.uIntensity.value = 0.35 + slabSettle * 0.65 + freezePulse
+      collapseChronoMat.customUniforms.uTime.value += finaleFreeze ? 0 : delta
+      collapseChronoMat.customUniforms.uMode.value = modeInt
+      collapseChronoMat.customUniforms.uIntensity.value = collapseLive
+        ? (mode === 'FREEZE' ? 1.05 + freezePulse : 0.42 + 0.12 * Math.sin(elapsed * 2.4))
+        : 0.28
+      if (!finaleFreeze) waveMat.customUniforms.uTime.value += delta
+      waveMat.customUniforms.uMode.value = finaleFreeze ? 2 : 3
+      const resumeWave = resumeFlashT >= 0 ? Math.max(0, 1 - resumeFlashT / 0.4) * 0.7 : 0
+      waveMat.customUniforms.uIntensity.value = depleted
+        ? (finaleFreeze ? 1.55 + Math.sin(elapsed * 2.2) * 0.12 : 1.12 + Math.sin(elapsed * 5.5) * 0.12) + resumeWave
+        : 1.0
+      waveMat.customUniforms.uOpacity.value = finaleFreeze ? 0.92 : 0.6
+      wave.scale.set(finaleFreeze ? 1.14 : 1, finaleFreeze ? 1.18 : 1, 1)
+      walkwayGlow.intensity = slabSettle * (mode === 'FREEZE' ? 4.2 : 1.6)
+
+      if (!finaleFreeze) lever.rotation.x = -0.4 + Math.sin(elapsed * 2.2) * 0.05
+
+      wreckExterior.setFrozenLook(finaleFreeze)
+
+      const resumeWarm = resumeFlashT >= 0 ? Math.max(0, 1 - resumeFlashT / 0.45) : 0
+      stasisLight.position.set(pp.x, 1.45, pp.z)
+      stasisLight.distance = finaleFreeze ? 24 : 16
+      stasisLight.intensity = finaleFreeze ? 12 : resumeWarm * 16
+      stasisLight.color.setHex(finaleFreeze ? 0xdbeafe : 0xff6a32)
+
+      if (finalePulseT >= 0 && finalePulseT < 0.48) {
+        const u = finalePulseT / 0.48
+        stasisPulse.visible = true
+        stasisPulse.position.set(pp.x, 1.15, pp.z)
+        stasisPulse.scale.setScalar(0.45 + u * 9.5)
+        stasisPulseMat.customUniforms.uTime.value += delta
+        stasisPulseMat.customUniforms.uMode.value = 2
+        stasisPulseMat.customUniforms.uIntensity.value = 1.15 * (1 - u)
+        stasisPulseMat.customUniforms.uOpacity.value = 0.22 * (1 - u) * (1 - u)
+      } else {
+        stasisPulse.visible = false
+        stasisPulseMat.customUniforms.uOpacity.value = 0
+      }
+
+      if (finaleFreeze) {
+        scene.background.copy(FINALE_FREEZE_COLOR)
+        scene.fog.color.copy(FINALE_FREEZE_COLOR)
+        scene.fog.near = 6
+        scene.fog.far = 88
+        chunkMat.color.setHex(0x64748b)
+        chunkMat.emissive.setHex(0xbfdbfe)
+        chunkMat.emissiveIntensity = 1.85
+        burstPanelMat.emissive.setHex(0x93c5fd)
+        burstPanelMat.emissiveIntensity = 1.35
+        burstSteel.emissive.setHex(0xdbeafe)
+        burstSteel.emissiveIntensity = 1.1
+        luggageMat.emissive.setHex(0x7dd3fc)
+        luggageMat.emissiveIntensity = 0.95
+        burstSparkMat.color.setHex(0xf0f9ff)
+        burstSparkMat.emissive.setHex(0xe0f2fe)
+        burstSparkMat.emissiveIntensity = 8
+        embers.material.color.setHex(0xdbeafe)
+        embers.material.size = 0.12
+        embers.material.opacity = 0.95
+        sparks.material.color.setHex(0xffffff)
+        sparks.material.size = 0.085
+        sparks.material.opacity = 1
+      } else if (!braking) {
+        scene.background.setHex(resumeWarm > 0.08 ? 0x1a1412 : NIGHT_COLOR.getHex())
+        scene.fog.color.set(resumeWarm > 0.08 ? 0x241814 : 0x10141c)
+        scene.fog.near = 10
+        scene.fog.far = resumeWarm > 0 ? 55 + (1 - resumeWarm) * 65 : 120
+        chunkMat.color.setHex(0x3d4248)
+        chunkMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a40 : 0x141618)
+        chunkMat.emissiveIntensity = 0.22 + resumeWarm * 1.6
+        burstPanelMat.emissive.setHex(resumeWarm > 0.08 ? 0xff7048 : 0x121416)
+        burstPanelMat.emissiveIntensity = 0.12 + resumeWarm * 1.1
+        burstSteel.emissive.setHex(0x000000)
+        burstSteel.emissiveIntensity = 0
+        luggageMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a28 : 0x000000)
+        luggageMat.emissiveIntensity = resumeWarm * 1.2
+        burstSparkMat.color.setHex(0xffe8c0)
+        burstSparkMat.emissive.setHex(0xffc078)
+        embers.material.color.setHex(resumeWarm > 0.08 ? 0xff5a20 : 0xff8a3c)
+        embers.material.size = 0.055 + resumeWarm * 0.05
+        embers.material.opacity = 0.75 + resumeWarm * 0.2
+        sparks.material.color.setHex(resumeWarm > 0.08 ? 0xffd9a0 : 0xffd9a0)
+        sparks.material.size = 0.028 + resumeWarm * 0.04
+        sparks.material.opacity = 0.4 + resumeWarm * 0.45
+      }
 
       // --- Brake pulled: the stop-on-the-bridge cinematic -----------------
       if (braking) {
@@ -573,6 +1387,7 @@ export function createTimewreckLevel({
           const s = Math.max(0, 1 - brakeT * 0.9)
           wave.scale.set(1, s, 1)
           waveLight.intensity = 14 * s
+          waveMat.customUniforms.uIntensity.value = 1.15 * s
           if (s <= 0.01) { wave.visible = false; waveLight.intensity = 0 }
         }
 
@@ -592,9 +1407,11 @@ export function createTimewreckLevel({
       }
 
       // --- Ambient instability: the whole train lurches, worse over time ---
-      const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
-      root.rotation.z = (Math.sin(elapsed * 1.7) * 0.012 + Math.sin(elapsed * 4.3) * 0.004) * unrest
-      root.position.y = Math.sin(elapsed * 6.1) * 0.012 * unrest
+      if (!finaleFreeze) {
+        const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
+        root.rotation.z = (Math.sin(elapsed * 1.7) * 0.012 + Math.sin(elapsed * 4.3) * 0.004) * unrest
+        root.position.y = Math.sin(elapsed * 6.1) * 0.012 * unrest
+      }
 
       // --- Rolling checkpoints (descending z) -----------------------------
       for (const z of checkpointZs) {
@@ -614,6 +1431,8 @@ export function createTimewreckLevel({
         'Security car — the floor is gone. [2]/F FREEZE the suspended wreckage into a walkway.')
       hint('passenger', pp.z, spans.passenger.maxZ,
         'The train is coming apart behind you — do not stop.')
+
+      if (failBurstArmed && pp.z < FAIL_BURST_TRIGGER_Z) startFailBurst()
 
       // --- FAST-TIME CAR: runaway pistons ---------------------------------
       for (const r of rams) {
@@ -661,13 +1480,58 @@ export function createTimewreckLevel({
         failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
       }
 
+      // --- PASSENGER collapse: Freeze stepping-stones across the hole ------
+      if (collapseArmed && pp.z < collapseTriggerZ) startCollapse()
+      collapseSettle += ((frozen && collapseLive ? 1 : 0) - collapseSettle) * Math.min(1, delta * 9)
+      if (collapseLive) applyCollapseMotion()
+      collapseGlow.intensity = collapseLive
+        ? (frozen ? 5.5 : 1.3 + Math.sin(elapsed * 3.2) * 0.4)
+        : 0
+      collapseSteel.emissiveIntensity = frozen && collapseLive ? 0.55 : 0.22
+      collapsePaint.emissiveIntensity = frozen && collapseLive ? 0.42 : 0.18
+      if (frozen && collapseLive) {
+        for (const p of collapsePieces) {
+          slabSupports.push({
+            minX: p.mesh.position.x - p.hx - COLLAPSE_PAD_X,
+            maxX: p.mesh.position.x + p.hx + COLLAPSE_PAD_X,
+            minZ: p.mesh.position.z - p.hz - COLLAPSE_PAD_Z,
+            maxZ: p.mesh.position.z + p.hz + COLLAPSE_PAD_Z,
+            y: p.mesh.position.y + p.hy + 0.02
+          })
+        }
+      }
+      const inCollapse = collapseLive && pp.z > collapseMinZ && pp.z < collapseMaxZ
+      const onFarLip = pp.z <= collapseMinZ + 1.9
+      let onCollapseSupport = false
+      if (frozen && collapseLive) {
+        for (const p of collapsePieces) {
+          if (
+            pp.x >= p.mesh.position.x - p.hx - COLLAPSE_PAD_X &&
+            pp.x <= p.mesh.position.x + p.hx + COLLAPSE_PAD_X &&
+            pp.z >= p.mesh.position.z - p.hz - COLLAPSE_PAD_Z &&
+            pp.z <= p.mesh.position.z + p.hz + COLLAPSE_PAD_Z &&
+            pp.y >= p.mesh.position.y + p.hy - 1.0
+          ) {
+            onCollapseSupport = true
+            break
+          }
+        }
+      }
+      if (inCollapse && onCollapseSupport) {
+        // Landing on/over an active Freeze pad — do not treat the void as a fail.
+      } else if (inCollapse && pp.y < -0.3) {
+        failSoft('The floor collapsed — FREEZE the wreckage and cross!', 'fell')
+      } else if (inCollapse && !frozen && !onFarLip && collapseSettle < 0.18) {
+        failSoft('The floor collapsed — FREEZE the wreckage and cross!', 'fell')
+      }
+
       // --- BREAKING TRAIN --------------------------------------------------
       if (breakupT < 0 && pp.z < spans.passenger.maxZ - 1) {
         breakupT = 0
         chunkGroup.visible = true
-        hud.showToast('The couplings are letting go — RUN!', 2600)
+        showLevelToast('The couplings are letting go — RUN!', 2600)
       }
-      if (breakupT >= 0) {
+      if (breakupT >= 0 && !finaleFreeze) {
         breakupT += delta
         // Each carriage yaws, rolls and drops independently of its siblings —
         // the Train/Carriage hierarchy doing real work.
@@ -697,7 +1561,7 @@ export function createTimewreckLevel({
         respawn.setCheckpoint(new THREE.Vector3(0, 0, DEPLETE_Z), Math.PI, {
           restore: captureCheckpointRestore(DEPLETE_Z)
         })
-        hud.showToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
+        showLevelToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
         hud.setObjective('Sprint to the locomotive (hold Shift) — pull the emergency brake!')
       }
 
@@ -706,8 +1570,12 @@ export function createTimewreckLevel({
         const holding = mode === 'FREEZE'
         if (!holding && !respawn.isFailing()) waveZ -= WAVE_SPEED * delta
         wave.position.z = waveZ
-        waveLight.position.z = waveZ
-        waveLight.intensity = 12 + Math.sin(elapsed * 9) * 3
+        waveLight.position.z = finaleFreeze ? THREE.MathUtils.lerp(waveZ, pp.z, 0.32) : waveZ
+        waveLight.distance = finaleFreeze ? 22 : 8
+        waveLight.color.setHex(finaleFreeze ? 0xbfdbfe : 0xa855f7)
+        waveLight.intensity = finaleFreeze
+          ? 26 + Math.sin(elapsed * 2.3) * 2
+          : 13 + Math.sin(elapsed * 9) * 3 + resumeWarm * 10
 
         if (waveZ <= pp.z + 0.35 && failCooldown <= 0) {
           failSoft('Time caught up with you!')
@@ -721,7 +1589,8 @@ export function createTimewreckLevel({
       // outdoorEnv.dispose() only frees GPU resources — the group still has to
       // come out of the scene here or it survives every level teardown.
       outdoorEnv.dispose()
-      scene.remove(outdoorEnv.group, root)
+      wreckExterior.dispose()
+      scene.remove(outdoorEnv.group, wreckExterior.group, root)
       disposeObject(root)
     }
   }

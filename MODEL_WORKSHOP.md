@@ -1,0 +1,142 @@
+# Model Workshop — Phase 2
+
+The Model Workshop is a **development-only** visual editor layered over the live Three.js scene. It lets you inspect and adjust the same objects the game is actually rendering without moving the project into Blender.
+
+## Start it
+
+1. Run `npm run dev`.
+2. Start a game so a level is loaded.
+3. Press **F2**.
+
+Gameplay, interactions and the player camera are disabled while the workshop is open. Press **F2** again to return to the same first/third-person mode and immediately test the live edits.
+
+## Phase 2 additions
+
+Phase 2 adds:
+
+- persistent development layouts saved to `.model-workshop/layout.json`;
+- automatic reapplication of saved overrides after a level restart/rebuild;
+- stable scene keys so fresh Three.js UUIDs do not break saved edits;
+- object renaming;
+- material editing (colour, emissive colour/intensity, roughness, metalness, opacity, transparency and render side where supported);
+- per-mesh material cloning before an edit, so a shared material is not accidentally changed on unrelated meshes;
+- camera bookmarks per level;
+- transform snapping;
+- isolate-selected mode;
+- Select Parent for moving from a small clicked mesh to its containing model/group;
+- Revert Unsaved versus Reset to Source.
+
+## Viewport controls
+
+- Left-drag: orbit.
+- Right-drag: pan.
+- Mouse wheel: zoom.
+- Click: select the exact rendered object under the pointer.
+- **W**: move gizmo.
+- **E**: rotate gizmo.
+- **R**: scale gizmo.
+- **F**: focus/frame selected.
+- **Esc**: deselect.
+- **F2**: close the workshop.
+
+The `LOCAL/WORLD` button changes gizmo space. `SNAP` toggles 0.25-unit translation, 15° rotation and 0.1 scale increments.
+
+## Inspector
+
+The right inspector exposes local position, rotation, scale, visibility and world-space dimensions. The name field is editable.
+
+The grey `key:` line is the object's stable Model Workshop address. The editor derives this from the original scene hierarchy, object type/name and sibling occurrence rather than the runtime UUID. This is what lets an override match the newly-created object after restarting a level.
+
+### Materials
+
+Meshes expose whichever material properties their Three.js material actually supports. For example a `MeshStandardMaterial` normally shows:
+
+- colour;
+- emissive colour and intensity;
+- roughness;
+- metalness;
+- opacity;
+- transparent;
+- render side.
+
+Multi-material meshes get a material-slot selector. Before changing a material, Phase 2 clones that mesh's material locally. This avoids the common Three.js problem where editing one shared material unexpectedly changes every wall/prop that references it.
+
+### Lights
+
+Lights keep the Phase 1 controls for colour, intensity, distance/decay and SpotLight angle/penumbra.
+
+## Hierarchy tools
+
+`Select Parent` is useful after clicking a small child mesh such as a railing post, display panel or train component. Keep moving upward until you reach the logical group you actually want to reposition.
+
+`Isolate` temporarily hides unrelated renderable scene objects while keeping lights. Exit Isolate before testing gameplay; closing the workshop restores the previous visibility state automatically.
+
+## Camera bookmarks
+
+The left panel can save named editor camera views per level. Example names:
+
+- `P1 cipher front`
+- `P3 relay overview`
+- `P3-P4 stairs`
+- `Train boarding side`
+
+Bookmarks store the editor camera position, orbit target and up vector. They are written to the same workspace file when you press **SAVE WORKSPACE**.
+
+## Saving — important distinction
+
+**SAVE WORKSPACE** sends the current editor overrides to the Vite development server, which writes:
+
+```text
+.model-workshop/layout.json
+```
+
+Saved overrides are automatically reapplied in development when that level is built again. This means you can refresh/restart the level and continue visual editing without losing your work.
+
+If the Vite endpoint is unavailable, the workshop falls back to browser local storage and tells you in the status bar. `COPY CHANGES` and `EXPORT JSON` remain available as manual backups.
+
+### Does SAVE WORKSPACE change the submitted game source?
+
+No. Phase 2 intentionally does **not** rewrite arbitrary constructor code or gameplay collision data. The workspace is a development layout overlay. This is safer because many code-generated objects have associated systems that cannot be updated correctly by changing only `object.position` — for example walls with separate AABB collision data, AI spawn points, animated doors or physics bodies.
+
+For final production changes, use the saved/exported values to update the appropriate source/configuration. A later phase can introduce an explicit editor registry for objects whose transforms are safe to bake automatically.
+
+## Revert controls
+
+- **Revert Unsaved**: returns the selected object to the last saved workspace state.
+- **Reset to Source**: returns it to the state generated by the JavaScript code before any saved Model Workshop override was applied. The next SAVE WORKSPACE removes that matched override from the workspace.
+
+This makes it possible to experiment without destroying a known-good saved layout.
+
+## Debug overlays
+
+- **GRID**: world X/Z grid.
+- **BOUNDS**: selected-object bounding box.
+- **LIGHTS**: Three.js light helpers.
+- **COLLIDERS**: approximate AABB boxes supplied by the current level.
+- **WIREFRAME**: temporary scene wireframe.
+
+Collider helpers are diagnostic only. Moving a visual wall does not automatically move a separately stored gameplay collider.
+
+## Recommended workflow
+
+```text
+npm run dev
+    ↓
+load the level
+    ↓
+F2
+    ↓
+select model / light
+    ↓
+move, rotate, scale, edit material
+    ↓
+SAVE WORKSPACE
+    ↓
+F2
+    ↓
+test immediately in gameplay
+    ↓
+F2 and refine again
+```
+
+When the result is final, transfer the relevant transform/material values to the object's source/configuration, especially for anything with collision, physics, AI or scripted animation.
