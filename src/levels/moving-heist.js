@@ -9,7 +9,7 @@ import { signMaterial } from '../environment/textures.js'
 // Level 2 — "The Moving Heist".
 //
 // Physical progression is deliberately one-way: REAR -> FRONT.
-// Passenger -> Security -> Relay -> Cargo -> Mechanical -> Roof -> Vault.
+// Passenger -> Security -> Relay -> Cargo -> Mechanical -> Convergence -> Roof -> Vault.
 //
 // Ability progression is equally deliberate:
 // Passenger  : no powers; reuse Level 1 timing/stealth instincts.
@@ -21,7 +21,8 @@ import { signMaterial } from '../environment/textures.js'
 //              switches on Chrono Strain while the player crosses moving loads.
 // Mechanical : acquire the Rollback module -> unlock REWIND, plus a twin-plate
 //              drive clamp that only a Ghost can hold open with you.
-// Vault      : no new power — a finale that asks for all four at once.
+// Convergence: the hardest carriage; every ability is required before the roof.
+// Vault      : the exposed Chrono Core, with a clear approach.
 //
 // GHOST is deliberately granted before FREEZE. It used to be the last pickup,
 // which left it with exactly one use in the whole level.
@@ -455,7 +456,6 @@ export function createMovingHeistLevel({
       obstacles: corridorObstacles,
       timeSystem
     })
-  const vaultObstacles = []
 
   // Standing / crouched body height used by the rotor hazards. Ducking really
   // does slip you under an arm that would have clipped you upright.
@@ -518,7 +518,7 @@ export function createMovingHeistLevel({
   // energy. A completed rollback repairs it permanently for this level run;
   // its failure history survives idle time while the player recharges.
   const REARM_DELAY = 1.2
-  const rearmTimers = { hatch: 0, vaultBridge: 0 }
+  const rearmTimers = { hatch: 0 }
   function readyToRearm(key, retreated, delta) {
     if (!retreated) {
       rearmTimers[key] = 0
@@ -566,7 +566,8 @@ export function createMovingHeistLevel({
     spans.security.minZ + 1.0,
     spans.relay.minZ + 1.0,
     spans.cargo.minZ + 1.0,
-    spans.mechanical.minZ + 1.0
+    spans.mechanical.minZ + 1.0,
+    spans.convergence.minZ + 1.0
   ]
 
   // --------------------------------------------------------------------------
@@ -1071,8 +1072,8 @@ export function createMovingHeistLevel({
 
   // Some physical equipment forces the player to explore both sides.
   addStaticBarrier({
-    z: spans.relay.minZ + 6.2,
-    x: 0.48,
+    z: spans.relay.minZ + 8.2,
+    x: -0.48,
     width: 0.68,
     depth: 1.2,
     height: 1.35,
@@ -1205,7 +1206,8 @@ export function createMovingHeistLevel({
     relayPadPostMat
   )
   let relayPadEverHeld = false
-  relayPadPost.position.set(relayPadPos.x, 0.55, relayPadPos.z)
+  // Keep the signal post beside the plate so the Ghost has a clear landing spot.
+  relayPadPost.position.set(relayPadPos.x + 0.7, 0.55, relayPadPos.z)
   root.add(relayPadPost)
   // --------------------------------------------------------------------------
   // CARGO — FREEZE
@@ -1350,22 +1352,23 @@ export function createMovingHeistLevel({
     }
   }))
 
-  // Cargo stacked to starboard leaves the port lane clear for traversal.
+  // Cargo stacks alternate sides to make the player weave between the
+  // moving loads, while leaving a clear approach to the module and crusher.
   addStaticBarrier({
-    z: spans.cargo.center + 1.8,
-    x: 0.48,
+    z: spans.cargo.minZ + 4.2,
+    x: 0.85,
     width: 0.6,
-    depth: 1.2,
-    height: 1.4,
+    depth: 1.1,
+    height: 1.05,
     color: 0x6b4b2f
   })
 
   addStaticBarrier({
-    z: spans.cargo.center + 4.2,
-    x: 0.48,
-    width: 0.6,
-    depth: 1.2,
-    height: 1.4,
+    z: spans.cargo.minZ + 13.6,
+    x: -0.55,
+    width: 0.9,
+    depth: 1.5,
+    height: 1.2,
     color: 0x4f3b2c
   })
 
@@ -1526,7 +1529,11 @@ export function createMovingHeistLevel({
   let clampDoorOpen = 0
   let syncHintShown = false
 
-  const { hatchCover, ladder } = env.parts.mechanical
+  const { hatchCover, ladder } = env.parts.convergence
+  // The roof access belongs to the Convergence car after the gauntlet.
+  for (const accessPart of [env.parts.mechanical.hatchCover, env.parts.mechanical.hatchRim, env.parts.mechanical.ladder]) {
+    accessPart.visible = false
+  }
   let hatchBroken = false
   let hatchRepaired = false
   let hatchOpen = 1
@@ -1557,11 +1564,84 @@ export function createMovingHeistLevel({
         interaction.flashPrompt('The drive clamp is still locked — sync both plates at once.')
         return
       }
+      if (!Object.values(gauntletCleared).every(Boolean)) {
+        interaction.flashPrompt('The Convergence gauntlet is still active — use every Chrono ability.')
+        return
+      }
       if (hatchOpen < 0.65) {
         interaction.flashPrompt('The hatch motor failed shut — REWIND it to the open state.')
         return
       }
       enterRoof()
+    }
+  }))
+
+  // ------------------------------------------------------------------
+  // CONVERGENCE — all four abilities, in sequence, before the roof.
+  // ------------------------------------------------------------------
+  const gauntletCleared = { slow: false, ghost: false, rewind: false, freeze: false }
+  const gauntletSlowZ = spans.convergence.minZ + 4.0
+  const gauntletSlowBeam = new THREE.Mesh(
+    new THREE.BoxGeometry(2.0, 0.08, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 2.4 })
+  )
+  addProp(gauntletSlowBeam, gauntletSlowZ, 0, 1.15)
+  let gauntletSlowT = 0
+  unregisters.push(registerHazard(gauntletSlowBeam, {
+    onUpdate(scaledDelta) {
+      gauntletSlowT += scaledDelta
+      gauntletSlowBeam.position.x = Math.sin(gauntletSlowT * 2.7) * 0.78
+    },
+    getSnapshot: () => ({ gauntletSlowT }),
+    restoreSnapshot: (s) => {
+      gauntletSlowT = s.gauntletSlowT
+      gauntletSlowBeam.position.x = Math.sin(gauntletSlowT * 2.7) * 0.78
+    }
+  }))
+
+  const gauntletPadPos = new THREE.Vector3(-0.55, 0.03, spans.convergence.minZ + 8.0)
+  const gauntletPad = makePressurePlate(0.9)
+  gauntletPad.name = 'convergence-ghost-pad'
+  gauntletPad.position.copy(gauntletPadPos)
+  root.add(gauntletPad)
+  unregisters.push(timeSystem.registerGhostPad(gauntletPadPos, 0.56))
+  const gauntletGhostGateZ = spans.convergence.minZ + 10.0
+  const gauntletGhostGate = new THREE.Mesh(
+    new THREE.BoxGeometry(2.1, 1.55, 0.14),
+    new THREE.MeshStandardMaterial({ color: 0x2f3742, metalness: 0.9, roughness: 0.35 })
+  )
+  addProp(gauntletGhostGate, gauntletGhostGateZ, 0, 0.9)
+  let gauntletGhostGateOpen = 0
+
+  const gauntletBridgeZ = spans.convergence.minZ + 14.0
+  const gauntletBridge = new THREE.Mesh(
+    new THREE.BoxGeometry(1.35, 0.12, 2.6),
+    new THREE.MeshStandardMaterial({ color: 0x5b6068, roughness: 0.66, metalness: 0.72 })
+  )
+  let gauntletBridgeY = -3.2
+  gauntletBridge.position.set(0, gauntletBridgeY, gauntletBridgeZ)
+  root.add(gauntletBridge)
+  const gauntletPit = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 3.4, 2.8),
+    new THREE.MeshStandardMaterial({ color: 0x10131a, roughness: 1, side: THREE.BackSide })
+  )
+  gauntletPit.position.set(0, -1.7, gauntletBridgeZ)
+  gauntletPit.userData.noCameraCollision = true
+  root.add(gauntletPit)
+
+  const gauntletFreezeZ = spans.convergence.minZ + 19.0
+  const gauntletFreezeRotor = makeRotor(0x60a5fa)
+  addProp(gauntletFreezeRotor, gauntletFreezeZ, 0, ROTOR_HUB_Y)
+  let gauntletFreezeA = 0
+  unregisters.push(registerHazard(gauntletFreezeRotor, {
+    onUpdate(scaledDelta) {
+      gauntletFreezeA += scaledDelta * 6.2
+      gauntletFreezeRotor.rotation.z = gauntletFreezeA
+    },
+    getSnapshot: () => ({ gauntletFreezeA }),
+    restoreSnapshot: (s) => {
+      gauntletFreezeA = s.gauntletFreezeA
+      gauntletFreezeRotor.rotation.z = gauntletFreezeA
     }
   }))
 
@@ -1602,7 +1682,7 @@ export function createMovingHeistLevel({
     setBounds(env.roofBounds)
     useObstacles([])
 
-    // The roof starts over Mechanical and ends over the forward Vault car.
+    // The roof starts over Convergence and ends over the forward Vault car.
     const start = new THREE.Vector3(0, CARRIAGE_ROOF_Y, roof.zStart + 0.8)
     player.setPose(start, 0)
     respawn.setCheckpoint(start, 0, { restore: captureCheckpointRestore() })
@@ -1625,169 +1705,22 @@ export function createMovingHeistLevel({
   }))
 
   // --------------------------------------------------------------------------
-  // VAULT — GHOST + full-kit final puzzle
-  // Sequence: unlock Ghost -> Ghost gate -> Slow lattice -> Rewind bridge ->
-  // Freeze cage -> steal Core.
+  // VAULT — clear final carriage. The gauntlet carries the ability challenge;
+  // the Core is exposed as the reward at the end of the run.
   // --------------------------------------------------------------------------
-  const plateMat = new THREE.MeshStandardMaterial({
-    color: 0x334155,
-    emissive: 0xf59e0b,
-    emissiveIntensity: 1.4,
-    roughness: 0.3
-  })
-  const vaultPlatePos = new THREE.Vector3(0, 0.03, spans.vault.minZ + 4.0)
-  unregisters.push(timeSystem.registerGhostPad(vaultPlatePos, 0.58))
-  const vaultPlate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.9), plateMat)
-  vaultPlate.position.copy(vaultPlatePos)
-  root.add(vaultPlate)
-
-  const ghostGateZ = spans.vault.minZ + 6.0
-  const ghostGate = new THREE.Mesh(
-    new THREE.BoxGeometry(2.25, 1.65, 0.14),
-    new THREE.MeshStandardMaterial({ color: 0x2f3742, metalness: 0.9, roughness: 0.35 })
-  )
-  addProp(ghostGate, ghostGateZ, 0, 1.05)
-  let ghostGateOpen = 0
-
-  const vaultLattice = makeRotor(0x38bdf8)
-  const vaultLatticeZ = spans.vault.center - 0.4
-  addProp(vaultLattice, vaultLatticeZ, 0, ROTOR_HUB_Y)
-  let latticeA = 0
-  unregisters.push(registerHazard(vaultLattice, {
-    onUpdate(scaledDelta) {
-      latticeA += scaledDelta * 5.4
-      vaultLattice.rotation.z = latticeA
-    },
-    getSnapshot: () => ({ latticeA }),
-    restoreSnapshot: (s) => {
-      latticeA = s.latticeA
-      vaultLattice.rotation.z = latticeA
-    }
-  }))
-
-  const vaultBridgeZ = spans.vault.center + 2.2
-  const vaultBridge = new THREE.Mesh(
-    new THREE.BoxGeometry(1.3, 0.12, 2.1),
-    new THREE.MeshStandardMaterial({ color: 0x626871, metalness: 0.72, roughness: 0.62 })
-  )
-  let vaultBridgeY = 0.06
-  let vaultBridgeTriggered = false
-  let vaultBridgeRepaired = false
-  let vaultBridgeCollapse = false
-  let vaultBridgeFuse = 0.65
-  vaultBridge.position.set(0, vaultBridgeY, vaultBridgeZ)
-  root.add(vaultBridge)
-
-  const vaultPit = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 3.2, 2.35),
-    new THREE.MeshStandardMaterial({ color: 0x020308, roughness: 1 })
-  )
-  vaultPit.position.set(0, -1.6, vaultBridgeZ)
-  vaultPit.userData.noCameraCollision = true
-  root.add(vaultPit)
-
-  unregisters.push(registerHazard(vaultBridge, {
-    recordWhen: () => vaultBridgeTriggered && vaultBridgeY > -3.0,
-    onUpdate(scaledDelta, timeScale) {
-      if (timeScale > 0) {
-        if (vaultBridgeCollapse) vaultBridgeY = Math.max(-3.0, vaultBridgeY - scaledDelta * 4.5)
-        else if (vaultBridgeTriggered) {
-          vaultBridgeFuse -= scaledDelta
-          if (vaultBridgeFuse <= 0) vaultBridgeCollapse = true
-        }
-      }
-      vaultBridge.position.y = vaultBridgeY
-    },
-    getSnapshot: () => ({ vaultBridgeY, vaultBridgeTriggered, vaultBridgeCollapse, vaultBridgeFuse }),
-    restoreSnapshot: (s) => {
-      if (vaultBridgeTriggered && !s.vaultBridgeTriggered) vaultBridgeRepaired = true
-      vaultBridgeY = s.vaultBridgeY
-      vaultBridgeTriggered = s.vaultBridgeTriggered
-      vaultBridgeCollapse = s.vaultBridgeCollapse
-      vaultBridgeFuse = s.vaultBridgeFuse
-      vaultBridge.position.y = vaultBridgeY
-    }
-  }))
-
-  const barMat = new THREE.MeshStandardMaterial({ color: 0x8d939c, metalness: 0.9, roughness: 0.3 })
-  const cage = new THREE.Group()
-  cage.name = 'chrono-core-cage'
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 2.2, 8), barMat)
-    bar.position.set(Math.cos(a) * 0.7, 1.1, Math.sin(a) * 0.7)
-    cage.add(bar)
-  }
-
-  const capRing = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.05, 8, 28), barMat)
-  capRing.rotation.x = Math.PI / 2
-  capRing.position.y = 2.2
-  cage.add(capRing)
-
-  const lockRing = new THREE.Mesh(
-    new THREE.TorusGeometry(0.78, 0.07, 10, 32),
-    new THREE.MeshStandardMaterial({
-      color: 0xb08d3f,
-      metalness: 0.9,
-      roughness: 0.25,
-      emissive: 0x3a2a08,
-      emissiveIntensity: 1
-    })
-  )
-  lockRing.rotation.x = Math.PI / 2
-  lockRing.position.y = 1.08
-  cage.add(lockRing)
-
   const coreZ = spans.vault.maxZ - 2.6
-  addProp(cage, coreZ)
-
-  let lockA = 0
-  unregisters.push(registerHazard(lockRing, {
-    onUpdate(scaledDelta) {
-      lockA += scaledDelta * 3.4
-      lockRing.rotation.z = lockA
-    },
-    getSnapshot: () => ({ lockA }),
-    restoreSnapshot: (s) => {
-      lockA = s.lockA
-      lockRing.rotation.z = lockA
-    }
-  }))
-
   const core = createChronoCore()
-  // The Core is displayed inside the cage. It must not occlude the cage's
-  // interaction ray before the cage is breached.
   core.userData.noInteractionBlocker = true
   addProp(core, coreZ)
 
-  let breached = false
   let taken = false
   let destabT = 0
-
-  const unregisterCage = interaction.register(cage, {
-    prompt: 'Breach the Chrono Core cage',
-    isEligible: () => section === 'vault' && !breached,
-    onInteract: () => {
-      if (timeSystem.getMode() !== 'FREEZE') {
-        interaction.flashPrompt('The lock ring is spinning — FREEZE it, then breach the cage.')
-        return
-      }
-      breached = true
-      cage.visible = false
-      hud.showToast('Cage breached — take the Chrono Core!', 2600)
-    }
-  })
-  unregisters.push(unregisterCage)
 
   unregisters.push(interaction.register(core, {
     prompt: 'STEAL CHRONO CORE',
     isEligible: () => section === 'vault',
     onInteract: () => {
       if (taken) return
-      if (!breached) {
-        interaction.flashPrompt('Breach the cage first.')
-        return
-      }
       taken = true
       beginCinematic?.()
       interaction.flashPrompt('Chrono Core secured!')
@@ -1801,7 +1734,7 @@ export function createMovingHeistLevel({
   function enterVault() {
     section = 'vault'
     setBounds(env.vaultBounds)
-    useObstacles(vaultObstacles)
+    useObstacles([])
 
     const p = new THREE.Vector3(0, 0, spans.vault.minZ + 1.1)
     player.setPose(p, 0)
@@ -1809,31 +1742,12 @@ export function createMovingHeistLevel({
     camera.setYaw?.(0)
     camera.snap()
 
-    hud.setObjective('Breach the Vault — you will need every Chrono ability at once')
+    hud.setObjective('The Chrono Core is exposed — take it')
     hud.showBriefing?.([
-      'Vault car. This is the one they built the train around.',
-      'No new gear from here. Everything between you and the Core is something you have already been taught to beat — it just comes at you all at once.'
+      'Vault car. The Convergence gauntlet is behind you.',
+      'The Core is exposed ahead.'
     ])
   }
-
-  // Decorative side blockers in the Vault force a final weave without blocking
-  // the central puzzle interactions.
-  addStaticBarrier({
-    z: spans.vault.center - 2.7,
-    x: 0.35,
-    width: 0.62,
-    depth: 0.9,
-    color: 0x2f3742,
-    target: vaultObstacles
-  })
-  addStaticBarrier({
-    z: spans.vault.center + 0.8,
-    x: -0.35,
-    width: 0.62,
-    depth: 0.9,
-    color: 0x2f3742,
-    target: vaultObstacles
-  })
 
   // Initial section setup.
   setBounds(env.interiorBounds)
@@ -1847,17 +1761,17 @@ export function createMovingHeistLevel({
   // solvable phase while durable progress captured at the checkpoint remains.
   function captureCheckpointRestore() {
     const saved = {
-      section, bounds: { ...bounds }, lastCheckpointZ, breached,
+      section, bounds: { ...bounds }, lastCheckpointZ,
       abilityState: { ...abilityState }, interfaceTaken, ghostTaken, freezeTaken, rewindTaken,
       relayLogged, relaySolved, relaySeen: [...relaySeen], relayInput: [...relayInput],
-      bridgeY, bridgeRepaired, clampReleased, hatchRepaired, vaultBridgeRepaired,
+      bridgeY, bridgeRepaired, clampReleased, hatchRepaired,
+      gauntletCleared: { ...gauntletCleared }, gauntletBridgeY, gauntletGhostGateOpen,
       hazards: checkpointHazards.map((hazard) => hazard.getSnapshot())
     }
     return () => {
       section = saved.section
       setBounds(saved.bounds)
-      useObstacles(section === 'roof' ? [] :
-        section === 'vault' ? vaultObstacles : corridorObstacles)
+      useObstacles(section === 'roof' || section === 'vault' ? [] : corridorObstacles)
       lastCheckpointZ = saved.lastCheckpointZ
       corridorStealth.reset()
       checkpointHazards.forEach((hazard, index) => hazard.restoreSnapshot(saved.hazards[index]))
@@ -1895,21 +1809,17 @@ export function createMovingHeistLevel({
       padBlockObstacle.minZ = slamGateZ - blockDepth
       padBlockObstacle.maxZ = slamGateZ + blockDepth
       hatchRepaired = saved.hatchRepaired
-      vaultBridgeRepaired = saved.vaultBridgeRepaired
-      rearmTimers.hatch = rearmTimers.vaultBridge = 0
-      breached = saved.breached
-      cage.visible = !breached
+      Object.assign(gauntletCleared, saved.gauntletCleared)
+      gauntletBridgeY = saved.gauntletBridgeY
+      gauntletBridge.position.y = gauntletBridgeY
+      gauntletGhostGateOpen = saved.gauntletGhostGateOpen
+      gauntletGhostGate.position.y = 0.9 + gauntletGhostGateOpen * 2.0
+      rearmTimers.hatch = 0
       taken = false
       destabT = 0
       failCooldown = 0
-      ghostGateOpen = 0
-      ghostGate.position.y = 1.05
-      vaultPlate.position.y = 0.03
-      plateMat.emissive.setHex(0xf59e0b)
       gustPhase = 0
       sweptTime = 0
-      lockA = 0
-      lockRing.rotation.z = 0
       root.rotation.z = 0
       root.position.y = 0
     }
@@ -2179,7 +2089,7 @@ export function createMovingHeistLevel({
           pp.z,
           spans.passenger.minZ + 2,
           [
-            'You’re aboard. Six cars between you and the Chrono Core, and the Express does not stop for anyone.',
+            'You’re aboard. Seven cars between you and the Chrono Core, and the Express does not stop for anyone.',
             'Every bulkhead on this train opens from the rear only. Once you’re through one, forward is the only direction left.',
             'Passenger car. A ceiling camera and a conductor on the walk — and you have no chrono gear yet. Use the cabin for cover and pick your moment.'
           ]
@@ -2219,7 +2129,16 @@ export function createMovingHeistLevel({
           [
             'Mechanical. The plank has already fallen into the floor gap. Install Rollback and REWIND it until it is level with the floor.',
             'Past the plank, pad A lifts the blocking bulkhead. Summon a Ghost on A to hold it up while you cross to pad B.',
-            'Both pads together release the drive clamp leading to the roof.'
+            'Both pads together release the drive clamp into Convergence.'
+          ]
+        )
+        hint(
+          'convergence',
+          pp.z,
+          spans.convergence.minZ,
+          [
+            'Convergence car. The route to the roof is sealed behind a four phase test.',
+            'SLOW the scanner, use a TIME GHOST on the pressure plate, REWIND the fallen span, then FREEZE the rotor.'
           ]
         )
 
@@ -2320,7 +2239,7 @@ export function createMovingHeistLevel({
         // This one is the car's only exit, so its failsafe matters most.
         if (
           hatchOpen < 0.99 &&
-          readyToRearm('hatch', pp.z < spans.mechanical.maxZ - 5.0, delta)
+          readyToRearm('hatch', pp.z < spans.convergence.maxZ - 5.0, delta)
         ) {
           hatchOpen = 1
           hatchBroken = false
@@ -2328,8 +2247,65 @@ export function createMovingHeistLevel({
         }
         if (
           mode !== 'REWIND' && mode !== 'FREEZE' &&
-          !hatchRepaired && !hatchBroken && pp.z > spans.mechanical.maxZ - 4.0
+          !hatchRepaired && !hatchBroken && pp.z > spans.convergence.maxZ - 4.0
         ) hatchBroken = true
+
+        if (pp.z > gauntletSlowZ + 0.55 && mode === 'SLOW') gauntletCleared.slow = true
+        if (
+          Math.abs(pp.z - gauntletSlowZ) < 0.48 &&
+          !gauntletCleared.slow && mode !== 'SLOW'
+        ) {
+          failSoft('The phase scanner is too fast — use SLOW to cross it.')
+        }
+        if (
+          Math.abs(pp.z - gauntletSlowZ) < 0.5 &&
+          Math.abs(pp.x - gauntletSlowBeam.position.x) < 0.22 &&
+          !gauntletCleared.slow
+        ) failSoft('The phase scanner caught you — use SLOW.')
+
+        const echoOnGauntletPad = ghost.isOccupying(gauntletPadPos, 0.56)
+        const gauntletPadPressed = echoOnGauntletPad
+        gauntletGhostGateOpen +=
+          ((gauntletPadPressed ? 1 : 0) - gauntletGhostGateOpen) * Math.min(1, delta * 5)
+        gauntletGhostGate.position.y = 0.9 + gauntletGhostGateOpen * 2.0
+        gauntletPad.position.y = gauntletPadPressed ? 0.012 : 0.03
+        if (
+          Math.abs(pp.z - gauntletGhostGateZ) < 0.36 &&
+          gauntletGhostGateOpen < 0.72
+        ) failSoft('The phase gate needs weight on its plate — send a TIME GHOST.')
+        if (pp.z > gauntletGhostGateZ + 0.5 && gauntletGhostGateOpen >= 0.72) {
+          gauntletCleared.ghost = true
+        }
+
+        if (mode === 'REWIND' && Math.abs(pp.z - gauntletBridgeZ) < 9.0) {
+          gauntletBridgeY = Math.min(0.06, gauntletBridgeY + delta * 3.4)
+          gauntletBridge.position.y = gauntletBridgeY
+        }
+        if (gauntletBridgeY >= 0.05) gauntletCleared.rewind = true
+        if (
+          Math.abs(pp.z - gauntletBridgeZ) < 1.3 &&
+          Math.abs(pp.x) < 1.0 &&
+          gauntletBridgeY < 0.05
+        ) failSoft('The span is broken — REWIND it before crossing.', 'fell')
+
+        if (
+          Math.abs(pp.z - gauntletFreezeZ) < 0.55 &&
+          !gauntletCleared.freeze &&
+          mode !== 'FREEZE'
+        ) failSoft('The rotor blocks the route — use FREEZE to pass it.')
+        if (
+          Math.abs(pp.z - gauntletFreezeZ) < 0.62 &&
+          rotorBlocks({
+            angle: gauntletFreezeA,
+            radius: ROTOR_RADIUS,
+            centreY: ROTOR_HUB_Y,
+            playerX: pp.x,
+            playerTopY: topY
+          })
+        ) failSoft('The convergence rotor clipped you — FREEZE it.')
+        if (pp.z > gauntletFreezeZ + 0.62 && mode === 'FREEZE') {
+          gauntletCleared.freeze = true
+        }
       } else if (section === 'roof') {
         // Slipstream. Slow affects the gust cycle AND the other registered roof
         // hazards because all of them use scaledDelta.
@@ -2375,57 +2351,6 @@ export function createMovingHeistLevel({
           !player.isCrouching?.()
         ) {
           failSoft('Duck under the roof signal frame!')
-        }
-      } else if (section === 'vault') {
-        const ghostOnPlate = ghost.isOccupying(vaultPlatePos, 0.58)
-        const playerOnPlate = playerOnPad(vaultPlatePos, 0.58)
-
-        const pressed = ghostOnPlate || playerOnPlate
-        ghostGateOpen += ((pressed ? 1 : 0) - ghostGateOpen) * Math.min(1, delta * 5)
-        ghostGate.position.y = 1.05 + ghostGateOpen * 2.0
-        plateMat.emissive.setHex(pressed ? 0x10b981 : 0xf59e0b)
-        vaultPlate.position.y = pressed ? 0.012 : 0.03
-
-        // The gate has no latch: standing on the plate yourself cannot get you
-        // through. A replaying Ghost must hold it while you move forward.
-        if (Math.abs(pp.z - ghostGateZ) < 0.32 && ghostGateOpen < 0.72) {
-          failSoft('The Vault gate needs the pressure plate held — use TIME GHOST.')
-        }
-
-        if (
-          Math.abs(pp.z - vaultLatticeZ) < 0.62 &&
-          rotorBlocks({
-            angle: latticeA,
-            radius: ROTOR_RADIUS,
-            centreY: ROTOR_HUB_Y,
-            playerX: pp.x,
-            playerTopY: topY
-          })
-        ) {
-          failSoft('The temporal lattice is too fast — use SLOW.')
-        }
-
-        if (
-          vaultBridgeY < 0.05 &&
-          readyToRearm('vaultBridge', pp.z < vaultBridgeZ - 2.9, delta)
-        ) {
-          vaultBridgeY = 0.06
-          vaultBridgeTriggered = false
-          vaultBridgeCollapse = false
-          vaultBridgeFuse = 0.65
-          vaultBridge.position.y = vaultBridgeY
-        }
-        if (
-          mode !== 'REWIND' && mode !== 'FREEZE' &&
-          !vaultBridgeRepaired && !vaultBridgeTriggered &&
-          pp.z > vaultBridgeZ - 2.5 && pp.z < vaultBridgeZ + 1.05
-        ) vaultBridgeTriggered = true
-        if (
-          Math.abs(pp.z - vaultBridgeZ) < 0.95 &&
-          Math.abs(pp.x) < 0.72 &&
-          vaultBridgeY < -0.42
-        ) {
-          failSoft('The Vault bridge collapsed — REWIND it!', 'fell')
         }
       }
     },

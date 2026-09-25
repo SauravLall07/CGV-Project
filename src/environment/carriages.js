@@ -15,8 +15,8 @@ export {
   listCarriageInteriorBoxes
 } from './carriage-bounds.js'
 
-// The train's interior playspace: the five carriages the concept doc calls for
-// — Passenger -> Security -> Cargo -> Mechanical -> Vault — built end to end as
+// The train's interior playspace: the progression carriages — Passenger ->
+// Security -> Relay -> Cargo -> Mechanical -> Convergence -> Vault — built end to end as
 // child groups of ONE parent group, so the Alpha plan's Train/Carriage
 // parent-child hierarchy now carries real, distinct interior content. Each
 // carriage is a shared shell (floor, walls, ceiling, end bulkheads with a
@@ -30,7 +30,7 @@ export {
 // the concept doc's stated scope strategy for Level 3: don't model new
 // carriages, re-light and damage the ones you have.
 //
-// Above the Mechanical and Vault cars (Level 2 only) sits a walkable roof
+// Above Mechanical, Convergence, and Vault (Level 2 only) sits a walkable roof
 // catwalk: the carriage-to-carriage exterior route for the Slow-Time wind set
 // piece. The forward bulkhead of the Vault is sealed, so the roof is the only
 // way in.
@@ -140,16 +140,16 @@ function buildShell(key, length, shared, damaged, seals = {}) {
     })
   }
   let floorGeometry
-  if (key === 'mechanical' && !damaged) {
+  if ((key === 'mechanical' || key === 'convergence') && !damaged) {
     const outline = new THREE.Shape()
     outline.moveTo(-WALL_X, -half)
     outline.lineTo(WALL_X, -half)
     outline.lineTo(WALL_X, half)
     outline.lineTo(-WALL_X, half)
     outline.closePath()
-    // Plane Y becomes negative world Z after the floor's rotation. This
-    // opening matches the Rollback plank six metres from the rear bulkhead.
-    const openingY = half - 6
+    // Plane Y becomes negative world Z after the floor's rotation. Openings
+    // match the Rollback plank and the Convergence bridge.
+    const openingY = key === 'mechanical' ? half - 6 : half - 14
     const hole = new THREE.Path()
     hole.moveTo(-0.725, openingY - 1.4)
     hole.lineTo(-0.725, openingY + 1.4)
@@ -560,7 +560,7 @@ function dressMechanical(g, half, shared, damaged, fx) {
   ladder.position.set(0.0, 0, hatchZ - 0.55)
   g.add(ladder)
 
-  return { hatchCover, ladder }
+  return { hatchCover, hatchRim: rim, ladder }
 }
 
 function dressVault(g, half, shared, damaged, fx) {
@@ -599,15 +599,6 @@ function dressVault(g, half, shared, damaged, fx) {
   const l = new THREE.PointLight(damaged ? 0xff5030 : 0x7cc4ff, damaged ? 13 : 16, damaged ? 9 : 12, 2)
   l.position.set(0, CARRIAGE_CEILING_Y - 0.3, 0)
   addLight(g, fx, l, damaged)
-
-  const chevron = new THREE.MeshStandardMaterial({
-    color: 0xd8b23a, emissive: 0x3a2c08, emissiveIntensity: 1, roughness: 0.6
-  })
-  for (let z = -half + 1.5; z < half - 3; z += 1.1) {
-    const c = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.02, 0.28), chevron)
-    c.position.set(0, 0.02, z)
-    g.add(c)
-  }
 
   const hatch = new THREE.Mesh(
     new THREE.BoxGeometry(1.2, 0.06, 1.2),
@@ -717,8 +708,8 @@ function buildRoof(spans, shared) {
     group.add(fascia)
   }
 
-  // The walkable catwalk — from the Mechanical roof hatch across to the Vault.
-  const zStart = spans.mechanical.maxZ - 4
+  // The walkable catwalk — from the Convergence roof hatch across to the Vault.
+  const zStart = spans.convergence.maxZ - 4
   const zEnd = spans.vault.maxZ - 1.5
   const midZ = (zStart + zEnd) / 2
   const span = zEnd - zStart
@@ -817,6 +808,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     else if (cfg.key === 'relay') dressRelay(group, half, shared, damaged, fx)
     else if (cfg.key === 'cargo') dressCargo(group, half, shared, damaged, fx)
     else if (cfg.key === 'mechanical') parts.mechanical = dressMechanical(group, half, shared, damaged, fx)
+    else if (cfg.key === 'convergence') parts.convergence = dressMechanical(group, half, shared, damaged, fx)
     else if (cfg.key === 'vault') parts.vault = dressVault(group, half, shared, damaged, fx)
 
     if (damaged) addWreckage(group, half, shared, fx)
@@ -852,7 +844,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   // single volume; Level 2 swaps between corridor / roof / vault.
   const interiorBounds = damaged
     ? { minX: -0.82, maxX: 0.82, minZ: spans.cab.minZ + 1.2, maxZ: spans.vault.maxZ - 1.0 }
-    : { minX: -0.82, maxX: 0.82, minZ: spans.passenger.minZ + 1.2, maxZ: spans.mechanical.maxZ - 1.4 }
+    : { minX: -0.82, maxX: 0.82, minZ: spans.passenger.minZ + 1.2, maxZ: spans.convergence.maxZ - 1.4 }
 
   const roofBounds = roof
     ? { minX: -1.35, maxX: 1.35, minZ: roof.zStart + 0.5, maxZ: roof.zEnd - 0.5 }

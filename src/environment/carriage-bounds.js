@@ -13,6 +13,7 @@ export const LAYOUT = [
   { key: 'relay', length: 18 },
   { key: 'cargo', length: 20 },
   { key: 'mechanical', length: 22 },
+  { key: 'convergence', length: 26 },
   { key: 'vault', length: 18 }
 ]
 
@@ -133,15 +134,12 @@ export function localInteriorBoxes(key, half) {
     boxes.push(box('grate', 0, half - 0.3, 0.35, 0.08))
     boxes.push(box('wheel', -(WALL_X - 0.16), -half + 3, 0.6, 0.6))
     boxes.push(box('ladder', 0, half - 2.5 - 0.55, 0.28, 0.2))
+  } else if (key === 'convergence') {
+    // The new gauntlet car is kept clear in the minimap; its hazards are dynamic.
   } else if (key === 'relay') {
     const zs = [-half + 3.5, 0, half - 4.0]
     const xs = [-0.52, 0.52, -0.52]
     zs.forEach((z, i) => boxes.push(box('terminal', xs[i], z, 0.3, 0.3)))
-  } else if (key === 'vault') {
-    boxes.push(box('door', 0, half - 0.16, 1.0, 0.2))
-    for (let z = -half + 1.5; z < half - 3; z += 1.1) {
-      boxes.push(box('chevron', 0, z, 0.5, 0.14))
-    }
   } else if (key === 'cab') {
     boxes.push(box('backhead', 0, -half + 0.5, 1.1, 0.18))
     boxes.push(box('firebox', 0, -half + 0.72, 0.45, 0.1))
