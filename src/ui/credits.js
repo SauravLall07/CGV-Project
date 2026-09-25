@@ -89,6 +89,14 @@ function buildRollContent() {
     willChange: 'transform'
   })
 
+  const heistCompleteBlock = addBlock(roll, [
+    heading('Heist Complete', 'clamp(18px, 3.2vw, 32px)'),
+    line('Completion Time: 00:00.0', { size: '16px' })
+  ])
+  heistCompleteBlock.dataset.heistComplete = '1'
+  heistCompleteBlock.style.display = 'none'
+  heistCompleteBlock.lastElementChild.dataset.completionTime = '1'
+
   addBlock(roll, [
     heading('Chrono Express'),
     line('A Time-Manipulation Stealth Heist', { size: '13px' })
@@ -138,6 +146,14 @@ function buildRollContent() {
   return roll
 }
 
+function formatCompletionClock(seconds) {
+  const tenths = Math.max(0, Math.floor(seconds * 10 + 1e-6))
+  const minutes = Math.floor(tenths / 600)
+  const secs = Math.floor((tenths % 600) / 10)
+  const tenth = tenths % 10
+  return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${tenth}`
+}
+
 export function createCredits({ onDismiss } = {}) {
   const root = createOverlayRoot('credits', 90)
   root.style.overflow = 'hidden'
@@ -145,6 +161,8 @@ export function createCredits({ onDismiss } = {}) {
   root.style.justifyContent = 'center'
 
   const roll = buildRollContent()
+  const heistCompleteBlock = roll.querySelector('[data-heist-complete]')
+  const completionTimeLine = roll.querySelector('[data-completion-time]')
   root.appendChild(roll)
   document.body.appendChild(root)
 
@@ -174,11 +192,17 @@ export function createCredits({ onDismiss } = {}) {
     roll.style.animation = `cx-credits-roll ${duration}s linear forwards`
   }
 
-  function open({ source: nextSource = 'menu' } = {}) {
+  function open({ source: nextSource = 'menu', completionTime } = {}) {
     if (isOpen) return
     source = nextSource
     isOpen = true
     ignoreUntil = performance.now() + DISMISS_GRACE_MS
+    if (source === 'complete' && completionTime != null && Number.isFinite(completionTime)) {
+      heistCompleteBlock.style.display = 'flex'
+      completionTimeLine.textContent = `Completion Time: ${formatCompletionClock(completionTime)}`
+    } else {
+      heistCompleteBlock.style.display = 'none'
+    }
     applyBackdrop()
     root.style.display = 'flex'
     root.style.pointerEvents = 'auto'
