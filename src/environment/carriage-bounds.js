@@ -20,12 +20,17 @@ export function wallXFor(damaged) {
 // Each booth is two benches facing each other across a window table, their
 // backs on the booth's outer ends; the space between the benches is where the
 // player hides. Shared by the meshes and the colliders.
-export const SEAT_INNER_X = 0.85
+// The aisle is 2 × SEAT_INNER_X wide. The conductor walks its centre line and
+// bumps anyone within 0.72 m of him (stealth.js GUARD_BUMP_RADIUS); with the
+// 0.2 m seat collider pad, 1.2 leaves room to step aside and let him pass.
+export const SEAT_INNER_X = 1.2
 export const SEAT_DEPTH = 0.55
 export const SEAT_BACK_DEPTH = 0.14
 export const SEAT_BACK_TOP = 1.15
 export const BOOTH_BENCH_OFFSET = 1.0 // bench centre from booth centre
-export const BOOTH_TABLE = { halfX: 0.42, halfZ: 0.34, inset: 0.6 } // centre at ±(wallX - inset)
+// Tables sit close to the window so the hiding space between the benches
+// stays deep enough to crouch in.
+export const BOOTH_TABLE = { halfX: 0.42, halfZ: 0.34, inset: 0.52 } // centre at ±(wallX - inset)
 
 // Level 2 vintage cars (Security, Route Control): one window bay — window with
 // a trunk below — per entry.

@@ -155,15 +155,21 @@ export function createInteractionSystem({ camera, input } = {}) {
   // emissive tint; a prop that already glows keeps its own colour and is
   // simply turned up, so highlighting the Chrono Core doesn't wash it out to
   // grey.
+  //
+  // The original glow is kept per material, not per mesh: props share
+  // materials (every brass part of a relay box is one material), and a
+  // per-mesh record would see the second part's material already tinted,
+  // boost it again, and restore a boosted value — leaving every object in the
+  // level that shares it glowing brighter after each focus.
   function applyHighlight(entry, on) {
-    entry.object.traverse((node) => {
-      const material = node.material
-      if (!material || !material.emissive) return
-
-      if (on) {
-        if (node.userData._focusBase) return
+    if (on) {
+      if (entry.focusBases) return
+      const bases = new Map()
+      entry.object.traverse((node) => {
+        const material = node.material
+        if (!material || !material.emissive || bases.has(material)) return
         const base = { hex: material.emissive.getHex(), intensity: material.emissiveIntensity }
-        node.userData._focusBase = base
+        bases.set(material, base)
 
         if (base.hex === 0x000000) {
           material.emissive.setHex(FOCUS_EMISSIVE)
@@ -171,12 +177,15 @@ export function createInteractionSystem({ camera, input } = {}) {
         } else {
           material.emissiveIntensity = base.intensity * FOCUS_BOOST
         }
-      } else if (node.userData._focusBase) {
-        material.emissive.setHex(node.userData._focusBase.hex)
-        material.emissiveIntensity = node.userData._focusBase.intensity
-        delete node.userData._focusBase
+      })
+      entry.focusBases = bases
+    } else if (entry.focusBases) {
+      for (const [material, base] of entry.focusBases) {
+        material.emissive.setHex(base.hex)
+        material.emissiveIntensity = base.intensity
       }
-    })
+      entry.focusBases = null
+    }
   }
 
   function renderPrompt() {
