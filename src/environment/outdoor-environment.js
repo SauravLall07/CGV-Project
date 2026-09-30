@@ -56,11 +56,11 @@ export function createOutdoorEnvironment(options = {}) {
   // -------------------------------------------------------------
   const sunPosition = options.sunPosition || new THREE.Vector3(120, 35, -90)
   
-  const skyTopColor = isStormy ? new THREE.Color(0x0f0b14) : new THREE.Color(0x14192d)
-  const skyBottomColor = isStormy ? new THREE.Color(0x4a181b) : new THREE.Color(0xef7d43)
-  const sunColor = isStormy ? new THREE.Color(0xff4a3a) : new THREE.Color(0xffd194)
-  const atmosphereColor = isStormy ? new THREE.Color(0x3a121d) : new THREE.Color(0x69547d)
-  const fogColor = isStormy ? new THREE.Color(0x1a0708) : new THREE.Color(0x241d24)
+  const skyTopColor = isStormy ? new THREE.Color(0x0c1018) : new THREE.Color(0x14192d)
+  const skyBottomColor = isStormy ? new THREE.Color(0x1c2433) : new THREE.Color(0xef7d43)
+  const sunColor = isStormy ? new THREE.Color(0x8a9bb4) : new THREE.Color(0xffd194)
+  const atmosphereColor = isStormy ? new THREE.Color(0x1a2230) : new THREE.Color(0x69547d)
+  const fogColor = isStormy ? new THREE.Color(0x10141c) : new THREE.Color(0x241d24)
 
   const skyMaterial = createSkyShaderMaterial({
     sunPosition,
@@ -68,7 +68,7 @@ export function createOutdoorEnvironment(options = {}) {
     bottomColor: skyBottomColor,
     sunColor,
     atmosphereColor,
-    cloudColor: isStormy ? new THREE.Color(0x24080a) : new THREE.Color(0x2b2236),
+    cloudColor: isStormy ? new THREE.Color(0x141820) : new THREE.Color(0x2b2236),
     hazeDensity: isStormy ? 0.9 : 0.6
   })
 
