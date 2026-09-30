@@ -1,6 +1,14 @@
 import * as THREE from 'three'
 import { disposeObject } from '../core/dispose.js'
-import { createCarriageEnvironment, CARRIAGE_CEILING_Y, CARRIAGE_ROOF_Y, listCarriageVolumes } from '../environment/carriages.js'
+import { createCarriageEnvironment, CARRIAGE_CEILING_Y, CARRIAGE_ROOF_Y, listCarriageVolumes, makeHourglassEmblem } from '../environment/carriages.js'
+import {
+  WALL_X,
+  HAZARD_AISLE_X,
+  RELAY_BOX_DEPTH,
+  RELAY_BOX_WIDTH,
+  CARGO_PIT,
+  routeControlLayout
+} from '../environment/carriage-bounds.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
@@ -15,8 +23,8 @@ import { signMaterial } from '../environment/textures.js'
 // Passenger  : no powers; reuse Level 1 timing/stealth instincts.
 // Security   : acquire the Chrono Interface -> unlock SLOW.
 // Relay      : acquire the Echo Synchronizer -> unlock GHOST, and immediately
-//              need it: the routing order only plays while the bus pad is
-//              weighted, and the pad is nowhere near the panel that shows it.
+//              need it: the route board only turns while the operator
+//              platform is weighted, and the platform is nowhere near it.
 // Cargo      : acquire the Cryo Phase module -> unlock FREEZE, which also
 //              switches on Chrono Strain while the player crosses moving loads.
 // Mechanical : acquire the Rollback module -> unlock REWIND, plus a twin-plate
@@ -258,10 +266,7 @@ function makeBarrierProp({ width = 0.68, height = 0.95, depth = 0.9, color = 0x5
   return g
 }
 
-// Small engraved plaque. The relay puzzle spreads three terminals down an 18 m
-// car and posts their target colours on one panel at the far end — without a
-// shared A/B/C marking on both, there is nothing telling the player which light
-// belongs to which terminal, and the pattern is unreadable even when visible.
+// Small engraved plaque with a single letter, lit so it reads at a distance.
 function makeLabelPlate(letter, size = 0.16) {
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(size, size),
@@ -442,10 +447,10 @@ export function createMovingHeistLevel({
   // The level manager exposes one obstacle array to player.js. Keep the array
   // identity stable and swap its contents when changing interior/roof/vault.
   const activeObstacles = []
-  const corridorObstacles = []
+  const corridorObstacles = [...env.colliders]
   // One stealth system for the whole interior run, not just the Passenger car:
-  // Security gets a sweeping camera and Cargo gets a laser grid. Passing
-  // timeSystem makes the Passenger guard and cameras obey Slow and Freeze.
+  // Passenger has the conductor and Cargo gets a laser grid. Passing
+  // timeSystem makes the guard obey Slow and Freeze.
   const corridorStealth =
     createStealthSystem({
       scene,
@@ -497,6 +502,65 @@ export function createMovingHeistLevel({
       maxZ: z + depth / 2
     })
     return prop
+  }
+
+  // Hazard chokepoints. The cars are wide now, but every hazard was tuned for
+  // the old ±HAZARD_AISLE_X lane, so a floor-to-ceiling housing on each side
+  // narrows the car back down to that lane wherever one sits. `lane` widens it
+  // for a hazard whose moving part swings further out. Drop a hazard's entry
+  // from the list below once it has been reworked for the full width.
+  const chokeMat = new THREE.MeshStandardMaterial({ color: 0x1f2a44, roughness: 0.72, metalness: 0.2 })
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.32, metalness: 0.9 })
+  const emblemMat = new THREE.MeshStandardMaterial({
+    color: 0xb08d3f, emissive: 0x3a2608, emissiveIntensity: 0.4, roughness: 0.32, metalness: 0.9
+  })
+  // Brass picture-frame border on a flat face `w` wide and `h` tall, centred
+  // at (x, h/2, z). Built along X, so it suits the pillars' end faces.
+  function addBrassFrame(x, z, w, h, inset = 0.07) {
+    const t = 0.04
+    for (const [bw, bh, bx, by] of [
+      [t, h - inset * 2, -(w / 2 - inset), h / 2],
+      [t, h - inset * 2, w / 2 - inset, h / 2],
+      [w - inset * 2, t, 0, inset],
+      [w - inset * 2, t, 0, h - inset]
+    ]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.03), brassMat)
+      bar.position.set(x + bx, by, z)
+      bar.userData.noCameraCollision = true
+      root.add(bar)
+    }
+  }
+  function addChokepoint(z, depth, lane = HAZARD_AISLE_X) {
+    const face = lane + 0.2 // pad matching the carriage colliders
+    const width = WALL_X - face
+    for (const s of [-1, 1]) {
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(width, CARRIAGE_CEILING_Y, depth), chokeMat)
+      housing.position.set(s * (face + width / 2), CARRIAGE_CEILING_Y / 2, z)
+      housing.castShadow = true
+      housing.receiveShadow = true
+      root.add(housing)
+      guardCollidables.push(housing)
+      // Brass-framed end faces with the hourglass crest, and a brass edge
+      // running up the aisle-side corners.
+      for (const e of [-1, 1]) {
+        const endZ = z + e * (depth / 2 + 0.015)
+        addBrassFrame(s * (face + width / 2), endZ, width, CARRIAGE_CEILING_Y)
+        const emblem = makeHourglassEmblem(emblemMat, 0.62)
+        emblem.position.set(s * (face + width / 2), 1.75, endZ + e * 0.02)
+        if (e < 0) emblem.rotation.y = Math.PI
+        root.add(emblem)
+        const edge = new THREE.Mesh(new THREE.BoxGeometry(0.05, CARRIAGE_CEILING_Y, 0.05), brassMat)
+        edge.position.set(s * face, CARRIAGE_CEILING_Y / 2, z + e * (depth / 2))
+        edge.userData.noCameraCollision = true
+        root.add(edge)
+      }
+      corridorObstacles.push({
+        minX: s < 0 ? -WALL_X : lane,
+        maxX: s < 0 ? -lane : WALL_X,
+        minZ: z - depth / 2 - 0.2,
+        maxZ: z + depth / 2 + 0.2
+      })
+    }
   }
 
   function setBounds(b) {
@@ -566,79 +630,27 @@ export function createMovingHeistLevel({
     spans.security.minZ + 1.0,
     spans.relay.minZ + 1.0,
     spans.cargo.minZ + 1.0,
+    spans.cargo.center - 0.8,
+    spans.cargo.center + 3.6,
+    spans.cargo.center + 6.6,
     spans.mechanical.minZ + 1.0,
     spans.convergence.minZ + 1.0
   ]
 
   // --------------------------------------------------------------------------
   // PASSENGER — STEALTH / COVER
-  // No Chrono powers yet. The player must use luggage and service furniture
-  // to break the guard's line of sight.
-  // --------------------------------------------------------------------------
-
-  addStaticBarrier({
-    z: spans.passenger.minZ + 5.0,
-    x: -0.45,
-    width: 0.72,
-    depth: 1.25,
-    height: 1.4,
-    color: 0x6f4529
-  })
-
-  addStaticBarrier({
-    z: spans.passenger.minZ + 7.6,
-    x: 0.45,
-    width: 0.72,
-    depth: 1.15,
-    height: 1.45,
-    color: 0x48505a
-  })
-
-  addStaticBarrier({
-    z: spans.passenger.minZ + 9.7,
-    x: -0.45,
-    width: 0.68,
-    depth: 1.0,
-    height: 1.3,
-    color: 0x765338
-  })
-
-  addStaticBarrier({
-    z: spans.passenger.center + 2.0,
-    x: 0.45,
-    width: 0.72,
-    depth: 1.1,
-    height: 1.35,
-    color: 0x4f3b2c
-  })
-
-  // ------------------------------------------------------------------
-  // PASSENGER — CAMERA FIRST, THEN THE CONDUCTOR
+  // No Chrono powers yet. The seat rows down both sides of the car (built and
+  // collided in carriages.js) are the cover: crouch in a legroom gap and the
+  // seat backs break the guard's line of sight.
   //
   // The guard used to start at minZ + 3.4, which is 1.2 m from the player's
   // spawn at minZ + 2.2 — inside GUARD_LOCK_ON_DISTANCE. He hard-locked on
   // before the player could take a step, which read as being caught for no
-  // reason. The opening threat is now a ceiling camera the player walks up to
-  // and reads, and the conductor patrols the far end of the car instead.
-  // ------------------------------------------------------------------
+  // reason.
+  // --------------------------------------------------------------------------
 
-  corridorStealth.addCamera({
-    position: new THREE.Vector3(
-      0.62,
-      CARRIAGE_CEILING_Y - 0.55,
-      spans.passenger.center + 0.5
-    ),
-    baseAngle: Math.PI, // facing back down the car, toward the player's approach
-    sweepRange: Math.PI / 3.4,
-    sweepSpeed: 0.7,
-    // Reach ends at minZ + 10.5, a good 2 m short of the first luggage barrier
-    // and 4.3 m short of the spawn: the player always gets a clear look at the
-    // car, and cover exists before anything can see them.
-    range: 6.0
-  })
-
-  // The conductor now walks the forward quarter of the car, well past the last
-  // luggage barrier and 11 m from the spawn — outside GUARD_VISION_DISTANCE, so
+  // The conductor now walks the forward quarter of the car, down the aisle
+  // and 11 m from the spawn — outside GUARD_VISION_DISTANCE, so
   // the player meets him on their own terms.
   corridorStealth.addGuard({
     waypoints: [
@@ -663,7 +675,7 @@ export function createMovingHeistLevel({
 
   // --------------------------------------------------------------------------
   // SECURITY — CHRONO INTERFACE + SLOW
-  // Three hazards after the pickup: scanner, rotor, shutter.
+  // Two hazards after the pickup: sliding panel, steam vents.
   // --------------------------------------------------------------------------
   const chronoInterface = makeConsole(0x38bdf8, 0.56)
   chronoInterface.name = 'chrono-interface'
@@ -786,38 +798,39 @@ export function createMovingHeistLevel({
     color: 0x39414b
   })
 
+  // A navy carriage panel in a brass frame, carrying the hourglass crest, rides
+  // a brass ceiling track across the aisle. It blocks the lane only where it is.
   const scanner = new THREE.Group()
-  const scanBeamMat = new THREE.MeshStandardMaterial({
-    color: 0x38bdf8,
-    emissive: 0x00d4ff,
-    emissiveIntensity: 3,
-    transparent: true,
-    opacity: 0.58
-  })
-  const scanBeam = new THREE.Mesh(
-    new THREE.BoxGeometry(
-      0.28,
-      CARRIAGE_CEILING_Y - 0.35,
-      1.15
-    ),
-    scanBeamMat
+  const SCAN_PANEL_W = 0.5
+  const SCAN_PANEL_H = 2.75
+  const scanBeam = new THREE.Group()
+  const panelBody = new THREE.Mesh(
+    new THREE.BoxGeometry(SCAN_PANEL_W, SCAN_PANEL_H, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x1f2a44, metalness: 0.2, roughness: 0.72 })
   )
-  scanBeam.position.y = (CARRIAGE_CEILING_Y - 0.35) / 2
+  panelBody.castShadow = true
+  scanBeam.add(panelBody)
+  for (const e of [-1, 1]) {
+    for (const [bw, bh, bx, by] of [
+      [0.035, SCAN_PANEL_H - 0.08, -(SCAN_PANEL_W / 2 - 0.04), 0],
+      [0.035, SCAN_PANEL_H - 0.08, SCAN_PANEL_W / 2 - 0.04, 0],
+      [SCAN_PANEL_W - 0.08, 0.035, 0, SCAN_PANEL_H / 2 - 0.04],
+      [SCAN_PANEL_W - 0.08, 0.035, 0, -(SCAN_PANEL_H / 2 - 0.04)]
+    ]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.02), brassMat)
+      bar.position.set(bx, by, e * 0.066)
+      scanBeam.add(bar)
+    }
+    const crest = makeHourglassEmblem(emblemMat, 0.42)
+    crest.position.set(0, 0.35, e * 0.07)
+    if (e < 0) crest.rotation.y = Math.PI
+    scanBeam.add(crest)
+  }
+  scanBeam.position.y = SCAN_PANEL_H / 2 + 0.02
   scanner.add(scanBeam)
 
   const scanRange = 0.62
-  const scanRail = new THREE.Mesh(
-    new THREE.BoxGeometry(
-      scanRange * 2 + 0.8,
-      0.08,
-      0.08
-    ),
-    new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      metalness: 0.8,
-      roughness: 0.3
-    })
-  )
+  const scanRail = new THREE.Mesh(new THREE.BoxGeometry(scanRange * 2 + 0.8, 0.08, 0.16), brassMat)
   scanRail.position.y = CARRIAGE_CEILING_Y - 0.14
   scanner.add(scanRail)
 
@@ -843,67 +856,110 @@ export function createMovingHeistLevel({
     }
   }))
 
-  const secRotor = makeRotor(0x60a5fa)
-  const secRotorZ = spans.security.center + 3.7
-  addProp(secRotor, secRotorZ, 0, ROTOR_HUB_Y)
-  let secRotorA = 0
-  unregisters.push(registerHazard(secRotor, {
-    onUpdate(scaledDelta) {
-      secRotorA += scaledDelta * 11.0
-      secRotor.rotation.z = secRotorA
-    },
-    getSnapshot: () => ({ secRotorA }),
-    restoreSnapshot: (s) => {
-      secRotorA = s.secRotorA
-      secRotor.rotation.z = secRotorA
+  // Steam vents. Two banks of brass nozzles, set into the chokepoint pillars,
+  // fire across the aisle in turn. Each hisses a thin warning plume before a
+  // full burst, and the pocket between the banks is safe to wait in. They run
+  // on chrono time, so SLOW stretches the gaps between bursts.
+  const STEAM_PERIOD = 3.2
+  const STEAM_BURST = 1.1
+  const STEAM_WARN = 0.6
+  const STEAM_PUFFS = 10
+  const STEAM_NOZZLE_X = HAZARD_AISLE_X + 0.2
+  const STEAM_HEIGHTS = [0.6, 1.4]
+  const steamBanks = [
+    { z: spans.security.maxZ - 4.4, offset: 0 },
+    { z: spans.security.maxZ - 2.2, offset: STEAM_PERIOD / 2 }
+  ]
+  const ventIron = new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.55, metalness: 0.8 })
+  const flangeGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.06, 20)
+  flangeGeo.rotateZ(Math.PI / 2)
+  const nozzleGeo = new THREE.CylinderGeometry(0.065, 0.085, 0.24, 14)
+  nozzleGeo.rotateZ(Math.PI / 2)
+  const puffGeo = new THREE.IcosahedronGeometry(1, 1)
+  const steamGroup = new THREE.Group()
+  steamGroup.name = 'security-steam-vents'
+  for (const bank of steamBanks) {
+    for (const s of [-1, 1]) {
+      for (const y of STEAM_HEIGHTS) {
+        const flange = new THREE.Mesh(flangeGeo, brassMat)
+        flange.position.set(s * (STEAM_NOZZLE_X - 0.03), y, bank.z)
+        steamGroup.add(flange)
+        const nozzle = new THREE.Mesh(nozzleGeo, ventIron)
+        nozzle.position.set(s * (STEAM_NOZZLE_X - 0.15), y, bank.z)
+        steamGroup.add(nozzle)
+      }
     }
-  }))
+    bank.mat = new THREE.MeshLambertMaterial({
+      color: 0xe9e4da, transparent: true, opacity: 0, depthWrite: false
+    })
+    bank.puffs = new THREE.InstancedMesh(puffGeo, bank.mat, 2 * STEAM_HEIGHTS.length * STEAM_PUFFS)
+    bank.puffs.userData.noCameraCollision = true
+    bank.puffs.raycast = () => {} // steam never blocks interaction or vision rays
+    bank.puffs.frustumCulled = false
+    bank.density = 0
+    steamGroup.add(bank.puffs)
+  }
+  root.add(steamGroup)
 
-  // Sweeping ceiling camera watching the run-up to the shutter. It is NOT
-  // chrono-shielded, so Slow stretches its sweep and Freeze parks it — the
-  // first place the player is rewarded for using a power on a person-detector
-  // rather than on a machine.
-  corridorStealth.addCamera({
-    position: new THREE.Vector3(0.62, CARRIAGE_CEILING_Y - 0.55, spans.security.center + 1.0),
-    baseAngle: Math.PI,
-    sweepRange: Math.PI / 3.0,
-    sweepSpeed: 0.85,
-    range: 8.0
-  })
-
-  const secShutter = new THREE.Mesh(
-    new THREE.BoxGeometry(2.4, 1.45, 0.12),
-    new THREE.MeshStandardMaterial({ color: 0x2f3742, metalness: 0.85, roughness: 0.35 })
-  )
-  const secShutterZ = spans.security.maxZ - 2.0
-  addProp(secShutter, secShutterZ, 0, 2.2)
-
-  let shutterT = 0
-  let shutterOpen = 1
-  unregisters.push(registerHazard(secShutter, {
+  const steamDummy = new THREE.Object3D()
+  let steamT = 0
+  // 0 = clear, ~0.2 = warning plume, 1 = full burst.
+  function steamDensity(phase) {
+    if (phase < STEAM_BURST) return Math.min(1, phase / 0.12, (STEAM_BURST - phase) / 0.25 + 0.3)
+    if (phase > STEAM_PERIOD - STEAM_WARN) return 0.2
+    return 0
+  }
+  function applySteam() {
+    for (const bank of steamBanks) {
+      const phase = (steamT + bank.offset) % STEAM_PERIOD
+      bank.density = steamDensity(phase)
+      bank.puffs.visible = bank.density > 0
+      if (!bank.puffs.visible) continue
+      bank.mat.opacity = 0.25 + 0.45 * bank.density
+      const reach = 0.25 + 0.75 * bank.density
+      let i = 0
+      for (const s of [-1, 1]) {
+        for (const y of STEAM_HEIGHTS) {
+          for (let k = 0; k < STEAM_PUFFS; k++) {
+            const u = (k / STEAM_PUFFS + steamT * 1.8) % 1
+            steamDummy.position.set(
+              s * (STEAM_NOZZLE_X - 0.25 - u * reach),
+              y + u * 0.3 * bank.density,
+              bank.z + Math.sin(k * 1.7 + steamT * 3) * 0.14 * u
+            )
+            steamDummy.scale.setScalar((0.08 + u * 0.34) * (0.4 + 0.6 * bank.density))
+            steamDummy.updateMatrix()
+            bank.puffs.setMatrixAt(i++, steamDummy.matrix)
+          }
+        }
+      }
+      bank.puffs.instanceMatrix.needsUpdate = true
+    }
+  }
+  applySteam()
+  unregisters.push(registerHazard(steamGroup, {
     onUpdate(scaledDelta) {
-      shutterT += scaledDelta
-      shutterOpen = (Math.sin(shutterT * 5.5) + 1) / 2
-      secShutter.position.y = 0.35 + shutterOpen * 2.75
+      steamT += scaledDelta
+      applySteam()
     },
-    getSnapshot: () => ({ shutterT }),
-    restoreSnapshot: (s) => {
-      shutterT = s.shutterT
-      shutterOpen = (Math.sin(shutterT * 5.5) + 1) / 2
-      secShutter.position.y = 0.35 + shutterOpen * 2.75
+    getSnapshot: () => ({ steamT }),
+    restoreSnapshot: (snap) => {
+      steamT = snap.steamT
+      applySteam()
     }
   }))
 
   // --------------------------------------------------------------------------
-  // CHRONO RELAY — ECHO SYNCHRONIZER + ROUTING SEQUENCE
+  // ROUTE CONTROL — ECHO SYNCHRONIZER + ROUTING SEQUENCE
   //
-  // This car used to hand out no power at all, which made it the one room with
-  // nothing to practise. It now grants GHOST and immediately demands it: the
-  // panel over the exit gate plays a routing order one lamp at a time, and it
-  // only runs while the bus pad is weighted. The pad is eleven metres behind
-  // the panel and the panel is unreadable from there, so a Time Ghost has to
-  // stand on the pad while the player watches. Then the order has to be keyed
-  // back into terminals A / B / C — memory, not colour-matching, and no Freeze.
+  // Grants GHOST and immediately demands it. The operator platform at the back
+  // of the car drives the route system: while it is weighted a lever pulls, the
+  // wall gear turns, the relay boxes swing open and the route board over the
+  // front door flips its plates to show the routing order. The board is a
+  // dozen metres from the platform, so a Time Ghost has to hold the platform
+  // while the player reads it up close. Reading it logs the order and latches
+  // the relays open; then relays A–D are thrown in the order I–IV and the door
+  // slides apart.
   // --------------------------------------------------------------------------
   const ghostPickup =
     makeChronoPickup(0x2dd4bf, 0.52)
@@ -924,294 +980,377 @@ export function createMovingHeistLevel({
       ghostTaken = true
       ghostPickup.collect()
       unlockAbility('GHOST', 'ECHO SYNCHRONIZER INSTALLED — TIME GHOST unlocked')
-      hud.setObjective('Relay — the routing order only plays while the bus pad is weighted')
+      hud.setObjective('Route Control — the route board only turns while the operator platform is held')
     }
   }))
 
-  const RELAY_COLORS = [
-    0xef4444, // A — red
-    0xf59e0b, // B — amber
-    0x38bdf8  // C — cyan
-  ]
+  const routeHalf = (spans.relay.maxZ - spans.relay.minZ) / 2
+  const routeLayout = routeControlLayout(routeHalf)
+  const routeZ = (localZ) => spans.relay.center + localZ
+  const RELAY_COUNT = routeLayout.relays.length
+  const ROMAN = ['I', 'II', 'III', 'IV']
 
-  const RELAY_LABELS = ['A', 'B', 'C']
-  const RELAY_SEQUENCE_LENGTH = 4
+  // relaySequence[step] = relay index. Rolled fresh each run so it cannot be
+  // memorised between attempts, and never plain A-B-C-D.
+  const relaySequence = [0, 1, 2, 3]
+  do {
+    for (let i = relaySequence.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[relaySequence[i], relaySequence[j]] = [relaySequence[j], relaySequence[i]]
+    }
+  } while (relaySequence.every((relay, step) => relay === step))
+  const relayStepOf = []
+  relaySequence.forEach((relay, step) => { relayStepOf[relay] = step })
 
-  // The routing pattern is call-and-response: the panel over the exit gate
-  // plays a run of lamps one at a time, and the player repeats that order on
-  // the terminals. Rolled fresh each run so it cannot be memorised between
-  // attempts, but never the same lamp twice in a row — two identical flashes
-  // back to back are indistinguishable from one long one.
-  const relaySequence = []
-
-  while (relaySequence.length < RELAY_SEQUENCE_LENGTH) {
-    const next = Math.floor(Math.random() * RELAY_COLORS.length)
-    if (next === relaySequence[relaySequence.length - 1]) continue
-    relaySequence.push(next)
-  }
-
-  // Which steps the player has actually watched play. The playback loop
-  // free-runs, so one short echo shows a slice of the sequence and the next
-  // shows a different slice; progress carries across both rather than demanding
-  // a single uninterrupted viewing that a 5 s echo cannot always buy.
-  const relaySeen = relaySequence.map(() => false)
   const relayInput = []
   let relayLogged = false
   let relaySolved = false
-  // Seconds of red "rejected" flash left on the panel after a wrong terminal.
-  let relayRejectFlash = 0
+  let routeEngaged = 0 // eased 0..1 while the operator platform is weighted
+  let routeEverEngaged = false
+  let routeReadT = 0 // seconds spent reading the turned board up close
+  const ROUTE_READ_SECONDS = 1.0
+  const ROUTE_READ_RANGE = 4.5
 
-  // Playback timing. Kept on real time in the level update — see the playback
-  // block there for why this must not be chrono-scaled.
-  const RELAY_STEP_ON = 0.34
-  const RELAY_STEP_GAP = 0.16
-  const RELAY_LOOP_PAUSE = 0.8
-  const RELAY_STEP_SPAN = RELAY_STEP_ON + RELAY_STEP_GAP
-  const RELAY_CYCLE = RELAY_STEP_SPAN * RELAY_SEQUENCE_LENGTH + RELAY_LOOP_PAUSE
-  let relayPlayT = 0
-  // Index of the step lit this frame, or -1 during a gap or the loop pause.
-  let relayActiveStep = -1
+  const oldBrass = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.34, metalness: 0.9 })
+  const darkIron = new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.55, metalness: 0.8 })
+  const creamFace = new THREE.MeshStandardMaterial({ color: 0xf0e4c8, roughness: 0.6 })
+  const woodDark = new THREE.MeshStandardMaterial({ color: 0x2e1a0c, roughness: 0.7, metalness: 0.05 })
 
-  const relayTerminals = []
-
-  const relayPositions = [
-    {
-      z: spans.relay.minZ + 3.5,
-      x: -0.52,
-      label: 'A'
-    },
-    {
-      z: spans.relay.center,
-      x: 0.52,
-      label: 'B'
-    },
-    {
-      z: spans.relay.maxZ - 4.0,
-      x: -0.52,
-      label: 'C'
-    }
-  ]
-
-  relayPositions.forEach((cfg, i) => {
-    // Each terminal wears its own colour permanently now: the panel lamp that
-    // fires for this terminal is the same colour as the terminal itself, which
-    // is the only cue tying a flash eleven metres away to a box in the aisle.
-    const terminal = makeConsole(RELAY_COLORS[i], 0.4)
-
-    terminal.name = `relay-terminal-${cfg.label}`
-    addProp(terminal, cfg.z, cfg.x)
-
-    // Turn the console to face the aisle rather than the front of the train.
-    // makeConsole builds its screen on +Z, so a terminal left as-is points its
-    // only readable surface away from a player walking toward the front — you
-    // had to walk past and look back to see it react to a press.
-    terminal.rotation.y = cfg.x < 0 ? Math.PI / 2 : -Math.PI / 2
-
-    // Matching plaque, so the panel at the gate can be read against the car.
-    const termLabel = makeLabelPlate(cfg.label, 0.14)
-    termLabel.position.set(0, 0.34, 0.175)
-    terminal.add(termLabel)
-
-    terminal.userData.pulse = 0
-    relayTerminals.push(terminal)
-
-    unregisters.push(interaction.register(terminal, {
-      prompt: `Key Chrono Relay ${cfg.label}`,
-
-      onInteract: () => {
-        if (relaySolved) return
-
-        // Entry is closed until the pattern has been watched. Otherwise the
-        // panel — and with it the Ghost — is optional: rejection after every
-        // wrong press turns three lamps and four steps into twelve guesses.
-        if (!relayLogged) {
-          interaction.flashPrompt(
-            'No routing order logged — read the panel above the gate first.'
-          )
-          return
-        }
-
-        terminal.userData.pulse = 1
-
-        if (relaySequence[relayInput.length] !== i) {
-          relayInput.length = 0
-          relayRejectFlash = 1.0
-
-          hud.showToast(
-            'ROUTING REJECTED — key the pattern again from the start',
-            2200
-          )
-
-          return
-        }
-
-        relayInput.push(i)
-
-        if (relayInput.length < RELAY_SEQUENCE_LENGTH) {
-          hud.showToast(
-            `ROUTING ${relayInput.length} / ${RELAY_SEQUENCE_LENGTH} ACCEPTED`,
-            900
-          )
-
-          return
-        }
-
-        relaySolved = true
-
-        hud.showToast(
-          'CHRONO RELAY STABLE — bulkhead unlocked',
-          2600
-        )
-
-        hud.setObjective(
-          'Proceed to Cargo and acquire the next Chrono module'
-        )
-      }
-    }))
-  })
-
-  // Some physical equipment forces the player to explore both sides.
-  addStaticBarrier({
-    z: spans.relay.minZ + 8.2,
-    x: -0.48,
-    width: 0.68,
-    depth: 1.2,
-    height: 1.35,
-    color: 0x33434f
-  })
-
-  addStaticBarrier({
-    z: spans.relay.center + 2.1,
-    x: -0.48,
-    width: 0.68,
-    depth: 1.2,
-    height: 1.35,
-    color: 0x293945
-  })
-
-  // Locked exit gate.
-  const relayGateZ = spans.relay.maxZ - 1.35
-
-  const relayGate = new THREE.Mesh(
-    new THREE.BoxGeometry(2.25, 1.65, 0.14),
-    new THREE.MeshStandardMaterial({
-      color: 0x2f3742,
-      metalness: 0.9,
-      roughness: 0.35
-    })
-  )
-
-  addProp(relayGate, relayGateZ, 0, 1.05)
-
-  let relayGateOpen = 0
-
-  // Routing panel above the exit gate: one lamp per terminal, lit one at a
-  // time as the pattern steps through its order. Dark unless the bus pad is
-  // weighted — or the pattern has already been logged, after which it replays
-  // on its own as a reminder.
-  const relayTargetPanel = new THREE.Group()
-  const relayTargetLights = []
-  const relayLightMats = []
-
-  RELAY_LABELS.forEach((label, i) => {
-    const mat = new THREE.MeshStandardMaterial({
-      color: RELAY_COLORS[i],
-      emissive: RELAY_COLORS[i],
-      emissiveIntensity: 3
-    })
-
-    const light = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), mat)
-
-    // NOTE the sign. The player always walks toward +Z, so world +X projects to
-    // SCREEN-LEFT from their viewpoint. Laying these out as (i - 1) put A on the
-    // right and the panel read C, B, A — the exact reverse of the terminals,
-    // which is a cruel thing to do to a player reading left to right. (1 - i)
-    // makes the panel read A, B, C in the order the terminals are encountered.
-    light.position.set(
-      (1 - i) * 0.35,
-      0,
-      0
+  function plaque(text, width, height, { bg = 0xb99a52, fg = 0x1d140a, px = 512 } = {}) {
+    return new THREE.Mesh(
+      new THREE.PlaneGeometry(width, height),
+      signMaterial({
+        text, background: bg, foreground: fg,
+        width: px, height: Math.round(px * height / width), emissiveIntensity: 0.25
+      })
     )
-
-    light.visible = false
-    relayTargetLights.push(light)
-    relayLightMats.push(mat)
-    relayTargetPanel.add(light)
-
-    // Always-on plaque under each lamp. The lamps come and go with the
-    // sequence; the letters must not, or the player cannot tell which flash
-    // belongs to which terminal.
-    const plate = makeLabelPlate(label, 0.15)
-    plate.position.set((1 - i) * 0.35, -0.26, -0.08)
-    plate.rotation.y = Math.PI // face back down the car, toward the player
-    relayTargetPanel.add(plate)
-  })
-
-  // Progress pips under the lamps: how much of the pattern has been watched
-  // while learning it, and how much has been keyed in while repeating it.
-  // Without them a half-read pattern and a half-entered one look identical.
-  const relayPipMats = []
-
-  for (let i = 0; i < RELAY_SEQUENCE_LENGTH; i++) {
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      emissive: 0x1e293b,
-      emissiveIntensity: 0.5
-    })
-
-    const pip = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), mat)
-    pip.position.set((1.5 - i) * 0.17, -0.46, 0)
-    relayPipMats.push(mat)
-    relayTargetPanel.add(pip)
   }
 
-  addProp(
-    relayTargetPanel,
-    relayGateZ - 0.12,
-    0,
-    2.45
+  function makeGauge(radius = 0.075) {
+    const g = new THREE.Group()
+    const face = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.02, 20), creamFace)
+    face.rotation.x = Math.PI / 2
+    g.add(face)
+    const bezel = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.012, 8, 20), oldBrass)
+    bezel.position.z = 0.01
+    g.add(bezel)
+    const needle = new THREE.Group()
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.008, radius * 0.85, 0.005), darkIron)
+    hand.position.y = radius * 0.42
+    needle.add(hand)
+    needle.position.z = 0.014
+    g.add(needle)
+    g.userData.needle = needle
+    return g
+  }
+
+  // --- Operator platform -----------------------------------------------------
+  const opSide = routeLayout.platform.s
+  const platformPos = new THREE.Vector3(opSide * (WALL_X - 0.8), 0.03, routeZ(routeLayout.platform.z))
+  unregisters.push(timeSystem.registerGhostPad(platformPos, 0.56))
+
+  const platform = new THREE.Group()
+  platform.name = 'operator-platform'
+  const platformBase = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.08, 1.15), darkIron)
+  platformBase.position.y = 0.04
+  platform.add(platformBase)
+  const platformPlate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.95, 0.04, 0.95),
+    new THREE.MeshStandardMaterial({ color: 0x6b6e73, roughness: 0.45, metalness: 0.85 })
   )
+  platformPlate.position.y = 0.1
+  platform.add(platformPlate)
+  // Brass rail on the wall side and both ends; the aisle side stays open.
+  const railY = 0.9
+  const railPosts = [[-1, -1], [-1, 1], [1, -1], [1, 1]]
+  for (const [px, pz] of railPosts) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, railY, 8), oldBrass)
+    post.position.set(px * 0.55, railY / 2, pz * 0.55)
+    platform.add(post)
+  }
+  for (const pz of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.1, 8), oldBrass)
+    rail.rotation.z = Math.PI / 2
+    rail.position.set(0, railY, pz * 0.55)
+    platform.add(rail)
+  }
+  const backRail = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.1, 8), oldBrass)
+  backRail.rotation.x = Math.PI / 2
+  backRail.position.set(opSide * 0.55, railY, 0)
+  platform.add(backRail)
+  platform.position.set(platformPos.x, 0, platformPos.z)
+  root.add(platform)
 
-  // Dead housing so the panel still reads as a fixture while unlit.
-  //
-  // This MUST sit at a higher z than the bulbs at relayGateZ - 0.12. The player
-  // approaches the gate from -Z, so lower z is nearer the eye — mounting the
-  // housing at relayGateZ - 0.2 put it directly in front of all three lights
-  // and the pattern could never be seen, however correctly the pad was weighted.
-  const relayPanelShell = new THREE.Mesh(
-    new THREE.BoxGeometry(1.16, 0.28, 0.1),
-    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.4 })
-  )
-  addProp(relayPanelShell, relayGateZ, 0, 2.45)
+  // Engaging lever on a pedestal at the platform's aisle-side corner.
+  const leverStand = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.75, 0.18), darkIron)
+  leverStand.position.set(platformPos.x - opSide * 0.72, 0.375, platformPos.z - 0.45)
+  root.add(leverStand)
+  const platformLever = new THREE.Group()
+  const leverArm = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), oldBrass)
+  leverArm.position.y = 0.25
+  const leverKnob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), darkIron)
+  leverKnob.position.y = 0.5
+  platformLever.add(leverArm, leverKnob)
+  platformLever.position.set(leverStand.position.x, 0.78, leverStand.position.z)
+  root.add(platformLever)
 
-  // The bus pad sits well behind the terminals, so weighting it yourself and
-  // then reading the panel at the gate is not possible — only an echo can hold
-  // it while you stand at the far end of the car.
-  const relayPadPos = new THREE.Vector3(0.55, 0.03, spans.relay.minZ + 5.6)
-  const relayPad = makePressurePlate(0.95)
-  unregisters.push(timeSystem.registerGhostPad(relayPadPos, 0.56))
-  const relayPadMat = relayPad.userData.plateMat
-  relayPad.position.copy(relayPadPos)
-  root.add(relayPad)
-
-  const relayPadPostMat = new THREE.MeshStandardMaterial({
-    color: 0x2dd4bf,
-    emissive: 0x2dd4bf,
-    emissiveIntensity: 1.6,
-    metalness: 0.7,
-    roughness: 0.3
+  // Sign on the wall behind the platform, with a status lamp.
+  const signX = opSide * (WALL_X - 0.07)
+  const signBack = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.62, 1.02), woodDark)
+  signBack.position.set(opSide * (WALL_X - 0.05), 1.78, platformPos.z)
+  root.add(signBack)
+  ;[['ROUTE CONTROL', 2.0], ['OPERATOR HOLD', 1.78], ['KEEP ENGAGED', 1.56]].forEach(([text, y]) => {
+    const line = plaque(text, 0.9, 0.17)
+    line.position.set(signX, y, platformPos.z)
+    line.rotation.y = -opSide * Math.PI / 2
+    root.add(line)
   })
-  const relayPadPost = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.05, 1.1, 10),
-    relayPadPostMat
+  const platformLampMat = new THREE.MeshStandardMaterial({
+    color: 0xffb454, emissive: 0xff9a2a, emissiveIntensity: 1.2, roughness: 0.3
+  })
+  const platformLamp = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), platformLampMat)
+  platformLamp.position.set(opSide * (WALL_X - 0.12), 2.2, platformPos.z)
+  root.add(platformLamp)
+
+  // --- Mechanical system: wall gear across from the platform ----------------
+  // Mounted on the wall with local +Z facing the aisle; only gearSpin turns.
+  const gearSide = routeLayout.gear.s
+  const gearMount = new THREE.Group()
+  gearMount.name = 'route-gear'
+  gearMount.position.set(gearSide * (WALL_X - 0.12), 1.6, routeZ(routeLayout.gear.z))
+  gearMount.rotation.y = -gearSide * Math.PI / 2
+  const gearSpin = new THREE.Group()
+  gearSpin.add(new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.05, 10, 32), oldBrass))
+  const gearHub = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.08, 16), darkIron)
+  gearHub.rotation.x = Math.PI / 2
+  gearSpin.add(gearHub)
+  for (let k = 0; k < 6; k++) {
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.8, 0.03), oldBrass)
+    spoke.rotation.z = k * Math.PI / 6
+    gearSpin.add(spoke)
+  }
+  for (let k = 0; k < 16; k++) {
+    const a = k / 16 * Math.PI * 2
+    const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.06), oldBrass)
+    tooth.position.set(Math.cos(a) * 0.5, Math.sin(a) * 0.5, 0)
+    tooth.rotation.z = a
+    gearSpin.add(tooth)
+  }
+  gearMount.add(gearSpin)
+  const gearGauge = makeGauge(0.1)
+  gearGauge.position.set(0, 0.72, 0.02)
+  gearMount.add(gearGauge)
+  root.add(gearMount)
+
+  // --- Relay boxes A–D --------------------------------------------------------
+  const relayGreen = new THREE.MeshStandardMaterial({ color: 0x2f4a3a, roughness: 0.55, metalness: 0.45 })
+  const relayBoxes = routeLayout.relays.map((slot, i) => {
+    // Group origin sits on the wall face at box height, so the interaction
+    // point is never inside the wall. Local +Z points out into the aisle.
+    const g = new THREE.Group()
+    g.name = `relay-box-${slot.label}`
+    g.position.set(slot.s * (WALL_X - 0.07), 1.2, routeZ(slot.z))
+    g.rotation.y = slot.s > 0 ? -Math.PI / 2 : Math.PI / 2
+
+    const d = RELAY_BOX_DEPTH
+    const w = RELAY_BOX_WIDTH
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, 0.75, d), relayGreen)
+    body.position.z = d / 2
+    body.castShadow = true
+    g.add(body)
+    const standPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.85, 10), oldBrass)
+    standPipe.position.set(0, -0.8, d / 2)
+    g.add(standPipe)
+    for (const [bw, bh, bx, by] of [
+      [0.03, 0.75, -w / 2 + 0.015, 0], [0.03, 0.75, w / 2 - 0.015, 0],
+      [w, 0.03, 0, 0.36], [w, 0.03, 0, -0.36]
+    ]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.02), oldBrass)
+      bar.position.set(bx, by, d + 0.005)
+      g.add(bar)
+    }
+
+    // Header with the letter plate and status lamp — visible while shut.
+    const header = new THREE.Mesh(new THREE.BoxGeometry(w, 0.2, 0.1), woodDark)
+    header.position.set(0, 0.49, d - 0.05)
+    g.add(header)
+    const letter = plaque(slot.label, 0.16, 0.16, { px: 128 })
+    letter.position.set(-0.12, 0.49, d + 0.006)
+    g.add(letter)
+    const lampMat = new THREE.MeshStandardMaterial({
+      color: 0x5a1a12, emissive: 0x7a1c10, emissiveIntensity: 0.6, roughness: 0.3
+    })
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), lampMat)
+    lamp.position.set(0.16, 0.49, d + 0.02)
+    g.add(lamp)
+
+    const gauge = makeGauge()
+    gauge.position.set(0.17, 0.2, d + 0.01)
+    g.add(gauge)
+
+    // Throw lever: swings across the front face.
+    const lever = new THREE.Group()
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.3, 8), oldBrass)
+    arm.position.y = 0.15
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), darkIron)
+    knob.position.y = 0.3
+    const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 12), darkIron)
+    boss.rotation.x = Math.PI / 2
+    lever.add(arm, knob, boss)
+    lever.position.set(-0.04, -0.12, d + 0.04)
+    g.add(lever)
+
+    // Hinged cover over the front face; swings out toward the aisle.
+    const hinge = new THREE.Group()
+    hinge.position.set(-w / 2, 0, d + 0.11)
+    const cover = new THREE.Mesh(new THREE.BoxGeometry(w, 0.74, 0.025), relayGreen)
+    cover.position.x = w / 2
+    hinge.add(cover)
+    const coverPlate = plaque(slot.label, 0.2, 0.2, { px: 128 })
+    coverPlate.position.set(w / 2, 0.05, 0.014)
+    hinge.add(coverPlate)
+    const coverKnob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), oldBrass)
+    coverKnob.position.set(w - 0.06, 0, 0.03)
+    hinge.add(coverKnob)
+    g.add(hinge)
+
+    root.add(g)
+    const entry = { slot, index: i, group: g, lever, hinge, lampMat, needle: gauge.userData.needle, open: 0, throw: 0 }
+
+    unregisters.push(interaction.register(g, {
+      prompt: `Throw Relay ${slot.label}`,
+      onInteract: () => {
+        if (relaySolved) return
+        if (!relayLogged) {
+          interaction.flashPrompt(
+            routeEngaged > 0.5
+              ? 'The relay will not take an order until the route board has been read.'
+              : 'Relay box is shut — the route system is not engaged.'
+          )
+          return
+        }
+        if (relayInput.includes(i)) return
+        if (relaySequence[relayInput.length] !== i) {
+          relayInput.length = 0
+          hud.showToast('ROUTING REJECTED — the levers spring back. Start again from I.', 2400)
+          return
+        }
+        relayInput.push(i)
+        if (relayInput.length < RELAY_COUNT) {
+          hud.showToast(`RELAY ${slot.label} THROWN — ${relayInput.length} / ${RELAY_COUNT}`, 1100)
+          return
+        }
+        relaySolved = true
+        hud.showToast('ROUTE SET — forward door unlocked', 2600)
+        hud.setObjective('Proceed to Cargo and acquire the next Chrono module')
+      }
+    }))
+    return entry
+  })
+
+  // --- Front door and route board ------------------------------------------
+  const relayGateZ = spans.relay.maxZ - 1.35
+  const DOOR_H = 2.4
+  const doorFace = HAZARD_AISLE_X + 0.2 // pillar face; the leaves slide into the pillars
+  const doorLeaves = [-1, 1].map((side) => {
+    const leaf = new THREE.Group()
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(doorFace, DOOR_H, 0.1), chokeMat)
+    panel.castShadow = true
+    leaf.add(panel)
+    for (const e of [-1, 1]) {
+      for (const [bw, bh, bx, by] of [
+        [0.035, DOOR_H - 0.16, -(doorFace / 2 - 0.08), 0],
+        [0.035, DOOR_H - 0.16, doorFace / 2 - 0.08, 0],
+        [doorFace - 0.16, 0.035, 0, DOOR_H / 2 - 0.08],
+        [doorFace - 0.16, 0.035, 0, -(DOOR_H / 2 - 0.08)]
+      ]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.02), brassMat)
+        bar.position.set(bx, by, e * 0.056)
+        leaf.add(bar)
+      }
+      const crest = makeHourglassEmblem(emblemMat, 0.5)
+      crest.position.set(0, 0.25, e * 0.062)
+      if (e < 0) crest.rotation.y = Math.PI
+      leaf.add(crest)
+    }
+    leaf.userData.side = side
+    root.add(leaf)
+    return leaf
+  })
+  let relayGateOpen = 0
+  function applyRouteDoor() {
+    for (const leaf of doorLeaves) {
+      const side = leaf.userData.side
+      leaf.position.set(side * (doorFace / 2 + relayGateOpen * (doorFace - 0.12)), DOOR_H / 2, relayGateZ)
+    }
+  }
+  applyRouteDoor()
+
+  const lintel = new THREE.Mesh(
+    new THREE.BoxGeometry(doorFace * 2, CARRIAGE_CEILING_Y - DOOR_H, 0.24),
+    woodDark
   )
-  let relayPadEverHeld = false
-  // Keep the signal post beside the plate so the Ghost has a clear landing spot.
-  relayPadPost.position.set(relayPadPos.x + 0.7, 0.55, relayPadPos.z)
-  root.add(relayPadPost)
+  lintel.position.set(0, (CARRIAGE_CEILING_Y + DOOR_H) / 2, relayGateZ)
+  root.add(lintel)
+
+  // The board faces back down the car (-Z). NOTE the sign on X: the player
+  // walks toward +Z, so world +X is SCREEN-LEFT — (1.5 - i) reads A..D left
+  // to right.
+  const board = new THREE.Group()
+  board.name = 'route-board'
+  const boardBack = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.92, 0.05), woodDark)
+  board.add(boardBack)
+  for (const [bw, bh, bx, by] of [
+    [0.04, 0.92, -0.93, 0], [0.04, 0.92, 0.93, 0], [1.9, 0.04, 0, 0.44], [1.9, 0.04, 0, -0.44]
+  ]) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.03), oldBrass)
+    bar.position.set(bx, by, -0.03)
+    board.add(bar)
+  }
+  const boardTitle = plaque('ROUTE SEQUENCE', 1.1, 0.16, { bg: 0x2e3b2a, fg: 0xd9b45e })
+  boardTitle.position.set(0, 0.3, -0.03)
+  boardTitle.rotation.y = Math.PI
+  board.add(boardTitle)
+  const questionMat = signMaterial({
+    text: '?', background: 0xf0e4c8, foreground: 0x3a2412, width: 128, height: 128, emissiveIntensity: 0.3
+  })
+  const flipPlates = routeLayout.relays.map((slot, i) => {
+    const x = (1.5 - i) * 0.42
+    const flip = new THREE.Group()
+    // Far enough off the backing that the half-turn clears it.
+    flip.position.set(x, -0.04, -0.18)
+    const disc = new THREE.CircleGeometry(0.15, 28)
+    // Front shows "?" toward the player; the back carries the numeral, turned
+    // so a half-turn about X leaves it upright and facing the player.
+    const front = new THREE.Mesh(disc, questionMat)
+    front.rotation.y = Math.PI
+    const back = new THREE.Mesh(disc, signMaterial({
+      text: ROMAN[relayStepOf[i]], background: 0xf0e4c8, foreground: 0x3a2412,
+      width: 128, height: 128, emissiveIntensity: 0.3
+    }))
+    back.rotation.z = Math.PI
+    flip.add(front, back)
+    const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.018, 8, 28), oldBrass)
+    bezel.position.set(x, -0.04, -0.18)
+    board.add(flip, bezel)
+    const caption = plaque(slot.label, 0.1, 0.1, { px: 128 })
+    caption.position.set(x, -0.3, -0.03)
+    caption.rotation.y = Math.PI
+    board.add(caption)
+    return flip
+  })
+  board.position.set(0, (CARRIAGE_CEILING_Y + DOOR_H) / 2, relayGateZ - 0.12)
+  root.add(board)
+  const boardLight = new THREE.PointLight(0xffd6a0, 4, 3.5, 2)
+  boardLight.position.set(0, 2.5, relayGateZ - 1.0)
+  root.add(boardLight)
+  let boardReveal = 0
+
   // --------------------------------------------------------------------------
   // CARGO — FREEZE
-  // Three moving cargo hazards: crane crate, pallet sweeper, crush gate.
+  // Six moving-load obstacles, each one a Freeze timing problem: a hanging
+  // crate, a sliding luggage stack, rotating barrier panels, a moving floor
+  // platform, a drop gate, and a final run that combines three of them.
   // --------------------------------------------------------------------------
   const freezePickup =
     makeChronoPickup(0x60a5fa, 0.5)
@@ -1251,129 +1390,267 @@ export function createMovingHeistLevel({
     }
   }))
 
-  const crane = new THREE.Group()
-  const craneCable = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.025, 0.025, 1.25, 8),
-    new THREE.MeshStandardMaterial({ color: 0x5d6570, metalness: 0.9, roughness: 0.3 })
-  )
-  craneCable.position.y = -0.62
-  crane.add(craneCable)
+  const cargoZ = (localZ) => spans.cargo.center + localZ
 
-  const hangingCrate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.95, 0.85, 0.95),
-    new THREE.MeshStandardMaterial({ color: 0x8a6a40, roughness: 0.76 })
-  )
-  hangingCrate.position.y = -1.45
-  hangingCrate.castShadow = true
-  crane.add(hangingCrate)
+  // Triangle wave in [-1, 1]: -1 at t = 0, +1 at half a period. Linear motion
+  // reads more like machinery than a sine, and its turnarounds are sharp.
+  function tri(t, period) {
+    const u = ((t / period) % 1 + 1) % 1
+    return 1 - 4 * Math.abs(u - 0.5)
+  }
 
-  const craneZ = spans.cargo.minZ + 6.0
-  addProp(crane, craneZ, 0, CARRIAGE_CEILING_Y - 0.05)
+  // Overdrive a triangle wave and clip it, so a load pauses at each end of its
+  // travel — roughly a fifth of the cycle — before heading back.
+  function dwell(w) {
+    return THREE.MathUtils.clamp(w * 1.6, -1, 1)
+  }
 
-  let craneT = 0
-  unregisters.push(registerHazard(crane, {
-    onUpdate(scaledDelta) {
-      craneT += scaledDelta
-      crane.position.x = Math.sin(craneT * 2.1) * 0.82
-    },
-    getSnapshot: () => ({ craneT }),
-    restoreSnapshot: (s) => {
-      craneT = s.craneT
-      crane.position.x = Math.sin(craneT * 2.1) * 0.82
+  // Every Cargo hazard is registered with the time system, so SLOW stretches
+  // and FREEZE stops all of them together, and a checkpoint restores its clock.
+  function registerCargoHazard(object, apply) {
+    const state = { t: 0 }
+    apply(0)
+    unregisters.push(registerHazard(object, {
+      onUpdate(scaledDelta) { state.t += scaledDelta; apply(state.t) },
+      getSnapshot: () => ({ t: state.t }),
+      restoreSnapshot: (snap) => { state.t = snap.t; apply(state.t) }
+    }))
+  }
+
+  const cargoWood = new THREE.MeshStandardMaterial({ color: 0x7a5a36, roughness: 0.8, metalness: 0.02 })
+  const cargoBand = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 0.7, metalness: 0.3 })
+  const leatherDark = new THREE.MeshStandardMaterial({ color: 0x2b211b, roughness: 0.78, metalness: 0.05 })
+  const leatherWarm = new THREE.MeshStandardMaterial({ color: 0x4a3526, roughness: 0.8, metalness: 0.05 })
+  const ropeMat = new THREE.MeshStandardMaterial({ color: 0x8a7350, roughness: 0.95 })
+
+  // Navy panel in a brass frame with the hourglass crest on both faces —
+  // the carriage-door look, reused for the gates and barrier panels.
+  function makeCrestPanel(width, height, depth = 0.1, originAtEdge = false) {
+    const g = new THREE.Group()
+    const ox = originAtEdge ? width / 2 : 0
+    const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), chokeMat)
+    body.position.x = ox
+    body.castShadow = true
+    g.add(body)
+    for (const e of [-1, 1]) {
+      for (const [bw, bh, bx, by] of [
+        [0.035, height - 0.12, -(width / 2 - 0.06), 0],
+        [0.035, height - 0.12, width / 2 - 0.06, 0],
+        [width - 0.12, 0.035, 0, height / 2 - 0.06],
+        [width - 0.12, 0.035, 0, -(height / 2 - 0.06)]
+      ]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.02), brassMat)
+        bar.position.set(ox + bx, by, e * (depth / 2 + 0.006))
+        g.add(bar)
+      }
+      const crest = makeHourglassEmblem(emblemMat, Math.min(0.5, height * 0.3))
+      crest.position.set(ox, 0, e * (depth / 2 + 0.012))
+      if (e < 0) crest.rotation.y = Math.PI
+      g.add(crest)
     }
-  }))
+    return g
+  }
 
-  const pallet = new THREE.Mesh(
-    new THREE.BoxGeometry(0.75, 0.42, 1.25),
-    new THREE.MeshStandardMaterial({ color: 0x6b4b2f, roughness: 0.78 })
-  )
-  pallet.castShadow = true
-  const palletZ = spans.cargo.center + 0.7
-  addProp(pallet, palletZ, 0, 0.21)
+  // --- 1. Hanging crate on a ceiling rail ------------------------------------
+  const CRATE_HALF = 0.45
+  const CRATE_TRAVEL = 0.9
+  const CRATE_BOTTOM = 0.35
+  const hangingCrates = []
+  function addHangingCrate(localZ, period, phase) {
+    const z = cargoZ(localZ)
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, 0.14), darkIron)
+    rail.position.set(0, CARRIAGE_CEILING_Y - 0.1, z)
+    rail.userData.noCameraCollision = true
+    root.add(rail)
 
-  let palletT = 0
-  unregisters.push(registerHazard(pallet, {
-    onUpdate(scaledDelta) {
-      palletT += scaledDelta
-      pallet.position.x = Math.sin(palletT * 2.8) * 0.78
-    },
-    getSnapshot: () => ({ palletT }),
-    restoreSnapshot: (s) => {
-      palletT = s.palletT
-      pallet.position.x = Math.sin(palletT * 2.8) * 0.78
+    const load = new THREE.Group()
+    const trolley = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.24), oldBrass)
+    trolley.position.y = CARRIAGE_CEILING_Y - 0.22
+    load.add(trolley)
+    const crateTop = CRATE_BOTTOM + CRATE_HALF * 2
+    const ropeLen = CARRIAGE_CEILING_Y - 0.3 - crateTop
+    for (const rx of [-0.3, 0.3]) {
+      const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, ropeLen, 6), ropeMat)
+      rope.position.set(rx, crateTop + ropeLen / 2, 0)
+      rope.rotation.z = rx > 0 ? -0.12 : 0.12
+      load.add(rope)
     }
-  }))
-
-  const cargoCrusher = new THREE.Mesh(
-    new THREE.BoxGeometry(2.25, 0.55, 0.65),
-    new THREE.MeshStandardMaterial({ color: 0x3b434d, metalness: 0.85, roughness: 0.4 })
-  )
-  const cargoCrusherZ = spans.cargo.maxZ - 3.0
-  addProp(cargoCrusher, cargoCrusherZ, 0, 2.7)
-
-  let crusherT = 0
-  let crusherOpen = 1
-  unregisters.push(registerHazard(cargoCrusher, {
-    onUpdate(scaledDelta) {
-      crusherT += scaledDelta
-      crusherOpen = (Math.sin(crusherT * 2.5) + 1) / 2
-      cargoCrusher.position.y = 0.45 + crusherOpen * 2.6
-    },
-    getSnapshot: () => ({ crusherT }),
-    restoreSnapshot: (s) => {
-      crusherT = s.crusherT
-      crusherOpen = (Math.sin(crusherT * 2.5) + 1) / 2
-      cargoCrusher.position.y = 0.45 + crusherOpen * 2.6
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(CRATE_HALF * 2, CRATE_HALF * 2, CRATE_HALF * 2), cargoWood)
+    crate.position.y = CRATE_BOTTOM + CRATE_HALF
+    crate.castShadow = true
+    load.add(crate)
+    for (const by of [0.12, 0.78]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(CRATE_HALF * 2 + 0.02, 0.06, CRATE_HALF * 2 + 0.02), cargoBand)
+      band.position.y = CRATE_BOTTOM + by
+      load.add(band)
     }
-  }))
+    const stencil = makeHourglassEmblem(cargoBand, 0.45)
+    stencil.position.set(0, CRATE_BOTTOM + CRATE_HALF, -(CRATE_HALF + 0.005))
+    stencil.rotation.y = Math.PI
+    load.add(stencil)
+    load.position.z = z
+    root.add(load)
 
-  // Laser grid across the forward Cargo doorway. It cycles on chrono time, so
-  // SLOW stretches the gap and FREEZE parks it.
-  const cargoGridZ = spans.cargo.maxZ - 5.4
-  const cargoGrid = corridorStealth.addLaserGrid({
-    position: new THREE.Vector3(0, 0, cargoGridZ),
-    width: 2.3,
-    height: 2.2,
-    beamCount: 4
+    registerCargoHazard(load, (t) => {
+      load.position.x = dwell(tri(t + phase * period, period)) * CRATE_TRAVEL
+    })
+    hangingCrates.push({ load, z })
+  }
+
+  // --- 2. Sliding luggage stack ----------------------------------------------
+  const STACK_HALF_X = 0.55
+  const STACK_HALF_Z = 0.45
+  const STACK_TRAVEL = 1.55 // far enough to tuck fully inside a pillar
+  const luggageStacks = []
+  function addLuggageStack(localZ, period, phase) {
+    const z = cargoZ(localZ)
+    const stack = new THREE.Group()
+    const dolly = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.06, 0.95), darkIron)
+    dolly.position.y = 0.03
+    stack.add(dolly)
+    let y = 0.06
+    for (const [w, h, d, mat, yaw] of [
+      [1.1, 0.55, 0.9, leatherDark, 0],
+      [1.0, 0.5, 0.82, leatherWarm, 0.06],
+      [0.82, 0.4, 0.7, leatherDark, -0.1]
+    ]) {
+      const trunk = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+      trunk.position.y = y + h / 2
+      trunk.rotation.y = yaw
+      trunk.castShadow = true
+      stack.add(trunk)
+      for (const e of [-1, 1]) {
+        const strap = new THREE.Mesh(new THREE.BoxGeometry(0.05, h + 0.02, d + 0.02), oldBrass)
+        strap.position.set(e * w * 0.3, y + h / 2, 0)
+        strap.rotation.y = yaw
+        stack.add(strap)
+      }
+      y += h
+    }
+    stack.position.z = z
+    root.add(stack)
+    registerCargoHazard(stack, (t) => {
+      stack.position.x = dwell(tri(t + phase * period, period)) * STACK_TRAVEL
+    })
+    luggageStacks.push({ stack, z })
+  }
+
+  // --- 3. Drop gate ------------------------------------------------------------
+  const GATE_W = (HAZARD_AISLE_X + 0.2) * 2 // pillar face to pillar face
+  const GATE_H = 1.6
+  const GATE_RAISED = CARRIAGE_CEILING_Y - GATE_H // bottom edge when up
+  // Bottom edge over one cycle: a long raised hold, a fast drop, a short
+  // hold on the floor, then a slow climb back.
+  function gateBottom(u) {
+    if (u < 0.5) return GATE_RAISED
+    if (u < 0.6) return GATE_RAISED * (1 - (u - 0.5) / 0.1)
+    if (u < 0.75) return 0
+    return GATE_RAISED * (u - 0.75) / 0.25
+  }
+  const dropGates = []
+  function addDropGate(localZ, period, phase) {
+    const z = cargoZ(localZ)
+    const gate = makeCrestPanel(GATE_W, GATE_H, 0.1)
+    gate.position.z = z
+    root.add(gate)
+    const entry = { gate, z, bottom: GATE_RAISED }
+    registerCargoHazard(gate, (t) => {
+      const u = (((t / period) + phase) % 1 + 1) % 1
+      entry.bottom = gateBottom(u)
+      gate.position.y = entry.bottom + GATE_H / 2
+    })
+    dropGates.push(entry)
+  }
+
+  // --- 4. Rotating barrier panels ----------------------------------------------
+  // Hinged on the pillar faces at the -Z end. Open, they lie flat against the
+  // pillars; closed, they meet across the aisle.
+  const PANEL_LEN = 0.95
+  const panelHingeX = HAZARD_AISLE_X + 0.2 - 0.04
+  const barrierPanels = []
+  function addBarrierPanels(localZ, period) {
+    const z = cargoZ(localZ)
+    const pair = { z, angle: 0, leaves: [] }
+    for (const side of [-1, 1]) {
+      const pivot = new THREE.Group()
+      pivot.position.set(side * panelHingeX, 1.2, z)
+      pivot.add(makeCrestPanel(PANEL_LEN, 2.4, 0.06, true))
+      root.add(pivot)
+      pair.leaves.push({ side, pivot })
+    }
+    const group = new THREE.Group() // time-system handle for the pair
+    root.add(group)
+    registerCargoHazard(group, (t) => {
+      // 0 = open against the pillar, PI/2 = closed across the aisle.
+      pair.angle = Math.PI / 2 * (0.5 - 0.5 * Math.cos(t / period * Math.PI * 2))
+      for (const { side, pivot } of pair.leaves) {
+        // Leaf runs along local +X; point it from the hinge toward its tip.
+        pivot.rotation.y = Math.atan2(-Math.cos(pair.angle), -side * Math.sin(pair.angle))
+      }
+    })
+    barrierPanels.push(pair)
+  }
+  function panelHits(pair, px, pz) {
+    for (const side of [-1, 1]) {
+      const hx = side * panelHingeX
+      const tx = hx - side * PANEL_LEN * Math.sin(pair.angle)
+      const tz = pair.z + PANEL_LEN * Math.cos(pair.angle)
+      const dx = tx - hx
+      const dz = tz - pair.z
+      const k = THREE.MathUtils.clamp(((px - hx) * dx + (pz - pair.z) * dz) / (dx * dx + dz * dz), 0, 1)
+      // 0.15, not a full body pad: open panels lie 0.2 m outside the lane.
+      if (Math.hypot(px - (hx + dx * k), pz - (pair.z + dz * k)) < 0.15) return true
+    }
+    return false
+  }
+
+  // --- 5. Moving floor platform over an open well -----------------------------
+  const pitZ = cargoZ(CARGO_PIT.z)
+  const PLATFORM_HALF_X = 0.6
+  const PLATFORM_TRAVEL = 1.6
+  const cargoPitGeometry = new THREE.BoxGeometry(CARGO_PIT.halfX * 2, 3.4, CARGO_PIT.halfZ * 2)
+  const cargoPitIndices = cargoPitGeometry.getIndex().array
+  cargoPitGeometry.setIndex(cargoPitGeometry.groups
+    .filter((group) => group.materialIndex !== 2)
+    .flatMap((group) => Array.from(cargoPitIndices.slice(group.start, group.start + group.count))))
+  cargoPitGeometry.clearGroups()
+  const cargoPit = new THREE.Mesh(cargoPitGeometry,
+    new THREE.MeshStandardMaterial({ color: 0x151310, roughness: 1, side: THREE.BackSide }))
+  cargoPit.position.set(0, -1.7, pitZ)
+  cargoPit.userData.noCameraCollision = true
+  root.add(cargoPit)
+  const floorPlatform = new THREE.Group()
+  floorPlatform.name = 'cargo-floor-platform'
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(PLATFORM_HALF_X * 2, 0.14, CARGO_PIT.halfZ * 2 - 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.75, metalness: 0.05 })
+  )
+  deck.position.y = -0.07
+  deck.receiveShadow = true
+  floorPlatform.add(deck)
+  for (const e of [-1, 1]) {
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, CARGO_PIT.halfZ * 2 - 0.1), oldBrass)
+    edge.position.set(e * (PLATFORM_HALF_X - 0.03), 0.005, 0)
+    floorPlatform.add(edge)
+  }
+  floorPlatform.position.z = pitZ
+  root.add(floorPlatform)
+  registerCargoHazard(floorPlatform, (t) => {
+    floorPlatform.position.x = tri(t + 0.5 * 3.4, 3.4) * PLATFORM_TRAVEL
   })
 
-  const CARGO_GRID_PERIOD = 4.2
-  const CARGO_GRID_DOWN = 1.25
-  let cargoGridT = 0
-  unregisters.push(registerHazard(cargoGrid.gridGroup, {
-    onUpdate(scaledDelta) {
-      cargoGridT = (cargoGridT + Math.max(0, scaledDelta)) % CARGO_GRID_PERIOD
-      cargoGrid.setActive(cargoGridT > CARGO_GRID_DOWN)
-    },
-    getSnapshot: () => ({ cargoGridT }),
-    restoreSnapshot: (snap) => {
-      cargoGridT = snap.cargoGridT
-      cargoGrid.setActive(cargoGridT > CARGO_GRID_DOWN)
-    }
-  }))
-
-  // Cargo stacks alternate sides to make the player weave between the
-  // moving loads, while leaving a clear approach to the module and crusher.
-  addStaticBarrier({
-    z: spans.cargo.minZ + 4.2,
-    x: 0.85,
-    width: 0.6,
-    depth: 1.1,
-    height: 1.05,
-    color: 0x6b4b2f
-  })
-
-  addStaticBarrier({
-    z: spans.cargo.minZ + 13.6,
-    x: -0.55,
-    width: 0.9,
-    depth: 1.5,
-    height: 1.2,
-    color: 0x4f3b2c
-  })
-
-  // No guard at the Cargo / Rollback approach: the machinery and pad puzzle
-  // can be worked without a patrol following the player into Mechanical.
+  // --- Layout, rear to front ----------------------------------------------------
+  addHangingCrate(-8.0, 2.2, 0)
+  addLuggageStack(-5.0, 2.8, 0)
+  addBarrierPanels(-2.9, 3.0)
+  addDropGate(5.0, 3.0, 0)
+  // 6. Combination: one shared 3.2 s cycle. At its start the stack is tucked
+  // into the +X pillar, the crate is at the -X end and the gate is up, so a
+  // well-timed FREEZE opens all three at once — along the +X side.
+  const COMBO_PERIOD = 3.2
+  addLuggageStack(8.2, COMBO_PERIOD, 0.5)
+  addHangingCrate(9.8, COMBO_PERIOD, 0)
+  addDropGate(11.2, COMBO_PERIOD, 0.1)
 
   // --------------------------------------------------------------------------
   // MECHANICAL — REWIND
@@ -1749,6 +2026,31 @@ export function createMovingHeistLevel({
     ])
   }
 
+  // [z, depth, lane] per hazard — see addChokepoint.
+  const chokepoints = [
+    [scannerZ, 0.9],
+    ...steamBanks.map((bank) => [bank.z, 1.0]),
+    [(relayGateZ - 0.4 + spans.relay.maxZ) / 2, spans.relay.maxZ - relayGateZ + 0.4],
+    // The crate and pallet swing past the old lane; the wider lane still
+    // leaves no spot either one can't reach.
+    // The crates swing past the old lane; the wider lane still leaves no spot
+    // one can't reach.
+    ...hangingCrates.map(({ z }) => [z, 1.4, 1.15]),
+    ...luggageStacks.map(({ z }) => [z, 1.3]),
+    ...barrierPanels.map(({ z }) => [z + PANEL_LEN / 2, PANEL_LEN + 0.35]),
+    [pitZ, CARGO_PIT.halfZ * 2 + 0.2],
+    ...dropGates.map(({ z }) => [z, 0.9]),
+    [bridgeZ, 3.0],
+    [slamGateZ, 1.2],
+    [mechBladeZ, 1.4],
+    [clampDoorZ, 0.8],
+    [gauntletSlowZ, 1.2],
+    [gauntletGhostGateZ, 0.8],
+    [gauntletBridgeZ, 3.0],
+    [gauntletFreezeZ, 1.4]
+  ]
+  for (const [z, depth, lane] of chokepoints) addChokepoint(z, depth, lane)
+
   // Initial section setup.
   setBounds(env.interiorBounds)
   useObstacles(corridorObstacles)
@@ -1763,7 +2065,7 @@ export function createMovingHeistLevel({
     const saved = {
       section, bounds: { ...bounds }, lastCheckpointZ,
       abilityState: { ...abilityState }, interfaceTaken, ghostTaken, freezeTaken, rewindTaken,
-      relayLogged, relaySolved, relaySeen: [...relaySeen], relayInput: [...relayInput],
+      relayLogged, relaySolved, relayInput: [...relayInput],
       bridgeY, bridgeRepaired, clampReleased, hatchRepaired,
       gauntletCleared: { ...gauntletCleared }, gauntletBridgeY, gauntletGhostGateOpen,
       hazards: checkpointHazards.map((hazard) => hazard.getSnapshot())
@@ -1788,13 +2090,12 @@ export function createMovingHeistLevel({
       timeSystem.setStrainEnabled(freezeTaken)
       relayLogged = saved.relayLogged
       relaySolved = saved.relaySolved
-      relaySeen.splice(0, relaySeen.length, ...saved.relaySeen)
       relayInput.splice(0, relayInput.length, ...saved.relayInput)
-      relayPlayT = 0
-      relayActiveStep = -1
-      relayRejectFlash = 0
+      routeEngaged = 0
+      routeReadT = 0
+      boardReveal = relayLogged ? 1 : 0
       relayGateOpen = relaySolved ? 1 : 0
-      relayGate.position.y = 1.05 + relayGateOpen * 2.2
+      applyRouteDoor()
       bridgeY = saved.bridgeY
       bridgeRepaired = saved.bridgeRepaired
       mechBridge.position.y = bridgeY
@@ -1884,129 +2185,73 @@ export function createMovingHeistLevel({
       // so the Passenger guard can react to a moving temporal decoy.
       corridorStealth.setDistraction(ghost.isPlaying() ? ghost.getPosition() : null)
 
-      // Chrono Relay exit gate.
-      relayGateOpen +=
-        ((relaySolved ? 1 : 0) - relayGateOpen) *
-        Math.min(1, delta * 5)
+      // Route Control. The operator platform drives the route system; only an
+      // echo can hold it while the player stands at the board a dozen metres away.
+      const platformHeld =
+        ghost.isOccupying(platformPos, 0.56) ||
+        playerOnPad(platformPos, 0.56)
+      routeEngaged += ((platformHeld ? 1 : 0) - routeEngaged) * Math.min(1, delta * 4)
+      platformPlate.position.y = platformHeld ? 0.075 : 0.1
+      platformLever.rotation.x = -0.7 + routeEngaged * 1.4
+      platformLampMat.color.setHex(platformHeld ? 0x7ee08a : 0xffb454)
+      platformLampMat.emissive.setHex(platformHeld ? 0x3fbf5a : 0xff9a2a)
+      gearSpin.rotation.z -= delta * routeEngaged * 1.8
 
-      relayGate.position.y =
-        1.05 + relayGateOpen * 2.2
+      // Say once that the hold worked, and state the constraint — the board
+      // is at the front and the hold ends when the platform is clear.
+      if (platformHeld && !routeEverEngaged) {
+        routeEverEngaged = true
+        hud.showBriefing?.([
+          'Operator hold engaged — the route system is live.',
+          'The route board over the front door has turned its plates. It turns back the moment the platform is clear.'
+        ])
+      }
 
-      // Prevent walking through the closed gate.
+      // Board plates flip in a short cascade; once logged they stay turned.
+      const boardTarget = routeEngaged > 0.5 || relayLogged ? 1 : 0
+      boardReveal += (boardTarget - boardReveal) * Math.min(1, delta * 3)
+      flipPlates.forEach((flip, i) => {
+        const t = THREE.MathUtils.clamp(boardReveal * 1.6 - i * 0.2, 0, 1)
+        flip.rotation.x = t * Math.PI
+      })
+
+      // Reading the turned board up close logs the order.
+      const nearBoard = pp.z < relayGateZ && relayGateZ - pp.z < ROUTE_READ_RANGE
+      if (!relayLogged && boardReveal > 0.97 && nearBoard) {
+        routeReadT += delta
+        if (routeReadT >= ROUTE_READ_SECONDS) {
+          relayLogged = true
+          hud.showToast('ROUTING ORDER LOGGED — relays latched open. Throw them in order, I to IV.', 3400)
+          hud.setObjective('Route Control — throw relays A–D in the order shown: I, II, III, IV')
+        }
+      }
+
+      // Relay boxes: open while engaged, latched once logged. Levers show
+      // thrown steps; gauges wake with the system.
+      const boxesOpen = routeEngaged > 0.5 || relayLogged || relaySolved
+      for (const box of relayBoxes) {
+        box.open += ((boxesOpen ? 1 : 0) - box.open) * Math.min(1, delta * 4)
+        box.hinge.rotation.y = -1.9 * box.open
+        const thrown = relaySolved || relayInput.includes(box.index)
+        box.throw += ((thrown ? 1 : 0) - box.throw) * Math.min(1, delta * 8)
+        box.lever.rotation.z = 0.7 - box.throw * 1.4
+        const live = Math.max(routeEngaged, relayLogged ? 1 : 0)
+        box.needle.rotation.z = 1.1 - live * (1.6 + Math.sin(elapsed * 3 + box.index) * 0.08)
+        box.lampMat.color.setHex(thrown ? 0x7ee08a : live > 0.5 ? 0xffb454 : 0x5a1a12)
+        box.lampMat.emissive.setHex(thrown ? 0x3fbf5a : live > 0.5 ? 0xff9a2a : 0x7a1c10)
+        box.lampMat.emissiveIntensity = thrown || live > 0.5 ? 1.4 : 0.6
+      }
+      gearGauge.userData.needle.rotation.z = 1.1 - routeEngaged * 1.7
+
+      // Front door slides apart once the route is set.
+      relayGateOpen += ((relaySolved ? 1 : 0) - relayGateOpen) * Math.min(1, delta * 3)
+      applyRouteDoor()
       if (
         !relaySolved &&
         pp.z > relayGateZ - 0.48 &&
         pp.z < spans.relay.maxZ
       ) {
         pp.z = relayGateZ - 0.48
-      }
-
-      // Relay bus pad. Only an echo can hold this while the player stands at the
-      // far end of the car watching the routing pattern play out on the panel.
-      const relayPadHeld =
-        ghost.isOccupying(relayPadPos, 0.56) ||
-        playerOnPad(relayPadPos, 0.56)
-
-      relayPadMat.emissive.setHex(relayPadHeld ? 0x10b981 : 0xf59e0b)
-      relayPad.position.y = relayPadHeld ? 0.012 : 0.03
-      relayPadPostMat.emissive.setHex(relayPadHeld ? 0x10b981 : 0x2dd4bf)
-      relayPadPostMat.emissiveIntensity = relayPadHeld ? 3.2 : 1.6
-
-      // Standing on the pad shows you nothing at the gate eleven metres away,
-      // which reads as "the pad is broken". Say once, out loud, that it worked
-      // and why you still cannot see the pattern — the constraint, not the fix.
-      if (relayPadHeld && !relayPadEverHeld) {
-        relayPadEverHeld = true
-        hud.showBriefing?.([
-          'Bus energised — that pad is doing its job.',
-          'The panel over the gate is stepping through the routing order now. Watch which lamps fire and in what sequence, then key that same order into the terminals. It goes dark the moment the pad is clear.'
-        ])
-      }
-
-      // Pattern playback. Real time on purpose — an echo replays at 1x whatever
-      // the player does with the clock, so a chrono-scaled sequence would run
-      // past the end of the echo that is holding the pad open.
-      if (relaySolved) {
-        relayActiveStep = -1
-      } else {
-        relayPlayT = (relayPlayT + delta) % RELAY_CYCLE
-        const stepIndex = Math.floor(relayPlayT / RELAY_STEP_SPAN)
-        relayActiveStep =
-          stepIndex < RELAY_SEQUENCE_LENGTH &&
-          relayPlayT - stepIndex * RELAY_STEP_SPAN < RELAY_STEP_ON
-            ? stepIndex
-            : -1
-      }
-
-      relayRejectFlash = Math.max(0, relayRejectFlash - delta)
-
-      // The panel is a low-power display: it is only legible from close up.
-      // Without this the player could weight the pad themselves and squint at
-      // it from eleven metres away, and the Ghost would be optional again.
-      const atRelayPanel = Math.abs(pp.z - relayGateZ) < 4.4
-
-      // Once the whole pattern has been logged the panel keeps replaying it
-      // with no pad. The echo is the price of *learning* the order, not a toll
-      // on every retry after one mistyped step at the far end of the car.
-      const relayPanelLive =
-        !relaySolved && atRelayPanel && (relayPadHeld || relayLogged)
-
-      for (let i = 0; i < relayTargetLights.length; i++) {
-        const mat = relayLightMats[i]
-        if (relaySolved) {
-          mat.color.setHex(0x10b981)
-          mat.emissive.setHex(0x10b981)
-          relayTargetLights[i].visible = true
-        } else if (relayRejectFlash > 0) {
-          // Rejection is shown at any range: the player is standing at a
-          // terminal when it happens, not at the panel.
-          mat.color.setHex(0xef4444)
-          mat.emissive.setHex(0xef4444)
-          relayTargetLights[i].visible = true
-        } else {
-          mat.color.setHex(RELAY_COLORS[i])
-          mat.emissive.setHex(RELAY_COLORS[i])
-          relayTargetLights[i].visible =
-            relayPanelLive &&
-            relayActiveStep >= 0 &&
-            relaySequence[relayActiveStep] === i
-        }
-      }
-
-      // Steps are logged as they are actually watched, so two short echoes that
-      // each catch part of the loop add up to the whole pattern.
-      if (relayPanelLive && relayActiveStep >= 0 && !relayLogged) {
-        relaySeen[relayActiveStep] = true
-        if (relaySeen.every(Boolean)) {
-          relayLogged = true
-          hud.showToast('ROUTING PATTERN LOGGED — repeat it on the terminals', 3200)
-          hud.setObjective('Relay — key the routing order into terminals A / B / C')
-        }
-      }
-
-      const relayPipsLit = relayLogged
-        ? relayInput.length
-        : relaySeen.reduce((n, seen) => n + (seen ? 1 : 0), 0)
-      const relayPipHue = relaySolved ? 0x10b981 : relayLogged ? 0x2dd4bf : 0xf59e0b
-
-      for (let i = 0; i < relayPipMats.length; i++) {
-        const lit = i < relayPipsLit
-        const mat = relayPipMats[i]
-        mat.color.setHex(lit ? relayPipHue : 0x1e293b)
-        mat.emissive.setHex(lit ? relayPipHue : 0x1e293b)
-        mat.emissiveIntensity = lit ? 2.6 : 0.5
-      }
-
-      // Terminal screens idle dim and flare on a press, so a keyed step is
-      // legible from the terminal itself rather than only on the far panel.
-      for (const terminal of relayTerminals) {
-        const screenMat = terminal.userData.screen.material
-        terminal.userData.pulse = Math.max(0, terminal.userData.pulse - delta * 2.4)
-        if (relaySolved) {
-          screenMat.color.setHex(0x10b981)
-          screenMat.emissive.setHex(0x10b981)
-        }
-        screenMat.emissiveIntensity = 0.9 + terminal.userData.pulse * 2.6
       }
 
       // Each pad lifts the block between them. Both together latch the exit.
@@ -2091,7 +2336,7 @@ export function createMovingHeistLevel({
           [
             'You’re aboard. Seven cars between you and the Chrono Core, and the Express does not stop for anyone.',
             'Every bulkhead on this train opens from the rear only. Once you’re through one, forward is the only direction left.',
-            'Passenger car. A ceiling camera and a conductor on the walk — and you have no chrono gear yet. Use the cabin for cover and pick your moment.'
+            'Passenger car. A conductor on the walk — and you have no chrono gear yet. Use the seats for cover and pick your moment.'
           ]
         )
         hint(
@@ -2108,8 +2353,8 @@ export function createMovingHeistLevel({
           pp.z,
           spans.relay.minZ,
           [
-            'Chrono Relay. The forward bulkhead is locked behind a routing pattern.',
-            'The pattern is posted above the gate, but that display stays dark unless the bus pad is carrying weight — and the pad sits a long way back from the gate.',
+            'Route Control. The forward door stays locked until the relays are thrown in the right order.',
+            'The order is posted on the route board over the door, but the board only turns while the operator platform at the back is held down.',
             'There is one more module in here. You will want it before you try.'
           ]
         )
@@ -2118,8 +2363,8 @@ export function createMovingHeistLevel({
           pp.z,
           spans.cargo.minZ,
           [
-            'Cargo. Live loads swinging on the move, and a hard security line across the forward door.',
-            'Watch the load cycles and the security grid. The route into Mechanical is clear of guards.'
+            'Cargo. Every load in this car is moving — crates on the ceiling rails, luggage on the floor, gates and panels on the walls.',
+            'Nothing in here waits for you. Read each cycle before you step in. The last stretch runs three of them at once.'
           ]
         )
         hint(
@@ -2152,63 +2397,59 @@ export function createMovingHeistLevel({
         }
 
         // Security obstacle 1:
-        // Narrow scanner sweeps LEFT <-> RIGHT across the doorway.
-        // SLOW makes the sweep much easier to read, while the player
-        // remains at normal movement speed.
+        // The security panel slides LEFT <-> RIGHT across the aisle.
+        // SLOW makes the slide much easier to read, while the player
+        // remains at normal movement speed. The 0.15 pad is body width.
         const beamWorldX =
           scanner.position.x +
           scanBeam.position.x
 
         if (
-          Math.abs(pp.z - scannerZ) < 0.58 &&
-          Math.abs(pp.x - beamWorldX) < 0.22
+          Math.abs(pp.z - scannerZ) < 0.3 &&
+          Math.abs(pp.x - beamWorldX) < SCAN_PANEL_W / 2 + 0.15
         ) {
           failSoft(
-            'The security scanner caught you — SLOW it and cross on the opposite side.'
+            'The security panel knocked you back — SLOW it and cross on the opposite side.'
           )
         }
 
-        // Security obstacle 2: rotating energy bar. No longer "any power works" —
-        // an arm either overlaps you or it doesn't, so Slow is what makes the
-        // gap readable and Freeze only helps if you stop it on a gap.
+        // Security obstacle 2: steam vents. Only a full burst knocks you
+        // back; the warning plume is safe to walk through.
+        for (const bank of steamBanks) {
+          if (Math.abs(pp.z - bank.z) < 0.5 && bank.density > 0.5) {
+            failSoft('Scalded by the steam vents — wait for the gap, or SLOW them.')
+          }
+        }
+
+        // Cargo: every load is a Freeze timing problem. Body pads of ~0.2 m
+        // are folded into each test.
+        for (const { load, z } of hangingCrates) {
+          if (
+            Math.abs(pp.z - z) < CRATE_HALF + 0.2 &&
+            Math.abs(pp.x - load.position.x) < CRATE_HALF + 0.2
+          ) failSoft('A hanging crate knocked you down — FREEZE it once it has cleared your side.')
+        }
+        for (const { stack, z } of luggageStacks) {
+          if (
+            Math.abs(pp.z - z) < STACK_HALF_Z + 0.2 &&
+            Math.abs(pp.x - stack.position.x) < STACK_HALF_X + 0.2
+          ) failSoft('The luggage stack slid into you — FREEZE it while it is tucked away.')
+        }
+        for (const pair of barrierPanels) {
+          if (panelHits(pair, pp.x, pp.z)) {
+            failSoft('A barrier panel swung into you — FREEZE the panels while they are open.')
+          }
+        }
         if (
-          Math.abs(pp.z - secRotorZ) < 0.55 &&
-          abilityState.SLOW &&
-          rotorBlocks({
-            angle: secRotorA,
-            radius: ROTOR_RADIUS,
-            centreY: ROTOR_HUB_Y,
-            playerX: pp.x,
-            playerTopY: topY
-          })
+          Math.abs(pp.z - pitZ) < CARGO_PIT.halfZ - 0.1 &&
+          Math.abs(pp.x - floorPlatform.position.x) > PLATFORM_HALF_X - 0.05
         ) {
-          failSoft('The security rotor caught you — SLOW it and cross on a gap.')
+          failSoft('You fell into the cargo well — FREEZE the platform when it lines up.', 'fell')
         }
-
-        // Security obstacle 3: vertical shutter. Slow extends the open phase.
-        if (Math.abs(pp.z - secShutterZ) < 0.32 && shutterOpen < 0.62) {
-          failSoft('The security shutter slammed shut.')
-        }
-
-        // Cargo obstacle 1: crane crate. Freeze it only after it clears your side.
-        if (
-          Math.abs(pp.z - craneZ) < 0.58 &&
-          Math.abs(pp.x - crane.position.x) < 0.58
-        ) {
-          failSoft('The swinging cargo crate hit you — FREEZE it when the aisle is clear.')
-        }
-
-        // Cargo obstacle 2: pallet sweeper.
-        if (
-          Math.abs(pp.z - palletZ) < 0.68 &&
-          Math.abs(pp.x - pallet.position.x) < 0.55
-        ) {
-          failSoft('The powered pallet swept you off your line.')
-        }
-
-        // Cargo obstacle 3: crusher. Freeze while high, then pass underneath.
-        if (Math.abs(pp.z - cargoCrusherZ) < 0.48 && crusherOpen < 0.64) {
-          failSoft('The cargo press came down — FREEZE it at the top of its cycle.')
+        for (const { z, bottom } of dropGates) {
+          if (Math.abs(pp.z - z) < 0.3 && bottom < topY + 0.05) {
+            failSoft('The drop gate came down on you — FREEZE it while it is raised.')
+          }
         }
 
         // The plank starts in the pit. Retreating never rebuilds it for free.

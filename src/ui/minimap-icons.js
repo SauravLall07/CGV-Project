@@ -96,9 +96,9 @@ function yawFromWorldForward(object, fallbackYaw) {
 }
 
 function obstacleKind(box) {
-  if (box.kind === 'crate' || box.type === 'crate') return 'crate'
+  if (box.kind === 'crate' || box.kind === 'trunk' || box.type === 'crate') return 'crate'
   if (box.kind === 'seat') return 'seat'
-  if (box.kind === 'locker') return 'locker'
+  if (box.kind === 'locker' || box.kind === 'relaybox') return 'locker'
   return 'wall'
 }
 

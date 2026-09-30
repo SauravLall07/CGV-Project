@@ -4,9 +4,25 @@ import {
   metalMaterial,
   nightViewMaterial,
   plasterMaterial,
+  signMaterial,
   woodMaterial
 } from './textures.js'
-import { WALL_X, DOOR_W, CAB_LENGTH, LAYOUT } from './carriage-bounds.js'
+import {
+  WALL_X as HEIST_WALL_X,
+  wallXFor,
+  DOOR_W,
+  CAB_LENGTH,
+  layoutFor,
+  CARGO_PIT,
+  SEAT_INNER_X,
+  SEAT_DEPTH,
+  SEAT_BACK_DEPTH,
+  SEAT_BACK_TOP,
+  passengerSeatRows,
+  windowBayZs,
+  routeControlLayout,
+  localInteriorBoxes
+} from './carriage-bounds.js'
 
 export {
   listCarriageVolumes,
@@ -45,6 +61,47 @@ const DOOR_H = 2.7
 export const CARRIAGE_ROOF_Y = 4.2 // top surface of the roof catwalk; clears the taller interior shell
 const ROOF_Y = CARRIAGE_ROOF_Y
 
+// Shell half-width for the build in progress. Level 2 builds wide cars and
+// Level 3 narrow ones; createCarriageEnvironment sets this before any builder
+// runs, and every builder is synchronous, so the builders can read it directly.
+let WALL_X = HEIST_WALL_X
+
+// Outlined hourglass — the train's Chrono Line crest — as a flat mesh facing
+// +Z, `height` tall. Used on the Security car's pillars and hazard panels.
+let hourglassGeometry = null
+export function makeHourglassEmblem(material, height = 0.6) {
+  if (!hourglassGeometry) {
+    const outline = new THREE.Shape()
+    outline.moveTo(-0.22, 0.5)
+    outline.lineTo(0.22, 0.5)
+    outline.lineTo(0.22, 0.44)
+    outline.lineTo(0.05, 0)
+    outline.lineTo(0.22, -0.44)
+    outline.lineTo(0.22, -0.5)
+    outline.lineTo(-0.22, -0.5)
+    outline.lineTo(-0.22, -0.44)
+    outline.lineTo(-0.05, 0)
+    outline.lineTo(-0.22, 0.44)
+    outline.closePath()
+    const top = new THREE.Path()
+    top.moveTo(-0.15, 0.4)
+    top.lineTo(0, 0.05)
+    top.lineTo(0.15, 0.4)
+    top.closePath()
+    const bottom = new THREE.Path()
+    bottom.moveTo(-0.15, -0.4)
+    bottom.lineTo(0.15, -0.4)
+    bottom.lineTo(0, -0.05)
+    bottom.closePath()
+    outline.holes.push(top, bottom)
+    hourglassGeometry = new THREE.ShapeGeometry(outline)
+  }
+  const mesh = new THREE.Mesh(hourglassGeometry, material)
+  mesh.scale.setScalar(height)
+  mesh.userData.noCameraCollision = true
+  return mesh
+}
+
 // Deterministic scatter so a rebuilt level looks identical to the first build.
 const skew = (n) => (Math.sin(n * 12.9898) * 43758.5453) % 1
 
@@ -69,11 +126,14 @@ function wallMaterialFor(key, length, damaged) {
     case 'passenger':
       return woodMaterial({ repeat: r, light: damaged ? 0x3a3938 : 0x8a5c33, dark: damaged ? 0x1a1b1d : 0x452a16 })
     case 'security':
-      return metalMaterial({ repeat: r, base: damaged ? 0x2f343c : 0x474d57, roughness: damaged ? 0.7 : 0.45, metalness: 0.8 })
+      return damaged
+        ? metalMaterial({ repeat: r, base: 0x2f343c, roughness: 0.7, metalness: 0.8 })
+        : woodMaterial({ repeat: r, light: 0x7a4a26, dark: 0x3a2211 })
     case 'relay':
+      if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
       return metalMaterial({ repeat: r, base: damaged ? 0x293138 : 0x344957, roughness: damaged ? 0.72 : 0.48, metalness: 0.8 })
     case 'cargo':
-      return woodMaterial({ repeat: r, light: damaged ? 0x323230 : 0x6a4a2c, dark: damaged ? 0x161616 : 0x33210f })
+      return woodMaterial({ repeat: r, light: damaged ? 0x323230 : 0x6e3b1e, dark: damaged ? 0x161616 : 0x2e160a })
     case 'mechanical':
       return metalMaterial({ repeat: r, base: damaged ? 0x282c33 : 0x3c4149, roughness: 0.6, metalness: 0.75 })
     case 'vault':
@@ -131,6 +191,8 @@ function buildShell(key, length, shared, damaged, seals = {}) {
       base: damaged ? 0x2a2428 : 0x5e1f28,
       accent: damaged ? 0x3c3a38 : 0x9a7238
     })
+  } else if ((key === 'security' || key === 'relay' || key === 'cargo') && !damaged) {
+    floorMat = woodMaterial({ repeat: [2, Math.round(length / 2)], light: 0x6b4526, dark: 0x2e1a0c })
   } else {
     floorMat = metalMaterial({
       repeat: [3, Math.round(length / 2)],
@@ -140,7 +202,7 @@ function buildShell(key, length, shared, damaged, seals = {}) {
     })
   }
   let floorGeometry
-  if ((key === 'mechanical' || key === 'convergence') && !damaged) {
+  if ((key === 'mechanical' || key === 'convergence' || key === 'cargo') && !damaged) {
     const outline = new THREE.Shape()
     outline.moveTo(-WALL_X, -half)
     outline.lineTo(WALL_X, -half)
@@ -148,13 +210,15 @@ function buildShell(key, length, shared, damaged, seals = {}) {
     outline.lineTo(-WALL_X, half)
     outline.closePath()
     // Plane Y becomes negative world Z after the floor's rotation. Openings
-    // match the Rollback plank and the Convergence bridge.
-    const openingY = key === 'mechanical' ? half - 6 : half - 14
+    // match the Rollback plank, the Convergence bridge and the Cargo platform pit.
+    const pit = key === 'cargo'
+      ? { y: -CARGO_PIT.z, hx: CARGO_PIT.halfX, hz: CARGO_PIT.halfZ }
+      : { y: key === 'mechanical' ? half - 6 : half - 14, hx: 0.725, hz: 1.4 }
     const hole = new THREE.Path()
-    hole.moveTo(-0.725, openingY - 1.4)
-    hole.lineTo(-0.725, openingY + 1.4)
-    hole.lineTo(0.725, openingY + 1.4)
-    hole.lineTo(0.725, openingY - 1.4)
+    hole.moveTo(-pit.hx, pit.y - pit.hz)
+    hole.lineTo(-pit.hx, pit.y + pit.hz)
+    hole.lineTo(pit.hx, pit.y + pit.hz)
+    hole.lineTo(pit.hx, pit.y - pit.hz)
     hole.closePath()
     outline.holes.push(hole)
     floorGeometry = new THREE.ShapeGeometry(outline)
@@ -185,7 +249,10 @@ function buildShell(key, length, shared, damaged, seals = {}) {
     }
   }
 
-  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, length), wallMat)
+  const ceilingMat = key === 'security' && !damaged
+    ? plasterMaterial({ repeat: [2, Math.round(length / 3)], base: 0xd8ccb0, roughness: 0.85 })
+    : wallMat
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, length), ceilingMat)
   ceiling.position.y = CARRIAGE_CEILING_Y
   g.add(ceiling)
 
@@ -610,33 +677,8 @@ function dressPassenger(g, half, shared, damaged, fx) {
     }
   }
 
-  // Seat bays down both sides of the aisle (instanced). Damaged seats are
-  // tilted and dropped so the same instanced set reads as thrown about.
-  const bays = Math.max(1, Math.floor((half * 2 - 4) / 3.4))
-  const seatMat = new THREE.MeshStandardMaterial({
-    color: damaged ? 0x3d4a58 : 0x4a5c74, roughness: 0.88, metalness: 0.03
-  })
-  const bases = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.16, 0.95), seatMat, bays * 2)
-  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.8, 0.16), seatMat, bays * 2)
-  const dummy = new THREE.Object3D()
-  const sites = damaged ? damageSites(half) : []
-  let i = 0
-  for (let b = 0; b < bays; b++) {
-    const z = -half + 3 + b * 3.4
-    for (const s of [-1, 1]) {
-      const wrecked = damaged && nearSite(sites, z, s, 1.8)
-      const tilt = wrecked ? skew(i + 1) * 0.18 : 0
-      const yaw = wrecked ? skew(i + 4) * 0.08 : 0
-      const drop = wrecked ? Math.abs(skew(i + 7)) * 0.05 : 0
-      dummy.rotation.set(wrecked ? Math.abs(skew(i + 2)) * 0.08 : 0, yaw, tilt)
-      dummy.position.set(s * 1.02, 0.42 - drop, z); dummy.updateMatrix()
-      bases.setMatrixAt(i, dummy.matrix)
-      dummy.position.set(s * 1.24, 0.82 - drop, z); dummy.updateMatrix()
-      backs.setMatrixAt(i, dummy.matrix)
-      i++
-    }
-  }
-  for (const m of [bases, backs]) { m.instanceMatrix.needsUpdate = true; m.castShadow = true; g.add(m) }
+  if (damaged) addWreckedSeatBays(g, half)
+  else addSeatRows(g, half, shared)
 
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.4, 0.05, half * 2 - 2),
@@ -656,9 +698,218 @@ function dressPassenger(g, half, shared, damaged, fx) {
   if (damaged) dressDamagedPassenger(g, half, shared, fx)
 }
 
+// Level 3: the original narrow-car seat bays, tilted and dropped near the
+// damage sites so the same instanced set reads as thrown about.
+function addWreckedSeatBays(g, half) {
+  const bays = Math.max(1, Math.floor((half * 2 - 4) / 3.4))
+  const seatMat = new THREE.MeshStandardMaterial({ color: 0x3d4a58, roughness: 0.88, metalness: 0.03 })
+  const bases = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.16, 0.95), seatMat, bays * 2)
+  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.8, 0.16), seatMat, bays * 2)
+  const dummy = new THREE.Object3D()
+  const sites = damageSites(half)
+  let i = 0
+  for (let b = 0; b < bays; b++) {
+    const z = -half + 3 + b * 3.4
+    for (const s of [-1, 1]) {
+      const wrecked = nearSite(sites, z, s, 1.8)
+      const tilt = wrecked ? skew(i + 1) * 0.18 : 0
+      const yaw = wrecked ? skew(i + 4) * 0.08 : 0
+      const drop = wrecked ? Math.abs(skew(i + 7)) * 0.05 : 0
+      dummy.rotation.set(wrecked ? Math.abs(skew(i + 2)) * 0.08 : 0, yaw, tilt)
+      dummy.position.set(s * 1.02, 0.42 - drop, z); dummy.updateMatrix()
+      bases.setMatrixAt(i, dummy.matrix)
+      dummy.position.set(s * 1.24, 0.82 - drop, z); dummy.updateMatrix()
+      backs.setMatrixAt(i, dummy.matrix)
+      i++
+    }
+  }
+  for (const m of [bases, backs]) { m.instanceMatrix.needsUpdate = true; m.castShadow = true; g.add(m) }
+}
+
+// Level 2: rows of forward-facing double benches down both sides of the aisle.
+// The backs stand SEAT_BACK_TOP high — above a crouched player's detection
+// point, below a standing one's — so the legroom gaps work as stealth cover.
+// Layout (and the matching colliders) comes from carriage-bounds.js.
+function addSeatRows(g, half, shared) {
+  const rows = passengerSeatRows(half)
+  const count = rows.length * 2
+  const width = WALL_X - 0.08 - SEAT_INNER_X
+  const backZ = -(SEAT_DEPTH + SEAT_BACK_DEPTH) / 2
+  const fabric = new THREE.MeshStandardMaterial({ color: 0x4a5c74, roughness: 0.88, metalness: 0.03 })
+  const linen = new THREE.MeshStandardMaterial({ color: 0xd8cfbd, roughness: 0.92, metalness: 0 })
+  // [geometry, material, x offset toward the wall, y, z offset from the row]
+  const parts = [
+    [new THREE.BoxGeometry(width, 0.3, SEAT_DEPTH - 0.1), shared.darkSteel, 0, 0.15, 0.02],
+    [new THREE.BoxGeometry(width, 0.14, SEAT_DEPTH), fabric, 0, 0.37, 0],
+    [new THREE.BoxGeometry(width, SEAT_BACK_TOP, SEAT_BACK_DEPTH), fabric, 0, SEAT_BACK_TOP / 2, backZ],
+    [new THREE.BoxGeometry(width - 0.24, 0.2, SEAT_BACK_DEPTH + 0.02), linen, 0, SEAT_BACK_TOP - 0.16, backZ],
+    // Aisle-side armrest.
+    [new THREE.BoxGeometry(0.07, 0.07, SEAT_DEPTH - 0.04), shared.brass, -(width / 2 - 0.035), 0.62, 0]
+  ]
+  const dummy = new THREE.Object3D()
+  for (const [geometry, material, dx, y, dz] of parts) {
+    const mesh = new THREE.InstancedMesh(geometry, material, count)
+    let i = 0
+    for (const z of rows) {
+      for (const s of [-1, 1]) {
+        dummy.position.set(s * (SEAT_INNER_X + width / 2 + dx), y, z + dz)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(i++, dummy.matrix)
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    g.add(mesh)
+  }
+
+  // Overhead luggage racks along both walls.
+  for (const s of [-1, 1]) {
+    const rack = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, half * 2 - 3), shared.brass)
+    rack.position.set(s * (WALL_X - 0.33), 2.35, 0)
+    noCam(rack)
+    g.add(rack)
+  }
+}
+
+// Level 2's old-world luxury cars share one fit-out: wood panelling, a
+// patterned runner with a gold border, dado and picture rails, windows with
+// brass trim, and leather trunks beneath each window. No glowing trim — the
+// light comes from lamps, not strips.
+function addVintageFitOut(g, half, shared, { runnerBase, runnerAccent, curtains, windows = true, trunks = true }) {
+  const length = half * 2
+
+  const runner = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, length - 0.4),
+    carpetMaterial({ repeat: [1, Math.round(length / 2)], base: runnerBase, accent: runnerAccent })
+  )
+  runner.rotation.x = -Math.PI / 2
+  runner.position.y = 0.006
+  runner.receiveShadow = true
+  g.add(runner)
+  const border = new THREE.MeshStandardMaterial({ color: 0x9a7a3a, roughness: 0.8, metalness: 0.2 })
+  for (const s of [-1, 1]) {
+    const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.06, length - 0.4), border)
+    edge.rotation.x = -Math.PI / 2
+    edge.position.set(s * 1.0, 0.008, 0)
+    g.add(edge)
+  }
+
+  const darkWood = woodMaterial({ repeat: [1, 1], light: 0x4a2c16, dark: 0x24140a })
+  const curtain = new THREE.MeshStandardMaterial({ color: 0x1b2a4a, roughness: 0.95, metalness: 0 })
+  const windowMat = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: 0.85 })
+  for (const s of [-1, 1]) {
+    // Dado rail and picture rail run the length of the car.
+    for (const y of [0.95, 2.72]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, length), darkWood)
+      rail.position.set(s * (WALL_X - 0.08), y, 0)
+      g.add(rail)
+    }
+  }
+
+  const bays = windowBayZs(half)
+  for (const z of windows ? bays : []) {
+    for (const s of [-1, 1]) {
+      const x = s * WALL_X
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.22, 1.42), darkWood)
+      frame.position.set(x - s * 0.05, 1.62, z)
+      g.add(frame)
+      // Glass sits proud of the brass trim so the trim reads as a thin border.
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.1, 1.3), shared.brass)
+      trim.position.set(x - s * 0.09, 1.62, z)
+      g.add(trim)
+      const pane = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.04, 1.24), windowMat)
+      pane.position.set(x - s * 0.12, 1.62, z)
+      g.add(pane)
+      if (!curtains) continue
+      for (const e of [-1, 1]) {
+        const drape = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.3, 0.3), curtain)
+        drape.position.set(x - s * 0.13, 1.5, z + e * 0.8)
+        drape.castShadow = true
+        noCam(drape)
+        g.add(drape)
+      }
+      const valance = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.22, 1.95), curtain)
+      valance.position.set(x - s * 0.14, 2.56, z)
+      noCam(valance)
+      g.add(valance)
+    }
+  }
+
+  if (!trunks) return
+
+  // Leather luggage trunks under each window, brass-strapped; every other bay
+  // carries a smaller case on top. Footprints match carriage-bounds.js.
+  const leather = new THREE.MeshStandardMaterial({ color: 0x2b211b, roughness: 0.78, metalness: 0.05 })
+  const leatherLight = new THREE.MeshStandardMaterial({ color: 0x4a3526, roughness: 0.8, metalness: 0.05 })
+  const trunkSpots = []
+  bays.forEach((z, k) => { for (const s of [-1, 1]) trunkSpots.push({ s, z, k }) })
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.75, 0.55, 1.0), leather, trunkSpots.length),
+    trunkSpots.length, (d, i) => {
+      const { s, z } = trunkSpots[i]
+      d.position.set(s * (WALL_X - 0.45), 0.275, z)
+      d.rotation.set(0, 0, 0)
+    }))
+  const straps = trunkSpots.length * 2
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.77, 0.57, 0.05), shared.brass, straps),
+    straps, (d, i) => {
+      const { s, z } = trunkSpots[i >> 1]
+      d.position.set(s * (WALL_X - 0.45), 0.275, z + (i % 2 ? 0.3 : -0.3))
+      d.rotation.set(0, 0, 0)
+    }))
+  const cases = trunkSpots.filter((t) => (t.k + (t.s > 0 ? 1 : 0)) % 2 === 0)
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.6, 0.36, 0.75), leatherLight, cases.length),
+    cases.length, (d, i) => {
+      const { s, z, k } = cases[i]
+      d.position.set(s * (WALL_X - 0.47), 0.73, z + 0.05)
+      d.rotation.set(0, skew(k + 3) * 0.2, 0)
+    }))
+}
+
+// Level 2 Security: navy runner, curtained windows, and a cream beamed
+// ceiling lit by small warm downlights.
+function dressVintageSecurity(g, half, shared, fx) {
+  const length = half * 2
+  addVintageFitOut(g, half, shared, { runnerBase: 0x1c2640, runnerAccent: 0x9a7a3a, curtains: true })
+
+  // Beamed ceiling: cross beams every two metres, two long beams, and a small
+  // warm downlight in each coffer.
+  const beamMat = new THREE.MeshStandardMaterial({ color: 0xc9b894, roughness: 0.8, metalness: 0.05 })
+  for (let z = -half + 1; z <= half - 1; z += 2) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.12, 0.14), beamMat)
+    beam.position.set(0, CARRIAGE_CEILING_Y - 0.1, z)
+    noCam(beam)
+    g.add(beam)
+  }
+  for (const s of [-1, 1]) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, length), beamMat)
+    beam.position.set(s * 1.2, CARRIAGE_CEILING_Y - 0.1, 0)
+    noCam(beam)
+    g.add(beam)
+  }
+  const bulbMat = new THREE.MeshStandardMaterial({ color: 0xfff1d6, emissive: 0xffe2b0, emissiveIntensity: 1.2 })
+  const bulbs = []
+  for (let z = -half + 2; z <= half - 2; z += 2) for (const x of [-1.9, 0, 1.9]) bulbs.push([x, z])
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.07, 0.07, 0.03, 12), bulbMat, bulbs.length),
+    bulbs.length, (d, i) => {
+      d.position.set(bulbs[i][0], CARRIAGE_CEILING_Y - 0.06, bulbs[i][1])
+      d.rotation.set(0, 0, 0)
+    }))
+
+  for (const z of [-half * 0.6, 0, half * 0.6]) {
+    const l = new THREE.PointLight(0xffd6a0, 13, 10, 2)
+    l.position.set(0, CARRIAGE_CEILING_Y - 0.4, z)
+    addLight(g, fx, l, false)
+  }
+}
+
 function dressSecurity(g, half, shared, damaged, fx) {
+  if (!damaged) {
+    dressVintageSecurity(g, half, shared, fx)
+    return
+  }
   const slitMat = new THREE.MeshStandardMaterial({
-    color: 0x1b2733, emissive: damaged ? 0x1e3a5f : 0x22405a, emissiveIntensity: 0.5, roughness: 0.4
+    color: 0x1b2733, emissive: 0x1e3a5f, emissiveIntensity: 0.5, roughness: 0.4
   })
   for (let z = -half + 2; z <= half - 2; z += 2.6) {
     for (const s of [-1, 1]) {
@@ -674,7 +925,7 @@ function dressSecurity(g, half, shared, damaged, fx) {
   }
 
   const lockerMat = metalMaterial({
-    repeat: [1, 1], base: damaged ? 0x262b32 : 0x39414b, roughness: 0.55, metalness: 0.7
+    repeat: [1, 1], base: 0x262b32, roughness: 0.55, metalness: 0.7
   })
   const cols = Math.max(2, Math.floor((half * 2 - 5) / 0.62))
   const lockers = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 1.7, 0.5), lockerMat, cols * 2)
@@ -697,21 +948,129 @@ function dressSecurity(g, half, shared, damaged, fx) {
     const cage = new THREE.Mesh(
       new THREE.BoxGeometry(0.5, 0.08, 0.5),
       new THREE.MeshStandardMaterial({
-        color: damaged ? 0x1e3a4a : 0xbfe4ff,
-        emissive: damaged ? 0x3b82f6 : 0x7fd0ff,
+        color: 0x1e3a4a,
+        emissive: 0x3b82f6,
         emissiveIntensity: 1.6
       })
     )
     cage.position.set(0, CARRIAGE_CEILING_Y - 0.07, z)
     g.add(cage)
-    const l = new THREE.PointLight(damaged ? 0x8fb4d4 : 0x9fd0ff, damaged ? 8 : 14, damaged ? 7 : 10, 2)
+    const l = new THREE.PointLight(0x8fb4d4, 8, 7, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, damaged)
   }
-  if (damaged) dressDamagedSecurity(g, half, shared, fx)
+  dressDamagedSecurity(g, half, shared, fx)
+}
+
+// Warm lamp glass shared by lanterns and sconces.
+function lampGlassMaterial() {
+  return new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.6, roughness: 0.3
+  })
+}
+
+// Brass handrail on stand-offs down both walls, at waist height.
+function addHandrail(g, half, shared) {
+  const railGeo = new THREE.CylinderGeometry(0.03, 0.03, half * 2 - 1, 10)
+  railGeo.rotateX(Math.PI / 2)
+  for (const s of [-1, 1]) {
+    const rail = new THREE.Mesh(railGeo, shared.brass)
+    rail.position.set(s * (WALL_X - 0.12), 1.02, 0)
+    noCam(rail)
+    g.add(rail)
+    for (let z = -half + 1; z <= half - 1; z += 1.3) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.12, 6), shared.brass)
+      post.rotation.z = Math.PI / 2
+      post.position.set(s * (WALL_X - 0.06), 1.02, z)
+      g.add(post)
+    }
+  }
+}
+
+// Hanging lanterns down the centreline: brass canopy, rod, glass and cap.
+function addLanterns(g, half, shared, fx, glassMat, spacing = 4) {
+  for (let z = -half + 2.5; z <= half - 2; z += spacing) {
+    const lantern = new THREE.Group()
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.35, 6), shared.brass)
+    rod.position.y = -0.18
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.16, 0.08, 8), shared.brass)
+    cap.position.y = -0.38
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.26, 8), glassMat)
+    glass.position.y = -0.55
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.07, 0.05, 8), shared.brass)
+    base.position.y = -0.7
+    lantern.add(rod, cap, glass, base)
+    lantern.position.set(0, CARRIAGE_CEILING_Y, z)
+    noCam(lantern)
+    g.add(lantern)
+    const l = new THREE.PointLight(0xffc98a, 11, 9, 2)
+    l.position.set(0, CARRIAGE_CEILING_Y - 0.6, z)
+    addLight(g, fx, l, false)
+  }
+}
+
+// Wall sconce: brass back plate with a small shaded lamp.
+function addSconce(g, s, z, shared, glassMat, y = 1.95) {
+  const x = s * WALL_X
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.22, 0.12), shared.brass)
+  plate.position.set(x - s * 0.02, y, z)
+  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.16, 8), glassMat)
+  shade.position.set(x - s * 0.16, y + 0.1, z)
+  noCam(shade)
+  g.add(plate, shade)
+  const l = new THREE.PointLight(0xffc27a, 3, 3.5, 2)
+  l.position.set(x - s * 0.3, y + 0.05, z)
+  g.add(l)
+}
+
+// Level 2 Route Control: burgundy runner, bare windows, a dark wood ceiling
+// hung with brass lanterns, wall sconces, a brass handrail down both walls,
+// and a framed route poster. The operator platform, relay boxes, route board
+// and exit doors are interactive, so moving-heist.js builds those.
+function dressRouteControl(g, half, shared, fx) {
+  const layout = routeControlLayout(half)
+  addVintageFitOut(g, half, shared, { runnerBase: 0x4a1119, runnerAccent: 0xa07a3a, curtains: false })
+
+  addHandrail(g, half, shared)
+  const glassMat = lampGlassMaterial()
+  addLanterns(g, half, shared, fx, glassMat)
+  for (const { s, z } of layout.sconces) addSconce(g, s, z, shared, glassMat)
+
+  // Framed route poster between two windows.
+  const { s: ps, z: pz } = layout.poster
+  const darkWood = woodMaterial({ repeat: [1, 1], light: 0x4a2c16, dark: 0x24140a })
+  const posterFrame = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.95, 0.85), darkWood)
+  posterFrame.position.set(ps * (WALL_X - 0.04), 1.75, pz)
+  g.add(posterFrame)
+  const poster = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.72, 0.18),
+    signMaterial({ text: 'ROUTE CONTROL', background: 0xe6d6b4, foreground: 0x3a2412, emissiveIntensity: 0.15 })
+  )
+  poster.position.set(ps * (WALL_X - 0.07), 2.06, pz)
+  poster.rotation.y = -ps * Math.PI / 2
+  g.add(poster)
+  const chart = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.72, 0.56),
+    new THREE.MeshStandardMaterial({ color: 0xd9c7a0, roughness: 0.9 })
+  )
+  chart.position.set(ps * (WALL_X - 0.07), 1.62, pz)
+  chart.rotation.y = -ps * Math.PI / 2
+  g.add(chart)
+  // A few inked route lines across the chart.
+  const ink = new THREE.MeshStandardMaterial({ color: 0x5a3a1c, roughness: 0.9 })
+  for (let k = 0; k < 3; k++) {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.012, 0.6), ink)
+    line.position.set(ps * (WALL_X - 0.075), 1.45 + k * 0.14, pz)
+    line.rotation.x = (k - 1) * 0.25
+    g.add(line)
+  }
 }
 
 function dressRelay(g, half, shared, damaged, fx) {
+  if (!damaged) {
+    dressRouteControl(g, half, shared, fx)
+    return
+  }
   const rackMat = metalMaterial({
     repeat: [1, 1],
     base: damaged ? 0x252c31 : 0x33434f,
@@ -780,7 +1139,70 @@ function dressRelay(g, half, shared, damaged, fx) {
   }
 }
 
+// Level 2 Cargo: a luxury baggage car. Wood panelling and a dark runner,
+// strapped crates stacked down both walls, framed landscapes above them, wall
+// sconces, a brass handrail and hanging lanterns. The moving loads are the
+// level's hazards, so moving-heist.js builds those.
+function dressVintageCargo(g, half, shared, fx) {
+  addVintageFitOut(g, half, shared, {
+    runnerBase: 0x3a1a12, runnerAccent: 0x9a7a3a, curtains: false, windows: false, trunks: false
+  })
+
+  // Crates: footprints match carriage-bounds.js. The stacked crate is smaller
+  // than the one beneath it so it sits clear of the handrail.
+  const crateMat = woodMaterial({ repeat: [1, 1], light: 0x8a6a40, dark: 0x4c3620 })
+  const bandMat = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 0.7, metalness: 0.3 })
+  const lower = []
+  const upper = []
+  for (let z = -half + 2; z <= half - 2; z += 2.2) {
+    lower.push([-(WALL_X - 0.45), z], [WALL_X - 0.45, z])
+    if ((z | 0) % 2 === 0) upper.push([-(WALL_X - 0.55), z])
+  }
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), crateMat, lower.length),
+    lower.length, (d, i) => {
+      d.position.set(lower[i][0], 0.4, lower[i][1])
+      d.rotation.set(0, skew(i + 5) * 0.12, 0)
+    }))
+  const bands = lower.length * 2
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.82, 0.06, 0.82), bandMat, bands),
+    bands, (d, i) => {
+      const [x, z] = lower[i >> 1]
+      d.position.set(x, i % 2 ? 0.68 : 0.12, z)
+      d.rotation.set(0, skew((i >> 1) + 5) * 0.12, 0)
+    }))
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), crateMat, upper.length),
+    upper.length, (d, i) => {
+      d.position.set(upper[i][0], 1.1, upper[i][1])
+      d.rotation.set(0, skew(i + 9) * 0.3, 0)
+    }))
+
+  // Framed landscapes above the crates, alternating walls, each facing a
+  // sconce on the opposite wall.
+  const darkWood = woodMaterial({ repeat: [1, 1], light: 0x4a2c16, dark: 0x24140a })
+  const canvasMat = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: 0.35 })
+  const glassMat = lampGlassMaterial()
+  let k = 0
+  for (let z = -half + 3.1; z <= half - 3; z += 2.2, k++) {
+    const s = k % 2 ? 1 : -1
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 1.05), darkWood)
+    frame.position.set(s * (WALL_X - 0.05), 2.15, z)
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.7, 0.95), shared.brass)
+    trim.position.set(s * (WALL_X - 0.08), 2.15, z)
+    const canvas = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.62, 0.87), canvasMat)
+    canvas.position.set(s * (WALL_X - 0.11), 2.15, z)
+    g.add(frame, trim, canvas)
+    addSconce(g, -s, z, shared, glassMat, 1.9)
+  }
+
+  addHandrail(g, half, shared)
+  addLanterns(g, half, shared, fx, glassMat, 4.5)
+}
+
 function dressCargo(g, half, shared, damaged, fx) {
+  if (!damaged) {
+    dressVintageCargo(g, half, shared, fx)
+    return
+  }
   const crateMat = woodMaterial({
     repeat: [1, 1], light: damaged ? 0x4a463c : 0x8a6a40, dark: damaged ? 0x1c1b18 : 0x4c3620
   })
@@ -1045,7 +1467,7 @@ function buildRoof(spans, shared) {
   const minZ = spans.passenger.minZ
   const maxZ = spans.vault.maxZ
   const roofline = new THREE.Mesh(
-    new THREE.BoxGeometry(3.0, 0.2, maxZ - minZ),
+    new THREE.BoxGeometry(WALL_X * 2 + 0.2, 0.2, maxZ - minZ),
     metalMaterial({ repeat: [3, 20], base: 0x3b4048, roughness: 0.6, metalness: 0.7 })
   )
   roofline.position.set(0, CARRIAGE_CEILING_Y + 0.45, (minZ + maxZ) / 2)
@@ -1054,7 +1476,7 @@ function buildRoof(spans, shared) {
 
   for (const s of [-1, 1]) {
     const fascia = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, maxZ - minZ), shared.darkSteel)
-    fascia.position.set(s * 1.5, CARRIAGE_CEILING_Y + 0.25, (minZ + maxZ) / 2)
+    fascia.position.set(s * (WALL_X + 0.1), CARRIAGE_CEILING_Y + 0.25, (minZ + maxZ) / 2)
     group.add(fascia)
   }
 
@@ -1127,24 +1549,56 @@ function buildRoof(spans, shared) {
 
 // -----------------------------------------------------------------------
 
+// Padding stands in for a body radius: player and guards collide as points.
+const COLLIDER_PAD = 0.2
+const COLLIDER_KINDS = new Set(['seat', 'trunk', 'relaybox', 'locker', 'crate', 'rack', 'wheel'])
+
+function buildInteriorColliders(spans, layout) {
+  const colliders = []
+  for (let i = 1; i < layout.length; i++) {
+    const z = spans[layout[i].key].minZ
+    for (const s of [-1, 1]) {
+      const a = s * (DOOR_W / 2)
+      const b = s * WALL_X
+      colliders.push({
+        minX: Math.min(a, b), maxX: Math.max(a, b),
+        minZ: z - 0.07 - COLLIDER_PAD, maxZ: z + 0.07 + COLLIDER_PAD
+      })
+    }
+  }
+  for (const cfg of layout) {
+    const { center } = spans[cfg.key]
+    for (const box of localInteriorBoxes(cfg.key, cfg.length / 2, WALL_X)) {
+      if (!COLLIDER_KINDS.has(box.kind)) continue
+      colliders.push({
+        minX: box.minX - COLLIDER_PAD, maxX: box.maxX + COLLIDER_PAD,
+        minZ: box.minZ + center - COLLIDER_PAD, maxZ: box.maxZ + center + COLLIDER_PAD
+      })
+    }
+  }
+  return colliders
+}
+
 export function createCarriageEnvironment({ damaged = false } = {}) {
+  WALL_X = wallXFor(damaged)
   const root = new THREE.Group()
   root.name = damaged ? 'train-interior-wrecked' : 'train-interior'
   const shared = makeShared(damaged)
   const fx = { lights: [], sparkMats: [] }
 
-  const total = LAYOUT.reduce((s, c) => s + c.length, 0)
+  const layout = layoutFor(damaged)
+  const total = layout.reduce((s, c) => s + c.length, 0)
   let cursor = -total / 2
   const carriages = {}
   const spans = {}
   const parts = {}
 
-  LAYOUT.forEach((cfg, index) => {
+  layout.forEach((cfg, index) => {
     const seals = {
       // Head of the train: sealed in Level 2, joined to the locomotive cab in
       // Level 3. Tail of the train is always the end of the world.
       min: index === 0 && !damaged,
-      max: index === LAYOUT.length - 1
+      max: index === layout.length - 1
     }
     const { group, half } = buildShell(cfg.key, cfg.length, shared, damaged, seals)
     const center = cursor + half
@@ -1194,16 +1648,24 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   // Axis-aligned volumes the player is clamped to per traversal section.
   // Level 3 is one continuous run from the vault down to the cab, so it gets a
   // single volume; Level 2 swaps between corridor / roof / vault.
+  // Level 2's wide cars open up almost wall to wall; Level 3 keeps its
+  // original narrow aisle.
+  const aisleX = damaged ? 0.82 : WALL_X - 0.3
   const interiorBounds = damaged
-    ? { minX: -0.82, maxX: 0.82, minZ: spans.cab.minZ + 1.2, maxZ: spans.vault.maxZ - 1.0 }
-    : { minX: -0.82, maxX: 0.82, minZ: spans.passenger.minZ + 1.2, maxZ: spans.convergence.maxZ - 1.4 }
+    ? { minX: -aisleX, maxX: aisleX, minZ: spans.cab.minZ + 1.2, maxZ: spans.vault.maxZ - 1.0 }
+    : { minX: -aisleX, maxX: aisleX, minZ: spans.passenger.minZ + 1.2, maxZ: spans.convergence.maxZ - 1.4 }
 
   const roofBounds = roof
     ? { minX: -1.35, maxX: 1.35, minZ: roof.zStart + 0.5, maxZ: roof.zEnd - 0.5 }
     : null
   const vaultBounds = {
-    minX: -0.82, maxX: 0.82, minZ: spans.vault.minZ + 0.9, maxZ: spans.vault.maxZ - 0.8
+    minX: -aisleX, maxX: aisleX, minZ: spans.vault.minZ + 0.9, maxZ: spans.vault.maxZ - 0.8
   }
+
+  // World-space AABBs for the interior walk (Level 2 only — Level 3's aisle
+  // never reaches the furniture): the bulkhead panels either side of each
+  // doorway, plus the seats and wall furniture now within reach.
+  const colliders = damaged ? [] : buildInteriorColliders(spans, layout)
 
   // Emergency lighting flickers and severed cables spark; Level 2's steady
   // interior lighting makes this a no-op, so levels can call it unconditionally.
@@ -1292,7 +1754,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   }
 
   return {
-    root, carriages, spans, roof, parts, interiorBounds, roofBounds, vaultBounds,
+    root, carriages, spans, roof, parts, interiorBounds, roofBounds, vaultBounds, colliders,
     update, shockPassengerLights, restorePassengerLights,
     getVaultFracture: () => ({
       lights: fx.lights.filter((e) => e.car === 'vault'),
