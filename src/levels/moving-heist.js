@@ -9,8 +9,10 @@ import {
   makeHourglassEmblem
 } from '../environment/carriages.js'
 import { createLightPool } from '../core/light-pool.js'
+import { createCarriageCulling } from '../environment/carriage-culling.js'
 import {
   WALL_X,
+  DOOR_W,
   HAZARD_AISLE_X,
   RELAY_BOX_DEPTH,
   RELAY_BOX_WIDTH,
@@ -2499,6 +2501,25 @@ export function createMovingHeistLevel({
   // Only the lights nearest the player are real; see core/light-pool.js.
   const lightPool = createLightPool({ root, size: 12 })
 
+  // Only the parts of the train the camera could see are drawn; see
+  // environment/carriage-culling.js. Built here, once every prop is placed.
+  const culling = createCarriageCulling({
+    root,
+    spans,
+    carriages: env.carriages,
+    // Passenger to Convergence open into each other; the Vault is sealed.
+    chains: [['passenger', 'security', 'relay', 'cargo', 'mechanical', 'convergence'], ['vault']],
+    wallX: WALL_X,
+    doorW: DOOR_W,
+    ceilingY: CARRIAGE_CEILING_Y
+  })
+  const previousBeforeRender = scene.onBeforeRender
+  const previousAfterRender = scene.onAfterRender
+  const cullBeforeRender = (renderer, renderScene, renderCamera) => culling.beforeRender(renderCamera)
+  const cullAfterRender = () => culling.afterRender()
+  scene.onBeforeRender = cullBeforeRender
+  scene.onAfterRender = cullAfterRender
+
   // Dev start (main.js ?start=<carriage>): begin at a later carriage with
   // everything before it already done — its ability collected, its door
   // solved, and its briefings marked as seen.
@@ -3010,6 +3031,8 @@ export function createMovingHeistLevel({
     },
 
     dispose() {
+      if (scene.onBeforeRender === cullBeforeRender) scene.onBeforeRender = previousBeforeRender
+      if (scene.onAfterRender === cullAfterRender) scene.onAfterRender = previousAfterRender
       unregisters.forEach((fn) => fn())
       timeSystem?.setStrainEnabled?.(false)
       outdoorEnv.dispose()

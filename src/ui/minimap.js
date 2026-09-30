@@ -43,7 +43,13 @@ export function createMinimap({
   camera.up.set(0, 0, 1) // world +Z is "up" on the map (yaw 0 faces up)
   camera.layers.set(MINIMAP_LAYER)
 
-  const icons = createMinimapIcons({ scene, player, getObstacles, getGuards })
+  // The icons live in a scene of their own. Rendering the world scene again
+  // with this camera would walk and re-matrix every level object for a
+  // handful of icons, and — because three.js keeps light state per scene —
+  // flip the light count to zero and back each frame, which makes every lit
+  // material re-validate its shader program on the next main render.
+  const iconScene = new THREE.Scene()
+  const icons = createMinimapIcons({ scene: iconScene, player, getObstacles, getGuards })
 
   const frame = document.createElement('div')
   frame.id = 'minimap-frame'
@@ -134,7 +140,9 @@ export function createMinimap({
     renderer.setScissor(x, y, size, size)
     renderer.setViewport(x, y, size, size)
     renderer.clear(true, true, false)
-    renderer.render(scene, camera)
+    // Same backdrop the inset had when it rendered the world scene.
+    iconScene.background = scene.background
+    renderer.render(iconScene, camera)
 
     renderer.setScissorTest(false)
     renderer.setViewport(0, 0, width, height)

@@ -3,6 +3,7 @@ import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import { disposeObject } from '../core/dispose.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { resolveBoxCollision, resolveCircleCollision } from '../core/collision.js'
+import { createNearRaycastSet } from '../core/near-raycast.js'
 
 // Level 1 Stealth & Infiltration System:
 // - Deterministic guard patrol AI, two states only:
@@ -84,6 +85,14 @@ export function createStealthSystem({
   const laserGrids = []
 
   const raycaster = new THREE.Raycaster()
+
+  // Every guard ray starts at the guard's eyes and is at most this long, so
+  // only the collidables near the guard are tested; see core/near-raycast.js.
+  const GUARD_RAY_REACH = 10
+  function guardBlockers(guard, eye) {
+    guard.nearbyBlockers ??= createNearRaycastSet()
+    return guard.nearbyBlockers.get(collidables, eye, Math.max(GUARD_RAY_REACH, guard.coneDistance))
+  }
 
   // -----------------------------------------------------------------
   // Vision Cone Geometry & Material Helper
@@ -473,8 +482,8 @@ export function createStealthSystem({
 
     const hits =
       raycaster.intersectObjects(
-        collidables,
-        true
+        guardBlockers(guard, guardEyePos),
+        false
       )
 
     for (const hit of hits) {
@@ -585,8 +594,8 @@ export function createStealthSystem({
 
     const hits =
       raycaster.intersectObjects(
-        collidables,
-        true
+        guardBlockers(guard, guardEyePos),
+        false
       )
 
     for (const hit of hits) {
@@ -871,7 +880,7 @@ export function createStealthSystem({
       raycaster.set(coneEye, coneDir)
       raycaster.far = guard.coneDistance
       let coneHitDist = guard.coneDistance
-      for (const hit of raycaster.intersectObjects(collidables, true)) {
+      for (const hit of raycaster.intersectObjects(guardBlockers(guard, coneEye), false)) {
         if (hit.distance < coneHitDist) coneHitDist = hit.distance
       }
       guard.visionCone.scale.setScalar(THREE.MathUtils.clamp(coneHitDist / guard.coneDistance, 0.05, 1))

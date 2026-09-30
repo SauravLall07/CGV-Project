@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { bindingLabel, settings } from '../core/settings.js'
+import { createNearRaycastSet } from '../core/near-raycast.js'
 
 // Interaction system (Phase 1 foundation): each frame, the registry of
 // "interactable" objects is scanned for the best visible candidate in front
@@ -103,6 +104,8 @@ export function createInteractionSystem({ camera, input } = {}) {
   const rayOrigin = new THREE.Vector3()
   const rayDirection = new THREE.Vector3()
   const raycaster = new THREE.Raycaster()
+  const nearbyBlockers = createNearRaycastSet()
+  let blockersUpdated = -1 // near-set version whose matrices are current this frame
 
   const prompt = createPromptElement()
   let focused = null
@@ -236,7 +239,14 @@ export function createInteractionSystem({ camera, input } = {}) {
     raycaster.set(rayOrigin, rayDirection)
     raycaster.far = Math.max(0, targetDistance - OCCLUSION_PADDING)
 
-    const hits = raycaster.intersectObjects(Array.from(blockerRegistry), true)
+    // Only blockers within reach of the ray are tested (core/near-raycast.js),
+    // and only those need this frame's movement applied before the cast.
+    const blockers = nearbyBlockers.get(Array.from(blockerRegistry), rayOrigin, targetDistance)
+    if (blockersUpdated !== nearbyBlockers.version) {
+      for (const blocker of blockers) blocker.updateWorldMatrix(true, false)
+      blockersUpdated = nearbyBlockers.version
+    }
+    const hits = raycaster.intersectObjects(blockers, false)
     for (const hit of hits) {
       if (isDescendantOf(hit.object, entry.object)) continue
       if (!isWorldVisible(hit.object)) continue
@@ -250,7 +260,7 @@ export function createInteractionSystem({ camera, input } = {}) {
     if (!enabled || registry.size === 0 || !player) return null
 
     player.getWorldPosition(playerPos)
-    blockerRegistry.forEach((blocker) => blocker.updateWorldMatrix(true, true))
+    blockersUpdated = -1
     const { forwardX, forwardZ } = getForward(yaw)
 
     let best = null
