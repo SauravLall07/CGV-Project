@@ -115,6 +115,20 @@ function buildRollContent() {
     line('"Ghost Noise" by whiprealgood (Freesound.org) — CC0')
   ])
 
+  addBlock(roll, [
+    label('3D Models & Animations'),
+    line('"Character (Type Detective)" by LokitoBlu (Sketchfab)'),
+    line('Licensed under Creative Commons Attribution 4.0', { dim: true }),
+    spacer(8),
+    line('"Character (Type Male Police)" by LokitoBlu (Sketchfab)'),
+    line('Licensed under Creative Commons Attribution 4.0', { dim: true }),
+    spacer(8),
+    line('"Flashlight" by MAR.COS. (Sketchfab)'),
+    line('Licensed under Creative Commons Attribution 4.0', { dim: true }),
+    spacer(8),
+    line('Character animations from Adobe Mixamo (mixamo.com)')
+  ])
+
   // --- PLACEHOLDER: team credits ---
   // Replace the lines below with names and roles before shipping.
   addBlock(roll, [

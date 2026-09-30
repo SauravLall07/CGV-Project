@@ -9,6 +9,7 @@ import { resolveInputState } from './core/input-state.js'
 import { initAudio, resumeAudio, getContext } from './core/audio.js'
 import { preloadAbilitySfx } from './systems/ability-sfx.js'
 import { createPlayer } from './entities/player.js'
+import { preloadPoliceVisual } from './entities/police-visual.js'
 import { createKeyboardState } from './input/keyboard-state.js'
 import { createKeyboardLock } from './input/keyboard-lock.js'
 import { createPlayerView } from './cameras/player-view.js'
@@ -51,6 +52,7 @@ const loadingScreen = createLoadingScreen(assets)
 const player = createPlayer()
 scene.add(player.mesh)
 const detectiveReady = player.loadVisual(assets)
+const policeReady = preloadPoliceVisual(assets)
 
 const minimap = createMinimap({
   scene,
@@ -443,7 +445,7 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
   // the canvas — first Ghost press must not pay that shader cost in-game.
   timeSystem.warmGhost(renderer, camera)
 
-  await detectiveReady
+  await Promise.all([detectiveReady, policeReady])
 
   // One more frame so the station has rendered behind the loading
   // overlay before it fades away to reveal the menu.
