@@ -1,12 +1,23 @@
 import * as THREE from 'three'
 import { disposeObject } from '../core/dispose.js'
-import { createCarriageEnvironment, CARRIAGE_CEILING_Y, CARRIAGE_ROOF_Y, listCarriageVolumes, makeHourglassEmblem } from '../environment/carriages.js'
+import {
+  createCarriageEnvironment,
+  CARRIAGE_CEILING_Y,
+  CARRIAGE_ROOF_Y,
+  VAULT_DAIS_TOP,
+  listCarriageVolumes,
+  makeHourglassEmblem
+} from '../environment/carriages.js'
+import { createLightPool } from '../core/light-pool.js'
 import {
   WALL_X,
   HAZARD_AISLE_X,
   RELAY_BOX_DEPTH,
   RELAY_BOX_WIDTH,
   CARGO_PIT,
+  MECH_PITS,
+  CONV_PITS,
+  ROOF_RUN,
   routeControlLayout
 } from '../environment/carriage-bounds.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
@@ -18,6 +29,7 @@ import { signMaterial } from '../environment/textures.js'
 //
 // Physical progression is deliberately one-way: REAR -> FRONT.
 // Passenger -> Security -> Relay -> Cargo -> Mechanical -> Convergence -> Roof -> Vault.
+// The roof run crosses an open freight wagon between Convergence and the Vault.
 //
 // Ability progression is equally deliberate:
 // Passenger  : no powers; reuse Level 1 timing/stealth instincts.
@@ -27,9 +39,11 @@ import { signMaterial } from '../environment/textures.js'
 //              platform is weighted, and the platform is nowhere near it.
 // Cargo      : acquire the Cryo Phase module -> unlock FREEZE, which also
 //              switches on Chrono Strain while the player crosses moving loads.
-// Mechanical : acquire the Rollback module -> unlock REWIND, plus a twin-plate
-//              drive clamp that only a Ghost can hold open with you.
-// Convergence: the hardest carriage; every ability is required before the roof.
+// Mechanical : acquire the Rollback module -> unlock REWIND, then cross a car
+//              of one-shot machinery that springs shut as you approach.
+// Convergence: the last car before the Core. Each ability once on its own —
+//              a Slow gate, a Freeze crate, a Rewind platform, Ghost-held
+//              switches — then all four in a row to reach the roof ladder.
 // Vault      : the exposed Chrono Core, with a clear approach.
 //
 // GHOST is deliberately granted before FREEZE. It used to be the last pickup,
@@ -93,6 +107,14 @@ function createChronoCore() {
   halo.position.y = 1.34
   halo.name = 'chrono-core-halo'
   core.add(halo)
+
+  // Armillary rings: the brass cradle the Core turns inside.
+  for (const [name, radius] of [['chrono-core-ring-a', 0.5], ['chrono-core-ring-b', 0.58]]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.018, 8, 40), brass)
+    ring.name = name
+    ring.position.y = 1.34
+    core.add(ring)
+  }
 
   const glow = new THREE.PointLight(0x54dcff, 18, 8, 2)
   glow.position.y = 1.34
@@ -266,144 +288,9 @@ function makeBarrierProp({ width = 0.68, height = 0.95, depth = 0.9, color = 0x5
   return g
 }
 
-// Small engraved plaque with a single letter, lit so it reads at a distance.
-function makeLabelPlate(letter, size = 0.16) {
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(size, size),
-    signMaterial({
-      text: letter,
-      background: 0x0f172a,
-      foreground: 0xe2e8f0,
-      width: 128,
-      height: 128,
-      emissiveIntensity: 1.6
-    })
-  )
-  return mesh
-}
-
-function makePressurePlate(size = 0.9) {
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x334155,
-    emissive: 0xf59e0b,
-    emissiveIntensity: 1.4,
-    roughness: 0.3
-  })
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(size, 0.05, size), mat)
-  mesh.userData.plateMat = mat
-  return mesh
-}
-
-// Rotor hazards are a single bar through a hub, not a four-armed cross.
-//
-// A cross this wide in a 1.6 m aisle has no safe phase at all — every angle
-// puts an arm across the player — which is exactly why these hazards used to
-// need a `mode === 'NORMAL'` check to be passable. A two-armed bar leaves a
-// genuine window: roughly a quarter of each rotation standing, and about half
-// of it crouched, since a horizontal bar passes over a ducking player.
-//
-// ROTOR_ARMS / ROTOR_RADIUS / ROTOR_HUB_Y are shared by the mesh and the
-// collision test on purpose. If the geometry and the maths drift apart the
-// hazard becomes unreadable, so change them here and nowhere else.
-const ROTOR_ARMS = 2
-const ROTOR_RADIUS = 0.9
-const ROTOR_HUB_Y = 1.55
-
-function makeRotor(accent = 0x38bdf8, radius = ROTOR_RADIUS) {
-  const g = new THREE.Group()
-  const hubMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.82, roughness: 0.22 })
-  const beamMat = new THREE.MeshStandardMaterial({
-    color: accent,
-    emissive: accent,
-    emissiveIntensity: 3.2,
-    roughness: 0.12
-  })
-
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.16, 14), hubMat)
-  hub.rotation.x = Math.PI / 2
-  g.add(hub)
-
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(radius * 2, 0.09, 0.09), beamMat)
-  g.add(bar)
-
-  // Counterweights on the tips so the bar's angle stays readable at speed.
-  for (const side of [-1, 1]) {
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.16), beamMat)
-    cap.position.x = side * radius
-    g.add(cap)
-  }
-
-  return g
-}
-
-// ---------------------------------------------------------------------------
-// Rotor hazard geometry.
-//
-// The spinning hazards used to fail on `mode === 'NORMAL'`, which made every
-// chrono ability an equally valid answer and Freeze the strictly safest one.
-// These helpers replace that with real geometry: an arm either overlaps the
-// player's body column or it doesn't. Normal time leaves a window too tight to
-// read, Slow makes it readable, and Freeze only works if you stop the rotor on
-// a gap — freezing it mid-arm leaves the aisle blocked until you pay to unfreeze.
-// ---------------------------------------------------------------------------
-
-function pointSegmentDistance(px, py, ax, ay, bx, by) {
-  const abx = bx - ax
-  const aby = by - ay
-  const lenSq = abx * abx + aby * aby
-  if (lenSq < 1e-8) return Math.hypot(px - ax, py - ay)
-  let t = ((px - ax) * abx + (py - ay) * aby) / lenSq
-  t = Math.max(0, Math.min(1, t))
-  return Math.hypot(px - (ax + abx * t), py - (ay + aby * t))
-}
-
-function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
-  const cross = (ox, oy, px, py, qx, qy) => (px - ox) * (qy - oy) - (py - oy) * (qx - ox)
-  const d1 = cross(ax, ay, bx, by, cx, cy)
-  const d2 = cross(ax, ay, bx, by, dx, dy)
-  const d3 = cross(cx, cy, dx, dy, ax, ay)
-  const d4 = cross(cx, cy, dx, dy, bx, by)
-  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))
-}
-
-function segmentDistance(ax, ay, bx, by, cx, cy, dx, dy) {
-  if (segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy)) return 0
-  return Math.min(
-    pointSegmentDistance(ax, ay, cx, cy, dx, dy),
-    pointSegmentDistance(bx, by, cx, cy, dx, dy),
-    pointSegmentDistance(cx, cy, ax, ay, bx, by),
-    pointSegmentDistance(dx, dy, ax, ay, bx, by)
-  )
-}
-
-// A rotor is a cross of `arms` beams spinning in the XY plane about
-// (centreX, centreY). The player is a vertical column at `playerX` reaching up
-// to `playerTopY`, so crouching genuinely shrinks the profile the arms can hit.
-function rotorBlocks({
-  angle,
-  radius,
-  centreX = 0,
-  centreY,
-  playerX,
-  playerTopY,
-  clearance = 0.3,
-  arms = ROTOR_ARMS
-}) {
-  for (let i = 0; i < arms; i++) {
-    const a = angle + (i / arms) * Math.PI * 2
-    const tipX = centreX + Math.cos(a) * radius
-    const tipY = centreY + Math.sin(a) * radius
-    const d = segmentDistance(
-      centreX, centreY, tipX, tipY,
-      playerX, 0, playerX, playerTopY
-    )
-    if (d < clearance) return true
-  }
-  return false
-}
-
 export function createMovingHeistLevel({
-  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic
+  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic,
+  startAt = null
 }) {
 
   const powerPickups = []
@@ -634,14 +521,21 @@ export function createMovingHeistLevel({
     spans.cargo.center + 3.6,
     spans.cargo.center + 6.6,
     spans.mechanical.minZ + 1.0,
-    spans.convergence.minZ + 1.0
+    spans.mechanical.center - 7.4,
+    spans.mechanical.center + 1.4,
+    spans.mechanical.center + 5.3,
+    spans.convergence.minZ + 1.0,
+    spans.convergence.center - 10.0,
+    spans.convergence.center - 4.6,
+    spans.convergence.center + 4.8,
+    spans.convergence.center + 13.8
   ]
 
   // --------------------------------------------------------------------------
   // PASSENGER — STEALTH / COVER
-  // No Chrono powers yet. The seat rows down both sides of the car (built and
-  // collided in carriages.js) are the cover: crouch in a legroom gap and the
-  // seat backs break the guard's line of sight.
+  // No Chrono powers yet, and nothing in the car but the conductor. The booths
+  // down both sides (built and collided in carriages.js) are the cover: crouch
+  // between a booth's benches and the seat backs break his line of sight.
   //
   // The guard used to start at minZ + 3.4, which is 1.2 m from the player's
   // spawn at minZ + 2.2 — inside GUARD_LOCK_ON_DISTANCE. He hard-locked on
@@ -649,26 +543,17 @@ export function createMovingHeistLevel({
   // reason.
   // --------------------------------------------------------------------------
 
-  // The conductor now walks the forward quarter of the car, down the aisle
-  // and 11 m from the spawn — outside GUARD_VISION_DISTANCE, so
-  // the player meets him on their own terms.
+  // The conductor walks the aisle from mid-car to the front door and back,
+  // pausing at each end. His rear turnaround is 7.6 m from the spawn — just
+  // outside GUARD_VISION_DISTANCE — so the player always gets to read his
+  // route before he can see them. He starts walking away from them.
   corridorStealth.addGuard({
     waypoints: [
-      new THREE.Vector3(
-        0.42,
-        0,
-        spans.passenger.center + 3.0
-      ),
-
-      new THREE.Vector3(
-        0.42,
-        0,
-        spans.passenger.maxZ - 2.5
-      )
+      new THREE.Vector3(0, 0, spans.passenger.minZ + 9.8),
+      new THREE.Vector3(0, 0, spans.passenger.maxZ - 1.8)
     ],
-
     speed: 1.15,
-    waitTime: 2.8,
+    waitTime: 2.6,
     initialWaypoint: 0
   })
 
@@ -1456,8 +1341,8 @@ export function createMovingHeistLevel({
   const CRATE_TRAVEL = 0.9
   const CRATE_BOTTOM = 0.35
   const hangingCrates = []
-  function addHangingCrate(localZ, period, phase) {
-    const z = cargoZ(localZ)
+  function addHangingCrate(localZ, period, phase, toWorld = cargoZ) {
+    const z = toWorld(localZ)
     const rail = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, 0.14), darkIron)
     rail.position.set(0, CARRIAGE_CEILING_Y - 0.1, z)
     rail.userData.noCameraCollision = true
@@ -1654,8 +1539,12 @@ export function createMovingHeistLevel({
 
   // --------------------------------------------------------------------------
   // MECHANICAL — REWIND
-  // Three main challenges: fallen plank, pad-powered block, hatch motor.
-  // A spinning blade remains as an extra timing obstacle.
+  // Every machine in here is one-shot: it springs as the player approaches and
+  // then stays shut. REWIND runs it back to where it was, and the moment time
+  // runs forward again it springs a second time — rewinding buys a window, not
+  // a repair. A pale outline marks where each machine will return to.
+  // Rail crate, floor platform, sliding door, wall panels, then a run that
+  // springs a platform, a crate and a door in sequence.
   // --------------------------------------------------------------------------
   const rewindPickup =
     makeChronoPickup(0xa855f7, 0.5)
@@ -1676,141 +1565,243 @@ export function createMovingHeistLevel({
       rewindTaken = true
       rewindPickup.collect()
       unlockAbility('REWIND', 'ROLLBACK MODULE INSTALLED — REWIND unlocked')
-      hud.setObjective('Cross Mechanical — REWIND broken machinery to an earlier working state')
+      hud.setObjective('Cross Mechanical — REWIND each machine open, then move before it springs again')
     }
   }))
 
-  const bridgeZ = spans.mechanical.minZ + 6.0
-  const mechBridge = new THREE.Mesh(
-    new THREE.BoxGeometry(1.35, 0.12, 2.6),
-    new THREE.MeshStandardMaterial({ color: 0x5b6068, roughness: 0.66, metalness: 0.72 })
-  )
-  mechBridge.name = 'mechanical-rewind-plank'
-  let bridgeY = -3.2
-  let bridgeRepaired = false
-  mechBridge.position.set(0, bridgeY, bridgeZ)
-  root.add(mechBridge)
-
-  const pitGeometry = new THREE.BoxGeometry(1.45, 3.4, 2.8)
-  // Open top; interior faces show the plank rising out of the well.
-  const pitIndices = pitGeometry.getIndex().array
-  pitGeometry.setIndex(pitGeometry.groups
-    .filter((group) => group.materialIndex !== 2)
-    .flatMap((group) => Array.from(pitIndices.slice(group.start, group.start + group.count))))
-  pitGeometry.clearGroups()
-  const bridgePit = new THREE.Mesh(pitGeometry,
-    new THREE.MeshStandardMaterial({ color: 0x151923, roughness: 1, side: THREE.BackSide }))
-  bridgePit.position.set(0, -1.7, bridgeZ)
-  bridgePit.userData.noCameraCollision = true
-  root.add(bridgePit)
-
-  // This failure predates the player's arrival. Reverse its fall directly,
-  // so it needs no live recording and cannot time out while waiting to repair.
-  unregisters.push(timeSystem.register(null, {
-    onUpdate(scaledDelta, timeScale) {
-      if (timeScale >= 0 || bridgeRepaired || section !== 'interior' ||
-          player.mesh.position.z < spans.mechanical.minZ ||
-          player.mesh.position.z > spans.mechanical.maxZ) return
-      bridgeY = Math.min(0.06, bridgeY - scaledDelta * 1.5)
-      mechBridge.position.y = bridgeY
-      if (bridgeY >= 0.06) {
-        bridgeRepaired = true
-        hud.showToast('PLANK RESTORED — stable and safe to cross', 2200)
-      }
-    }
-  }))
-
-  const slamGate = new THREE.Mesh(
-    new THREE.BoxGeometry(2.2, 1.5, 0.14),
-    new THREE.MeshStandardMaterial({ color: 0x343a42, metalness: 0.86, roughness: 0.36 })
-  )
-  const slamGateZ = spans.mechanical.center + 0.8
-  let slamGateY = 0.75
-  slamGate.name = 'mechanical-pad-block'
-  slamGate.position.set(0, slamGateY, slamGateZ)
-  root.add(slamGate)
-  const padBlockObstacle = {
-    minX: -1.1, maxX: 1.1,
-    minZ: slamGateZ - 0.48, maxZ: slamGateZ + 0.48
-  }
-  corridorObstacles.push(padBlockObstacle)
-
-  const mechBlade = makeRotor(0x38bdf8)
-  const mechBladeZ = spans.mechanical.maxZ - 6.0
-  addProp(mechBlade, mechBladeZ, 0, ROTOR_HUB_Y)
-  let mechBladeA = 0
-  unregisters.push(registerHazard(mechBlade, {
-    onUpdate(scaledDelta) {
-      mechBladeA += scaledDelta * 6.4
-      mechBlade.rotation.z = mechBladeA
-    },
-    getSnapshot: () => ({ mechBladeA }),
-    restoreSnapshot: (s) => {
-      mechBladeA = s.mechBladeA
-      mechBlade.rotation.z = mechBladeA
-    }
-  }))
-
-  // ------------------------------------------------------------------
-  // DRIVE CLAMP — TWIN SYNC PLATES (Time Ghost)
-  //
-  // Two plates six metres apart that must be weighted at the SAME moment.
-  // Neither sits on the route, so you cannot solve it by walking through:
-  // summon an echo on A to hold the intervening block up, then move to B.
-  // Unlike the Vault plate this one latches, so the door stays open once the
-  // pair fires.
-  // ------------------------------------------------------------------
-  const syncPlateAPos = new THREE.Vector3(-0.56, 0.03, spans.mechanical.center - 3.1)
-  const syncPlateBPos = new THREE.Vector3(0.56, 0.03, spans.mechanical.center + 2.9)
-
-  const syncPlateA = makePressurePlate(0.86)
-  syncPlateA.name = 'mechanical-sync-pad-a'
-  const syncPlateAMat = syncPlateA.userData.plateMat
-  syncPlateA.position.copy(syncPlateAPos)
-  root.add(syncPlateA)
-
-  const syncPlateB = makePressurePlate(0.86)
-  syncPlateB.name = 'mechanical-sync-pad-b'
-  const syncPlateBMat = syncPlateB.userData.plateMat
-  syncPlateB.position.copy(syncPlateBPos)
-  root.add(syncPlateB)
-  unregisters.push(timeSystem.registerGhostPad(syncPlateAPos, 0.54))
-  unregisters.push(timeSystem.registerGhostPad(syncPlateBPos, 0.54))
-  for (const [pad, letter] of [[syncPlateA, 'A'], [syncPlateB, 'B']]) {
-    const label = makeLabelPlate(letter, 0.32)
-    label.rotation.x = -Math.PI / 2
-    label.position.y = 0.03
-    pad.add(label)
-  }
-
-  // Sits between the turbine blade and the roof ladder, so the clamp really is
-  // the last thing standing between the player and the roof.
-  const clampDoorZ = spans.mechanical.maxZ - 4.6
-  const clampDoor = new THREE.Mesh(
-    new THREE.BoxGeometry(2.3, 1.7, 0.16),
-    new THREE.MeshStandardMaterial({ color: 0x2f3742, metalness: 0.9, roughness: 0.35 })
-  )
-  clampDoor.name = 'mechanical-drive-clamp'
-  addProp(clampDoor, clampDoorZ, 0, 1.05)
-
-  // Status light on the clamp door, so "both plates at once" is legible.
-  const clampLampMat = new THREE.MeshStandardMaterial({
-    color: 0xef4444,
-    emissive: 0xef4444,
-    emissiveIntensity: 3
+  const mechZ = (localZ) => spans.mechanical.center + localZ
+  const outlineMat = new THREE.LineBasicMaterial({
+    color: 0x9fd4ff, transparent: true, opacity: 0.5, depthTest: false
   })
-  const clampLamp = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), clampLampMat)
-  addProp(clampLamp, clampDoorZ - 0.14, 0, 2.15)
+  const rewindMachines = []
 
-  let clampReleased = false
-  let clampDoorOpen = 0
-  let syncHintShown = false
+  // Edges of `mesh` at its current transform, drawn through walls so the
+  // outline of a machine's parked position reads even inside a pillar.
+  function makeOutline(mesh) {
+    const lines = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), outlineMat)
+    mesh.updateWorldMatrix(true, false)
+    mesh.matrixWorld.decompose(lines.position, lines.quaternion, lines.scale)
+    lines.renderOrder = 10
+    lines.visible = false
+    lines.userData.noCameraCollision = true
+    lines.raycast = () => {}
+    root.add(lines)
+    return lines
+  }
+
+  // One-shot machine. `s` is its clock: -1 idle, then an arming delay, then
+  // the spring. Snapshots are only recorded while it is arming or moving, so
+  // REWIND runs it back through the spring to idle and it rests there; once
+  // time runs forward with the player still in range, it springs again.
+  function addRewindMachine({ z, handle, triggerFrom, triggerTo, delay, duration, apply, outlines, activeIn = 'interior' }) {
+    const total = delay + duration
+    const m = { z, s: -1, p: 0, outlines, moving: false }
+    function set(s) {
+      m.s = s
+      const k = s < delay ? 0 : Math.min(1, (s - delay) / duration)
+      m.p = k * k * (3 - 2 * k)
+      m.moving = m.p > 0 && m.p < 1
+      apply(m.p)
+    }
+    set(-1)
+    unregisters.push(registerHazard(handle, {
+      // Checked before each step's update, so the step that finishes the
+      // spring still records its final pose; resting time is never recorded.
+      recordWhen: () => m.s >= 0 && m.s < total,
+      onUpdate(scaledDelta, timeScale) {
+        if (timeScale <= 0) return
+        if (m.s < 0) {
+          const pz = player.mesh.position.z
+          if (section !== activeIn || pz < triggerFrom || pz > triggerTo) return
+          set(0)
+        } else if (m.s < total) {
+          set(Math.min(total, m.s + scaledDelta))
+        }
+      },
+      getSnapshot: () => ({ s: m.s }),
+      restoreSnapshot: (snap) => set(snap.s)
+    }))
+    rewindMachines.push(m)
+    return m
+  }
+
+  // Dynamic collider that follows a machine part; padded like the carriage's.
+  function trackingCollider() {
+    const box = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }
+    corridorObstacles.push(box)
+    return box
+  }
+  function placeCollider(box, x, z, halfX, halfZ) {
+    box.minX = x - halfX - 0.2
+    box.maxX = x + halfX + 0.2
+    box.minZ = z - halfZ - 0.2
+    box.maxZ = z + halfZ + 0.2
+  }
+  const insideBox = (box, x, z) => x > box.minX && x < box.maxX && z > box.minZ && z < box.maxZ
+
+  // --- Rail crate: slides out of a pillar along a ceiling rail --------------
+  const RAIL_CRATE_W = 1.5
+  const RAIL_CRATE_D = 1.0
+  const RAIL_CRATE_H = 1.0
+  const RAIL_CRATE_BOTTOM = 0.3
+  const RAIL_CRATE_PARK_X = HAZARD_AISLE_X + 0.2 + RAIL_CRATE_W / 2 + 0.05
+  const railCrates = []
+  function addRailCrate(localZ, trigger, delay, duration) {
+    const z = mechZ(localZ)
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, 0.14), darkIron)
+    rail.position.set(0, CARRIAGE_CEILING_Y - 0.1, z)
+    rail.userData.noCameraCollision = true
+    root.add(rail)
+    const load = new THREE.Group()
+    load.name = `mechanical-rail-crate-${railCrates.length}`
+    const crateY = RAIL_CRATE_BOTTOM + RAIL_CRATE_H / 2
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(RAIL_CRATE_W, RAIL_CRATE_H, RAIL_CRATE_D), cargoWood)
+    crate.position.y = crateY
+    crate.castShadow = true
+    load.add(crate)
+    for (const by of [0.1, RAIL_CRATE_H - 0.1]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(RAIL_CRATE_W + 0.02, 0.06, RAIL_CRATE_D + 0.02), cargoBand)
+      band.position.y = RAIL_CRATE_BOTTOM + by
+      load.add(band)
+    }
+    const stencil = makeHourglassEmblem(cargoBand, 0.5)
+    stencil.position.set(0, crateY, -(RAIL_CRATE_D / 2 + 0.005))
+    stencil.rotation.y = Math.PI
+    load.add(stencil)
+    const trolley = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.24), oldBrass)
+    trolley.position.y = CARRIAGE_CEILING_Y - 0.22
+    load.add(trolley)
+    const crateTop = RAIL_CRATE_BOTTOM + RAIL_CRATE_H
+    const ropeLen = CARRIAGE_CEILING_Y - 0.3 - crateTop
+    for (const rx of [-0.3, 0.3]) {
+      const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, ropeLen, 6), ropeMat)
+      rope.position.set(rx, crateTop + ropeLen / 2, 0)
+      load.add(rope)
+    }
+    load.position.set(RAIL_CRATE_PARK_X, 0, z)
+    root.add(load)
+    const outline = makeOutline(crate)
+    const box = trackingCollider()
+    const machine = addRewindMachine({
+      z, handle: load, triggerFrom: mechZ(trigger[0]), triggerTo: mechZ(trigger[1]), delay, duration,
+      outlines: [outline],
+      apply(p) {
+        load.position.x = RAIL_CRATE_PARK_X * (1 - p)
+        placeCollider(box, load.position.x, z, RAIL_CRATE_W / 2, RAIL_CRATE_D / 2)
+      }
+    })
+    railCrates.push({ machine, box })
+    return machine
+  }
+
+  // --- Floor platform: slides away from over a well ----------------------------
+  const MECH_PLATFORM_HALF_X = 0.65
+  const MECH_PLATFORM_PARK_X = -(HAZARD_AISLE_X + 0.2 + MECH_PLATFORM_HALF_X + 0.3)
+  const mechPlatforms = []
+  function addRewindPlatform(pit, trigger, delay, duration, toWorld = mechZ) {
+    const z = toWorld(pit.z)
+    const pitGeometry = new THREE.BoxGeometry(pit.halfX * 2, 3.4, pit.halfZ * 2)
+    const pitIndices = pitGeometry.getIndex().array
+    pitGeometry.setIndex(pitGeometry.groups
+      .filter((group) => group.materialIndex !== 2)
+      .flatMap((group) => Array.from(pitIndices.slice(group.start, group.start + group.count))))
+    pitGeometry.clearGroups()
+    const well = new THREE.Mesh(pitGeometry,
+      new THREE.MeshStandardMaterial({ color: 0x151310, roughness: 1, side: THREE.BackSide }))
+    well.position.set(0, -1.7, z)
+    well.userData.noCameraCollision = true
+    root.add(well)
+
+    const platform = new THREE.Group()
+    platform.name = `mechanical-platform-${mechPlatforms.length}`
+    const deck = new THREE.Mesh(
+      new THREE.BoxGeometry(MECH_PLATFORM_HALF_X * 2, 0.14, pit.halfZ * 2 - 0.1),
+      new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.75, metalness: 0.05 })
+    )
+    deck.position.y = -0.07
+    deck.receiveShadow = true
+    platform.add(deck)
+    for (const e of [-1, 1]) {
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, pit.halfZ * 2 - 0.1), oldBrass)
+      edge.position.set(e * (MECH_PLATFORM_HALF_X - 0.03), 0.005, 0)
+      platform.add(edge)
+    }
+    platform.position.set(0, 0, z)
+    root.add(platform)
+    const outline = makeOutline(deck)
+    const machine = addRewindMachine({
+      z, handle: platform, triggerFrom: toWorld(trigger[0]), triggerTo: toWorld(trigger[1]), delay, duration,
+      outlines: [outline],
+      apply(p) { platform.position.x = MECH_PLATFORM_PARK_X * p }
+    })
+    mechPlatforms.push({ machine, platform, z, halfZ: pit.halfZ })
+    return machine
+  }
+
+  // --- Sliding door: a heavy crest door slams across the aisle ----------------
+  const SLIDE_DOOR_W = 1.9
+  const SLIDE_DOOR_H = 2.5
+  const SLIDE_DOOR_PARK_X = HAZARD_AISLE_X + 0.2 + SLIDE_DOOR_W / 2
+  const slideDoors = []
+  function addSlideDoor(localZ, trigger, delay, duration) {
+    const z = mechZ(localZ)
+    const door = makeCrestPanel(SLIDE_DOOR_W, SLIDE_DOOR_H, 0.12)
+    door.name = `mechanical-door-${slideDoors.length}`
+    door.position.set(SLIDE_DOOR_PARK_X, SLIDE_DOOR_H / 2, z)
+    root.add(door)
+    const outline = makeOutline(door.children[0])
+    const box = trackingCollider()
+    const machine = addRewindMachine({
+      z, handle: door, triggerFrom: mechZ(trigger[0]), triggerTo: mechZ(trigger[1]), delay, duration,
+      outlines: [outline],
+      apply(p) {
+        door.position.x = SLIDE_DOOR_PARK_X * (1 - p)
+        placeCollider(box, door.position.x, z, SLIDE_DOOR_W / 2, 0.06)
+      }
+    })
+    slideDoors.push({ machine, box })
+    return machine
+  }
+
+  // --- Wall panels: a pair slides in from both pillars and meets -------------
+  const WALL_PANEL_W = HAZARD_AISLE_X + 0.2
+  const wallPanelPairs = []
+  function addWallPanels(localZ, trigger, delay, duration) {
+    const z = mechZ(localZ)
+    const handle = new THREE.Group()
+    handle.name = 'mechanical-wall-panels'
+    root.add(handle)
+    const leaves = [-1, 1].map((side) => {
+      const leaf = makeCrestPanel(WALL_PANEL_W, SLIDE_DOOR_H, 0.1)
+      leaf.position.set(side * (WALL_PANEL_W * 1.5), SLIDE_DOOR_H / 2, z)
+      root.add(leaf)
+      return { side, leaf, outline: makeOutline(leaf.children[0]), box: trackingCollider() }
+    })
+    const machine = addRewindMachine({
+      z, handle, triggerFrom: mechZ(trigger[0]), triggerTo: mechZ(trigger[1]), delay, duration,
+      outlines: leaves.map((l) => l.outline),
+      apply(p) {
+        for (const { side, leaf, box } of leaves) {
+          leaf.position.x = side * WALL_PANEL_W * (1.5 - p)
+          placeCollider(box, leaf.position.x, z, WALL_PANEL_W / 2, 0.05)
+        }
+      }
+    })
+    wallPanelPairs.push({ machine, leaves })
+    return machine
+  }
+
+  // --- Layout, rear to front ([from, to] trigger range is local Z) -----------
+  addRailCrate(-9.0, [-11.0, -7.5], 0.2, 0.8)
+  addRewindPlatform(MECH_PITS[0], [-7.2, -3.9], 0.1, 0.6)
+  addSlideDoor(-0.4, [-3.8, 0.8], 0, 0.6)
+  addWallPanels(3.6, [0.6, 4.8], 0, 0.6)
+  // Combination: one trigger springs all three in a staggered sequence.
+  addRewindPlatform(MECH_PITS[1], [5.6, 13.5], 0.25, 0.6)
+  addRailCrate(10.6, [5.6, 13.5], 0.35, 0.7)
+  addSlideDoor(12.4, [5.6, 13.5], 0.5, 0.6)
 
   const { hatchCover, ladder } = env.parts.convergence
-  // The roof access belongs to the Convergence car after the gauntlet.
-  for (const accessPart of [env.parts.mechanical.hatchCover, env.parts.mechanical.hatchRim, env.parts.mechanical.ladder]) {
-    accessPart.visible = false
-  }
   let hatchBroken = false
   let hatchRepaired = false
   let hatchOpen = 1
@@ -1837,12 +1828,8 @@ export function createMovingHeistLevel({
     prompt: 'Climb to the carriage roof',
     isEligible: () => section === 'interior',
     onInteract: () => {
-      if (!clampReleased) {
-        interaction.flashPrompt('The drive clamp is still locked — sync both plates at once.')
-        return
-      }
-      if (!Object.values(gauntletCleared).every(Boolean)) {
-        interaction.flashPrompt('The Convergence gauntlet is still active — use every Chrono ability.')
+      if (!exitDoor.latched) {
+        interaction.flashPrompt('The Convergence exit door is still locked.')
         return
       }
       if (hatchOpen < 0.65) {
@@ -1854,126 +1841,512 @@ export function createMovingHeistLevel({
   }))
 
   // ------------------------------------------------------------------
-  // CONVERGENCE — all four abilities, in sequence, before the roof.
+  // CONVERGENCE — the last car before the Chrono Core.
+  //
+  // One obstacle per ability, then all four together:
+  //   1. a brass cage gate whose open window is too short to walk through —
+  //      SLOW stretches it;
+  //   2. a fast hanging crate — FREEZE it clear of the aisle;
+  //   3. a floor platform that slides off its well — REWIND it back;
+  //   4. twin switches too far apart for one person — a TIME GHOST holds one;
+  //   5. crate, platform and cage gate in a row, then a final switch that
+  //      only holds the exit door open while it is weighted.
   // ------------------------------------------------------------------
-  const gauntletCleared = { slow: false, ghost: false, rewind: false, freeze: false }
-  const gauntletSlowZ = spans.convergence.minZ + 4.0
-  const gauntletSlowBeam = new THREE.Mesh(
-    new THREE.BoxGeometry(2.0, 0.08, 0.08),
-    new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 2.4 })
-  )
-  addProp(gauntletSlowBeam, gauntletSlowZ, 0, 1.15)
-  let gauntletSlowT = 0
-  unregisters.push(registerHazard(gauntletSlowBeam, {
-    onUpdate(scaledDelta) {
-      gauntletSlowT += scaledDelta
-      gauntletSlowBeam.position.x = Math.sin(gauntletSlowT * 2.7) * 0.78
-    },
-    getSnapshot: () => ({ gauntletSlowT }),
-    restoreSnapshot: (s) => {
-      gauntletSlowT = s.gauntletSlowT
-      gauntletSlowBeam.position.x = Math.sin(gauntletSlowT * 2.7) * 0.78
+  const convZ = (localZ) => spans.convergence.center + localZ
+
+  // --- Cage gate (Slow) ---------------------------------------------------------
+  // A two-sided brass portcullis 1.5 m deep. Its raised window is shorter than
+  // a sprint through the cage, so it has to be slowed (or frozen) to pass.
+  const CAGE_W = (HAZARD_AISLE_X + 0.2) * 2
+  const CAGE_H = 1.6
+  const CAGE_DEPTH = 1.5
+  const CAGE_RAISED = CARRIAGE_CEILING_Y - CAGE_H
+  function cageBottom(u) {
+    if (u < 0.2) return CAGE_RAISED
+    if (u < 0.3) return CAGE_RAISED * (1 - (u - 0.2) / 0.1)
+    if (u < 0.8) return 0
+    return CAGE_RAISED * (u - 0.8) / 0.2
+  }
+  const cageGates = []
+  function addCageGate(localZ, period, phase) {
+    const z = convZ(localZ)
+    const cage = new THREE.Group()
+    cage.name = `convergence-cage-gate-${cageGates.length}`
+    const barGeo = new THREE.CylinderGeometry(0.025, 0.025, CAGE_H, 6)
+    const bars = Math.round(CAGE_W / 0.17)
+    for (const e of [-1, 1]) {
+      for (let i = 0; i <= bars; i++) {
+        const bar = new THREE.Mesh(barGeo, oldBrass)
+        bar.position.set(-CAGE_W / 2 + i * (CAGE_W / bars), CAGE_H / 2, e * CAGE_DEPTH / 2)
+        cage.add(bar)
+      }
+      for (const y of [0.04, CAGE_H / 2, CAGE_H - 0.04]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(CAGE_W, 0.07, 0.07), oldBrass)
+        rail.position.set(0, y, e * CAGE_DEPTH / 2)
+        cage.add(rail)
+      }
     }
-  }))
-
-  const gauntletPadPos = new THREE.Vector3(-0.55, 0.03, spans.convergence.minZ + 8.0)
-  const gauntletPad = makePressurePlate(0.9)
-  gauntletPad.name = 'convergence-ghost-pad'
-  gauntletPad.position.copy(gauntletPadPos)
-  root.add(gauntletPad)
-  unregisters.push(timeSystem.registerGhostPad(gauntletPadPos, 0.56))
-  const gauntletGhostGateZ = spans.convergence.minZ + 10.0
-  const gauntletGhostGate = new THREE.Mesh(
-    new THREE.BoxGeometry(2.1, 1.55, 0.14),
-    new THREE.MeshStandardMaterial({ color: 0x2f3742, metalness: 0.9, roughness: 0.35 })
-  )
-  addProp(gauntletGhostGate, gauntletGhostGateZ, 0, 0.9)
-  let gauntletGhostGateOpen = 0
-
-  const gauntletBridgeZ = spans.convergence.minZ + 14.0
-  const gauntletBridge = new THREE.Mesh(
-    new THREE.BoxGeometry(1.35, 0.12, 2.6),
-    new THREE.MeshStandardMaterial({ color: 0x5b6068, roughness: 0.66, metalness: 0.72 })
-  )
-  let gauntletBridgeY = -3.2
-  gauntletBridge.position.set(0, gauntletBridgeY, gauntletBridgeZ)
-  root.add(gauntletBridge)
-  const gauntletPit = new THREE.Mesh(
-    new THREE.BoxGeometry(1.5, 3.4, 2.8),
-    new THREE.MeshStandardMaterial({ color: 0x10131a, roughness: 1, side: THREE.BackSide })
-  )
-  gauntletPit.position.set(0, -1.7, gauntletBridgeZ)
-  gauntletPit.userData.noCameraCollision = true
-  root.add(gauntletPit)
-
-  const gauntletFreezeZ = spans.convergence.minZ + 19.0
-  const gauntletFreezeRotor = makeRotor(0x60a5fa)
-  addProp(gauntletFreezeRotor, gauntletFreezeZ, 0, ROTOR_HUB_Y)
-  let gauntletFreezeA = 0
-  unregisters.push(registerHazard(gauntletFreezeRotor, {
-    onUpdate(scaledDelta) {
-      gauntletFreezeA += scaledDelta * 6.2
-      gauntletFreezeRotor.rotation.z = gauntletFreezeA
-    },
-    getSnapshot: () => ({ gauntletFreezeA }),
-    restoreSnapshot: (s) => {
-      gauntletFreezeA = s.gauntletFreezeA
-      gauntletFreezeRotor.rotation.z = gauntletFreezeA
+    for (const x of [-CAGE_W / 2, CAGE_W / 2]) {
+      for (const y of [0.04, CAGE_H - 0.04]) {
+        const tie = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, CAGE_DEPTH), oldBrass)
+        tie.position.set(x, y, 0)
+        cage.add(tie)
+      }
     }
-  }))
+    cage.position.z = z
+    root.add(cage)
+    const entry = { z, bottom: CAGE_RAISED }
+    unregisters.push(registerHazard(cage, (() => {
+      let t = 0
+      const apply = () => {
+        const u = (((t / period) + phase) % 1 + 1) % 1
+        entry.bottom = cageBottom(u)
+        cage.position.y = entry.bottom
+      }
+      apply()
+      return {
+        onUpdate(scaledDelta) { t += scaledDelta; apply() },
+        getSnapshot: () => ({ t }),
+        restoreSnapshot: (snap) => { t = snap.t; apply() }
+      }
+    })()))
+    cageGates.push(entry)
+  }
+
+  // --- Switch station (Ghost) --------------------------------------------------
+  // Floor plate by the wall, a numbered brass plaque above it and a lever that
+  // pulls down while the plate is weighted.
+  function addSwitchStation(number, side, localZ) {
+    const z = convZ(localZ)
+    const pos = new THREE.Vector3(side * 1.8, 0.03, z)
+    unregisters.push(timeSystem.registerGhostPad(pos, 0.56))
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 1.0), darkIron)
+    base.position.set(pos.x, 0.03, z)
+    root.add(base)
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.04, 0.8),
+      new THREE.MeshStandardMaterial({ color: 0x8a6d34, roughness: 0.4, metalness: 0.85 })
+    )
+    plate.position.set(pos.x, 0.08, z)
+    root.add(plate)
+    const wallX = side * (WALL_X - 0.07)
+    const backing = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.42), woodDark)
+    backing.position.set(side * (WALL_X - 0.05), 1.95, z)
+    root.add(backing)
+    const label = plaque(String(number), 0.3, 0.36, { px: 128 })
+    label.position.set(wallX, 1.95, z)
+    label.rotation.y = -side * Math.PI / 2
+    root.add(label)
+    const lever = new THREE.Group()
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.4, 8), oldBrass)
+    arm.position.y = 0.2
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), darkIron)
+    knob.position.y = 0.4
+    lever.add(arm, knob)
+    lever.position.set(side * (WALL_X - 0.12), 1.3, z)
+    root.add(lever)
+    const lampMat = new THREE.MeshStandardMaterial({
+      color: 0xffb454, emissive: 0xff9a2a, emissiveIntensity: 1.2, roughness: 0.3
+    })
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), lampMat)
+    lamp.position.set(side * (WALL_X - 0.1), 2.3, z)
+    root.add(lamp)
+    const station = { pos, held: false }
+    station.update = (held) => {
+      station.held = held
+      plate.position.y = held ? 0.055 : 0.08
+      lever.rotation.x = held ? 0.8 : -0.6
+      lampMat.color.setHex(held ? 0x7ee08a : 0xffb454)
+      lampMat.emissive.setHex(held ? 0x3fbf5a : 0xff9a2a)
+    }
+    station.update(false)
+    return station
+  }
+
+  // --- Crest double door --------------------------------------------------------
+  function addCrestDoubleDoor(localZ) {
+    const z = convZ(localZ)
+    const leafW = HAZARD_AISLE_X + 0.2
+    const leaves = [-1, 1].map((side) => {
+      const leaf = makeCrestPanel(leafW, 2.4, 0.1)
+      root.add(leaf)
+      return { side, leaf }
+    })
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(leafW * 2, CARRIAGE_CEILING_Y - 2.4, 0.24), woodDark)
+    lintel.position.set(0, (CARRIAGE_CEILING_Y + 2.4) / 2, z)
+    root.add(lintel)
+    const door = { z, open: 0, latched: false }
+    door.apply = () => {
+      for (const { side, leaf } of leaves) {
+        leaf.position.set(side * (leafW / 2 + door.open * (leafW - 0.12)), 1.2, z)
+      }
+    }
+    door.apply()
+    return door
+  }
+
+  // --- Layout, rear to front ------------------------------------------------------
+  addCageGate(-16.0, 1.3, 0)
+  addHangingCrate(-11.5, 1.4, 0, convZ)
+  addRewindPlatform(CONV_PITS[0], [-9.5, -5.7], 0.1, 0.6, convZ)
+  const switchOne = addSwitchStation(1, -1, -3.7)
+  const switchTwo = addSwitchStation(2, 1, 1.5)
+  const switchDoor = addCrestDoubleDoor(3.6)
+  // Combination.
+  addHangingCrate(6.5, 1.4, 0.5, convZ)
+  addRewindPlatform(CONV_PITS[1], [7.4, 11.0], 0.1, 0.6, convZ)
+  addCageGate(12.2, 1.3, 0.4)
+  const exitSwitch = addSwitchStation(3, -1, 14.5)
+  const exitDoor = addCrestDoubleDoor(16.4)
+  let switchHintShown = false
 
   // --------------------------------------------------------------------------
-  // ROOF — SLOW
-  // Always move toward +Z. Additional roof obstacles make the exterior leg feel
-  // like a real set piece instead of a straight corridor.
+  // ROOF — every ability, out in the open.
+  //
+  // Starts over the tail of Convergence, crosses an open freight wagon on
+  // wooden decking and ends at the Vault drop hatch. Gaps and deck openings
+  // are real voids — step into one and you fall.
+  //   0. a short gap onto the wagon — jump it;
+  //   1. a deck panel slides off the side as you arrive — REWIND it back;
+  //   2. a pair of crates shuttles across on rails — FREEZE them clear;
+  //   3. a two-section plank bridge drops out under you — SLOW or REWIND;
+  //   4. a row of vent hatches blasts steam — FREEZE them shut;
+  //   5. a zipline over the last opening, braked until its release lever is
+  //      held — a TIME GHOST holds it while you ride;
+  //   6. more crates, then a drawbridge over the gap to the Vault that only
+  //      lowers while its plate is weighted — FREEZE, then GHOST.
   // --------------------------------------------------------------------------
   let gustPhase = 0
-  let sweptTime = 0
+  const ROOF_Y = CARRIAGE_ROOF_Y
+  const F0 = spans.freight.minZ
+  const V0 = spans.vault.minZ
+  const roofZ = (f) => F0 + f
+  const roofSupports = []
+  const roofObstacles = []
 
-  const roofArc = makeRotor(0x7dd3fc)
-  roofArc.position.set(0, CARRIAGE_ROOF_Y + ROTOR_HUB_Y, (roof.zStart + roof.zEnd) / 2)
-  roof.group.add(roofArc)
+  // Roof lighting: a low warm sun ahead of the train and a sky fill. They
+  // stay in the scene at zero intensity indoors — changing the light count
+  // would recompile every material on the climb out.
+  const roofSun = new THREE.DirectionalLight(0xffb27a, 0)
+  roofSun.position.set(-8, ROOF_Y + 12, V0 + 30)
+  roofSun.target.position.set(0, ROOF_Y, F0 + 10)
+  const roofSky = new THREE.HemisphereLight(0xffc49a, 0x3a2a2a, 0)
+  root.add(roofSun, roofSun.target, roofSky)
+  const roofVoids = [
+    { minX: -9, maxX: 9, minZ: spans.convergence.maxZ, maxZ: roofZ(ROOF_RUN.shell[0]) },
+    ...ROOF_RUN.openings.map(([a, b]) => ({ minX: -9, maxX: 9, minZ: roofZ(a), maxZ: roofZ(b) })),
+    { minX: -9, maxX: 9, minZ: roofZ(ROOF_RUN.shell[1]), maxZ: V0 }
+  ]
+  const deckW = WALL_X * 2 + 0.3
+  const roofWood = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.78, metalness: 0.04 })
 
-  let roofArcT = 0
-  unregisters.push(registerHazard(roofArc, {
-    onUpdate(scaledDelta) {
-      roofArcT += scaledDelta
-      roofArc.rotation.z = roofArcT * 4.8
-    },
-    getSnapshot: () => ({ roofArcT }),
-    restoreSnapshot: (s) => {
-      roofArcT = s.roofArcT
-      roofArc.rotation.z = roofArcT * 4.8
+  function roofSupport() {
+    const support = { minX: 0, maxX: -1, minZ: 0, maxZ: -1, y: ROOF_Y }
+    roofSupports.push(support)
+    return support
+  }
+  function placeSupport(support, x, halfX, minZ, maxZ, active = true) {
+    support.minX = active ? x - halfX : 0
+    support.maxX = active ? x + halfX : -1
+    support.minZ = minZ
+    support.maxZ = maxZ
+  }
+
+  // --- 1. Sliding deck panel (Rewind) -------------------------------------------
+  {
+    const [a, b] = ROOF_RUN.openings[0]
+    const len = b - a
+    const panel = new THREE.Group()
+    panel.name = 'roof-sliding-panel'
+    const boards = new THREE.Mesh(new THREE.BoxGeometry(deckW, 0.12, len), roofWood)
+    boards.position.y = -0.06
+    panel.add(boards)
+    for (let k = 0; k < 3; k++) {
+      const strap = new THREE.Mesh(new THREE.BoxGeometry(deckW, 0.02, 0.1), darkIron)
+      strap.position.set(0, 0.005, -len / 2 + 0.5 + k * (len - 1) / 2)
+      panel.add(strap)
     }
-  }))
+    panel.position.set(0, ROOF_Y, roofZ((a + b) / 2))
+    root.add(panel)
+    const outline = makeOutline(boards)
+    const support = roofSupport()
+    const parkedX = -(deckW + 0.6)
+    addRewindMachine({
+      z: panel.position.z, handle: panel, activeIn: 'roof',
+      triggerFrom: roofZ(ROOF_RUN.shell[0] - 0.2), triggerTo: roofZ(b), delay: 0.25, duration: 0.7,
+      outlines: [outline],
+      apply(p) {
+        panel.position.x = parkedX * p
+        // Only a panel that is (nearly) home can be stood on.
+        placeSupport(support, panel.position.x, deckW / 2, roofZ(a), roofZ(b), p < 0.35)
+      }
+    })
+  }
 
-  const lowSignal = new THREE.Mesh(
-    new THREE.BoxGeometry(2.1, 0.16, 0.18),
-    new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.75, roughness: 0.4 })
+  // --- 2 & 6. Rail crates (Freeze) ------------------------------------------------
+  const ROOF_CRATE_W = 1.5
+  const ROOF_CRATE_D = 1.1
+  const roofCrates = []
+  function addRoofCrates(f, period, phase) {
+    const z = roofZ(f)
+    for (const dz of [-0.35, 0.35]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(deckW - 0.3, 0.05, 0.08), darkIron)
+      rail.position.set(0, ROOF_Y + 0.025, z + dz)
+      root.add(rail)
+    }
+    const pair = new THREE.Group()
+    pair.name = `roof-crates-${roofCrates.length}`
+    for (const ox of [-0.8, 0.8]) {
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(ROOF_CRATE_W, 1.15, ROOF_CRATE_D), cargoWood)
+      crate.position.set(ox, 0.62, 0)
+      crate.castShadow = true
+      pair.add(crate)
+      for (const by of [0.15, 1.05]) {
+        const band = new THREE.Mesh(new THREE.BoxGeometry(ROOF_CRATE_W + 0.02, 0.06, ROOF_CRATE_D + 0.02), cargoBand)
+        band.position.set(ox, by, 0)
+        pair.add(band)
+      }
+    }
+    pair.position.set(0, ROOF_Y, z)
+    root.add(pair)
+    registerCargoHazard(pair, (t) => {
+      pair.position.x = dwell(tri(t + phase * period, period)) * 0.8
+    })
+    roofCrates.push({ pair, z })
+  }
+  addRoofCrates(9.0, 1.1, 0)
+
+  // --- 3. Collapsing plank bridge (Slow / Rewind) ------------------------------
+  const BRIDGE_HALF_X = 0.8
+  {
+    const [a, b] = ROOF_RUN.openings[1]
+    const sectionLen = (b - a) / 2
+    for (let k = 0; k < 2; k++) {
+      const z0 = roofZ(a + k * sectionLen)
+      const z1 = z0 + sectionLen
+      const section = new THREE.Group()
+      section.name = `roof-bridge-${k}`
+      const planks = new THREE.Mesh(new THREE.BoxGeometry(BRIDGE_HALF_X * 2, 0.1, sectionLen - 0.06), roofWood)
+      planks.position.y = -0.05
+      section.add(planks)
+      for (const e of [-1, 1]) {
+        const stringer = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, sectionLen - 0.06), darkIron)
+        stringer.position.set(e * (BRIDGE_HALF_X - 0.04), -0.12, 0)
+        section.add(stringer)
+      }
+      section.position.set(0, ROOF_Y, (z0 + z1) / 2)
+      root.add(section)
+      const outline = makeOutline(planks)
+      const support = roofSupport()
+      addRewindMachine({
+        z: section.position.z, handle: section, activeIn: 'roof',
+        triggerFrom: z0, triggerTo: z1, delay: 0.08, duration: 0.55,
+        outlines: [outline],
+        apply(p) {
+          section.position.y = ROOF_Y - p * 4.2
+          section.rotation.x = p * (k ? -0.5 : 0.5)
+          placeSupport(support, 0, BRIDGE_HALF_X, z0, z1, p < 0.12)
+        }
+      })
+    }
+  }
+
+  // --- 4. Vent hatches (Freeze) ---------------------------------------------------
+  const VENT_Z = roofZ(18.5)
+  const VENT_PERIOD = 1.6
+  const VENT_PUFFS = 9
+  let ventSteam = 0 // 0 clear .. 1 full blast, for the hit test
+  {
+    const grateMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.6, metalness: 0.8 })
+    const vents = new THREE.Group()
+    vents.name = 'roof-vents'
+    const lids = []
+    for (const x of [-1.6, 0, 1.6]) {
+      const grate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 1.2), grateMat)
+      grate.position.set(x, 0.04, 0)
+      vents.add(grate)
+      const hinge = new THREE.Group()
+      hinge.position.set(x, 0.1, 0.6)
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.05, 1.1), oldBrass)
+      lid.position.z = -0.55
+      hinge.add(lid)
+      vents.add(hinge)
+      lids.push(hinge)
+    }
+    const steamMat = new THREE.MeshLambertMaterial({
+      color: 0xe9e4da, transparent: true, opacity: 0, depthWrite: false
+    })
+    const puffs = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), steamMat, 3 * VENT_PUFFS)
+    puffs.userData.noCameraCollision = true
+    puffs.raycast = () => {}
+    puffs.frustumCulled = false
+    vents.add(puffs)
+    vents.position.set(0, ROOF_Y, VENT_Z)
+    root.add(vents)
+    const dummy = new THREE.Object3D()
+    registerCargoHazard(vents, (t) => {
+      const u = ((t / VENT_PERIOD) % 1 + 1) % 1
+      // Down, lids lifting (warning wisps), full blast, lids closing.
+      const lift = u < 0.2 ? 0 : u < 0.32 ? (u - 0.2) / 0.12 : u < 0.9 ? 1 : 1 - (u - 0.9) / 0.1
+      ventSteam = u < 0.32 ? (u < 0.2 ? 0 : 0.2) : u < 0.9 ? 1 : 0.3
+      for (const hinge of lids) hinge.rotation.x = -lift * 1.1
+      steamMat.opacity = ventSteam * 0.6
+      puffs.visible = ventSteam > 0
+      let i = 0
+      for (const x of [-1.6, 0, 1.6]) {
+        for (let k = 0; k < VENT_PUFFS; k++) {
+          const v = (k / VENT_PUFFS + t * 1.5) % 1
+          dummy.position.set(x + Math.sin(k * 2.1 + t * 3) * 0.2 * v, 0.2 + v * 2.4 * ventSteam, Math.cos(k * 1.3) * 0.2)
+          dummy.scale.setScalar((0.15 + v * 0.45) * Math.max(0.3, ventSteam))
+          dummy.updateMatrix()
+          puffs.setMatrixAt(i++, dummy.matrix)
+        }
+      }
+      puffs.instanceMatrix.needsUpdate = true
+    })
+  }
+
+  // --- 5. Zipline over the last opening (Ghost) -------------------------------
+  const ZIP_X = 1.55
+  const zipFrom = roofZ(ROOF_RUN.openings[2][0] - 0.45)
+  const zipTo = roofZ(ROOF_RUN.openings[2][1] + 0.6)
+  const leverPad = new THREE.Vector3(-1.8, ROOF_Y + 0.03, roofZ(20.3))
+  unregisters.push(timeSystem.registerGhostPad(leverPad, 0.56))
+  const leverBase = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 1.0), darkIron)
+  leverBase.position.set(leverPad.x, ROOF_Y + 0.03, leverPad.z)
+  root.add(leverBase)
+  const leverPlate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 0.04, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x8a6d34, roughness: 0.4, metalness: 0.85 })
   )
-  lowSignal.position.set(0, CARRIAGE_ROOF_Y + 1.35, roof.zEnd - 3.0)
-  roof.group.add(lowSignal)
+  leverPlate.position.set(leverPad.x, ROOF_Y + 0.08, leverPad.z)
+  root.add(leverPlate)
+  const releaseLever = new THREE.Group()
+  const releaseArm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8), oldBrass)
+  releaseArm.position.y = 0.4
+  const releaseKnob = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), darkIron)
+  releaseKnob.position.y = 0.8
+  releaseLever.add(releaseArm, releaseKnob)
+  releaseLever.position.set(leverPad.x - 0.6, ROOF_Y, leverPad.z)
+  root.add(releaseLever)
+  const zipLampMat = new THREE.MeshStandardMaterial({
+    color: 0xffb454, emissive: 0xff9a2a, emissiveIntensity: 1.2, roughness: 0.3
+  })
+  const zipCableY = ROOF_Y + 2.5
+  for (const z of [zipFrom - 0.3, zipTo + 0.3]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.6, 8), darkIron)
+    post.position.set(ZIP_X + 0.35, ROOF_Y + 1.3, z)
+    root.add(post)
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.08), darkIron)
+    arm.position.set(ZIP_X + 0.15, zipCableY + 0.05, z)
+    root.add(arm)
+  }
+  const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, zipTo - zipFrom + 0.6, 6), darkIron)
+  cable.rotation.x = Math.PI / 2
+  cable.position.set(ZIP_X, zipCableY, (zipFrom + zipTo) / 2)
+  root.add(cable)
+  const zipLamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), zipLampMat)
+  zipLamp.position.set(ZIP_X + 0.35, ROOF_Y + 2.7, zipFrom - 0.3)
+  root.add(zipLamp)
+  // Trolley and grab handle; the interaction point is the handle's low end.
+  const trolley = new THREE.Group()
+  trolley.name = 'roof-zipline'
+  const wheelBox = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.34), oldBrass)
+  wheelBox.position.y = zipCableY - ROOF_Y - 1.2
+  const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.7, 6), ropeMat)
+  strap.position.y = zipCableY - ROOF_Y - 1.65
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.45, 8), darkIron)
+  grip.rotation.x = Math.PI / 2
+  grip.position.y = zipCableY - ROOF_Y - 2.0
+  trolley.add(wheelBox, strap, grip)
+  trolley.position.set(ZIP_X, ROOF_Y + 1.2, zipFrom)
+  root.add(trolley)
+  const ZIP_DURATION = 1.5
+  let zipRide = -1 // seconds into the ride, or -1 when not riding
+  let zipHintShown = false
+
+  // --- 6. Final drawbridge (Freeze, then Ghost) -------------------------------
+  addRoofCrates(28.2, 1.1, 0.5)
+  const bridgePlatePos = new THREE.Vector3(1.8, ROOF_Y + 0.03, roofZ(30.3))
+  unregisters.push(timeSystem.registerGhostPad(bridgePlatePos, 0.56))
+  const bridgePlateBase = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 1.0), darkIron)
+  bridgePlateBase.position.set(bridgePlatePos.x, ROOF_Y + 0.03, bridgePlatePos.z)
+  root.add(bridgePlateBase)
+  const bridgePlate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 0.04, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x8a6d34, roughness: 0.4, metalness: 0.85 })
+  )
+  bridgePlate.position.set(bridgePlatePos.x, ROOF_Y + 0.08, bridgePlatePos.z)
+  root.add(bridgePlate)
+  const gapFrom = roofZ(ROOF_RUN.shell[1])
+  const gapLen = V0 - gapFrom
+  const drawbridge = new THREE.Group()
+  drawbridge.name = 'roof-drawbridge'
+  const bridgeDeck = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, gapLen + 0.3), roofWood)
+  bridgeDeck.position.set(0, -0.06, (gapLen + 0.3) / 2)
+  drawbridge.add(bridgeDeck)
+  for (const e of [-1, 1]) {
+    const side = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, gapLen + 0.3), darkIron)
+    side.position.set(e * 0.76, -0.1, (gapLen + 0.3) / 2)
+    drawbridge.add(side)
+  }
+  drawbridge.position.set(0, ROOF_Y, gapFrom - 0.15)
+  root.add(drawbridge)
+  const drawbridgeSupport = roofSupport()
+  let drawbridgeDown = 0
+  let drawbridgeLatched = false
+
+  // Decor crates on the decks, clear of the obstacles; they collide.
+  for (const [f, x] of [[7.4, -1.9], [15.8 + 1.2, 1.9], [26.6, -1.9]]) {
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), cargoWood)
+    crate.position.set(x, ROOF_Y + 0.4, roofZ(f))
+    crate.rotation.y = 0.15
+    crate.castShadow = true
+    root.add(crate)
+    roofObstacles.push({ minX: x - 0.6, maxX: x + 0.6, minZ: roofZ(f) - 0.6, maxZ: roofZ(f) + 0.6 })
+  }
+
+  // Checkpoints along the roof, after each landing.
+  const roofCheckpoints = [roofZ(8.0), roofZ(17.0), roofZ(26.8)]
+  let lastRoofCheckpointZ = -Infinity
 
   function enterRoof() {
     section = 'roof'
     setBounds(env.roofBounds)
-    useObstacles([])
+    useObstacles(roofObstacles)
 
     // The roof starts over Convergence and ends over the forward Vault car.
-    const start = new THREE.Vector3(0, CARRIAGE_ROOF_Y, roof.zStart + 0.8)
+    const start = new THREE.Vector3(0, ROOF_Y, roof.zStart + 0.8)
     player.setPose(start, 0)
+    lastRoofCheckpointZ = start.z
     respawn.setCheckpoint(start, 0, { restore: captureCheckpointRestore() })
     camera.setYaw?.(0)
     camera.snap()
 
     gustPhase = 0
-    sweptTime = 0
-    hud.setObjective('Cross the roof toward the Vault — keep moving FORWARD')
+    hud.setObjective('Cross the roof to the Vault drop hatch')
     hud.showBriefing?.([
-      'You are outside. Slipstream at line speed will take you off the roof if you stand up in it for long.',
-      'Keep moving forward, stay low when you have to, and watch what comes over the top of the car.'
+      'You are outside. The roof runs across an open freight wagon to the Vault.',
+      'Watch your footing — the gaps between the cars are real, and so is the drop.'
     ])
   }
+
+  const zipHandle = new THREE.Group()
+  zipHandle.position.set(ZIP_X - 0.3, ROOF_Y + 1.0, zipFrom)
+  root.add(zipHandle)
+  unregisters.push(interaction.register(zipHandle, {
+    prompt: 'Ride the zipline',
+    isEligible: () => section === 'roof' && zipRide < 0,
+    onInteract: () => {
+      const ghost = timeSystem.getGhost()
+      const leverHeld = ghost.isOccupying(leverPad, 0.56) || playerOnPad(leverPad, 0.56)
+      if (!leverHeld) {
+        interaction.flashPrompt('The zipline brake is locked — something has to hold its release lever down.')
+        return
+      }
+      zipRide = 0
+    }
+  }))
 
   unregisters.push(interaction.register(roof.dropHatch, {
     prompt: 'Drop into the forward Vault car',
@@ -1982,13 +2355,13 @@ export function createMovingHeistLevel({
   }))
 
   // --------------------------------------------------------------------------
-  // VAULT — clear final carriage. The gauntlet carries the ability challenge;
+  // VAULT — clear final carriage. Convergence carries the ability challenge;
   // the Core is exposed as the reward at the end of the run.
   // --------------------------------------------------------------------------
   const coreZ = spans.vault.maxZ - 2.6
   const core = createChronoCore()
   core.userData.noInteractionBlocker = true
-  addProp(core, coreZ)
+  addProp(core, coreZ, 0, VAULT_DAIS_TOP)
 
   let taken = false
   let destabT = 0
@@ -2008,10 +2381,16 @@ export function createMovingHeistLevel({
     }
   }))
 
+  // The Vault's trunks, plus the dais — the Core is taken from its edge.
+  const vaultObstacles = [
+    ...env.colliders,
+    { minX: -1.3, maxX: 1.3, minZ: coreZ - 1.3, maxZ: coreZ + 1.3 }
+  ]
+
   function enterVault() {
     section = 'vault'
     setBounds(env.vaultBounds)
-    useObstacles([])
+    useObstacles(vaultObstacles)
 
     const p = new THREE.Vector3(0, 0, spans.vault.minZ + 1.1)
     player.setPose(p, 0)
@@ -2021,7 +2400,7 @@ export function createMovingHeistLevel({
 
     hud.setObjective('The Chrono Core is exposed — take it')
     hud.showBriefing?.([
-      'Vault car. The Convergence gauntlet is behind you.',
+      'Vault car. Convergence is behind you.',
       'The Core is exposed ahead.'
     ])
   }
@@ -2040,14 +2419,13 @@ export function createMovingHeistLevel({
     ...barrierPanels.map(({ z }) => [z + PANEL_LEN / 2, PANEL_LEN + 0.35]),
     [pitZ, CARGO_PIT.halfZ * 2 + 0.2],
     ...dropGates.map(({ z }) => [z, 0.9]),
-    [bridgeZ, 3.0],
-    [slamGateZ, 1.2],
-    [mechBladeZ, 1.4],
-    [clampDoorZ, 0.8],
-    [gauntletSlowZ, 1.2],
-    [gauntletGhostGateZ, 0.8],
-    [gauntletBridgeZ, 3.0],
-    [gauntletFreezeZ, 1.4]
+    ...railCrates.map(({ machine }) => [machine.z, RAIL_CRATE_D + 0.4]),
+    ...mechPlatforms.map(({ z, halfZ }) => [z, halfZ * 2 + 0.2]),
+    ...slideDoors.map(({ machine }) => [machine.z, 0.8]),
+    ...wallPanelPairs.map(({ machine }) => [machine.z, 0.8]),
+    ...cageGates.map(({ z }) => [z, CAGE_DEPTH + 0.3]),
+    [switchDoor.z, 0.8],
+    [exitDoor.z, 0.8]
   ]
   for (const [z, depth, lane] of chokepoints) addChokepoint(z, depth, lane)
 
@@ -2056,6 +2434,8 @@ export function createMovingHeistLevel({
   useObstacles(corridorObstacles)
 
   const orb = core.getObjectByName('chrono-core-orb')
+  const coreRingA = core.getObjectByName('chrono-core-ring-a')
+  const coreRingB = core.getObjectByName('chrono-core-ring-b')
   const halo = core.getObjectByName('chrono-core-halo')
   let elapsed = 0
 
@@ -2066,14 +2446,14 @@ export function createMovingHeistLevel({
       section, bounds: { ...bounds }, lastCheckpointZ,
       abilityState: { ...abilityState }, interfaceTaken, ghostTaken, freezeTaken, rewindTaken,
       relayLogged, relaySolved, relayInput: [...relayInput],
-      bridgeY, bridgeRepaired, clampReleased, hatchRepaired,
-      gauntletCleared: { ...gauntletCleared }, gauntletBridgeY, gauntletGhostGateOpen,
+      hatchRepaired,
+      switchDoorLatched: switchDoor.latched, exitDoorLatched: exitDoor.latched, drawbridgeLatched,
       hazards: checkpointHazards.map((hazard) => hazard.getSnapshot())
     }
     return () => {
       section = saved.section
       setBounds(saved.bounds)
-      useObstacles(section === 'roof' || section === 'vault' ? [] : corridorObstacles)
+      useObstacles(section === 'roof' ? roofObstacles : section === 'vault' ? vaultObstacles : corridorObstacles)
       lastCheckpointZ = saved.lastCheckpointZ
       corridorStealth.reset()
       checkpointHazards.forEach((hazard, index) => hazard.restoreSnapshot(saved.hazards[index]))
@@ -2096,45 +2476,101 @@ export function createMovingHeistLevel({
       boardReveal = relayLogged ? 1 : 0
       relayGateOpen = relaySolved ? 1 : 0
       applyRouteDoor()
-      bridgeY = saved.bridgeY
-      bridgeRepaired = saved.bridgeRepaired
-      mechBridge.position.y = bridgeY
-      clampReleased = saved.clampReleased
-      clampDoorOpen = clampReleased ? 1 : 0
-      clampDoor.position.y = 1.05 + clampDoorOpen * 2.2
-      clampLampMat.color.setHex(clampReleased ? 0x10b981 : 0xef4444)
-      clampLampMat.emissive.copy(clampLampMat.color)
-      slamGateY = clampReleased ? 3 : 0.75
-      slamGate.position.y = slamGateY
-      const blockDepth = clampReleased ? 0 : 0.48
-      padBlockObstacle.minZ = slamGateZ - blockDepth
-      padBlockObstacle.maxZ = slamGateZ + blockDepth
       hatchRepaired = saved.hatchRepaired
-      Object.assign(gauntletCleared, saved.gauntletCleared)
-      gauntletBridgeY = saved.gauntletBridgeY
-      gauntletBridge.position.y = gauntletBridgeY
-      gauntletGhostGateOpen = saved.gauntletGhostGateOpen
-      gauntletGhostGate.position.y = 0.9 + gauntletGhostGateOpen * 2.0
+      switchDoor.latched = saved.switchDoorLatched
+      exitDoor.latched = saved.exitDoorLatched
+      for (const door of [switchDoor, exitDoor]) {
+        door.open = door.latched ? 1 : 0
+        door.apply()
+      }
       rearmTimers.hatch = 0
       taken = false
       destabT = 0
       failCooldown = 0
       gustPhase = 0
-      sweptTime = 0
+      zipRide = -1
+      drawbridgeLatched = saved.drawbridgeLatched
+      drawbridgeDown = drawbridgeLatched ? 1 : 0
       root.rotation.z = 0
       root.position.y = 0
     }
   }
 
+  // Only the lights nearest the player are real; see core/light-pool.js.
+  const lightPool = createLightPool({ root, size: 12 })
+
+  // Dev start (main.js ?start=<carriage>): begin at a later carriage with
+  // everything before it already done — its ability collected, its door
+  // solved, and its briefings marked as seen.
+  const STAGES = ['passenger', 'security', 'relay', 'cargo', 'mechanical', 'convergence', 'roof', 'vault']
+  const startStage = Math.max(0, STAGES.indexOf(startAt))
+  let startPos = new THREE.Vector3(0, 0, spans.passenger.minZ + 2.2)
+  let startObjective = 'Move toward the FRONT of the train — reach Security and acquire the glowing blue Chrono Interface.'
+  if (startStage > 0) {
+    const done = (key) => STAGES.indexOf(key) < startStage
+    if (done('security')) {
+      interfaceTaken = true
+      interfaceBeacon.visible = false
+      unlockAbility('SLOW')
+    }
+    if (done('relay')) {
+      ghostTaken = true
+      ghostPickup.setCollected(true)
+      unlockAbility('GHOST')
+      relayLogged = true
+      relaySolved = true
+      boardReveal = 1
+      relayGateOpen = 1
+      applyRouteDoor()
+    }
+    if (done('cargo')) {
+      freezeTaken = true
+      freezePickup.setCollected(true)
+      unlockAbility('FREEZE')
+      timeSystem.setStrainEnabled(true)
+    }
+    if (done('mechanical')) {
+      rewindTaken = true
+      rewindPickup.setCollected(true)
+      unlockAbility('REWIND')
+    }
+    for (const key of STAGES.slice(0, startStage)) hintsShown.add(key)
+    introShown = true
+    startObjective = `Dev start: ${STAGES[startStage]}`
+    if (STAGES[startStage] === 'vault') {
+      switchDoor.latched = true
+      exitDoor.latched = true
+      drawbridgeLatched = true
+      section = 'vault'
+      setBounds(env.vaultBounds)
+      useObstacles(vaultObstacles)
+      startPos = new THREE.Vector3(0, 0, spans.vault.minZ + 1.1)
+    } else if (STAGES[startStage] === 'roof') {
+      switchDoor.latched = true
+      exitDoor.latched = true
+      section = 'roof'
+      setBounds(env.roofBounds)
+      useObstacles(roofObstacles)
+      startPos = new THREE.Vector3(0, CARRIAGE_ROOF_Y, roof.zStart + 0.8)
+      lastRoofCheckpointZ = startPos.z
+    } else {
+      startPos = new THREE.Vector3(0, 0, spans[STAGES[startStage]].minZ + 1.2)
+      lastCheckpointZ = startPos.z
+    }
+  }
+
   return {
-    objective: 'Move toward the FRONT of the train — reach Security and acquire the glowing blue Chrono Interface.',
+    objective: startObjective,
     checkpoint: {
-      position: new THREE.Vector3(0, 0, spans.passenger.minZ + 2.2),
+      position: startPos,
       yaw: 0,
       restore: captureCheckpointRestore()
     },
     bounds,
     obstacles: activeObstacles,
+    // Roof run only: deck gaps are voids, and bridges / panels stand over them.
+    get supports() { return section === 'roof' ? roofSupports : null },
+    get voids() { return section === 'roof' ? roofVoids : null },
     getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return taken },
 
@@ -2142,6 +2578,7 @@ export function createMovingHeistLevel({
       outdoorEnv.update(delta)
       env.update(delta)
       corridorStealth.update(delta)
+      lightPool.update(player.mesh.position)
       elapsed += delta
       // Draw the player's eye toward the Chrono Interface until collected.
       for (const pickup of powerPickups) {
@@ -2254,50 +2691,11 @@ export function createMovingHeistLevel({
         pp.z = relayGateZ - 0.48
       }
 
-      // Each pad lifts the block between them. Both together latch the exit.
-      const onA = ghost.isOccupying(syncPlateAPos, 0.54) || playerOnPad(syncPlateAPos, 0.54)
-      const onB = ghost.isOccupying(syncPlateBPos, 0.54) || playerOnPad(syncPlateBPos, 0.54)
-      const blockPowered = onA || onB || clampReleased
-      slamGateY += ((blockPowered ? 3.0 : 0.75) - slamGateY) * Math.min(1, delta * 5)
-      slamGate.position.y = slamGateY
-      // Collapse the collision box to zero depth once the block clears a
-      // standing player. It follows the visible lift, including during Freeze.
-      const blockDepth = slamGateY < 2.5 ? 0.48 : 0
-      padBlockObstacle.minZ = slamGateZ - blockDepth
-      padBlockObstacle.maxZ = slamGateZ + blockDepth
-
-      syncPlateAMat.emissive.setHex(onA ? 0x10b981 : 0xf59e0b)
-      syncPlateBMat.emissive.setHex(onB ? 0x10b981 : 0xf59e0b)
-      syncPlateA.position.y = onA ? 0.012 : 0.03
-      syncPlateB.position.y = onB ? 0.012 : 0.03
-
-      if (!clampReleased) {
-        if ((onA || onB) && section === 'interior' && !syncHintShown) {
-          syncHintShown = true
-          hud.showToast('PAD A LIFTS THE BLOCK — summon a Ghost here, then cross to pad B to unlock the exit.', 5500)
-        }
-
-        if (onA && onB) {
-          clampReleased = true
-          clampLampMat.color.setHex(0x10b981)
-          clampLampMat.emissive.setHex(0x10b981)
-          hud.showToast('DRIVE CLAMP RELEASED — the forward bulkhead is open', 2600)
-        }
-      }
-
-      clampDoorOpen +=
-        ((clampReleased ? 1 : 0) - clampDoorOpen) * Math.min(1, delta * 5)
-      clampDoor.position.y = 1.05 + clampDoorOpen * 2.2
-
-      // Interior only: the roof span starts just past the clamp door, and a
-      // stray z-clamp up there would shove the player backwards off the train.
-      if (
-        section === 'interior' &&
-        !clampReleased &&
-        pp.z > clampDoorZ - 0.48 &&
-        pp.z < spans.mechanical.maxZ
-      ) {
-        pp.z = clampDoorZ - 0.48
+      // Rewind outlines: shown while a machine is away from its parked
+      // position and the player is close enough for it to matter.
+      for (const m of rewindMachines) {
+        const show = m.p > 0.02 && Math.abs(pp.z - m.z) < 14
+        for (const outline of m.outlines) outline.visible = show
       }
 
       // Core idle animation and shader reaction.
@@ -2306,6 +2704,9 @@ export function createMovingHeistLevel({
       orb.position.y = 1.34 + Math.sin(elapsed * 1.6) * 0.05
       halo.rotation.z += delta * 1.1
       halo.position.y = orb.position.y
+      coreRingA.rotation.y += delta * 0.6
+      coreRingA.rotation.x = 0.4
+      coreRingB.rotation.x += delta * 0.45
       for (const m of core.userData.shaderMats) {
         if (!m.customUniforms) continue
 
@@ -2336,7 +2737,8 @@ export function createMovingHeistLevel({
           [
             'You’re aboard. Seven cars between you and the Chrono Core, and the Express does not stop for anyone.',
             'Every bulkhead on this train opens from the rear only. Once you’re through one, forward is the only direction left.',
-            'Passenger car. A conductor on the walk — and you have no chrono gear yet. Use the seats for cover and pick your moment.'
+            'First-class carriage. The conductor walks the aisle end to end and pauses at each end — and you have no chrono gear yet.',
+            'Duck into the booths while he passes, move while his back is turned, and make for the front door.'
           ]
         )
         hint(
@@ -2372,9 +2774,9 @@ export function createMovingHeistLevel({
           pp.z,
           spans.mechanical.minZ,
           [
-            'Mechanical. The plank has already fallen into the floor gap. Install Rollback and REWIND it until it is level with the floor.',
-            'Past the plank, pad A lifts the blocking bulkhead. Summon a Ghost on A to hold it up while you cross to pad B.',
-            'Both pads together release the drive clamp into Convergence.'
+            'Mechanical. The machinery in here springs shut as you approach — crates, floor sections, doors and wall panels.',
+            'Install Rollback. REWIND runs a machine back to where it was; the pale outline shows where that is.',
+            'It springs again the moment time runs forward, so be ready to move.'
           ]
         )
         hint(
@@ -2382,8 +2784,8 @@ export function createMovingHeistLevel({
           pp.z,
           spans.convergence.minZ,
           [
-            'Convergence car. The route to the roof is sealed behind a four phase test.',
-            'SLOW the scanner, use a TIME GHOST on the pressure plate, REWIND the fallen span, then FREEZE the rotor.'
+            'Convergence — the last car before the Core. Every Chrono ability, once each, then all four together.',
+            'The roof ladder is past the exit door at the far end. That door only opens while its switch is held.'
           ]
         )
 
@@ -2452,28 +2854,25 @@ export function createMovingHeistLevel({
           }
         }
 
-        // The plank starts in the pit. Retreating never rebuilds it for free.
-        if (
-          Math.abs(pp.z - bridgeZ) < 1.3 &&
-          Math.abs(pp.x) < 1.0 &&
-          bridgeY < 0.05
-        ) {
-          failSoft('The mechanical bridge collapsed — REWIND it!', 'fell')
+        // Mechanical: a machine springing into the player knocks them back;
+        // one that has finished springing simply blocks, through its collider.
+        for (const { machine, box } of [...railCrates, ...slideDoors]) {
+          if (machine.moving && insideBox(box, pp.x, pp.z)) {
+            failSoft('The machinery sprang into you — REWIND it, then move while it is open.')
+          }
         }
-
-        // Extra Mechanical timing obstacle. Crouching genuinely slips under a
-        // high arm here, which is a second answer that costs no energy at all.
-        if (
-          Math.abs(pp.z - mechBladeZ) < 0.62 &&
-          rotorBlocks({
-            angle: mechBladeA,
-            radius: ROTOR_RADIUS,
-            centreY: ROTOR_HUB_Y,
-            playerX: pp.x,
-            playerTopY: topY
-          })
-        ) {
-          failSoft('The turbine blade clipped you!')
+        for (const { machine, leaves } of wallPanelPairs) {
+          if (machine.moving && leaves.some(({ box }) => insideBox(box, pp.x, pp.z))) {
+            failSoft('The wall panels closed on you — REWIND them, then move while they are open.')
+          }
+        }
+        for (const { platform, z, halfZ } of mechPlatforms) {
+          if (
+            Math.abs(pp.z - z) < halfZ - 0.1 &&
+            Math.abs(pp.x - platform.position.x) > MECH_PLATFORM_HALF_X - 0.05
+          ) {
+            failSoft('The floor platform slid away — REWIND it back over the well.', 'fell')
+          }
         }
 
         // Mechanical obstacle 3: the hatch motor fails shut near the ladder.
@@ -2491,108 +2890,122 @@ export function createMovingHeistLevel({
           !hatchRepaired && !hatchBroken && pp.z > spans.convergence.maxZ - 4.0
         ) hatchBroken = true
 
-        if (pp.z > gauntletSlowZ + 0.55 && mode === 'SLOW') gauntletCleared.slow = true
-        if (
-          Math.abs(pp.z - gauntletSlowZ) < 0.48 &&
-          !gauntletCleared.slow && mode !== 'SLOW'
-        ) {
-          failSoft('The phase scanner is too fast — use SLOW to cross it.')
-        }
-        if (
-          Math.abs(pp.z - gauntletSlowZ) < 0.5 &&
-          Math.abs(pp.x - gauntletSlowBeam.position.x) < 0.22 &&
-          !gauntletCleared.slow
-        ) failSoft('The phase scanner caught you — use SLOW.')
-
-        const echoOnGauntletPad = ghost.isOccupying(gauntletPadPos, 0.56)
-        const gauntletPadPressed = echoOnGauntletPad
-        gauntletGhostGateOpen +=
-          ((gauntletPadPressed ? 1 : 0) - gauntletGhostGateOpen) * Math.min(1, delta * 5)
-        gauntletGhostGate.position.y = 0.9 + gauntletGhostGateOpen * 2.0
-        gauntletPad.position.y = gauntletPadPressed ? 0.012 : 0.03
-        if (
-          Math.abs(pp.z - gauntletGhostGateZ) < 0.36 &&
-          gauntletGhostGateOpen < 0.72
-        ) failSoft('The phase gate needs weight on its plate — send a TIME GHOST.')
-        if (pp.z > gauntletGhostGateZ + 0.5 && gauntletGhostGateOpen >= 0.72) {
-          gauntletCleared.ghost = true
+        // Convergence cage gates: only a raised cage is safe to be inside.
+        for (const { z, bottom } of cageGates) {
+          if (Math.abs(pp.z - z) < CAGE_DEPTH / 2 + 0.1 && bottom < topY + 0.05) {
+            failSoft('The cage gate dropped on you — SLOW it to hold the gap open.')
+          }
         }
 
-        if (mode === 'REWIND' && Math.abs(pp.z - gauntletBridgeZ) < 9.0) {
-          gauntletBridgeY = Math.min(0.06, gauntletBridgeY + delta * 3.4)
-          gauntletBridge.position.y = gauntletBridgeY
+        // Twin switches latch their door once both are weighted together.
+        const stationHeld = (station) =>
+          ghost.isOccupying(station.pos, 0.56) || playerOnPad(station.pos, 0.56)
+        switchOne.update(stationHeld(switchOne))
+        switchTwo.update(stationHeld(switchTwo))
+        exitSwitch.update(stationHeld(exitSwitch))
+        if ((switchOne.held || switchTwo.held) && !switchDoor.latched && !switchHintShown) {
+          switchHintShown = true
+          hud.showToast('Switch engaged — its partner must be held at the same moment.', 3200)
         }
-        if (gauntletBridgeY >= 0.05) gauntletCleared.rewind = true
-        if (
-          Math.abs(pp.z - gauntletBridgeZ) < 1.3 &&
-          Math.abs(pp.x) < 1.0 &&
-          gauntletBridgeY < 0.05
-        ) failSoft('The span is broken — REWIND it before crossing.', 'fell')
-
-        if (
-          Math.abs(pp.z - gauntletFreezeZ) < 0.55 &&
-          !gauntletCleared.freeze &&
-          mode !== 'FREEZE'
-        ) failSoft('The rotor blocks the route — use FREEZE to pass it.')
-        if (
-          Math.abs(pp.z - gauntletFreezeZ) < 0.62 &&
-          rotorBlocks({
-            angle: gauntletFreezeA,
-            radius: ROTOR_RADIUS,
-            centreY: ROTOR_HUB_Y,
-            playerX: pp.x,
-            playerTopY: topY
-          })
-        ) failSoft('The convergence rotor clipped you — FREEZE it.')
-        if (pp.z > gauntletFreezeZ + 0.62 && mode === 'FREEZE') {
-          gauntletCleared.freeze = true
+        if (switchOne.held && switchTwo.held && !switchDoor.latched) {
+          switchDoor.latched = true
+          hud.showToast('BOTH SWITCHES HELD — the door is open', 2400)
         }
-      } else if (section === 'roof') {
-        // Slipstream. Slow affects the gust cycle AND the other registered roof
-        // hazards because all of them use scaledDelta.
-        const slowed = mode === 'SLOW'
-        gustPhase += delta * (slowed ? 0.16 : 1)
-        const raw = Math.sin(gustPhase * 1.7)
-        const gust = Math.pow(Math.max(0, raw), 0.6) * (slowed ? 0.24 : 1)
+        // The exit door only stands open while switch 3 is weighted, and
+        // latches once the player is through it.
+        if (!exitDoor.latched && pp.z > exitDoor.z + 0.5) {
+          exitDoor.latched = true
+          hud.setObjective('Climb to the roof — the Chrono Core is in the Vault ahead')
+        }
+        for (const door of [switchDoor, exitDoor]) {
+          const target = door.latched || (door === exitDoor && exitSwitch.held) ? 1 : 0
+          door.open += (target - door.open) * Math.min(1, delta * 4)
+          door.apply()
+          if (door.open < 0.7 && pp.z > door.z - 0.48 && pp.z < door.z + 0.3) {
+            pp.z = door.z - 0.48
+          }
+        }
+      }
 
-        pp.x += gust * 2.35 * delta
+      roofSun.intensity = section === 'roof' ? 2.2 : 0
+      roofSky.intensity = section === 'roof' ? 1.3 : 0
+
+      if (section === 'roof') {
+        // Slipstream streaks pulse with the gusts; SLOW calms them.
+        gustPhase += delta * (mode === 'SLOW' ? 0.16 : 1)
+        const gust = Math.pow(Math.max(0, Math.sin(gustPhase * 1.7)), 0.6)
         roof.streaks.forEach((s) => {
-          s.material.opacity = 0.05 + gust * 0.5
+          s.material.opacity = 0.04 + gust * 0.2
         })
 
-        if (gust > 0.45) {
-          sweptTime += delta * gust * (1 + Math.max(0, Math.abs(pp.x) - 0.55))
-        } else {
-          sweptTime = Math.max(0, sweptTime - delta * 1.7)
+        // Falling through a gap or an opening.
+        if (pp.y < ROOF_Y - 1.0 && zipRide < 0) {
+          failSoft('You fell between the cars.', 'fell')
         }
 
-        if (sweptTime > 1.5) {
-          sweptTime = 0
-          respawn.fail('fell')
-          hud.showToast('Blown off the roof!', 1800)
+        for (const z of roofCheckpoints) {
+          if (pp.z > z && z > lastRoofCheckpointZ && pp.y > ROOF_Y - 0.2) {
+            lastRoofCheckpointZ = z
+            respawn.setCheckpoint(new THREE.Vector3(0, ROOF_Y, z), 0, {
+              restore: captureCheckpointRestore()
+            })
+          }
         }
 
-        const roofArcZ = roofArc.position.z
-        if (
-          Math.abs(pp.z - roofArcZ) < 0.58 &&
-          rotorBlocks({
-            angle: roofArcT * 4.8,
-            radius: ROTOR_RADIUS,
-            centreY: ROTOR_HUB_Y,
-            playerX: pp.x,
-            playerTopY: topY
-          })
-        ) {
-          failSoft('The roof arc caught you — SLOW the timing.')
+        for (const { pair, z } of roofCrates) {
+          if (Math.abs(pp.z - z) < ROOF_CRATE_D / 2 + 0.2 && pp.y < ROOF_Y + 1.1) {
+            for (const ox of [-0.8, 0.8]) {
+              if (Math.abs(pp.x - (pair.position.x + ox)) < ROOF_CRATE_W / 2 + 0.2) {
+                failSoft('A cargo crate ran you down — FREEZE the pair while the gap is on your side.')
+              }
+            }
+          }
         }
 
-        // A low signal arm forces a final crouch before the Vault drop hatch.
-        if (
-          Math.abs(pp.z - lowSignal.position.z) < 0.38 &&
-          !player.isCrouching?.()
-        ) {
-          failSoft('Duck under the roof signal frame!')
+        if (Math.abs(pp.z - VENT_Z) < 0.75 && ventSteam > 0.5) {
+          failSoft('The vents blasted you — FREEZE them while the hatches are shut.')
         }
+
+        // Zipline: the brake only releases while the lever plate is weighted.
+        const leverHeld =
+          ghost.isOccupying(leverPad, 0.56) || playerOnPad(leverPad, 0.56)
+        leverPlate.position.y = leverHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
+        releaseLever.rotation.x = leverHeld ? 0.9 : -0.3
+        zipLampMat.color.setHex(leverHeld ? 0x7ee08a : 0xffb454)
+        zipLampMat.emissive.setHex(leverHeld ? 0x3fbf5a : 0xff9a2a)
+        if (leverHeld && !zipHintShown) {
+          zipHintShown = true
+          hud.showToast('Zipline brake released — it locks again the moment the lever lifts.', 3000)
+        }
+        if (zipRide >= 0) {
+          zipRide += delta
+          const k = Math.min(1, zipRide / ZIP_DURATION)
+          const e = k * k * (3 - 2 * k)
+          const z = zipFrom + (zipTo - zipFrom) * e
+          const y = ROOF_Y - Math.sin(k * Math.PI) * 0.35
+          trolley.position.set(ZIP_X, y + 1.2, z)
+          // Pin the rider to the trolley; the player's own update can't move them.
+          pp.set(ZIP_X - 0.15, y, z)
+          setBounds({ minX: pp.x, maxX: pp.x, minZ: z, maxZ: z })
+          if (k >= 1) {
+            zipRide = -1
+            setBounds(env.roofBounds)
+            player.setPose(new THREE.Vector3(ZIP_X - 0.15, ROOF_Y, zipTo), 0)
+          }
+        } else if (trolley.position.z !== zipFrom && pp.z < zipFrom) {
+          trolley.position.set(ZIP_X, ROOF_Y + 1.2, zipFrom)
+        }
+
+        // Drawbridge lowers while its plate is weighted, and stays down once
+        // the player is across.
+        const plateHeld =
+          ghost.isOccupying(bridgePlatePos, 0.56) || playerOnPad(bridgePlatePos, 0.56)
+        bridgePlate.position.y = plateHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
+        if (!drawbridgeLatched && pp.z > V0 + 0.6 && pp.y > ROOF_Y - 0.2) drawbridgeLatched = true
+        const bridgeTarget = plateHeld || drawbridgeLatched ? 1 : 0
+        drawbridgeDown += (bridgeTarget - drawbridgeDown) * Math.min(1, delta * 2.5)
+        drawbridge.rotation.x = -(1 - drawbridgeDown) * Math.PI / 2
+        placeSupport(drawbridgeSupport, 0, 0.8, gapFrom, V0 + 0.2, drawbridgeDown > 0.93)
       }
     },
 

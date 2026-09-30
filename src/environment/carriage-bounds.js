@@ -16,14 +16,16 @@ export function wallXFor(damaged) {
   return damaged ? WRECK_WALL_X : WALL_X
 }
 
-// Level 2 passenger seating: forward-facing double benches down both sides of
-// a central aisle, with legroom gaps between rows the player can duck into.
-// The seat back sits on the -Z edge. Shared by the meshes and the colliders.
+// Level 2 first-class seating: booths down both sides of a central aisle.
+// Each booth is two benches facing each other across a window table, their
+// backs on the booth's outer ends; the space between the benches is where the
+// player hides. Shared by the meshes and the colliders.
 export const SEAT_INNER_X = 0.85
 export const SEAT_DEPTH = 0.55
 export const SEAT_BACK_DEPTH = 0.14
 export const SEAT_BACK_TOP = 1.15
-const SEAT_PITCH = 1.9
+export const BOOTH_BENCH_OFFSET = 1.0 // bench centre from booth centre
+export const BOOTH_TABLE = { halfX: 0.42, halfZ: 0.34, inset: 0.6 } // centre at ±(wallX - inset)
 
 // Level 2 vintage cars (Security, Route Control): one window bay — window with
 // a trunk below — per entry.
@@ -58,10 +60,10 @@ export function routeControlLayout(half) {
 export const RELAY_BOX_DEPTH = 0.36
 export const RELAY_BOX_WIDTH = 0.6
 
-export function passengerSeatRows(half) {
-  const rows = []
-  for (let z = -half + 3.2; z <= half - 2; z += SEAT_PITCH) rows.push(z)
-  return rows
+export function passengerBooths(half) {
+  const booths = []
+  for (let z = -half + 3.0; z <= half - 1.6; z += 3.0) booths.push(z)
+  return booths
 }
 export const CAB_LENGTH = 8
 
@@ -76,17 +78,49 @@ export const LAYOUT = [
   { key: 'vault', length: 18 }
 ]
 
-// Level 2 lengthens Cargo to fit its six Freeze obstacles. Level 3 keeps the
-// original lengths — its set pieces are placed at fixed world positions.
-const HEIST_LENGTHS = { cargo: 28 }
+// Level 2 lengthens Cargo, Mechanical and Convergence to fit their obstacles.
+// Level 3 keeps the original lengths — its set pieces are placed at fixed
+// world positions.
+const HEIST_LENGTHS = { cargo: 28, mechanical: 30, convergence: 40 }
+
+// Level 2's rooftop run crosses an open freight wagon between Convergence and
+// the Vault. The wagon is never entered; only its deck is walked. Distances
+// are from the wagon's rear end (its span's minZ).
+export const ROOF_RUN = {
+  freightLength: 36,
+  shell: [1.5, 31.5], // wagon body; open gaps before and after it
+  decks: [[1.5, 2.5], [6.7, 11.5], [16.3, 21.6], [26.0, 31.5]],
+  openings: [[2.5, 6.7], [11.5, 16.3], [21.6, 26.0]],
+  vaultDeck: 5.2 // walkable deck at the rear of the Vault roof
+}
 
 export function layoutFor(damaged) {
   if (damaged) return LAYOUT
-  return LAYOUT.map((cfg) => ({ ...cfg, length: HEIST_LENGTHS[cfg.key] ?? cfg.length }))
+  const layout = LAYOUT.map((cfg) => ({ ...cfg, length: HEIST_LENGTHS[cfg.key] ?? cfg.length }))
+  layout.splice(layout.length - 1, 0, { key: 'freight', length: ROOF_RUN.freightLength })
+  return layout
 }
 
-// Level 2 Cargo: the moving-platform pit, in local coordinates.
+// Level 2 floor openings, in local coordinates: the Cargo moving-platform
+// pit, and the rewind-platform pits in Mechanical and Convergence.
 export const CARGO_PIT = { z: 1.5, halfZ: 1.3, halfX: 0.95 }
+export const MECH_PITS = [
+  { z: -5.2, halfZ: 1.3, halfX: 0.95 },
+  { z: 7.6, halfZ: 1.3, halfX: 0.95 }
+]
+export const CONV_PITS = [
+  { z: -7.0, halfZ: 1.3, halfX: 0.95 },
+  { z: 9.5, halfZ: 1.3, halfX: 0.95 }
+]
+// Level 2 Convergence roof hatch, local Z (the ladder stands just behind it).
+export const CONV_HATCH_Z = 18.2
+
+export function floorPits(key, half) {
+  if (key === 'cargo') return [CARGO_PIT]
+  if (key === 'mechanical') return MECH_PITS
+  if (key === 'convergence') return CONV_PITS
+  return []
+}
 
 export function buildCarriageSpans({ damaged = false } = {}) {
   const layout = layoutFor(damaged)
@@ -196,10 +230,16 @@ export function localInteriorBoxes(key, half, wallX = WALL_X) {
     const outer = wallX - 0.08
     const halfX = (outer - SEAT_INNER_X) / 2
     const halfZ = (SEAT_DEPTH + SEAT_BACK_DEPTH) / 2
-    for (const z of passengerSeatRows(half)) {
-      // Seat base is centred on z; the back hangs off its -Z edge.
-      const cz = z - SEAT_BACK_DEPTH / 2
-      for (const s of [-1, 1]) boxes.push(box('seat', s * (SEAT_INNER_X + halfX), cz, halfX, halfZ))
+    for (const zc of passengerBooths(half)) {
+      for (const s of [-1, 1]) {
+        // Seat bases centre on the bench line; each back is on the booth's
+        // outer end, so the footprint shifts outward by half a back.
+        for (const dir of [-1, 1]) {
+          const cz = zc + dir * (BOOTH_BENCH_OFFSET + SEAT_BACK_DEPTH / 2)
+          boxes.push(box('seat', s * (SEAT_INNER_X + halfX), cz, halfX, halfZ))
+        }
+        boxes.push(box('seat', s * (wallX - BOOTH_TABLE.inset), zc, BOOTH_TABLE.halfX, BOOTH_TABLE.halfZ))
+      }
     }
   } else if (key === 'security' && wallX !== WRECK_WALL_X) {
     for (const z of windowBayZs(half)) {
@@ -217,12 +257,24 @@ export function localInteriorBoxes(key, half, wallX = WALL_X) {
       boxes.push(box('crate', wallX - 0.45, z, 0.4, 0.4))
       if ((z | 0) % 2 === 0) boxes.push(box('crate', -(wallX - 0.5), z, 0.4, 0.4))
     }
+  } else if (key === 'mechanical' && wallX !== WRECK_WALL_X) {
+    for (const z of windowBayZs(half)) {
+      for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
+    }
   } else if (key === 'mechanical') {
     boxes.push(box('grate', 0, half - 0.3, 0.35, 0.08))
     boxes.push(box('wheel', -(wallX - 0.16), -half + 3, 0.6, 0.6))
     boxes.push(box('ladder', 0, half - 2.5 - 0.55, 0.28, 0.2))
+  } else if (key === 'vault' && wallX !== WRECK_WALL_X) {
+    for (const z of windowBayZs(half)) {
+      for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
+    }
+  } else if (key === 'convergence' && wallX !== WRECK_WALL_X) {
+    for (const z of windowBayZs(half)) {
+      for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
+    }
   } else if (key === 'convergence') {
-    // The new gauntlet car is kept clear in the minimap; its hazards are dynamic.
+    // Level 3 keeps this car clear in the minimap.
   } else if (key === 'relay' && wallX !== WRECK_WALL_X) {
     const layout = routeControlLayout(half)
     for (const z of layout.bays) {

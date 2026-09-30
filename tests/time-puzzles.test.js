@@ -114,9 +114,9 @@ function installCanvasStub() {
   globalThis.window = { devicePixelRatio: 1, innerWidth: 1280 }
 }
 
-test('Mechanical: plank starts fallen, rollback repairs it, and an anchored ghost lifts the block for traversal', () => {
+test('Mechanical: machines spring on approach, REWIND parks them again, and they spring once time runs on', () => {
   installCanvasStub()
-  const { scene, player, hud, messages, time, tick } = setup()
+  const { scene, player, hud, time, tick } = setup()
   const failures = []
   const level = createMovingHeistLevel({
     scene, player, hud, timeSystem: time,
@@ -126,74 +126,69 @@ test('Mechanical: plank starts fallen, rollback repairs it, and an anchored ghos
     advance() {}
   })
   time.setAbilityAvailability({})
-  const plank = scene.getObjectByName('mechanical-rewind-plank')
-  const padA = scene.getObjectByName('mechanical-sync-pad-a')
-  const padB = scene.getObjectByName('mechanical-sync-pad-b')
-  const clamp = scene.getObjectByName('mechanical-drive-clamp')
-  const block = scene.getObjectByName('mechanical-pad-block')
-  assert.equal(scene.getObjectByName('guard-shielded'), undefined)
-  assert.equal(plank.position.y, -3.2, 'the plank must start down in the pit')
-  assert.equal(block.position.y, 0.75, 'the pad block must start closed')
+  const mech = level.getCarriageVolumes().find((volume) => volume.key === 'mechanical')
+  const center = (mech.minZ + mech.maxZ) / 2
+  const crate = scene.getObjectByName('mechanical-rail-crate-0')
+  const platform = scene.getObjectByName('mechanical-platform-0')
+  const parkedX = crate.position.x
+  assert.ok(parkedX > 1, 'the crate must start parked out of the aisle')
+  assert.ok(Math.abs(platform.position.x) < 1e-9, 'the platform must start over its well')
 
   scene.updateMatrixWorld(true)
   const floor = scene.getObjectByName('floor-mechanical')
-  const ray = new THREE.Raycaster(new THREE.Vector3(0, 2, plank.position.z), new THREE.Vector3(0, -1, 0))
-  assert.equal(ray.intersectObject(floor).length, 0, 'the floor must have a real opening over the fallen plank')
+  const runner = scene.getObjectByName('floor-runner-mechanical')
+  const ray = new THREE.Raycaster(new THREE.Vector3(0, 2, platform.position.z), new THREE.Vector3(0, -1, 0))
+  assert.equal(ray.intersectObject(floor).length, 0, 'the floor must have a real opening under the platform')
+  assert.equal(ray.intersectObject(runner, true).length, 0, 'the decorative runner must not cover the opening')
+  const secondPlatform = scene.getObjectByName('mechanical-platform-1')
+  ray.ray.origin.z = secondPlatform.position.z
+  assert.equal(ray.intersectObject(runner, true).length, 0, 'the second opening must also be visible')
+  const cargoPlatform = scene.getObjectByName('cargo-floor-platform')
+  ray.ray.origin.z = cargoPlatform.position.z
+  assert.equal(ray.intersectObject(scene.getObjectByName('floor-runner-cargo'), true).length, 0,
+    'the cargo opening must not be covered by carpet')
+  ray.ray.origin.z = platform.position.z
   ray.ray.origin.z -= 2
   assert.ok(ray.intersectObject(floor).length > 0, 'the approach floor must remain intact')
+  assert.ok(ray.intersectObject(runner, true).length > 0, 'the runner must remain on the approach floor')
 
-  // Rewinding from another carriage must not solve Mechanical prematurely.
-  player.mesh.position.set(0, 0, plank.position.z - 7)
-  tick(1, 60, level)
-  time.triggerRewind()
-  tick(0.2, 60, level)
-  assert.equal(plank.position.y, -3.2)
-  time.setMode('NORMAL')
-  player.mesh.position.z = plank.position.z - 4
-  tick(15, 60, level)
-  assert.equal(plank.position.y, -3.2, 'waiting or retreating must not restore the plank')
+  // Approaching springs the crate across the aisle; at rest it blocks.
+  player.mesh.position.set(0, 0, center - 10.5)
+  tick(1.5, 60, level)
+  assert.ok(Math.abs(crate.position.x) < 0.05, 'the crate must spring into the aisle')
+  tick(1.5, 60, level, { forward: true })
+  assert.ok(player.mesh.position.z < crate.position.z - 0.5, 'a sprung crate must block the aisle')
+  assert.equal(failures.length, 0, 'walking into a crate at rest blocks rather than fails')
 
-  time.triggerRewind()
-  tick(0.4, 60, level)
-  assert.ok(plank.position.y > -3.2 && plank.position.y < 0, 'rollback must visibly lift the plank')
-  time.setMode('NORMAL')
-  const partialY = plank.position.y
-  tick(2, 60, level)
-  assert.equal(plank.position.y, partialY, 'interrupted rollback must keep its progress')
+  // Rewind runs it back to its parked spot; walk through while it is open.
   time.triggerRewind()
   tick(0.6, 60, level)
-  assert.equal(plank.position.y, 0.06, 'rollback must restore the whole plank')
-  time.setMode('NORMAL')
-  tick(2, 60, level)
-  assert.equal(plank.position.y, 0.06, 'the restored plank must not immediately collapse again')
-  const failuresBeforeCrossing = failures.length
-  player.mesh.position.z = plank.position.z
-  tick(0.5, 60, level)
-  assert.equal(failures.length, failuresBeforeCrossing, 'crossing the restored plank should be safe')
-
-  // A closed block has collision rather than a checkpoint-failure trigger.
-  player.mesh.position.set(0, 0, block.position.z - 1)
+  assert.ok(crate.position.x > parkedX - 0.05, 'rewind must return the crate to its parked position')
   tick(0.5, 60, level, { forward: true })
-  assert.ok(player.mesh.position.z <= block.position.z - 0.47)
+  assert.ok(player.mesh.position.z > crate.position.z + 0.7, 'the player must get past the rewound crate')
+  time.setMode('NORMAL')
+  tick(1.5, 60, level)
+  assert.ok(Math.abs(crate.position.x) < 0.05, 'the crate must spring again once time runs forward')
+  assert.equal(failures.length, 0)
 
-  // Step onto A and summon right away: no five-second stationary recording.
-  player.mesh.position.copy(padA.position).setY(0)
+  // The platform slides off its well as the player nears it.
+  player.mesh.position.set(0, 0, center - 6.9)
+  tick(1.2, 60, level)
+  assert.ok(platform.position.x < -1.5, 'the platform must slide away from the well')
+  player.mesh.position.z = platform.position.z
   tick(0.1, 60, level)
-  assert.ok(clamp.position.y < 1.1, 'one weighted pad must not release the clamp')
-  assert.ok(block.position.y > 0.75, 'the pad must immediately start lifting the visible block')
-  time.triggerGhost()
-  assert.equal(time.getGhost().isOccupying(padA.position, 0.54), true)
-  const failuresBeforePads = failures.length
-  tick(1.5, 60, level, { forward: true })
-  assert.ok(player.mesh.position.z > block.position.z + 0.48, 'the player must walk through the raised block')
-  tick(0.28, 60, level, { left: true })
-  tick(1, 60, level)
-  assert.equal(failures.length, failuresBeforePads, 'crossing the pad block must not respawn the player')
-  assert.ok(clamp.position.y > 3, 'ghost and player together must release the clamp')
-  assert.ok(messages.some((message) => message.startsWith('DRIVE CLAMP RELEASED')))
-  tick(13, 60, level)
-  assert.equal(time.getGhost().isPlaying(), false)
-  assert.ok(clamp.position.y > 3, 'the released clamp must remain open after the echo fades')
+  assert.deepEqual(failures, ['fell'], 'stepping into the open well is a fall')
+
+  // Rewind brings it back under the player's feet. (The stub respawn does
+  // not move the player, so step back out of the well by hand.)
+  player.mesh.position.z = platform.position.z - 2
+  tick(1.3, 60, level)
+  time.triggerRewind()
+  tick(0.5, 60, level)
+  assert.ok(Math.abs(platform.position.x) < 0.05, 'rewind must return the platform over its well')
+  player.mesh.position.z = platform.position.z
+  tick(0.3, 60, level)
+  assert.deepEqual(failures, ['fell'], 'crossing the rewound platform must be safe')
   level.dispose()
   time.dispose()
   delete globalThis.document
@@ -256,7 +251,7 @@ test('Level 2 checkpoints restore collectible abilities and the active section r
     assert.deepEqual(level.bounds, initialBounds)
     assert.deepEqual(level.obstacles, initialObstacles)
     assert.equal(time.getAbilityAvailability().SLOW, false)
-    assert.equal(scene.getObjectByName('mechanical-rewind-plank').position.y, -3.2)
+    assert.ok(scene.getObjectByName('mechanical-rail-crate-0').position.x > 1, 'machines restore to their parked positions')
     respawn.respawn()
     assert.deepEqual(level.bounds, initialBounds)
   } finally {

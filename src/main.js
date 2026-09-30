@@ -453,7 +453,26 @@ function startGame() {
   hud.resetRunTimer()
   hud.setVisible(true)
   keyboardLock.engage()
-  levelManager.enter('Boarding')
+  const devStart = devStartOptions()
+  if (devStart) levelManager.enter(devStart.state, { levelOptions: devStart.levelOptions })
+  else levelManager.enter('Boarding')
+}
+
+// Dev builds only: ?start=<target> makes NEW GAME skip ahead for playtesting.
+//   level2 / level3          — start that level from its beginning
+//   security, relay, cargo,  — start Level 2 at that carriage (or on the
+//   mechanical, convergence,   roof run or in the Vault), with every ability
+//   roof, vault                and door from the earlier cars done
+function devStartOptions() {
+  if (!import.meta.env.DEV) return null
+  const target = new URLSearchParams(window.location.search).get('start')?.toLowerCase()
+  if (!target) return null
+  if (target === 'level2') return { state: 'MovingHeist' }
+  if (target === 'level3') return { state: 'Timewreck' }
+  const carriages = ['passenger', 'security', 'relay', 'cargo', 'mechanical', 'convergence', 'roof', 'vault']
+  if (carriages.includes(target)) return { state: 'MovingHeist', levelOptions: { startAt: target } }
+  console.warn(`?start=${target} is not a known start point`)
+  return null
 }
 
 // Quit to title: tear the run down and rebuild the title screen's backdrop,
