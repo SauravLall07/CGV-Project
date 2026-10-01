@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createHumanoid, PLAYER_PALETTE } from './humanoid.js'
+import { loadDetectiveVisual } from './detective-visual.js'
 import { resolveBoxCollision } from '../core/collision.js'
 
 // -----------------------------------------------------------------------------
@@ -224,6 +225,10 @@ export function createPlayer() {
   let airVelocityZ = 0
   let airborne = false
   let wasJumpHeld = false
+  let wasAirborne = false
+  let jumpStarted = false
+  let timingJump = false
+  let jumpAirborneTime = 0
 
   // Movement flags, lifted out of update()'s locals so the stealth system can
   // read the player's current gait (crouch/run/jump) to scale detectability —
@@ -232,6 +237,37 @@ export function createPlayer() {
   let crouching = false
   let running = false
   let moving = false
+
+  let visual = null
+
+  function setPrimitiveVisible(visible) {
+    body.visible = visible
+    leftArm.visible = visible
+    rightArm.visible = visible
+    leftRig.hip.visible = visible
+    rightRig.hip.visible = visible
+  }
+
+  async function loadVisual(assets) {
+    if (visual) return visual
+    try {
+      visual = await loadDetectiveVisual(assets)
+      group.add(visual.root)
+      setPrimitiveVisible(false)
+    } catch (error) {
+      console.warn('[player] detective FBX failed, keeping humanoid', error)
+      visual = null
+    }
+    return visual
+  }
+
+  function updateVisual(delta) {
+    visual?.update(delta)
+  }
+
+  function playCast() {
+    visual?.playCast()
+  }
 
   function turnToward(dx, dz, delta) {
     const target = Math.atan2(dx, dz)
@@ -351,6 +387,7 @@ export function createPlayer() {
     const jumpHeld = Boolean(keyboard.jump)
     const jumpPressed = jumpHeld && !wasJumpHeld
     wasJumpHeld = jumpHeld
+    jumpStarted = false
 
     crouching = Boolean(keyboard.duck) && !airborne
     running = Boolean(keyboard.run) && moving && !crouching
@@ -393,6 +430,9 @@ export function createPlayer() {
       airVelocityZ = moving ? dz * launchSpeed * JUMP_MOMENTUM : 0
       verticalVelocity = JUMP_SPEED
       airborne = true
+      jumpStarted = true
+      timingJump = true
+      jumpAirborneTime = 0
 
       if (moving) turnToward(dx, dz, delta)
     } else if (moving) {
@@ -430,10 +470,27 @@ export function createPlayer() {
       (crouchTarget - crouchAmount) *
       Math.min(1, delta * CROUCH_BLEND_SPEED)
 
+    if (timingJump) {
+      if (airborne) jumpAirborneTime += delta
+      else if (wasAirborne) {
+        visual?.noteJumpAirtime(jumpAirborneTime)
+        timingJump = false
+        jumpAirborneTime = 0
+      }
+    }
+    wasAirborne = airborne
+
     // -----------------------------------------------------------------------
     // CHARACTER ANIMATION
     // -----------------------------------------------------------------------
-    const blend = Math.min(1, delta * 14)
+    if (visual) {
+      // Locomotion only. mixer.update lives in updateVisual() so it keeps
+      // running from the rAF loop even when this gameplay update is skipped
+      // (title, transition, cinematic).
+      // jumpStarted + moving picks Jump-Running vs Jump-Idle; mixer ticks in updateVisual().
+      visual.setLocomotion({ moving, airborne, crouching, jumpStarted })
+    } else {
+      const blend = Math.min(1, delta * 14)
 
     if (airborne) {
       // Keep pelvis/torso connected and remove crouch offsets while jumping.
@@ -507,6 +564,7 @@ export function createPlayer() {
       leftArm.rotation.x += (leftArmTarget - leftArm.rotation.x) * blend
       rightArm.rotation.x += (rightArmTarget - rightArm.rotation.x) * blend
     }
+    }
 
     // -----------------------------------------------------------------------
     // COLLISION / BOUNDS
@@ -523,6 +581,9 @@ export function createPlayer() {
     mesh: group,
     update,
     setPose,
+    loadVisual,
+    updateVisual,
+    playCast,
     isCrouching: () => crouching,
     isRunning: () => running,
     isAirborne: () => airborne,

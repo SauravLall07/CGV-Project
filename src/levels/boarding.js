@@ -52,7 +52,8 @@ export function createBoardingLevel({
     respawn,
     hud,
     collidables,
-    obstacles: wallColliders
+    obstacles: wallColliders,
+    assets
   })
 
   // -------------------------------------------------------------
