@@ -244,25 +244,35 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
 
     notifyTimeDilation()
     playAbilitySfx('GHOST')
+    player.playCast?.()
     if (hud) hud.showToast(onPad ? 'Ghost holding pad — move ahead! (8 seconds)' : 'Time Ghost summoned!', 1800)
   }
 
   function triggerSlow() {
     const previous = mode
     setMode(TIME_MODES.SLOW)
-    if (mode === TIME_MODES.SLOW && previous !== TIME_MODES.SLOW) playAbilitySfx('SLOW')
+    if (mode === TIME_MODES.SLOW && previous !== TIME_MODES.SLOW) {
+      playAbilitySfx('SLOW')
+      player.playCast?.()
+    }
   }
 
   function triggerFreeze() {
     const previous = mode
     setMode(TIME_MODES.FREEZE)
-    if (mode === TIME_MODES.FREEZE && previous !== TIME_MODES.FREEZE) playAbilitySfx('FREEZE')
+    if (mode === TIME_MODES.FREEZE && previous !== TIME_MODES.FREEZE) {
+      playAbilitySfx('FREEZE')
+      player.playCast?.()
+    }
   }
 
   function triggerRewind() {
     const previous = mode
     setMode(TIME_MODES.REWIND)
-    if (mode === TIME_MODES.REWIND && previous !== TIME_MODES.REWIND) playAbilitySfx('REWIND')
+    if (mode === TIME_MODES.REWIND && previous !== TIME_MODES.REWIND) {
+      playAbilitySfx('REWIND')
+      player.playCast?.()
+    }
   }
 
   function updateUniforms() {

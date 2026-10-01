@@ -1,5 +1,10 @@
 import * as THREE from 'three'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
+import {
+  preloadPoliceVisual,
+  getPoliceTemplate,
+  createPoliceGuardVisual
+} from '../entities/police-visual.js'
 import { disposeObject } from '../core/dispose.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { resolveBoxCollision, resolveCircleCollision } from '../core/collision.js'
@@ -30,6 +35,7 @@ const PLAYER_BODY_RADIUS = 0.32
 const GUARD_BUMP_RADIUS = GUARD_BODY_RADIUS + PLAYER_BODY_RADIUS
 const PLAYER_STAND_DETECTION_HEIGHT = 1.2
 const PLAYER_CROUCH_DETECTION_HEIGHT = 0.72
+const GUARD_FALLBACK_LIGHT_Y = 1.55
 
 // Proximity at which a guard abandons its patrol routine entirely and hard-
 // locks onto the player, regardless of which way it's currently facing —
@@ -74,8 +80,12 @@ export function createStealthSystem({
   // Optional. When supplied, guards / cameras run on chrono-scaled time, so
   // Slow and Freeze actually affect them. Detectors created with
   // `shielded: true` opt back out and keep running on real time.
-  timeSystem = null
-}) {  let suspicion = 0
+  timeSystem = null,
+  // Optional asset registry. Supplied so guards can swap their placeholder
+  // humanoid for the police FBX visual once it finishes loading.
+  assets = null
+}) {
+  let suspicion = 0
   const maxSuspicion = 100
   const suspicionRiseRate = 45 // percent per second in line of sight
   const suspicionDecayRate = 22 // percent per second in shadow/cover
@@ -85,6 +95,7 @@ export function createStealthSystem({
   const laserGrids = []
 
   const raycaster = new THREE.Raycaster()
+  if (assets) preloadPoliceVisual(assets)
 
   // Every guard ray starts at the guard's eyes and is at most this long, so
   // only the collidables near the guard are tested; see core/near-raycast.js.
@@ -130,11 +141,13 @@ export function createStealthSystem({
     shielded = false,
     distractible = true
   }) {
-    const { group, body, leftArm, rightArm, leftLeg, rightLeg } = createHumanoid(GUARD_PALETTE)
+    // The body is attached separately below — either the police FBX visual or
+    // the procedural humanoid as a stand-in until it loads.
+    const group = new THREE.Group()
     group.name = shielded ? 'guard-shielded' : 'guard'
 
     const { mesh: visionCone, coneMat } = createVisionConeMesh(GUARD_VISION_DISTANCE, Math.PI / 3.2)
-    visionCone.position.set(0, 1.55, 0)
+    visionCone.position.set(0, GUARD_FALLBACK_LIGHT_Y, 0)
     group.add(visionCone)
 
     // Suspicion status beacon indicator above guard hat
@@ -187,11 +200,13 @@ export function createStealthSystem({
       shieldMat,
       shieldPulse: 0,
       group,
-      body,
-      leftArm,
-      rightArm,
-      leftLeg,
-      rightLeg,
+      body: null,
+      leftArm: null,
+      rightArm: null,
+      leftLeg: null,
+      rightLeg: null,
+      visual: null,
+      primitiveRoot: null,
       coneMat,
       visionCone,
       coneDistance: GUARD_VISION_DISTANCE,
@@ -208,6 +223,52 @@ export function createStealthSystem({
       scanBase: 0, // heading the guard sweeps around while waiting at a waypoint
       stridePhase: 0,
       lookAroundTimer: 0
+    }
+
+    function attachPrimitive() {
+      if (guard.primitiveRoot || guard.visual) return
+      const human = createHumanoid(GUARD_PALETTE)
+      human.group.name = 'guard-primitive'
+      group.add(human.group)
+      guard.primitiveRoot = human.group
+      guard.body = human.body
+      guard.leftArm = human.leftArm
+      guard.rightArm = human.rightArm
+      guard.leftLeg = human.leftLeg
+      guard.rightLeg = human.rightLeg
+    }
+
+    function attachVisual(tmpl) {
+      if (!tmpl || guard.visual) return
+      const visual = createPoliceGuardVisual(tmpl)
+      if (!visual) return
+      if (guard.primitiveRoot) {
+        group.remove(guard.primitiveRoot)
+        disposeObject(guard.primitiveRoot)
+        guard.primitiveRoot = null
+        guard.body = null
+        guard.leftArm = null
+        guard.rightArm = null
+        guard.leftLeg = null
+        guard.rightLeg = null
+      }
+      guard.visual = visual
+      group.add(visual.root)
+      group.updateMatrixWorld(true)
+      syncVisionConeToTorch(guard)
+    }
+
+    const ready = getPoliceTemplate()
+    if (ready) {
+      attachVisual(ready)
+    } else {
+      attachPrimitive()
+      if (assets) {
+        preloadPoliceVisual(assets).then((tmpl) => {
+          if (!guards.includes(guard)) return
+          attachVisual(tmpl)
+        })
+      }
     }
 
     guards.push(guard)
@@ -397,16 +458,31 @@ export function createStealthSystem({
   }
   const coneDir = new THREE.Vector3()
   const coneEye = new THREE.Vector3()
+  const coneLocal = new THREE.Vector3()
+
+  function guardLightOrigin(guard, target) {
+    if (guard.visual?.getBeamWorldPosition?.(target)) return target
+    return target.set(
+      guard.group.position.x,
+      guard.group.position.y + GUARD_FALLBACK_LIGHT_Y,
+      guard.group.position.z
+    )
+  }
+
+  function syncVisionConeToTorch(guard) {
+    if (!guard.visual?.getBeamWorldPosition?.(coneLocal)) {
+      guard.visionCone.position.set(0, GUARD_FALLBACK_LIGHT_Y, 0)
+      return
+    }
+    guard.group.worldToLocal(coneLocal)
+    guard.visionCone.position.copy(coneLocal)
+  }
 
   function checkGuardDetection(guard, playerPos) {
     if (!playerPos) return false
 
-    // Guard eyes
-    guardEyePos.set(
-      guard.group.position.x,
-      guard.group.position.y + 1.55,
-      guard.group.position.z
-    )
+    // Torch lens if the FBX visual is attached; primitive fallback is head height.
+    guardLightOrigin(guard, guardEyePos)
 
     // Important:
     // crouching changes the point the guard is trying to see.
@@ -555,11 +631,7 @@ export function createStealthSystem({
       return false
     }
 
-    guardEyePos.set(
-      guard.group.position.x,
-      guard.group.position.y + 1.55,
-      guard.group.position.z
-    )
+    guardLightOrigin(guard, guardEyePos)
 
     playerEyePos.set(
       playerPos.x,
@@ -691,6 +763,7 @@ export function createStealthSystem({
     guards.forEach((guard) => {
       // A shielded guard ignores the chrono field entirely.
       const gd = guard.shielded ? delta : scaledDelta
+      const prevStride = guard.stridePhase
 
       const isSeeingPlayer = checkGuardDetection(guard, playerPos)
       const isLockedRange = checkGuardLockOn(guard, playerPos)
@@ -874,9 +947,27 @@ export function createStealthSystem({
         guard.stridePhase *= Math.max(0, 1 - gd * 10)
       }
 
-      // Limb swing animation
+      // Vision cone occlusion along the current facing, from the torch lens.
+      if (guard.visual) {
+        // Walk clip only while stridePhase is advancing. Scan/turn/alert/search
+        // decay stridePhase — play the idle looking clip instead.
+        guard.visual.setWalking(guard.stridePhase > prevStride + 1e-6)
+        // Chrono-scaled, not raw delta: a frozen guard has to look frozen, and
+        // a shielded one keeps moving at full speed as the visible tell.
+        guard.visual.update(gd)
+        guard.group.updateMatrixWorld(true)
+      } else if (guard.leftLeg && guard.rightLeg && guard.leftArm && guard.rightArm && guard.body) {
+        const swing = Math.sin(guard.stridePhase) * STRIDE_AMPLITUDE
+        guard.leftLeg.rotation.x = swing
+        guard.rightLeg.rotation.x = -swing
+        guard.leftArm.rotation.x = -swing * 0.8
+        guard.rightArm.rotation.x = swing * 0.8
+        guard.body.position.y = Math.abs(Math.sin(guard.stridePhase)) * BOB_HEIGHT
+      }
+
+      syncVisionConeToTorch(guard)
       coneDir.set(Math.sin(guard.facing), 0, Math.cos(guard.facing))
-      coneEye.set(guard.group.position.x, guard.group.position.y + 1.55, guard.group.position.z)
+      guardLightOrigin(guard, coneEye)
       raycaster.set(coneEye, coneDir)
       raycaster.far = guard.coneDistance
       let coneHitDist = guard.coneDistance
@@ -884,14 +975,6 @@ export function createStealthSystem({
         if (hit.distance < coneHitDist) coneHitDist = hit.distance
       }
       guard.visionCone.scale.setScalar(THREE.MathUtils.clamp(coneHitDist / guard.coneDistance, 0.05, 1))
-
-      // Limb swing animation
-      const swing = Math.sin(guard.stridePhase) * STRIDE_AMPLITUDE
-      guard.leftLeg.rotation.x = swing
-      guard.rightLeg.rotation.x = -swing
-      guard.leftArm.rotation.x = -swing * 0.8
-      guard.rightArm.rotation.x = swing * 0.8
-      guard.body.position.y = Math.abs(Math.sin(guard.stridePhase)) * BOB_HEIGHT
 
       // While the chrono field is up, the shield ring pulses hard — that is
       // the moment the player needs to understand this guard is exempt.
@@ -1005,6 +1088,11 @@ export function createStealthSystem({
 
   function dispose() {
     guards.forEach((g) => {
+      if (g.visual) {
+        g.group.remove(g.visual.root)
+        g.visual.dispose()
+        g.visual = null
+      }
       scene.remove(g.group)
       disposeObject(g.group)
     })

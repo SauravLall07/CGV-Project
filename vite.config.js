@@ -95,5 +95,6 @@ function modelWorkshopPlugin() {
 // department LAMP server, not from the domain root.
 export default defineConfig({
   base: './',
+  assetsInclude: ['**/*.fbx'],
   plugins: [modelWorkshopPlugin()]
 })
