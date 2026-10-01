@@ -476,7 +476,6 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
 
     updateUniforms()
   }
-
   function clearTransientState() {
     setMode(TIME_MODES.NORMAL)
     ghost.cancel()
@@ -489,22 +488,50 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     uniforms.uTime.value = 0
   }
 
-  // Normal level progression carries remaining energy, but grants a 50-point
-  // floor so the next puzzle cannot begin in an unusable state. Restarts and
-  // new runs use the default and receive the complete initial kit.
+  function clearRegisteredState() {
+    registered.forEach((entry) => {
+      entry.snapshots?.splice?.(0)
+      entry.accumulator = 0
+
+      entry.options?.onSlow?.(false)
+      entry.options?.onFreeze?.(false)
+      entry.options?.onRewind?.(false)
+    })
+  }
+
+  // Normal level progression carries remaining energy, but grants a
+  // checkpoint-energy floor so the next puzzle cannot begin unusable.
+  //
+  // A fresh run/restarter receives the full initial ability kit.
   function resetForLevel({ preserveEnergy = false } = {}) {
     clearTransientState()
+
+    // Reset any objects still carrying time-manipulation state before their
+    // level registrations are discarded.
+    clearRegisteredState()
     registered.clear()
     ghostPads.clear()
     setStrainEnabled(false)
     levelMultiplier = 1.0
     availability = { ...ALL_ABILITIES }
-    energy = preserveEnergy ? Math.max(energy, CHECKPOINT_ENERGY_FLOOR) : MAX_ENERGY
+
+    energy = preserveEnergy
+      ? Math.max(energy, CHECKPOINT_ENERGY_FLOOR)
+      : MAX_ENERGY
+
     updateUniforms()
   }
 
   function resetForRun() {
-    resetForLevel()
+    resetForLevel({
+      preserveEnergy: false
+    })
+  }
+
+  // Compatibility name used by the Level-1 branch/main.js.
+  // Both names now perform exactly the same full-run reset.
+  function resetRun() {
+    resetForRun()
   }
 
   function captureCheckpointState() {
@@ -515,26 +542,27 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     }
   }
 
-  // Puzzle state is restored by the level-owned checkpoint callback. Once it
-  // has done so, discard every pre-death recording and seed a fresh rewind
-  // timeline from the safe checkpoint state.
+  // Puzzle/world state is restored by the level-owned checkpoint callback.
+  // Time manipulation history, however, must be discarded so the player
+  // cannot rewind back into the life they just lost.
   function resetForCheckpoint(snapshot = captureCheckpointState()) {
     clearTransientState()
     strain = 0
     freezeLockout = 0
-    energy = Math.max(snapshot.energy, CHECKPOINT_ENERGY_FLOOR)
-    availability = { ...snapshot.availability }
-    levelMultiplier = snapshot.levelMultiplier
+    energy = Math.max(snapshot?.energy ?? energy, CHECKPOINT_ENERGY_FLOOR)
+    availability = snapshot?.availability ? { ...snapshot.availability } : { ...availability }
+    levelMultiplier = snapshot?.levelMultiplier ?? levelMultiplier
     for (const entry of registered) {
-      entry.snapshots.length = 0
-      const snap = captureSnapshot(entry)
-      if (snap) entry.snapshots.push(snap)
+      entry.snapshots?.splice?.(0)
+      entry.accumulator = 0
     }
+    captureAllSnapshots(0)
     updateUniforms()
   }
 
   function dispose() {
     resetForRun()
+
     if (ghost) {
       scene.remove(ghost.mesh)
       ghost.dispose()
@@ -549,13 +577,15 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     setAbilityAvailability,
     getAbilityAvailability,
     setStrainEnabled,
+    resetRun,
     resetForLevel,
     resetForRun,
     resetForCheckpoint,
     captureCheckpointState,
-    triggerSlow,
-    triggerFreeze,
-    triggerRewind,
+
+    triggerSlow: () => setMode(TIME_MODES.SLOW),
+    triggerFreeze: () => setMode(TIME_MODES.FREEZE),
+    triggerRewind: () => setMode(TIME_MODES.REWIND),
     triggerGhost,
     resetGhost,
     getMode: () => mode,
@@ -568,9 +598,13 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     getFreezeLockout: () => freezeLockout,
     getGhost: () => ghost,
     getUniforms: () => uniforms,
+
     warmGhost(renderer, camera) {
-      if (ghost && ghost.warm) ghost.warm(renderer, scene, camera)
+      if (ghost && ghost.warm) {
+        ghost.warm(renderer, scene, camera)
+      }
     },
+
     update,
     dispose
   }

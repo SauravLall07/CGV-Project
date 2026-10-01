@@ -25,6 +25,9 @@ const RUN_LEAN = 0.13
 const GRAVITY = 18
 const JUMP_SPEED = 6.4
 const JUMP_MOMENTUM = 0.8
+const AIR_CONTROL = 8
+const PLAYER_COLLISION_RADIUS = 0.18
+const MAX_PLANAR_STEP = 0.08
 
 // -----------------------------------------------------------------------------
 // CROUCH POSE
@@ -39,6 +42,12 @@ const CROUCH_TORSO_LEAN = 0.24
 const CROUCH_STRIDE_SCALE = 0.25
 const CROUCH_ARM_SWING_SCALE = 0.35
 const CROUCH_BLEND_SPEED = 10
+// The maintenance vent is only 1.34 m high. Normal crouching remains the
+// ordinary stealth pose; while actually inside that vent the legs fold much
+// deeper so the hat/head stays visibly below the roof.
+const VENT_CROUCH_HIP_ANGLE = -1.55
+const VENT_CROUCH_KNEE_ANGLE = 2.32
+const VENT_CROUCH_TORSO_LEAN = 0.48
 
 // -----------------------------------------------------------------------------
 // HELPERS FOR THE ARTICULATED LEG REPLACEMENT
@@ -292,9 +301,11 @@ export function createPlayer() {
   // crouch angles. This is the key to the pose: the knees bend while the feet
   // stay close to their standing height instead of the torso separating from
   // the legs.
-  function crouchPelvisDrop(amount) {
-    const hipAngle = CROUCH_HIP_ANGLE * amount
-    const kneeAngle = CROUCH_KNEE_ANGLE * amount
+  function crouchPelvisDrop(amount, deepVent = false) {
+    const hipBase = deepVent ? VENT_CROUCH_HIP_ANGLE : CROUCH_HIP_ANGLE
+    const kneeBase = deepVent ? VENT_CROUCH_KNEE_ANGLE : CROUCH_KNEE_ANGLE
+    const hipAngle = hipBase * amount
+    const kneeAngle = kneeBase * amount
 
     const l1 = (leftRig.thighLength + rightRig.thighLength) * 0.5
     const l2 = (leftRig.shinLength + rightRig.shinLength) * 0.5
@@ -342,26 +353,60 @@ export function createPlayer() {
 
   function inVoid(x, z, voids) {
     if (!voids) return false
+
     for (const v of voids) {
-      if (x > v.minX && x < v.maxX && z > v.minZ && z < v.maxZ) return true
+      if (
+        x > v.minX &&
+        x < v.maxX &&
+        z > v.minZ &&
+        z < v.maxZ
+      ) {
+        return true
+      }
     }
+
     return false
   }
 
   function supportTopAt(x, y, z, supports) {
     if (!supports) return null
+
     let top = null
+
     for (const s of supports) {
-      if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue
+      if (
+        x < s.minX ||
+        x > s.maxX ||
+        z < s.minZ ||
+        z > s.maxZ
+      ) {
+        continue
+      }
+
       const sy = s.y
+
       if (y >= sy - 1.0 && y <= sy + 0.55) {
-        if (top == null || sy > top) top = sy
+        if (top == null || sy > top) {
+          top = sy
+        }
       }
     }
+
     return top
   }
 
-  function update(delta, { keyboard, cameraYaw, bounds, obstacles, supports, voids }) {
+  function update(
+    delta,
+    {
+      keyboard,
+      cameraYaw,
+      bounds,
+      obstacles,
+      groundHeightAt,
+      supports,
+      voids
+    }
+  ) {
     const sin = Math.sin(cameraYaw)
     const cos = Math.cos(cameraYaw)
 
@@ -390,16 +435,58 @@ export function createPlayer() {
     jumpStarted = false
 
     crouching = Boolean(keyboard.duck) && !airborne
+    const deepVentCrouch = crouching && Boolean(group.userData.tightCrouchCamera)
     running = Boolean(keyboard.run) && moving && !crouching
 
-    if (!airborne) groundY = group.position.y
+    function sampleGroundHeight(fallback) {
+      if (typeof groundHeightAt !== 'function') return fallback
+      const sampled = groundHeightAt(group.position.x, group.position.z, fallback)
+      return Number.isFinite(sampled) ? sampled : fallback
+    }
+
+    // Move in short X/Z substeps so thin wall colliders cannot be tunneled
+    // through on a long/slow frame. The player is treated as a small circle
+    // rather than a mathematical point, which also keeps the visible body out
+    // of walls and corners.
+    function movePlanar(moveX, moveZ) {
+      const distance = Math.hypot(moveX, moveZ)
+      const steps = Math.max(1, Math.ceil(distance / MAX_PLANAR_STEP))
+      const stepX = moveX / steps
+      const stepZ = moveZ / steps
+
+      for (let i = 0; i < steps; i++) {
+        group.position.x += stepX
+        group.position.z += stepZ
+        if (obstacles) resolveBoxCollision(group.position, obstacles, PLAYER_COLLISION_RADIUS)
+      }
+    }
+
+    if (!airborne) {
+      groundY = sampleGroundHeight(group.position.y)
+      group.position.y = groundY
+    }
 
     // -----------------------------------------------------------------------
     // MOVEMENT / JUMP PHYSICS
     // -----------------------------------------------------------------------
     if (airborne) {
-      group.position.x += airVelocityX * delta
-      group.position.z += airVelocityZ * delta
+      // Allow controlled air movement. Previously the X/Z velocity was captured
+      // only on the jump-start frame, so jumping first and then pressing a
+      // direction left the player hanging vertically with no way to clear the
+      // Passageway 3 laser rows.
+      if (moving) {
+        const desiredSpeed = MOVE_SPEED * (running ? RUN_MULTIPLIER : 1) * JUMP_MOMENTUM
+        const control = Math.min(1, delta * AIR_CONTROL)
+        airVelocityX += (dx * desiredSpeed - airVelocityX) * control
+        airVelocityZ += (dz * desiredSpeed - airVelocityZ) * control
+      }
+
+      movePlanar(airVelocityX * delta, airVelocityZ * delta)
+
+      // A jump can cross a staircase/ramp. Sample the floor underneath the
+      // player's current X/Z so landing follows the connector instead of the
+      // take-off height.
+      groundY = sampleGroundHeight(groundY)
 
       verticalVelocity -= GRAVITY * delta
       group.position.y += verticalVelocity * delta
@@ -442,8 +529,14 @@ export function createPlayer() {
 
       const distance = MOVE_SPEED * movementMultiplier * delta
 
-      group.position.x += dx * distance
-      group.position.z += dz * distance
+      movePlanar(dx * distance, dz * distance)
+
+      // Flat levels simply return the fallback. Stair-enabled levels can return
+      // a local floor height, allowing smooth vertical traversal while the
+      // rendered staircase remains visibly stepped.
+      groundY = sampleGroundHeight(group.position.y)
+      group.position.y = groundY
+
       turnToward(dx, dz, delta)
 
       stridePhase += distance * STRIDE_FREQUENCY
@@ -521,8 +614,8 @@ export function createPlayer() {
       const leftWalkKnee = Math.max(0, stride) * 0.38
       const rightWalkKnee = Math.max(0, -stride) * 0.38
 
-      const crouchHip = CROUCH_HIP_ANGLE * crouchAmount
-      const crouchKnee = CROUCH_KNEE_ANGLE * crouchAmount
+      const crouchHip = (deepVentCrouch ? VENT_CROUCH_HIP_ANGLE : CROUCH_HIP_ANGLE) * crouchAmount
+      const crouchKnee = (deepVentCrouch ? VENT_CROUCH_KNEE_ANGLE : CROUCH_KNEE_ANGLE) * crouchAmount
 
       // Reduce the normal walk swing as the character gets deeper into the
       // crouch, but keep enough alternating motion to read as crouch-walking.
@@ -539,7 +632,7 @@ export function createPlayer() {
         rightWalkKnee * (1 - crouchAmount * 0.6) +
         hipSwing * crouchAmount * 0.25
 
-      const hipDrop = crouchPelvisDrop(crouchAmount)
+      const hipDrop = crouchPelvisDrop(crouchAmount, deepVentCrouch)
       const pelvisBob = bob * (1 - crouchAmount * 0.5)
       const pelvisOffset = pelvisBob - hipDrop
 
@@ -553,7 +646,7 @@ export function createPlayer() {
 
       const torsoTarget = running
         ? RUN_LEAN
-        : CROUCH_TORSO_LEAN * crouchAmount
+        : (deepVentCrouch ? VENT_CROUCH_TORSO_LEAN : CROUCH_TORSO_LEAN) * crouchAmount
 
       body.rotation.x += (torsoTarget - body.rotation.x) * Math.min(1, delta * 9)
 
@@ -569,7 +662,7 @@ export function createPlayer() {
     // -----------------------------------------------------------------------
     // COLLISION / BOUNDS
     // -----------------------------------------------------------------------
-    if (obstacles) resolveBoxCollision(group.position, obstacles)
+    if (obstacles) resolveBoxCollision(group.position, obstacles, PLAYER_COLLISION_RADIUS)
 
     if (bounds) {
       group.position.x = THREE.MathUtils.clamp(group.position.x, bounds.minX, bounds.maxX)

@@ -176,6 +176,14 @@ export function createLevelManager({
     if (!transitioning && current?.update) current.update(delta)
   }
 
+  // One-shot gameplay actions that belong to the active level (for example the
+  // Passageway 2 distraction throw) are forwarded here instead of making main.js
+  // know which level currently owns them.
+  function handleAction(action, payload) {
+    if (!current || typeof current.handleAction !== 'function') return false
+    return Boolean(current.handleAction(action, payload))
+  }
+
   function dispose() {
     unload()
   }
@@ -186,6 +194,7 @@ export function createLevelManager({
     unload,
     advance,
     update,
+    handleAction,
     dispose,
     getState: () => currentState,
     isTransitioning: () => transitioning,
@@ -195,6 +204,9 @@ export function createLevelManager({
     },
     get obstacles() {
       return current && current.obstacles ? current.obstacles : null
+        },
+    get groundHeightAt() {
+      return current && current.groundHeightAt ? current.groundHeightAt : null
     },
     get supports() {
       return current && current.supports ? current.supports : null

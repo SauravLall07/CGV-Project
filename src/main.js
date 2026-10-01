@@ -208,14 +208,24 @@ keyboard.onAction('slow', () => timeSystem.triggerSlow())
 keyboard.onAction('freeze', () => timeSystem.triggerFreeze())
 keyboard.onAction('rewind', () => timeSystem.triggerRewind())
 keyboard.onAction('ghost', () => timeSystem.triggerGhost())
+
 keyboard.onAction('restart', () => {
-  if (gameStarted && !credits.isOpen) levelManager.restart()
+  if (gameStarted && !credits.isOpen) {
+    respawn.resetLives()
+    levelManager.restart()
+  }
+})
+
+// Passage-specific action routing. Boarding owns the distraction mechanic, but
+// the keyboard binding remains global/rebindable like every other action.
+keyboard.onAction('distract', () => {
+  if (gameStarted) levelManager.handleAction('distract')
 })
 
 // First-person / third-person toggle (V by default, rebindable like the rest).
 keyboard.onAction('toggleView', () => playerView.toggle())
 
-// Checkpoint resets are one of the run stats the pause menu reports.
+// Checkpoint resets are one of the run stats the pause
 let resetCount = 0
 respawn.onFail(() => { resetCount += 1 })
 
@@ -252,6 +262,19 @@ if (import.meta.env.DEV) {
   window.musicSystem = musicSystem
 }
 
+// Losing all three lives is a true run reset: rebuild Level 1, restore global
+// run resources/stats and discard every level-owned puzzle/interaction state.
+// Tutorial walkthrough memory intentionally lives outside this reset.
+respawn.setGameOverHandler(() => {
+  elapsed = 0
+  resetCount = 0
+  timeSystem.resetRun?.()
+  playerView.reset()
+  hud.setSuspicion(0)
+  respawn.resetLives()
+  levelManager.enter('Boarding')
+})
+
 // ---------------------------------------------------------------
 // Main Menu
 // ---------------------------------------------------------------
@@ -265,6 +288,16 @@ let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
 let titleBackdrop = null // the silently-built station behind the title screen
 let modelEditor = null // DEV-only live scene/model workshop (F2)
+
+// Large walkthrough popups freeze gameplay and silence actions, but keep the
+// rendered scene visible behind the guide. The HUD captures Enter/Space itself
+// so those keys dismiss the guide without also triggering a gameplay action.
+hud.onTutorialStateChange((open) => {
+  const controlsEnabled = gameStarted && !paused && !open
+  keyboard.setEnabled(controlsEnabled)
+  interaction.setEnabled(controlsEnabled)
+  playerView.setEnabled(controlsEnabled)
+})
 
 // Until NEW GAME is clicked there is no run to drive: the HUD is hidden, the
 // third-person camera and pointer lock are off (the menu owns the camera), and
@@ -325,12 +358,17 @@ const pauseMenu = createPauseMenu({
     maxEnergy: timeSystem.getMaxEnergy(),
     suspicion: hud.getSuspicion(),
     timeMode: timeSystem.getMode(),
+    lives: respawn.getLives(),
+    maxLives: respawn.getMaxLives(),
     resets: resetCount
   }),
   onPause: () => setPaused(true),
   onResume: () => setPaused(false),
   onRestart: () => {
     resetCount = 0
+    elapsed = 0
+    respawn.resetLives()
+    timeSystem.resetRun?.()
     levelManager.restart()
     setPaused(false)
   },
@@ -415,6 +453,7 @@ function setPaused(value) {
     // Runs from the Resume click, which is the user gesture a fullscreen
     // request needs; resuming with Esc instead just leaves the lock off.
     keyboardLock.engage()
+
     // Re-grab the mouse straight away; if the browser refuses (it rate-limits
     // a re-lock right after an Escape-driven exit) clicking the canvas still
     // works, which is what the camera's own click handler is for.
@@ -452,6 +491,8 @@ function startGame() {
   paused = false
   elapsed = 0
   resetCount = 0
+  respawn.resetLives()
+  timeSystem.resetRun?.()
   playerView.reset() // every run opens in third person
   hud.resetRunTimer()
   hud.setVisible(true)
@@ -490,6 +531,7 @@ function quitToTitle() {
   levelManager.unload()
   syncInputState()
   keyboardLock.release()
+
   // Quitting mid-run from first person left the player figure hidden; the
   // title screen's cinematic shot needs it back.
   playerView.reset()
@@ -532,12 +574,17 @@ const loop = createLoop({
   scene,
   camera,
   clock,
+
   afterRender: (gl) => {
     const show = gameStarted && !credits.isOpen
     minimap.setVisible(show)
-    if (show) minimap.render(gl)
+
+    if (show) {
+      minimap.render(gl)
+    }
   }
 })
+
 loop.add((delta) => {
   // Mixer tick is independent of gameplay input state. Title / transition /
   // cinematic / credits all used to return before player.update(), which
@@ -562,9 +609,22 @@ loop.add((delta) => {
     return
   }
 
+  // Walkthrough tutorials completely freeze gameplay while the scene remains
+  // rendered behind the overlay. Check this before syncInputState() so the
+  // tutorial's disabled controls cannot accidentally be re-enabled.
+  if (hud.isTutorialOpen()) return
+
   syncInputState()
+
   const inputState = getInputState()
-  if (inputState === 'PAUSED' || inputState === 'TRANSITION' || inputState === 'CAUGHT') return
+
+  if (
+    inputState === 'PAUSED' ||
+    inputState === 'TRANSITION' ||
+    inputState === 'CAUGHT'
+  ) {
+    return
+  }
 
   const heistComplete = levelManager.getState() === 'Complete'
   if (!heistComplete) elapsed += delta
@@ -580,8 +640,12 @@ loop.add((delta) => {
   timeSystem.update(delta)
   levelManager.update(delta)
 
-  // Cinematics continue their level animation but never hand movement or
-  // interactions back to the player during the same frame.
+  // A level update may have opened a tutorial this frame. Stop immediately
+  // so the player cannot move one extra frame into a hazard under the popup.
+  if (hud.isTutorialOpen()) return
+
+  // Cinematics and other non-playing states may still need level animation,
+  // but movement and interaction must not resume during the same frame.
   if (getInputState() !== 'PLAYING') {
     syncInputState()
     return
@@ -592,6 +656,7 @@ loop.add((delta) => {
     cameraYaw: playerView.getYaw(),
     bounds: levelManager.bounds,
     obstacles: levelManager.obstacles,
+    groundHeightAt: levelManager.groundHeightAt,
     supports: levelManager.supports,
     voids: levelManager.voids
   })
@@ -599,6 +664,7 @@ loop.add((delta) => {
   playerView.update(delta, player.mesh, scene, {
     crouching: Boolean(keyboard.state.duck)
   })
+
   interaction.update(player.mesh, playerView.getYaw())
   respawn.update()
 
@@ -615,4 +681,5 @@ loop.add((delta) => {
     freezeLockout: timeSystem.getFreezeLockout()
   })
 })
+
 loop.start()

@@ -275,6 +275,7 @@ export function createPauseMenu({
       color: suspicion > 60 ? '#ef4444' : '#f59e0b'
     })
 
+    addStatusRow('Lives', `${status.lives ?? 3} / ${status.maxLives ?? 3}`)
     addStatusRow('Checkpoint Resets', String(status.resets ?? 0))
 
     const mode = status.timeMode && status.timeMode !== 'NORMAL' ? status.timeMode : 'Normal Flow'

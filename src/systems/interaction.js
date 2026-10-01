@@ -119,7 +119,10 @@ export function createInteractionSystem({ camera, input } = {}) {
     onInteract,
     range = DEFAULT_RANGE,
     verticalTolerance = DEFAULT_VERTICAL_TOLERANCE,
-    isEligible
+    isEligible,
+    selectionMode = 'forgiving',
+    aimMin = 0.72,
+    onFocusChange
   } = {}) {
     if (!object || typeof onInteract !== 'function') {
       throw new Error('register(object, { prompt, onInteract }) requires an object and an onInteract callback')
@@ -130,7 +133,10 @@ export function createInteractionSystem({ camera, input } = {}) {
       onInteract,
       range,
       verticalTolerance,
-      isEligible
+      isEligible,
+      selectionMode,
+      aimMin,
+      onFocusChange
     }
     registry.set(object, entry)
 
@@ -201,9 +207,15 @@ export function createInteractionSystem({ camera, input } = {}) {
 
   function setFocus(entry) {
     if (focused !== entry) {
-      if (focused) applyHighlight(focused, false)
+      if (focused) {
+        applyHighlight(focused, false)
+        focused.onFocusChange?.(false)
+      }
       focused = entry
-      if (focused) applyHighlight(focused, true)
+      if (focused) {
+        applyHighlight(focused, true)
+        focused.onFocusChange?.(true)
+      }
     }
     renderPrompt()
   }
@@ -271,6 +283,7 @@ export function createInteractionSystem({ camera, input } = {}) {
     player.getWorldPosition(playerPos)
     blockersUpdated = -1
     const { forwardX, forwardZ } = getForward(yaw)
+    if (camera) camera.getWorldDirection(cameraDir).normalize()
 
     let best = null
     let bestScore = Infinity
@@ -287,10 +300,30 @@ export function createInteractionSystem({ camera, input } = {}) {
 
       const facing = distance > 1e-4 ? (dx * forwardX + dz * forwardZ) / distance : 1
       if (facing < FACING_MIN) continue
+
+      let score
+      if (entry.selectionMode === 'aim' && camera) {
+        // Dense controls (such as the 3x3 relay board) need to follow where
+        // the crosshair/camera is actually aimed rather than whichever object
+        // happens to be a few centimetres closer to the player. Use a full 3D
+        // angular comparison here so neighbouring rows on a horizontal board
+        // remain independently selectable.
+        rayOrigin.copy(camera.position)
+        rayDirection.subVectors(targetPos, rayOrigin)
+        const aimDistance = rayDirection.length()
+        if (aimDistance <= DISTANCE_EPSILON) continue
+        rayDirection.multiplyScalar(1 / aimDistance)
+        const aim = cameraDir.dot(rayDirection)
+        if (aim < entry.aimMin) continue
+        score = (1 - aim) * 16 + distance * 0.035
+      } else {
+        // Original forgiving behaviour for ordinary doors, pickups and
+        // terminals: nearby + generally in front is enough.
+        score = distance - facing
+      }
+
       if (!hasLineOfSight(entry)) continue
 
-      // Closest wins, with better-aimed breaking ties.
-      const score = distance - facing
       if (score < bestScore) {
         bestScore = score
         best = entry
@@ -335,7 +368,10 @@ export function createInteractionSystem({ camera, input } = {}) {
 
   function dispose() {
     if (unbindInteract) unbindInteract()
-    if (focused) applyHighlight(focused, false)
+    if (focused) {
+      applyHighlight(focused, false)
+      focused.onFocusChange?.(false)
+    }
     prompt.remove()
     registry.clear()
     blockerRegistry.clear()

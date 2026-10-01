@@ -61,7 +61,7 @@ export function createPlayerView({ camera, domElement, player, hud }) {
         crouching
       })
     } else {
-      third.update(delta, playerMesh, collidables)
+      third.update(delta, playerMesh, collidables, { crouching })
     }
   }
 
