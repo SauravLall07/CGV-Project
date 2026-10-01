@@ -2,10 +2,12 @@
 // No Three.js — seats/crates/lockers here match the InstancedMesh loops in
 // carriages.js (local Z relative to the car centre, converted to world below).
 
-// Level 2's heist cars are wide enough to move around in; Level 3 keeps the
-// narrower shell its floor holes and collapse pits were cut for.
+// Both levels build the same shell: wide enough to move around in. Level 3
+// used to keep a narrower shell (half-width 1.7), which made the wreck feel
+// cramped next to Level 2 — its hazards are scaled to the shell in
+// levels/timewreck.js rather than assuming the old narrow width.
 export const WALL_X = 2.6
-export const WRECK_WALL_X = 1.7
+export const WRECK_WALL_X = WALL_X
 export const DOOR_W = 1.12
 
 // Half-width of the lane the Level 2 hazards were tuned for. Chokepoint
@@ -73,20 +75,20 @@ export function passengerBooths(half) {
 export const CAB_LENGTH = 8
 
 // key, interior length (m). Order is the concept doc's progression.
+// Cargo, Mechanical and Convergence are the long cars Level 2's obstacle
+// courses need; Level 3 builds the same shells so both levels read as the
+// same train. Every Level 3 set piece is positioned from its carriage span
+// (see levels/timewreck.js), so these lengths can change without moving
+// anything out of its car.
 export const LAYOUT = [
   { key: 'passenger', length: 20 },
   { key: 'security', length: 20 },
   { key: 'relay', length: 18 },
-  { key: 'cargo', length: 20 },
-  { key: 'mechanical', length: 22 },
-  { key: 'convergence', length: 26 },
+  { key: 'cargo', length: 28 },
+  { key: 'mechanical', length: 30 },
+  { key: 'convergence', length: 40 },
   { key: 'vault', length: 18 }
 ]
-
-// Level 2 lengthens Cargo, Mechanical and Convergence to fit their obstacles.
-// Level 3 keeps the original lengths — its set pieces are placed at fixed
-// world positions.
-const HEIST_LENGTHS = { cargo: 28, mechanical: 30, convergence: 40 }
 
 // Level 2's rooftop run crosses an open freight wagon between Convergence and
 // the Vault. The wagon is never entered; only its deck is walked. Distances
@@ -100,8 +102,12 @@ export const ROOF_RUN = {
 }
 
 export function layoutFor(damaged) {
-  if (damaged) return LAYOUT
-  const layout = LAYOUT.map((cfg) => ({ ...cfg, length: HEIST_LENGTHS[cfg.key] ?? cfg.length }))
+  // Only Level 2 adds the open freight wagon, and only because its rooftop
+  // run crosses the wagon's deck. The wagon is sealed at both bulkheads, so
+  // it is a roof-run set piece rather than a carriage, and the wreck (which
+  // has no roof run) must not get one.
+  if (damaged) return LAYOUT.map((cfg) => ({ ...cfg }))
+  const layout = LAYOUT.map((cfg) => ({ ...cfg }))
   layout.splice(layout.length - 1, 0, { key: 'freight', length: ROOF_RUN.freightLength })
   return layout
 }
@@ -151,8 +157,10 @@ export function listCarriageVolumes(spans) {
   if (spans.cab) keys.unshift('cab')
   // Only Level 3's spans carry a cab, so it doubles as the wreck flag.
   const wallX = wallXFor(Boolean(spans.cab))
+  const damaged = Boolean(spans.cab)
   return keys.filter((key) => spans[key]).map((key) => ({
     key,
+    damaged,
     minX: -wallX,
     maxX: wallX,
     minZ: spans[key].minZ,
@@ -223,9 +231,13 @@ function box(kind, x, z, halfX, halfZ) {
 // Local XZ footprints matching dressPassenger / dressSecurity / dressCargo /
 // dressMechanical / dressVault / buildLocomotiveCab. Z is relative to the
 // carriage group origin (world Z = local Z + span.center).
-export function localInteriorBoxes(key, half, wallX = WALL_X) {
+// `damaged` picks the wreck's dressing (bare benches, lockers, server racks)
+// over the heist's (booths, trunks, relay boxes). It used to be inferred by
+// comparing wallX against WRECK_WALL_X; both levels now build the same width,
+// so the flag has to be passed in.
+export function localInteriorBoxes(key, half, wallX = WALL_X, damaged = false) {
   const boxes = []
-  if (key === 'passenger' && wallX === WRECK_WALL_X) {
+  if (key === 'passenger' && damaged) {
     const bays = Math.max(1, Math.floor((half * 2 - 4) / 3.4))
     for (let b = 0; b < bays; b++) {
       const z = -half + 3 + b * 3.4
@@ -246,7 +258,7 @@ export function localInteriorBoxes(key, half, wallX = WALL_X) {
         boxes.push(box('seat', s * (wallX - BOOTH_TABLE.inset), zc, BOOTH_TABLE.halfX, BOOTH_TABLE.halfZ))
       }
     }
-  } else if (key === 'security' && wallX !== WRECK_WALL_X) {
+  } else if (key === 'security' && !damaged) {
     for (const z of windowBayZs(half)) {
       for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
     }
@@ -262,7 +274,7 @@ export function localInteriorBoxes(key, half, wallX = WALL_X) {
       boxes.push(box('crate', wallX - 0.45, z, 0.4, 0.4))
       if ((z | 0) % 2 === 0) boxes.push(box('crate', -(wallX - 0.5), z, 0.4, 0.4))
     }
-  } else if (key === 'mechanical' && wallX !== WRECK_WALL_X) {
+  } else if (key === 'mechanical' && !damaged) {
     for (const z of windowBayZs(half)) {
       for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
     }
@@ -270,17 +282,17 @@ export function localInteriorBoxes(key, half, wallX = WALL_X) {
     boxes.push(box('grate', 0, half - 0.3, 0.35, 0.08))
     boxes.push(box('wheel', -(wallX - 0.16), -half + 3, 0.6, 0.6))
     boxes.push(box('ladder', 0, half - 2.5 - 0.55, 0.28, 0.2))
-  } else if (key === 'vault' && wallX !== WRECK_WALL_X) {
+  } else if (key === 'vault' && !damaged) {
     for (const z of windowBayZs(half)) {
       for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
     }
-  } else if (key === 'convergence' && wallX !== WRECK_WALL_X) {
+  } else if (key === 'convergence' && !damaged) {
     for (const z of windowBayZs(half)) {
       for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
     }
   } else if (key === 'convergence') {
     // Level 3 keeps this car clear in the minimap.
-  } else if (key === 'relay' && wallX !== WRECK_WALL_X) {
+  } else if (key === 'relay' && !damaged) {
     const layout = routeControlLayout(half)
     for (const z of layout.bays) {
       for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
@@ -306,7 +318,7 @@ export function listCarriageInteriorBoxes(volume) {
   if (!volume) return []
   const half = (volume.maxZ - volume.minZ) / 2
   const center = (volume.minZ + volume.maxZ) * 0.5
-  return localInteriorBoxes(volume.key, half, volume.maxX).map((entry) => ({
+  return localInteriorBoxes(volume.key, half, volume.maxX, Boolean(volume.damaged)).map((entry) => ({
     ...entry,
     minZ: entry.minZ + center,
     maxZ: entry.maxZ + center

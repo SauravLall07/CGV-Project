@@ -2050,7 +2050,9 @@ function buildInteriorColliders(spans, layout) {
   }
   for (const cfg of layout) {
     const { center } = spans[cfg.key]
-    for (const box of localInteriorBoxes(cfg.key, cfg.length / 2, WALL_X)) {
+    // Only called for the heist build (see the damaged check at the call
+    // site), so the wreck dressing is never the one wanted here.
+    for (const box of localInteriorBoxes(cfg.key, cfg.length / 2, WALL_X, false)) {
       if (!COLLIDER_KINDS.has(box.kind)) continue
       colliders.push({
         minX: box.minX - COLLIDER_PAD, maxX: box.maxX + COLLIDER_PAD,
@@ -2149,9 +2151,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   // Axis-aligned volumes the player is clamped to per traversal section.
   // Level 3 is one continuous run from the vault down to the cab, so it gets a
   // single volume; Level 2 swaps between corridor / roof / vault.
-  // Level 2's wide cars open up almost wall to wall; Level 3 keeps its
-  // original narrow aisle.
-  const aisleX = damaged ? 0.82 : WALL_X - 0.3
+  // Both levels open up almost wall to wall. Level 3 used to clamp the player
+  // to a 0.82 m half-aisle, which left the wreck feeling like a corridor even
+  // though it is the same shell; its fall checks are Z-ranges rather than X
+  // ones, so the wider lane does not let the walkway puzzles be sidestepped.
+  const aisleX = WALL_X - 0.3
   const interiorBounds = damaged
     ? { minX: -aisleX, maxX: aisleX, minZ: spans.cab.minZ + 1.2, maxZ: spans.vault.maxZ - 1.0 }
     : { minX: -aisleX, maxX: aisleX, minZ: spans.passenger.minZ + 1.2, maxZ: spans.convergence.maxZ - 1.4 }

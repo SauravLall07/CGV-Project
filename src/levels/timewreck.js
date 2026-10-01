@@ -3,6 +3,7 @@ import * as CANNON from 'cannon-es'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
+import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
@@ -35,7 +36,12 @@ const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
 const NIGHT_COLOR = new THREE.Color(0x0d1218)
 const DAWN_COLOR = new THREE.Color(0x2c3a56)
 const FINALE_FREEZE_COLOR = new THREE.Color(0x1a3358)
-const INTERIOR_HALF_WIDTH = 1.6
+// Inset from the shell wall, so floor voids, lips and the collapse slab stop
+// just short of the panelling. Derived from the shell rather than hardcoded:
+// the wreck is built at the same width as Level 2, and these set pieces have
+// to span whatever that is.
+const WALL_INSET = 0.1
+const INTERIOR_HALF_WIDTH = WRECK_WALL_X - WALL_INSET
 
 // Deterministic scatter, matching the environment modules.
 const skew = (n) => (Math.sin(n * 12.9898) * 43758.5453) % 1
@@ -168,12 +174,18 @@ export function createTimewreckLevel({
   })
   const ramRailMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, metalness: 0.8, roughness: 0.5 })
   const rams = []
-  for (const [z, phase] of [[20, 0], [16, 2.1], [12, 4.2]]) {
+  const RAM_HEAD_WIDTH = 0.85
+  // Sweep wall to wall. The head has to clear the full interior or the player
+  // can walk around the piston bank instead of timing it with Slow.
+  const RAM_SWEEP = INTERIOR_HALF_WIDTH - RAM_HEAD_WIDTH / 2
+  // Offsets from the Mechanical car's centre, keeping the original spacing.
+  for (const [dz, phase] of [[3, 0], [-1, 2.1], [-5, 4.2]]) {
+    const z = spans.mechanical.center + dz
     const rail = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2, 0.1, 0.16), ramRailMat)
     rail.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     ramBank.add(rail)
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.75, 0.5), ramHeadMat)
+    const head = new THREE.Mesh(new THREE.BoxGeometry(RAM_HEAD_WIDTH, 1.75, 0.5), ramHeadMat)
     head.position.set(0, 0.9, z)
     head.castShadow = true
     ramBank.add(head)
@@ -184,7 +196,7 @@ export function createTimewreckLevel({
 
   let ramT = 0
   function applyRams() {
-    for (const r of rams) r.head.position.x = Math.sin(ramT * 3.4 + r.phase) * 1.15
+    for (const r of rams) r.head.position.x = Math.sin(ramT * 3.4 + r.phase) * RAM_SWEEP
   }
   applyRams()
   unregisters.push(timeSystem.register(ramBank, {
@@ -291,7 +303,7 @@ export function createTimewreckLevel({
   })
   const slabs = []
   const slabSupports = []
-  const gapVoids = [{ minX: -2, maxX: 2, minZ: gapMinZ, maxZ: gapMaxZ }]
+  const gapVoids = [{ minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: gapMinZ, maxZ: gapMaxZ }]
   for (let i = 0; i < 5; i++) {
     const slab = new THREE.Group()
     const deck = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
@@ -332,7 +344,7 @@ export function createTimewreckLevel({
   const collapseMaxZ = spans.passenger.maxZ - 2.4
   const collapseMinZ = spans.passenger.center + 0.15
   const collapseTriggerZ = collapseMaxZ + 1.15
-  const collapseVoid = { minX: -2, maxX: 2, minZ: collapseMinZ, maxZ: collapseMaxZ }
+  const collapseVoid = { minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: collapseMinZ, maxZ: collapseMaxZ }
 
   const collapsePit = new THREE.Mesh(
     new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.28, 3.5, collapseMaxZ - collapseMinZ),
@@ -635,7 +647,7 @@ export function createTimewreckLevel({
 
   function respawnChunk(c) {
     const s = ++chunkSeed
-    c.x = skew(s + 11) * 1.25
+    c.x = skew(s + 11) * (INTERIOR_HALF_WIDTH * 0.78)
     c.y = 0.5 + Math.abs(skew(s + 3)) * 1.5
     c.z = spans.passenger.maxZ + 3
     c.vx = skew(s + 5) * 0.9
@@ -1040,18 +1052,18 @@ export function createTimewreckLevel({
   // ============================================================
   const embers = createParticleField({
     count: 240,
-    area: { halfX: 1.4, minY: 0.1, maxY: 2.5, minZ: spans.cab.minZ, maxZ: spans.vault.maxZ },
+    area: { halfX: INTERIOR_HALF_WIDTH * 0.88, minY: 0.1, maxY: 2.5, minZ: spans.cab.minZ, maxZ: spans.vault.maxZ },
     color: 0xff8a3c, size: 0.055, opacity: 0.75, gravity: 0.32, drift: 0.22, seed: 13
   })
   const sparks = createParticleField({
     count: 90,
-    area: { halfX: 1.45, minY: 0.05, maxY: 2.55, minZ: spans.cab.minZ, maxZ: spans.vault.maxZ },
+    area: { halfX: INTERIOR_HALF_WIDTH * 0.91, minY: 0.05, maxY: 2.55, minZ: spans.cab.minZ, maxZ: spans.vault.maxZ },
     color: 0xffd9a0, size: 0.028, opacity: 0.4, gravity: -0.9, drift: 0.35, seed: 29
   })
   const openingWind = createParticleField({
     count: 48,
     area: {
-      halfX: 1.62, minAbsX: 1.18,
+      halfX: INTERIOR_HALF_WIDTH * 1.01, minAbsX: INTERIOR_HALF_WIDTH * 0.74,
       minY: 0.85, maxY: 2.15,
       minZ: spans.cab.minZ + 0.4, maxZ: spans.passenger.maxZ - 0.4
     },
@@ -1060,7 +1072,7 @@ export function createTimewreckLevel({
   const openingSparks = createParticleField({
     count: 28,
     area: {
-      halfX: 1.58, minAbsX: 1.2,
+      halfX: INTERIOR_HALF_WIDTH * 0.99, minAbsX: INTERIOR_HALF_WIDTH * 0.75,
       minY: 1.05, maxY: 2.35,
       minZ: spans.cab.minZ + 0.4, maxZ: spans.passenger.maxZ - 0.4
     },
@@ -1070,15 +1082,15 @@ export function createTimewreckLevel({
     seed: 47,
     ambient: {
       count: 40,
-      halfX: 1.15,
+      halfX: INTERIOR_HALF_WIDTH * 0.72,
       minY: 0.4,
       maxY: 2.15,
       minZ: spans.cab.minZ + 1,
       maxZ: spans.vault.maxZ - 1
     },
-    loop: { count: 16, z: spans.cargo.center, halfZ: 4.2, halfX: 1.15 },
-    walkway: { count: 12, minZ: gapMinZ, maxZ: gapMaxZ, halfX: 1.1 },
-    wave: { count: 22, halfZ: 3.4, halfX: 1.15 }
+    loop: { count: 16, z: spans.cargo.center, halfZ: 4.2, halfX: INTERIOR_HALF_WIDTH * 0.72 },
+    walkway: { count: 12, minZ: gapMinZ, maxZ: gapMaxZ, halfX: INTERIOR_HALF_WIDTH * 0.69 },
+    wave: { count: 22, halfZ: 3.4, halfX: INTERIOR_HALF_WIDTH * 0.72 }
   })
   root.add(embers.points, sparks.points, openingWind.points, openingSparks.points, chronoMotes.points)
 

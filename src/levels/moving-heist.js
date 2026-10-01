@@ -292,6 +292,7 @@ function makeBarrierProp({ width = 0.68, height = 0.95, depth = 0.9, color = 0x5
 
 export function createMovingHeistLevel({
   scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic,
+  assets = null,
   startAt = null
 }) {
 
@@ -339,7 +340,8 @@ export function createMovingHeistLevel({
   const corridorObstacles = [...env.colliders]
   // One stealth system for the whole interior run, not just the Passenger car:
   // Passenger has the conductor and Cargo gets a laser grid. Passing
-  // timeSystem makes the guard obey Slow and Freeze.
+  // timeSystem makes the guard obey Slow and Freeze; assets lets the guards
+  // pick up the police FBX model if it is still loading when the level builds.
   const corridorStealth =
     createStealthSystem({
       scene,
@@ -348,7 +350,8 @@ export function createMovingHeistLevel({
       hud,
       collidables: guardCollidables,
       obstacles: corridorObstacles,
-      timeSystem
+      timeSystem,
+      assets
     })
 
   // Standing / crouched body height used by the rotor hazards. Ducking really
