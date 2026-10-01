@@ -564,8 +564,9 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     for (const entry of registered) {
       entry.snapshots?.splice?.(0)
       entry.accumulator = 0
+      const initial = captureSnapshot(entry)
+      if (initial) entry.snapshots.push(initial)
     }
-    captureAllSnapshots(0)
     updateUniforms()
   }
 

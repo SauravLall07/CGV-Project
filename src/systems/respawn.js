@@ -67,8 +67,6 @@ export function createRespawnSystem({
     // to reset things such as stealth/suspicion, but an error in that cleanup
     // must not strand the player at the point where they were caught.
     player.setPose(checkpoint.position, checkpoint.yaw)
-    camera?.setYaw?.(checkpoint.yaw)
-    camera?.snap?.()
 
     try {
       checkpoint.restore?.()
@@ -81,6 +79,11 @@ export function createRespawnSystem({
     } catch (error) {
       console.error('respawn: time checkpoint cleanup failed after player was restored', error)
     }
+
+    // Restore the camera after the level callback has restored moving geometry
+    // and collision bounds, so its snap uses the final checkpoint scene.
+    camera?.setYaw?.(checkpoint.yaw)
+    camera?.snap?.()
 
     return true
   }
