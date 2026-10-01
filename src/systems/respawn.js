@@ -63,17 +63,24 @@ export function createRespawnSystem({
   function respawn() {
     if (!checkpoint) return false
 
-    // Level-owned restore logic runs first. In Boarding this is also where
-    // things such as stealth/suspicion can be cleared without rebuilding the
-    // whole level.
-    checkpoint.restore?.()
-
-    timeSystem?.resetForCheckpoint?.(checkpoint.timeState)
-
+    // Move the player out of the hazard first. Level-owned cleanup is allowed
+    // to reset things such as stealth/suspicion, but an error in that cleanup
+    // must not strand the player at the point where they were caught.
     player.setPose(checkpoint.position, checkpoint.yaw)
-
     camera?.setYaw?.(checkpoint.yaw)
     camera?.snap?.()
+
+    try {
+      checkpoint.restore?.()
+    } catch (error) {
+      console.error('respawn: level checkpoint cleanup failed after player was restored', error)
+    }
+
+    try {
+      timeSystem?.resetForCheckpoint?.(checkpoint.timeState)
+    } catch (error) {
+      console.error('respawn: time checkpoint cleanup failed after player was restored', error)
+    }
 
     return true
   }
