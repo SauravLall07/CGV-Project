@@ -27,7 +27,6 @@ const STRIDE_FREQUENCY = 2.4
 const BOB_HEIGHT = 0.03
 const GUARD_VISION_DISTANCE = 7.5
 const GUARD_PATROL_TURN_SMOOTHING = 8
-const GUARD_ALERT_TURN_SMOOTHING = 6
 const GUARD_BODY_RADIUS = 0.4
 const PLAYER_BODY_RADIUS = 0.32
 const GUARD_BUMP_RADIUS = GUARD_BODY_RADIUS + PLAYER_BODY_RADIUS
@@ -284,6 +283,10 @@ export function createStealthSystem({
   function investigate(position, { radius = 9, duration = 3.2 } = {}) {
     if (!position) return 0
     let responders = 0
+
+    // Keep thrown items and Time Ghost lures on the same target point.
+    distraction.position.copy(position)
+    distraction.timer = Math.max(distraction.timer, duration)
 
     guards.forEach((guard) => {
       if (guard.state === 'ALERT') return
@@ -826,14 +829,14 @@ export function createStealthSystem({
           guard.state = 'PATROL'
           guard.lookAroundTimer = 0
         }
-      } else if (lured) {
+      } else if (lured && guard.state !== 'INVESTIGATE') {
         guard.state = 'INVESTIGATE'
-      } else if (guard.state === 'INVESTIGATE') {
-        // The echo faded. Stand and scan for a beat before picking the route
-        // back up, which is the window the player is meant to move through.
-        guard.state = 'PATROL'
-        guard.waitTimer = 1.4
-        guard.scanBase = guard.facing
+        guard.investigateTarget = distraction.position.clone()
+        guard.investigateTimer = 3.2
+        guard.investigateGiveUpTimer = 9.2
+        guard.investigateArrived = false
+        guard.waitTimer = 0
+        guard.lookAroundTimer = 0
       }
 
       // Guard visual cues. This is purely cosmetic feedback for the player —
@@ -868,7 +871,7 @@ export function createStealthSystem({
         const gz = target.z - guard.group.position.z
         const distToTarget = Math.hypot(gx, gz)
 
-        if (!guard.investigateArrived && distToTarget > 0.18) {
+        if (!guard.investigateArrived && distToTarget > DISTRACTION_STOP_DISTANCE) {
           const moveAngle = Math.atan2(gx, gz)
           let diff = moveAngle - guard.facing
           while (diff > Math.PI) diff -= Math.PI * 2
@@ -913,31 +916,7 @@ export function createStealthSystem({
       // Patrol movement along waypoints
       // Strict, readable patrol routine:
       // WALK -> STOP/SCAN -> TURN ON SPOT -> WALK -> repeat.
-      if (guard.state === 'INVESTIGATE') {
-        // ---------------------------------------------------------
-        // WALK TO THE DECOY
-        // ---------------------------------------------------------
-        const dx = distraction.position.x - guard.group.position.x
-        const dz = distraction.position.z - guard.group.position.z
-        const distToLure = Math.hypot(dx, dz)
-
-        const lureAngle = Math.atan2(dx, dz)
-        let lureDiff = lureAngle - guard.facing
-        while (lureDiff > Math.PI) lureDiff -= Math.PI * 2
-        while (lureDiff < -Math.PI) lureDiff += Math.PI * 2
-        guard.facing += lureDiff * Math.min(1, gd * GUARD_ALERT_TURN_SMOOTHING)
-        guard.group.rotation.y = guard.facing
-
-        if (distToLure > DISTRACTION_STOP_DISTANCE) {
-          const step = Math.min(guard.speed * gd, distToLure - DISTRACTION_STOP_DISTANCE)
-          guard.group.position.x += (dx / distToLure) * step
-          guard.group.position.z += (dz / distToLure) * step
-          resolveBoxCollision(guard.group.position, obstacles)
-          guard.stridePhase += step * STRIDE_FREQUENCY
-        } else {
-          guard.stridePhase *= Math.max(0, 1 - gd * 10)
-        }
-      } else if (guard.state === 'PATROL' && guard.waypoints.length > 1) {
+      if (guard.state === 'PATROL' && guard.waypoints.length > 1) {
         if (guard.waitTimer > 0) {
           // ---------------------------------------------------------
           // STOP + SCAN

@@ -262,18 +262,18 @@ if (import.meta.env.DEV) {
   window.musicSystem = musicSystem
 }
 
-// Losing all three lives is a true run reset: rebuild Level 1, restore global
-// run resources/stats and discard every level-owned puzzle/interaction state.
-// Tutorial walkthrough memory intentionally lives outside this reset.
-respawn.setGameOverHandler(() => {
-  elapsed = 0
-  resetCount = 0
-  timeSystem.resetRun?.()
-  playerView.reset()
-  hud.setSuspicion(0)
-  respawn.resetLives()
-  levelManager.enter('Boarding')
-})
+// Disabled: running out of lives on Level 2 must not send the player back to
+// Level 1. With no game-over handler, the respawn system keeps using the
+// current checkpoint after every failure.
+// respawn.setGameOverHandler(() => {
+//   elapsed = 0
+//   resetCount = 0
+//   timeSystem.resetRun?.()
+//   playerView.reset()
+//   hud.setSuspicion(0)
+//   respawn.resetLives()
+//   levelManager.enter('Boarding')
+// })
 
 // ---------------------------------------------------------------
 // Main Menu

@@ -181,11 +181,8 @@ export const DEFAULT_BINDINGS = {
   right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'],
   jump: ['Space', null],
-  // Crouch avoids Ctrl on purpose. Ctrl is the usual crouch key, but in a
-  // browser Ctrl+W (crouch-walking forward) closes the tab, and a page can
-  // only intercept that while the keyboard lock is up — see
-  // input/keyboard-lock.js. Ctrl is still bindable by hand.
-  duck: ['KeyX', 'KeyZ'],
+  // Ctrl is captured with the browser shortcut keys while the game is active.
+  duck: ['ControlLeft', 'ControlRight'],
   interact: ['KeyE', null],
   distract: ['KeyT', null],
   toggleView: ['KeyV', null],
@@ -296,7 +293,16 @@ function createSettingsStore() {
     }
   }
 
-  const bindings = cloneBindings(stored.bindings ?? {})
+  const storedBindings = { ...(stored.bindings ?? {}) }
+  // Move existing installs off the previous X/Z crouch defaults while
+  // preserving any custom crouch binding the player chose themselves.
+  if (
+    storedBindings.duck?.[0] === 'KeyX' &&
+    storedBindings.duck?.[1] === 'KeyZ'
+  ) {
+    storedBindings.duck = DEFAULT_BINDINGS.duck
+  }
+  const bindings = cloneBindings(storedBindings)
   const listeners = new Set()
 
   function persist() {

@@ -21,7 +21,8 @@ const RECHARGE_RATE = 15 // energy per second when normal
 const DRAIN_RATES = {
   SLOW: 18,
   FREEZE: 28,
-  REWIND: 32
+  REWIND: 32,
+  GHOST: 1.5
 }
 const GHOST_ENERGY_COST = 35
 const GHOST_BUFFER_SECONDS = 5.0
@@ -364,15 +365,20 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
       }
     }
 
-    // Energy drain & recharge
-    if (mode === TIME_MODES.NORMAL) {
+    // Energy drain & recharge. Ghost runs alongside NORMAL time, so account
+    // for its sustained cost separately and pause normal recharge while it is
+    // active. Its activation cost is still charged in triggerGhost().
+    const ghostDrainRate = ghost.isPlaying() ? DRAIN_RATES.GHOST : 0
+    if (mode === TIME_MODES.NORMAL && ghostDrainRate === 0) {
       energy = Math.min(MAX_ENERGY, energy + RECHARGE_RATE * delta)
     } else if (mode !== TIME_MODES.REWIND) {
-      const drain = (DRAIN_RATES[mode] || 20) * delta
+      const modeDrain = mode === TIME_MODES.NORMAL ? 0 : (DRAIN_RATES[mode] || 20)
+      const drain = (modeDrain + ghostDrainRate) * delta
       energy -= drain
       if (energy <= 0) {
         energy = 0
         setMode(TIME_MODES.NORMAL)
+        if (ghost.isPlaying()) ghost.stop()
         if (hud) hud.showToast('Chrono energy depleted — time normalized', 1500)
       }
     }
@@ -412,8 +418,10 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
         (entry.snapshots.length - 1) * SNAPSHOT_INTERVAL))
       const remainingTime = proceduralRewind ? Infinity :
         Math.max(0, historyTime - rewindPlaybackTime) / REWIND_SPEED
-      const rewindDelta = Math.min(delta, energy / DRAIN_RATES.REWIND, remainingTime)
-      energy = Math.max(0, energy - rewindDelta * DRAIN_RATES.REWIND)
+      const ghostDrainRate = ghost.isPlaying() ? DRAIN_RATES.GHOST : 0
+      const rewindDrainRate = DRAIN_RATES.REWIND + ghostDrainRate
+      const rewindDelta = Math.min(delta, energy / rewindDrainRate, remainingTime)
+      energy = Math.max(0, energy - rewindDelta * rewindDrainRate)
       rewindPlaybackTime += rewindDelta * REWIND_SPEED
       const stepsToPop = Math.floor((rewindPlaybackTime + 1e-9) / SNAPSHOT_INTERVAL)
       rewindPlaybackTime -= stepsToPop * SNAPSHOT_INTERVAL
@@ -440,6 +448,7 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
       if (energy <= 1e-9) {
         energy = 0
         setMode(TIME_MODES.NORMAL)
+        if (ghost.isPlaying()) ghost.stop()
         hud?.showToast('Chrono energy depleted — time normalized', 1500)
       } else if (remainingTime <= delta + 1e-9) {
         setMode(TIME_MODES.NORMAL)

@@ -70,6 +70,20 @@ export function createKeyboardState() {
 
   function onKeyDown(event) {
     if (!enabled) return
+
+    // Modifier chords belong to the browser or operating system, not to game
+    // actions. In particular, Ctrl+R must not invoke the restart action while
+    // Ctrl is also being held as crouch. Keyboard Lock captures the browser's
+    // reserved chords in fullscreen; this also prevents captured keydowns from
+    // reaching the game's action map.
+    const isModifierKey = [
+      'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'
+    ].includes(event.code)
+    if ((event.ctrlKey || event.altKey || event.metaKey) && !isModifierKey) {
+      event.preventDefault()
+      return
+    }
+
     const action = codeToAction.get(event.code)
     if (!action) return
 

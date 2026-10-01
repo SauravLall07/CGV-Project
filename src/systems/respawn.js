@@ -131,7 +131,7 @@ export function createRespawnSystem({
     failTimer = null
 
     const reason = failReason
-    const gameOver = pendingGameOver
+    const gameOver = isGameOver()
 
     // ------------------------------------------------------------
     // FINAL LIFE LOST
@@ -209,10 +209,10 @@ export function createRespawnSystem({
     hud?.showCaughtScreen?.(failReason, {
       lives,
       maxLives: DEFAULT_LIVES,
-      gameOver: pendingGameOver
+      gameOver: isGameOver()
     })
 
-    const duration = pendingGameOver
+    const duration = isGameOver()
       ? GAME_OVER_FREEZE_DURATION
       : CAUGHT_FREEZE_DURATION
 
@@ -291,6 +291,12 @@ export function createRespawnSystem({
     gameOverHandler = typeof fn === 'function'
       ? fn
       : null
+  }
+
+  function isGameOver() {
+    // Losing the last life only ends a run when the owning game registers a
+    // game-over action. With no handler, failures continue to use checkpoints.
+    return pendingGameOver && Boolean(gameOverHandler)
   }
 
   function update() {
