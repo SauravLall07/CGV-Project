@@ -31,6 +31,9 @@ export function createLevelManager({
   let pendingToken = 0
   let held = null
   let transitioning = false
+  // Extra factory options for the current state (e.g. a dev start carriage),
+  // kept so restart() rebuilds the level the same way.
+  let currentOptions = null
 
   const ctx = {
     scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance,
@@ -54,7 +57,7 @@ export function createLevelManager({
     current = null
   }
 
-  function build(state, preserveEnergy) {
+  function build(state, preserveEnergy, levelOptions) {
     const preserve = keepPrevious.has(state) && current
     if (preserve) {
       // Credits (and anything else flagged keepPrevious) freeze the outgoing
@@ -68,7 +71,8 @@ export function createLevelManager({
 
     timeSystem?.resetForLevel({ preserveEnergy })
     currentState = state
-    current = factories.get(state)(ctx)
+    currentOptions = levelOptions
+    current = factories.get(state)(levelOptions ? { ...ctx, ...levelOptions } : ctx)
 
     if (!preserve) {
       const checkpoint = current.checkpoint ?? DEFAULT_CHECKPOINT
@@ -92,7 +96,7 @@ export function createLevelManager({
     onInputStateChange?.()
   }
 
-  function enter(state, { preserveEnergy = false } = {}) {
+  function enter(state, { preserveEnergy = false, levelOptions = null } = {}) {
     if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
     console.log(
       `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] level-manager enter("${state}") currentState=${currentState} pendingToken=${pendingToken}`
@@ -104,7 +108,7 @@ export function createLevelManager({
     // Keep-previous states (Complete / credits) must not flash the loading
     // screen or dispose the outgoing level — the last frame stays up.
     if (keepPrevious.has(state) && current) {
-      build(state, preserveEnergy)
+      build(state, preserveEnergy, levelOptions)
       loadingScreen.hide()
       setTransitioning(false)
       return
@@ -124,7 +128,7 @@ export function createLevelManager({
     // The first frame lets the loading screen paint; the second does the work.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (token !== pendingToken) return
-      build(state, preserveEnergy)
+      build(state, preserveEnergy, levelOptions)
 
       // And one more so the built level has rendered behind the overlay
       // before it fades away.
@@ -143,7 +147,8 @@ export function createLevelManager({
     // sequence over instead — both without a page refresh, which is what the
     // pause menu's RESTART LEVEL button and the restart key both call.
     const isLast = sequence.indexOf(currentState) === sequence.length - 1
-    enter(isLast ? sequence[0] : currentState)
+    if (isLast) enter(sequence[0])
+    else enter(currentState, { levelOptions: currentOptions })
   }
 
   // Tear the current level down without building another. Quitting to the

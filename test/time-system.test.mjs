@@ -71,9 +71,10 @@ test('a fully collapsed walkway rewinds to its intact state predictably', () => 
   assert.equal(plank.y, -3)
 
   timeSystem.triggerRewind()
-  while (timeSystem.getMode() === TIME_MODES.REWIND) {
+  for (let frames = 0; frames < 144 * 4 && timeSystem.getMode() === TIME_MODES.REWIND; frames++) {
     timeSystem.update(1 / 144)
   }
+  assert.equal(timeSystem.getMode(), TIME_MODES.NORMAL)
 
   assert.ok(Math.abs(plank.y - 0.06) < 1e-9)
   assert.equal(plank.triggered, false)
@@ -139,6 +140,8 @@ test('Ghost recording uses active simulation time rather than wall-clock timesta
   assert.equal(timeSystem.getGhost().isPlaying(), true)
 
   runFor(timeSystem, 1.1, [1 / 60])
+  assert.equal(timeSystem.getGhost().isPlaying(), true, 'echo holds its endpoint for pad puzzles')
+  runFor(timeSystem, 8, [1 / 60])
   assert.equal(timeSystem.getGhost().isPlaying(), false)
   timeSystem.dispose()
 })

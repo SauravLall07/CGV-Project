@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { bindingLabel, settings } from '../core/settings.js'
+import { createNearRaycastSet } from '../core/near-raycast.js'
 
 // Interaction system (Phase 1 foundation): each frame, the registry of
 // "interactable" objects is scanned for the best visible candidate in front
@@ -103,6 +104,8 @@ export function createInteractionSystem({ camera, input } = {}) {
   const rayOrigin = new THREE.Vector3()
   const rayDirection = new THREE.Vector3()
   const raycaster = new THREE.Raycaster()
+  const nearbyBlockers = createNearRaycastSet()
+  let blockersUpdated = -1 // near-set version whose matrices are current this frame
 
   const prompt = createPromptElement()
   let focused = null
@@ -152,15 +155,21 @@ export function createInteractionSystem({ camera, input } = {}) {
   // emissive tint; a prop that already glows keeps its own colour and is
   // simply turned up, so highlighting the Chrono Core doesn't wash it out to
   // grey.
+  //
+  // The original glow is kept per material, not per mesh: props share
+  // materials (every brass part of a relay box is one material), and a
+  // per-mesh record would see the second part's material already tinted,
+  // boost it again, and restore a boosted value — leaving every object in the
+  // level that shares it glowing brighter after each focus.
   function applyHighlight(entry, on) {
-    entry.object.traverse((node) => {
-      const material = node.material
-      if (!material || !material.emissive) return
-
-      if (on) {
-        if (node.userData._focusBase) return
+    if (on) {
+      if (entry.focusBases) return
+      const bases = new Map()
+      entry.object.traverse((node) => {
+        const material = node.material
+        if (!material || !material.emissive || bases.has(material)) return
         const base = { hex: material.emissive.getHex(), intensity: material.emissiveIntensity }
-        node.userData._focusBase = base
+        bases.set(material, base)
 
         if (base.hex === 0x000000) {
           material.emissive.setHex(FOCUS_EMISSIVE)
@@ -168,12 +177,15 @@ export function createInteractionSystem({ camera, input } = {}) {
         } else {
           material.emissiveIntensity = base.intensity * FOCUS_BOOST
         }
-      } else if (node.userData._focusBase) {
-        material.emissive.setHex(node.userData._focusBase.hex)
-        material.emissiveIntensity = node.userData._focusBase.intensity
-        delete node.userData._focusBase
+      })
+      entry.focusBases = bases
+    } else if (entry.focusBases) {
+      for (const [material, base] of entry.focusBases) {
+        material.emissive.setHex(base.hex)
+        material.emissiveIntensity = base.intensity
       }
-    })
+      entry.focusBases = null
+    }
   }
 
   function renderPrompt() {
@@ -236,7 +248,14 @@ export function createInteractionSystem({ camera, input } = {}) {
     raycaster.set(rayOrigin, rayDirection)
     raycaster.far = Math.max(0, targetDistance - OCCLUSION_PADDING)
 
-    const hits = raycaster.intersectObjects(Array.from(blockerRegistry), true)
+    // Only blockers within reach of the ray are tested (core/near-raycast.js),
+    // and only those need this frame's movement applied before the cast.
+    const blockers = nearbyBlockers.get(Array.from(blockerRegistry), rayOrigin, targetDistance)
+    if (blockersUpdated !== nearbyBlockers.version) {
+      for (const blocker of blockers) blocker.updateWorldMatrix(true, false)
+      blockersUpdated = nearbyBlockers.version
+    }
+    const hits = raycaster.intersectObjects(blockers, false)
     for (const hit of hits) {
       if (isDescendantOf(hit.object, entry.object)) continue
       if (!isWorldVisible(hit.object)) continue
@@ -250,7 +269,7 @@ export function createInteractionSystem({ camera, input } = {}) {
     if (!enabled || registry.size === 0 || !player) return null
 
     player.getWorldPosition(playerPos)
-    blockerRegistry.forEach((blocker) => blocker.updateWorldMatrix(true, true))
+    blockersUpdated = -1
     const { forwardX, forwardZ } = getForward(yaw)
 
     let best = null

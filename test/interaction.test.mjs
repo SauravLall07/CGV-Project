@@ -130,3 +130,59 @@ test('small switches remain selectable and transparent effects do not block them
   assert.equal(system.getFocused(), target)
   system.dispose()
 })
+
+test('a solid decorative object marked non-blocking does not hide its container interaction', () => {
+  const scene = new THREE.Scene()
+  const player = new THREE.Group()
+  const cage = new THREE.Group()
+  cage.position.set(0, 0, 2)
+  const core = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x38bdf8 })
+  )
+  core.position.set(0, 0.75, 2)
+  core.userData.noInteractionBlocker = true
+  scene.add(player, cage, core)
+
+  const system = createInteractionSystem()
+  system.register(cage, { prompt: 'Breach cage', onInteract() {} })
+  system.registerBlocker(scene)
+
+  system.update(player, 0)
+  assert.equal(system.getFocused(), cage)
+  system.dispose()
+})
+
+test('focusing a prop whose parts share a material leaves that material as it was', () => {
+  const scene = new THREE.Scene()
+  const player = new THREE.Group()
+  const brass = new THREE.MeshStandardMaterial({ color: 0xb08d3f })
+  const lever = new THREE.Group()
+  lever.position.set(0, 1, 2)
+  for (let i = 0; i < 4; i++) {
+    const part = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), brass)
+    part.position.y = i * 0.1
+    lever.add(part)
+  }
+  // A cage elsewhere built from the same material, like the Convergence gates.
+  const cage = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), brass)
+  cage.position.set(0, 1, -20)
+  scene.add(player, lever, cage)
+
+  const system = createInteractionSystem()
+  system.register(lever, { prompt: 'Pull lever', onInteract() {} })
+
+  for (let round = 0; round < 5; round++) {
+    player.position.set(0, 0, 0)
+    system.update(player, 0)
+    assert.equal(system.getFocused(), lever)
+    assert.equal(brass.emissiveIntensity, 1, 'one tint per material, not one per part')
+
+    player.position.set(0, 0, 10) // out of range: focus drops
+    system.update(player, 0)
+    assert.equal(system.getFocused(), null)
+    assert.equal(brass.emissive.getHex(), 0x000000)
+    assert.equal(brass.emissiveIntensity, 1)
+  }
+  system.dispose()
+})

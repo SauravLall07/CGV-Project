@@ -21,8 +21,13 @@ import { disposeObject } from '../core/dispose.js'
 // - Cinematic train departure sequence into Level 2
 
 export function createBoardingLevel({
-  scene, interaction, assets, hud, player, respawn, advance, beginCinematic
+  scene, interaction, assets, hud, player, respawn, timeSystem, advance, beginCinematic
 }) {
+  // Level 1 is pure stealth. The Chrono Interface has not been stolen yet, so
+  // all temporal abilities are genuinely unavailable and the Chrono HUD stays hidden.
+  timeSystem?.setMode?.('NORMAL')
+  timeSystem?.setAbilityAvailability?.({ SLOW: false, FREEZE: false, REWIND: false, GHOST: false })
+  hud?.setChronoVisible?.(false)
   const { group: station, boardingControl, wallColliders } = createStationBlockout({ includePlaceholders: false })
   const { train } = createTrain()
   const lights = createStationLighting()

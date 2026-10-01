@@ -23,8 +23,8 @@ const HALF_WIDTH = 1.7
 // Generous for a real carriage, but the third-person camera needs headroom
 // behind the player — at 2.4 m it spends the whole level clamped against the
 // ceiling.
-const WALL_TOP = 2.3
-const CEILING_Y = 2.6
+const WALL_TOP = 3.1
+const CEILING_Y = 3.5
 const BAY_SPACING = 3.6
 const SEAT_X = 1.15
 
@@ -112,12 +112,12 @@ export function createCarriageInterior({ length = 26, damaged = false } = {}) {
     bulkhead.position.set(0, (WALL_TOP + 0.4) / 2, side * halfLength)
     group.add(bulkhead)
 
-    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.95, 0.18), brass)
-    doorFrame.position.set(0, 0.97, side * halfLength)
+    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.15, 2.7, 0.18), brass)
+    doorFrame.position.set(0, 1.35, side * halfLength)
     group.add(doorFrame)
 
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.82, 1.5, 0.2), doorGlass)
-    glass.position.set(0, 1.15, side * halfLength)
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.15, 0.2), doorGlass)
+    glass.position.set(0, 1.45, side * halfLength)
     group.add(glass)
   }
 
@@ -148,7 +148,7 @@ export function createCarriageInterior({ length = 26, damaged = false } = {}) {
   const rackGeometry = new THREE.BoxGeometry(0.5, 0.05, length - 1)
   for (const side of [-1, 1]) {
     const rack = new THREE.Mesh(rackGeometry, brass)
-    rack.position.set(side * (HALF_WIDTH - 0.3), 2.02, 0)
+    rack.position.set(side * (HALF_WIDTH - 0.3), 2.82, 0)
     rack.castShadow = true
     group.add(rack)
   }

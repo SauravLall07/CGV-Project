@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { settings } from '../core/settings.js'
+import { createNearRaycastSet } from '../core/near-raycast.js'
 
 // Third-person camera: orbits a pivot at the player's head on mouse look
 // (Pointer Lock API), follows with a smoothed pivot, and pulls itself in when
@@ -87,6 +88,8 @@ export function createThirdPersonCamera(camera, domElement) {
   const smoothedPivot = new THREE.Vector3()
   const offset = new THREE.Vector3()
   const raycaster = new THREE.Raycaster()
+  // Only geometry within reach of the pivot is tested; see core/near-raycast.js.
+  const nearby = createNearRaycastSet()
 
   let distance = settings.get('cameraDistance')
   let hasSnapped = false
@@ -119,7 +122,8 @@ export function createThirdPersonCamera(camera, domElement) {
     if (collidables) {
       raycaster.set(smoothedPivot, offset)
       raycaster.far = maxDistance
-      const hits = raycaster.intersectObject(collidables, true)
+      const nearbyCollidables = nearby.get(collidables, smoothedPivot, maxDistance, playerMesh)
+      const hits = raycaster.intersectObjects(nearbyCollidables, false)
       for (const hit of hits) {
         if (isDescendantOf(hit.object, playerMesh)) continue
         if (hit.object.userData.noCameraCollision) continue
@@ -143,6 +147,7 @@ export function createThirdPersonCamera(camera, domElement) {
   // whole map would look wrong.
   function snap() {
     hasSnapped = false
+    nearby.invalidate()
   }
 
   // Point the camera (and therefore "forward" for movement, which is

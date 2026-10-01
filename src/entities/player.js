@@ -461,7 +461,7 @@ export function createPlayer() {
         verticalVelocity = 0
         airVelocityX = 0
         airVelocityZ = 0
-      } 
+      }
     }
 
     // Smooth crouch in/out instead of snapping.
