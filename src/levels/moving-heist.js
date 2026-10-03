@@ -310,6 +310,7 @@ export function createMovingHeistLevel({
   const { root, spans, roof } = env
 
   scene.add(outdoorEnv.group, root)
+  scene.background = new THREE.Color(0x1a1a2e)
   scene.fog = new THREE.Fog(0x241d24, 30, 250)
 
   // Geometry that can block the Passenger guard's vision.

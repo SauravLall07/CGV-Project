@@ -484,6 +484,11 @@ export function createPoliceGuardVisual(tmpl = template) {
   function dispose() {
     mixer.stopAllAction()
     mixer.uncacheRoot(model)
+    // Geometry and maps belong to the shared template. The bone DataTexture
+    // does not: the renderer builds one per cloned skeleton on first draw.
+    root.traverse((node) => {
+      if (node.skeleton?.boneTexture) node.skeleton.dispose()
+    })
   }
 
   function getBeamWorldPosition(target) {

@@ -110,7 +110,9 @@ export function createBoardingLevel({
   const unregisterStationBlocker = interaction.registerBlocker(station)
   const unregisterTrainBlocker = interaction.registerBlocker(train)
 
-  // Dusk atmosphere with depth fog
+  // Dusk atmosphere. Set on entry so a previous level (Timewreck's night
+  // sky) cannot leave its background behind.
+  scene.background = new THREE.Color(0x1a1a2e)
   scene.fog = new THREE.Fog(0x241d24, 30, 250)
 
   // Collect solid obstacles for line-of-sight raycasts

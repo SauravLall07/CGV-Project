@@ -7,13 +7,14 @@ import * as THREE from 'three'
 // rather than colour. That map + normalMap pairing is what the brief means by
 // textures "used for more than colour".
 //
-// The generated CANVASES are cached module-side (they're CPU-side pixel data
-// and cost real milliseconds to build), but every call hands back a FRESH
-// THREE.CanvasTexture. That split matters: the level manager disposes every
-// texture it tears down, so a cache of GPU textures would hand the next level
-// disposed resources, while a cache of canvases is safe to reuse forever.
+// Canvases and the Texture that owns each one are cached module-side. A level
+// teardown disposes the textures on its materials; those are clones, so the
+// cached Texture and its Source stay valid for the next visit. clone() shares
+// that Source, and Three uploads a Source to the GPU once no matter how many
+// clones (and repeat/offset variants) reference it.
 
 const canvasCache = new Map()
+const textureCache = new Map()
 
 function cachedCanvas(key, build) {
   let canvas = canvasCache.get(key)
@@ -127,13 +128,29 @@ function normalFromCanvas(source, strength) {
   return target
 }
 
-function toTexture(canvas, repeat, { srgb = true } = {}) {
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.wrapS = THREE.RepeatWrapping
-  texture.wrapT = THREE.RepeatWrapping
+function sharedTexture(key, canvas, srgb) {
+  const cacheKey = `${key}:${srgb ? 'srgb' : 'linear'}`
+  let texture = textureCache.get(cacheKey)
+  if (!texture) {
+    texture = new THREE.CanvasTexture(canvas)
+    texture.name = cacheKey
+    texture.wrapS = THREE.RepeatWrapping
+    texture.wrapT = THREE.RepeatWrapping
+    texture.anisotropy = 8
+    if (srgb) texture.colorSpace = THREE.SRGBColorSpace
+    // disposeObject skips this object. Materials receive clones instead.
+    texture.userData.sharedTexture = true
+    textureCache.set(cacheKey, texture)
+  }
+  return texture
+}
+
+function toTexture(key, canvas, repeat, { srgb = true } = {}) {
+  const texture = sharedTexture(key, canvas, srgb).clone()
+  // clone() copies userData, including the cache flag. This copy belongs to
+  // the level and has to be released on teardown.
+  delete texture.userData.sharedTexture
   texture.repeat.set(repeat[0], repeat[1])
-  texture.anisotropy = 8
-  if (srgb) texture.colorSpace = THREE.SRGBColorSpace
   return texture
 }
 
@@ -390,8 +407,8 @@ export function woodMaterial({ repeat = [1, 1], seed = 11, light = 0x8a5a33, dar
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.4))
 
   return new THREE.MeshStandardMaterial({
-    map: toTexture(colour, repeat),
-    normalMap: toTexture(normal, repeat, { srgb: false }),
+    map: toTexture(key, colour, repeat),
+    normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
     roughness,
     metalness: 0.04
   })
@@ -403,8 +420,8 @@ export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab9
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 2.2))
 
   return new THREE.MeshStandardMaterial({
-    map: toTexture(colour, repeat),
-    normalMap: toTexture(normal, repeat, { srgb: false }),
+    map: toTexture(key, colour, repeat),
+    normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
     roughness: 0.34,
     metalness: 0.02
   })
@@ -416,8 +433,8 @@ export function carpetMaterial({ repeat = [1, 1], seed = 37, base = 0x5c2230, ac
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 2.6))
 
   return new THREE.MeshStandardMaterial({
-    map: toTexture(colour, repeat),
-    normalMap: toTexture(normal, repeat, { srgb: false }),
+    map: toTexture(key, colour, repeat),
+    normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
     roughness: 0.94,
     metalness: 0
   })
@@ -429,20 +446,21 @@ export function metalMaterial({ repeat = [1, 1], seed = 53, base = 0x8c8f96, rou
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.1))
 
   return new THREE.MeshStandardMaterial({
-    map: toTexture(colour, repeat),
-    normalMap: toTexture(normal, repeat, { srgb: false }),
+    map: toTexture(key, colour, repeat),
+    normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
     roughness,
     metalness
   })
 }
 
 export function plasterMaterial({ repeat = [1, 1], seed = 71, base = 0xa79c8a, roughness = 0.82 } = {}) {
-  const colour = cachedCanvas(`plaster:${seed}:${base}`, () => plasterCanvas(256, seed, base))
-  const normal = cachedCanvas(`plaster:${seed}:${base}:n`, () => normalFromCanvas(colour, 1.6))
+  const key = `plaster:${seed}:${base}`
+  const colour = cachedCanvas(key, () => plasterCanvas(256, seed, base))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.6))
 
   return new THREE.MeshStandardMaterial({
-    map: toTexture(colour, repeat),
-    normalMap: toTexture(normal, repeat, { srgb: false }),
+    map: toTexture(key, colour, repeat),
+    normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
     roughness,
     metalness: 0.02
   })
@@ -453,8 +471,8 @@ export function litWindowMaterial({ repeat = [1, 1], paneCount = 6, glass = 0xff
   const canvas = cachedCanvas(key, () => windowStripCanvas(512, 128, paneCount, glass, frame))
 
   return new THREE.MeshStandardMaterial({
-    map: toTexture(canvas, repeat),
-    emissiveMap: toTexture(canvas, repeat),
+    map: toTexture(key, canvas, repeat),
+    emissiveMap: toTexture(key, canvas, repeat),
     emissive: 0xffffff,
     emissiveIntensity,
     roughness: 0.28,
@@ -463,11 +481,12 @@ export function litWindowMaterial({ repeat = [1, 1], paneCount = 6, glass = 0xff
 }
 
 export function nightViewMaterial({ repeat = [1, 1], seed = 91, emissiveIntensity = 0.9 } = {}) {
-  const canvas = cachedCanvas(`night:${seed}`, () => passingNightCanvas(512, 256, seed))
+  const key = `night:${seed}`
+  const canvas = cachedCanvas(key, () => passingNightCanvas(512, 256, seed))
 
   return new THREE.MeshStandardMaterial({
-    map: toTexture(canvas, repeat),
-    emissiveMap: toTexture(canvas, repeat),
+    map: toTexture(key, canvas, repeat),
+    emissiveMap: toTexture(key, canvas, repeat),
     emissive: 0xffffff,
     emissiveIntensity,
     roughness: 0.15,
@@ -480,8 +499,8 @@ export function signMaterial({ text = 'PLATFORM 1', background = 0x14110d, foreg
   const canvas = cachedCanvas(key, () => signCanvas(text, background, foreground, width, height))
 
   return new THREE.MeshStandardMaterial({
-    map: toTexture(canvas, [1, 1]),
-    emissiveMap: toTexture(canvas, [1, 1]),
+    map: toTexture(key, canvas, [1, 1]),
+    emissiveMap: toTexture(key, canvas, [1, 1]),
     emissive: 0xffffff,
     emissiveIntensity,
     roughness: 0.5,
