@@ -119,7 +119,34 @@ export function createTimewreckLevel({
   scene.add(outdoorEnv.group, wreckExterior.group, root)
   scene.background = new THREE.Color().copy(NIGHT_COLOR)
   // Wide enough to keep the storm-lit scenery outside readable.
-  scene.fog = new THREE.Fog(0x10141c, 10, 120)
+  scene.fog = new THREE.Fog(0x161c28, 38, 185)
+
+  // Damaged PBR surfaces are very dark; short-range emergency points leave most
+  // of each car on ambient alone, which ACES tone mapping crushes to near-black.
+  // One soft directional key (no shadows) lights the aisle and player.
+  const aisleKey = new THREE.DirectionalLight(0xc8d6e8, 1.75)
+  aisleKey.position.set(1.6, 13, spans.vault.maxZ + 8)
+  scene.add(aisleKey)
+  const aisleKeyTarget = new THREE.Object3D()
+  aisleKeyTarget.position.set(0, 0.6, spans.cab.minZ - 6)
+  scene.add(aisleKeyTarget)
+  aisleKey.target = aisleKeyTarget
+
+  const playerMatRestore = []
+  player.mesh.traverse((node) => {
+    if (!node.isMesh?.material) return
+    const mats = Array.isArray(node.material) ? node.material : [node.material]
+    for (const m of mats) {
+      if (!m.isMeshStandardMaterial) continue
+      playerMatRestore.push({
+        m,
+        emissive: m.emissive.getHex(),
+        ei: m.emissiveIntensity
+      })
+      m.emissive.setHex(0x4a5a6e)
+      m.emissiveIntensity = 0.42
+    }
+  })
 
   const unregisters = []
   unregisters.push(interaction.registerBlocker(root))
@@ -235,7 +262,7 @@ export function createTimewreckLevel({
   const loopRing = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.05, 10, 24), loopRingMat)
   loopRing.rotation.y = Math.PI / 2
   addProp(loopRing, loopDoorZ + 1.4, -(INTERIOR_HALF_WIDTH - 0.14), 1.7)
-  const loopRingLight = new THREE.PointLight(0x10b981, 5, 5, 2)
+  const loopRingLight = new THREE.PointLight(0x10b981, 6.5, 7, 2)
   addProp(loopRingLight, loopDoorZ + 1.4, -(INTERIOR_HALF_WIDTH - 0.5), 1.7)
 
   let loopT = 0
@@ -277,7 +304,7 @@ export function createTimewreckLevel({
 
   const voidBox = new THREE.Mesh(
     new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.3, 3.4, gapMaxZ - gapMinZ),
-    new THREE.MeshStandardMaterial({ color: 0x04050a, roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: 0x0c1018, roughness: 1 })
   )
   voidBox.position.set(0, -1.68, (gapMinZ + gapMaxZ) / 2)
   voidBox.userData.noCameraCollision = true
@@ -331,7 +358,7 @@ export function createTimewreckLevel({
     restoreSnapshot: (s) => { slabDriftT = s.slabDriftT }
   }))
 
-  const walkwayGlow = new THREE.PointLight(0x7dd3fc, 0, 5.5, 2)
+  const walkwayGlow = new THREE.PointLight(0x7dd3fc, 0, 9, 2)
   walkwayGlow.position.set(0, 0.55, spans.security.center)
   walkwayGlow.userData.noCameraCollision = true
   root.add(walkwayGlow)
@@ -348,7 +375,7 @@ export function createTimewreckLevel({
 
   const collapsePit = new THREE.Mesh(
     new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.28, 3.5, collapseMaxZ - collapseMinZ),
-    new THREE.MeshStandardMaterial({ color: 0x05060a, roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: 0x12141a, roughness: 1 })
   )
   collapsePit.position.set(0, -1.72, (collapseMinZ + collapseMaxZ) / 2)
   collapsePit.visible = false
@@ -514,7 +541,7 @@ export function createTimewreckLevel({
     collapseSparks.push(sp)
   }
 
-  const collapseGlow = new THREE.PointLight(0x7dd3fc, 0, 6.5, 2)
+  const collapseGlow = new THREE.PointLight(0x7dd3fc, 0, 8, 2)
   collapseGlow.position.set(0, 0.7, (collapseMinZ + collapseMaxZ) / 2)
   collapseGlow.userData.noCameraCollision = true
   root.add(collapseGlow)
@@ -1301,12 +1328,12 @@ export function createTimewreckLevel({
       const freezePulse = mode === 'FREEZE' ? 0.1 * (0.5 + 0.5 * Math.sin(elapsed * 3.4)) : 0
       slabMat.customUniforms.uTime.value += finaleFreeze ? 0 : delta
       slabMat.customUniforms.uMode.value = modeInt
-      slabMat.customUniforms.uIntensity.value = 0.35 + slabSettle * 0.65 + freezePulse
+      slabMat.customUniforms.uIntensity.value = 0.45 + slabSettle * 0.85 + freezePulse
       collapseChronoMat.customUniforms.uTime.value += finaleFreeze ? 0 : delta
       collapseChronoMat.customUniforms.uMode.value = modeInt
       collapseChronoMat.customUniforms.uIntensity.value = collapseLive
-        ? (mode === 'FREEZE' ? 1.05 + freezePulse : 0.42 + 0.12 * Math.sin(elapsed * 2.4))
-        : 0.28
+        ? (mode === 'FREEZE' ? 1.25 + freezePulse : 0.55 + 0.14 * Math.sin(elapsed * 2.4))
+        : 0.34
       if (!finaleFreeze) waveMat.customUniforms.uTime.value += delta
       waveMat.customUniforms.uMode.value = finaleFreeze ? 2 : 3
       const resumeWave = resumeFlashT >= 0 ? Math.max(0, 1 - resumeFlashT / 0.4) * 0.7 : 0
@@ -1315,7 +1342,7 @@ export function createTimewreckLevel({
         : 1.0
       waveMat.customUniforms.uOpacity.value = finaleFreeze ? 0.92 : 0.6
       wave.scale.set(finaleFreeze ? 1.14 : 1, finaleFreeze ? 1.18 : 1, 1)
-      walkwayGlow.intensity = slabSettle * (mode === 'FREEZE' ? 4.2 : 1.6)
+      walkwayGlow.intensity = slabSettle * (mode === 'FREEZE' ? 5.5 : 2.4)
 
       if (!finaleFreeze) lever.rotation.x = -0.4 + Math.sin(elapsed * 2.2) * 0.05
 
@@ -1366,9 +1393,9 @@ export function createTimewreckLevel({
         sparks.material.opacity = 1
       } else if (!braking) {
         scene.background.setHex(resumeWarm > 0.08 ? 0x1a1412 : NIGHT_COLOR.getHex())
-        scene.fog.color.set(resumeWarm > 0.08 ? 0x241814 : 0x10141c)
-        scene.fog.near = 10
-        scene.fog.far = resumeWarm > 0 ? 55 + (1 - resumeWarm) * 65 : 120
+        scene.fog.color.set(resumeWarm > 0.08 ? 0x241814 : 0x161c28)
+        scene.fog.near = 38
+        scene.fog.far = resumeWarm > 0 ? 55 + (1 - resumeWarm) * 65 : 185
         chunkMat.color.setHex(0x3d4248)
         chunkMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a40 : 0x141618)
         chunkMat.emissiveIntensity = 0.22 + resumeWarm * 1.6
@@ -1497,10 +1524,10 @@ export function createTimewreckLevel({
       collapseSettle += ((frozen && collapseLive ? 1 : 0) - collapseSettle) * Math.min(1, delta * 9)
       if (collapseLive) applyCollapseMotion()
       collapseGlow.intensity = collapseLive
-        ? (frozen ? 5.5 : 1.3 + Math.sin(elapsed * 3.2) * 0.4)
+        ? (frozen ? 8 : 2.4 + Math.sin(elapsed * 3.2) * 0.4)
         : 0
-      collapseSteel.emissiveIntensity = frozen && collapseLive ? 0.55 : 0.22
-      collapsePaint.emissiveIntensity = frozen && collapseLive ? 0.42 : 0.18
+      collapseSteel.emissiveIntensity = frozen && collapseLive ? 1.1 : 0.22
+      collapsePaint.emissiveIntensity = frozen && collapseLive ? 0.85 : 0.18
       if (frozen && collapseLive) {
         for (const p of collapsePieces) {
           slabSupports.push({
@@ -1598,6 +1625,11 @@ export function createTimewreckLevel({
 
     dispose() {
       unregisters.forEach((fn) => fn())
+      scene.remove(aisleKey, aisleKeyTarget)
+      for (const snap of playerMatRestore) {
+        snap.m.emissive.setHex(snap.emissive)
+        snap.m.emissiveIntensity = snap.ei
+      }
       // outdoorEnv.dispose() only frees GPU resources — the group still has to
       // come out of the scene here or it survives every level teardown.
       outdoorEnv.dispose()
