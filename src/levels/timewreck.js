@@ -7,6 +7,8 @@ import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
+import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
+import { bindingLabel, settings } from '../core/settings.js'
 
 // Level 3 — "The Timewreck". The escape run: the player now sprints BACK down
 // the train they just robbed, from the vault to the locomotive, as the Chrono
@@ -184,6 +186,304 @@ export function createTimewreckLevel({
   }
 
   let lastCheckpointZ = Infinity
+
+  // Vault security checkpoint: two wall-mounted racks spanning the aisle.
+  // Each rack's three beams rise and fall together. The open window is when
+  // the lowest beam is above head height.
+  const VAULT_BEAM_BASES = [0.5, 1.1, 1.7]
+  const VAULT_BEAM_LIFT = 1.55
+  const VAULT_BEAM_LENGTH = 4.8
+  const VAULT_BEAM_RADIUS = 0.045
+  const VAULT_GATE_SPEED = 0.9
+  const VAULT_HIT_HALF_Y = 0.08
+  const VAULT_HIT_HALF_Z = 0.16
+  const VAULT_BODY_HEIGHT = 1.85
+  const vaultPostMat = new THREE.MeshStandardMaterial({ color: 0x1a222c, metalness: 0.82, roughness: 0.38 })
+  let vaultGateT = 0
+
+  function createVaultGate(z, phase) {
+    const group = new THREE.Group()
+    group.name = 'vault-security-gate'
+    group.position.set(0, 0, z)
+    const laserMat = createSecurityLaserMaterial({ beamCount: 1 })
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.35, 0.16), vaultPostMat)
+      post.position.set(side * 2.4, 1.175, 0)
+      group.add(post)
+    }
+    const beams = VAULT_BEAM_BASES.map((baseY) => {
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(VAULT_BEAM_RADIUS, VAULT_BEAM_RADIUS, VAULT_BEAM_LENGTH, 12),
+        laserMat
+      )
+      mesh.rotation.z = Math.PI / 2
+      mesh.position.y = baseY
+      group.add(mesh)
+      const emitters = [-1, 1].map((side) => {
+        const emitter = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.18), vaultPostMat)
+        emitter.position.set(side * 2.4, baseY, 0)
+        group.add(emitter)
+        return emitter
+      })
+      return { mesh, baseY, emitters }
+    })
+    group.traverse((node) => { node.userData.noCameraCollision = true })
+    root.add(group)
+    return { z, phase, laserMat, beams }
+  }
+
+  const vaultGates = [
+    createVaultGate(spans.vault.center - 1.2, 0),
+    createVaultGate(spans.vault.center - 4.6, Math.PI)
+  ]
+
+  function updateVaultGates(dt, playerPos) {
+    vaultGateT += dt
+    for (const gate of vaultGates) {
+      const lift = (0.5 + 0.5 * Math.sin(vaultGateT * VAULT_GATE_SPEED + gate.phase)) * VAULT_BEAM_LIFT
+      if (gate.laserMat.customUniforms) gate.laserMat.customUniforms.uTime.value += dt
+      for (const beam of gate.beams) {
+        const y = beam.baseY + lift
+        beam.mesh.position.y = y
+        for (const emitter of beam.emitters) emitter.position.y = y
+        if (!playerPos) continue
+        const overlapsBody = (y + VAULT_HIT_HALF_Y) > playerPos.y
+          && (y - VAULT_HIT_HALF_Y) < playerPos.y + VAULT_BODY_HEIGHT
+        const inSlice = Math.abs(playerPos.z - gate.z) <= VAULT_HIT_HALF_Z
+        const inWidth = Math.abs(playerPos.x) <= VAULT_BEAM_LENGTH / 2
+        if (overlapsBody && inSlice && inWidth) {
+          failSoft('A damaged security laser caught you!', 'laser')
+        }
+      }
+    }
+  }
+
+  // Convergence — electrical surges across the aisle. The ladder is at this
+  // car's Vault end; the arcs sit further along the walk toward Mechanical.
+  const SURGE_WARN = 0.75
+  const SURGE_DEPTH = 2.6
+  const SURGE_HIT_HALF_Z = 1.15
+  let surgeT = 0
+
+  function createElectricalSurge(z, side, offset, period, danger) {
+    const group = new THREE.Group()
+    group.name = 'convergence-electrical-surge'
+    group.position.set(0, 0, z)
+
+    const panelMat = new THREE.MeshStandardMaterial({
+      color: 0x1c2430, metalness: 0.55, roughness: 0.42,
+      emissive: 0x7dd3fc, emissiveIntensity: 0.25
+    })
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.55, 1.05), panelMat)
+    panel.position.set(side * 2.28, 1.2, 0)
+    group.add(panel)
+
+    const cable = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 2.4, 6),
+      new THREE.MeshStandardMaterial({ color: 0x2a3038, metalness: 0.35, roughness: 0.72 })
+    )
+    cable.position.set(side * 1.55, 1.85, 0)
+    cable.rotation.z = side * 1.05
+    group.add(cable)
+
+    const arcMat = new THREE.MeshStandardMaterial({
+      color: 0xe7fbff, emissive: 0xb6f3ff, emissiveIntensity: 0.25,
+      transparent: true, opacity: 0.18, roughness: 0.15, metalness: 0.05
+    })
+    const arc = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.25, SURGE_DEPTH), arcMat)
+    arc.position.y = 1.05
+    group.add(arc)
+    for (let i = 0; i < 4; i++) {
+      const bolt = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.08, SURGE_DEPTH - 0.35), arcMat)
+      bolt.position.set(-1.55 + i * 1.05, 0.62 + (i % 2) * 0.7, 0)
+      bolt.rotation.z = (i - 1.5) * 0.42
+      group.add(bolt)
+    }
+
+    const light = new THREE.PointLight(0x9be7ff, 0.35, 7, 2)
+    light.position.set(0, 1.15, 0)
+    group.add(light)
+    group.traverse((node) => { node.userData.noCameraCollision = true })
+    root.add(group)
+    return { z, offset, period, danger, arcMat, panelMat, light }
+  }
+
+  const electricalSurges = [
+    createElectricalSurge(spans.convergence.center + 8, 1, 0, 4.6, 2.1),
+    createElectricalSurge(spans.convergence.center - 4, -1, 1.8, 4.5, 2.4),
+    createElectricalSurge(spans.convergence.center - 14, 1, 3.2, 4.4, 2.6)
+  ]
+
+  function updateElectricalSurges(dt, playerPos) {
+    surgeT += dt
+    for (const surge of electricalSurges) {
+      const phase = ((surgeT + surge.offset) % surge.period + surge.period) % surge.period
+      const dangerous = phase < surge.danger
+      const warning = !dangerous && phase > surge.period - SURGE_WARN
+      const glow = dangerous
+        ? 6
+        : warning
+          ? 0.7 + 3.4 * Math.abs(Math.sin(surgeT * 30))
+          : 0.22
+      surge.arcMat.emissiveIntensity = glow
+      surge.arcMat.opacity = dangerous ? 0.94 : warning ? 0.5 : 0.16
+      surge.panelMat.emissiveIntensity = dangerous ? 2.4 : warning ? 1.1 : 0.25
+      surge.light.intensity = dangerous ? 12 : warning ? 3 : 0.35
+      if (!dangerous || !playerPos) continue
+      const overlapsBody = playerPos.y < 1.67 && playerPos.y + 1.85 > 0.43
+      const inSlice = Math.abs(playerPos.z - surge.z) <= SURGE_HIT_HALF_Z
+      const inWidth = Math.abs(playerPos.x) <= 2.1
+      if (overlapsBody && inSlice && inWidth) {
+        failSoft('An electrical surge caught you!')
+      }
+    }
+  }
+
+  // Relay blast doors. The clock uses envDt, so Slow, Freeze and Rewind
+  // move the whole cycle — leaves and warning light — together.
+  const BLAST_OPEN_S = 2.4
+  const BLAST_WARN_S = 1.5
+  const BLAST_CLOSE_S = 2.6
+  const BLAST_SHUT_S = 1.2
+  const BLAST_REOPEN_S = 2.8
+  const BLAST_CYCLE_S = BLAST_OPEN_S + BLAST_WARN_S + BLAST_CLOSE_S + BLAST_SHUT_S + BLAST_REOPEN_S
+  const BLAST_LEAF_HALF_X = 0.75
+  const BLAST_LEAF_HALF_Z = 0.18
+  const BLAST_LEAF_TOP = 2.8
+  const doorZ = spans.relay.center - 2.6
+  let blastT = 0
+
+  const blastSteel = new THREE.MeshStandardMaterial({
+    color: 0x3a424c, metalness: 0.74, roughness: 0.42, emissive: 0x14181c, emissiveIntensity: 0.12
+  })
+  const blastPlate = new THREE.MeshStandardMaterial({
+    color: 0x232a31, metalness: 0.62, roughness: 0.58
+  })
+  const blastScar = new THREE.MeshStandardMaterial({
+    color: 0x4a3028, emissive: 0x7c2d12, emissiveIntensity: 0.55, roughness: 0.62
+  })
+  const blastLampMat = new THREE.MeshStandardMaterial({
+    color: 0x3a1210, emissive: 0xff2a1a, emissiveIntensity: 0.12, roughness: 0.28
+  })
+  const blastSparkMat = new THREE.MeshStandardMaterial({
+    color: 0x3a1210, emissive: 0xff2a1a, emissiveIntensity: 0.2, roughness: 0.35
+  })
+
+  function blastBox(parent, w, h, d, mat, x, y, z) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+    mesh.position.set(x, y, z)
+    parent.add(mesh)
+    return mesh
+  }
+
+  function createBlastLeaf(side) {
+    const leaf = new THREE.Group()
+    leaf.name = side < 0 ? 'relay-blast-leaf-left' : 'relay-blast-leaf-right'
+    blastBox(leaf, 1.34, 2.48, 0.22, blastPlate, 0, 0, 0)
+    for (const x of [-0.66, 0.66]) blastBox(leaf, 0.16, 2.8, 0.36, blastSteel, x, 0, 0)
+    for (const y of [-1.32, 1.32]) blastBox(leaf, 1.36, 0.16, 0.36, blastSteel, 0, y, 0)
+    for (const y of [-0.42, 0.42]) blastBox(leaf, 1.28, 0.08, 0.32, blastSteel, 0, y, 0.02)
+    for (let i = 0; i < 5; i++) {
+      const y = -1.0 + i * 0.5
+      blastBox(leaf, 0.05, 0.05, 0.04, blastSteel, -0.66, y, 0.18)
+      blastBox(leaf, 0.05, 0.05, 0.04, blastSteel, 0.66, y, 0.18)
+    }
+    // Leading edge faces the centre. side < 0 is the left leaf.
+    blastBox(leaf, 0.08, 2.62, 0.34, blastScar, -side * 0.71, 0, side * 0.01)
+    leaf.position.set(side * 1.85, 1.4, doorZ)
+    return leaf
+  }
+
+  const blastDoors = new THREE.Group()
+  blastDoors.name = 'relay-blast-doors'
+  const blastLeft = createBlastLeaf(-1)
+  const blastRight = createBlastLeaf(1)
+  blastDoors.add(blastLeft, blastRight)
+
+  for (const side of [-1, 1]) {
+    const housing = new THREE.Group()
+    housing.name = side < 0 ? 'relay-blast-housing-left' : 'relay-blast-housing-right'
+    blastBox(housing, 0.22, 2.8, 0.7, blastSteel, side * 2.42, 1.4, 0)
+    blastBox(housing, 0.14, 2.8, 0.58, blastSteel, side * 1.2, 1.4, 0)
+    blastBox(housing, 0.9, 0.7, 0.62, blastPlate, side * 1.95, 2.35, 0)
+    blastBox(housing, 0.08, 0.16, 0.08, blastSparkMat, side * 1.55, 2.15, 0.32)
+    blastBox(housing, 0.08, 0.16, 0.08, blastSparkMat, side * 2.2, 1.7, 0.32)
+    housing.position.z = doorZ
+    blastDoors.add(housing)
+  }
+
+  blastBox(blastDoors, 5.2, 0.5, 0.34, blastSteel, 0, 3.05, doorZ)
+  blastBox(blastDoors, 4.7, 0.05, 0.08, blastPlate, 0, 0.04, doorZ - 0.22)
+  blastBox(blastDoors, 4.7, 0.05, 0.08, blastPlate, 0, 0.04, doorZ + 0.22)
+  const blastLamp = blastBox(blastDoors, 0.34, 0.16, 0.12, blastLampMat, 0, 3.16, doorZ + 0.24)
+  blastBox(blastDoors, 0.5, 0.08, 0.16, blastSteel, 0, 3.28, doorZ + 0.2)
+  const blastLight = new THREE.PointLight(0xff2a1a, 0.45, 6.5, 2)
+  blastLight.position.set(0, 3.16, doorZ + 0.2)
+  blastDoors.add(blastLight)
+  blastDoors.traverse((node) => { node.userData.noCameraCollision = true })
+  root.add(blastDoors)
+
+  const blastObstacles = [
+    { minX: -2.6, maxX: -1.1, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
+    { minX: 1.1, maxX: 2.6, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 }
+  ]
+
+  function updateBlastDoors(dt, playerPos) {
+    blastT = ((blastT + dt) % BLAST_CYCLE_S + BLAST_CYCLE_S) % BLAST_CYCLE_S
+    let closeAmount = 0
+    let lampEi = 0.12
+    let lightI = 0.45
+    const warnStart = BLAST_OPEN_S
+    const closeStart = warnStart + BLAST_WARN_S
+    const shutStart = closeStart + BLAST_CLOSE_S
+    const reopenStart = shutStart + BLAST_SHUT_S
+    if (blastT < warnStart) {
+      closeAmount = 0
+    } else if (blastT < closeStart) {
+      closeAmount = 0
+      const flick = 0.5 + 0.5 * Math.sin(blastT * 16 * Math.PI)
+      lampEi = 0.35 + flick * 2.4
+      lightI = 0.6 + flick * 13.4
+    } else if (blastT < shutStart) {
+      const u = (blastT - closeStart) / BLAST_CLOSE_S
+      closeAmount = u * u * (3 - 2 * u)
+      const pulse = 0.5 + 0.5 * Math.sin(blastT * 10 * Math.PI)
+      lampEi = 1.6 + pulse * 0.9
+      lightI = 5 + pulse * 6
+    } else if (blastT < reopenStart) {
+      closeAmount = 1
+      const pulse = 0.5 + 0.5 * Math.sin(blastT * 4 * Math.PI)
+      lampEi = 1.7 + pulse * 0.35
+      lightI = 8 + pulse * 2
+    } else {
+      const u = (blastT - reopenStart) / BLAST_REOPEN_S
+      const eased = u * u * (3 - 2 * u)
+      closeAmount = 1 - eased
+      const pulse = 0.5 + 0.5 * Math.sin(blastT * 8 * Math.PI)
+      const urgency = 1 - eased
+      lampEi = 0.12 + urgency * (1.4 + pulse * 0.6)
+      lightI = 0.45 + urgency * (6 + pulse * 3)
+    }
+    blastSparkMat.emissiveIntensity = lampEi > 0.4 ? lampEi * 0.85 : 0.15
+    blastLampMat.emissiveIntensity = lampEi
+    blastLight.intensity = lightI
+
+    const leftX = -1.85 + 1.1 * closeAmount
+    const rightX = 1.85 - 1.1 * closeAmount
+    blastLeft.position.x = leftX
+    blastRight.position.x = rightX
+
+    if (!playerPos) return
+    const bodyTop = playerPos.y + 1.85
+    const bodyBottom = playerPos.y
+    const pad = 0.18
+    const inSlab = Math.abs(playerPos.z - doorZ) < BLAST_LEAF_HALF_Z + pad
+      && bodyTop > 0 && bodyBottom < BLAST_LEAF_TOP
+    const hitLeft = Math.abs(playerPos.x - leftX) < BLAST_LEAF_HALF_X + pad
+    const hitRight = Math.abs(playerPos.x - rightX) < BLAST_LEAF_HALF_X + pad
+    if (inSlab && (hitLeft || hitRight)) failSoft('The blast doors caught you!')
+  }
+
   const checkpointZs = [
     spans.mechanical.maxZ - 1.5,
     spans.cargo.maxZ - 1.5,
@@ -1230,6 +1530,7 @@ export function createTimewreckLevel({
       restore: captureCheckpointRestore(spans.vault.center + 3)
     },
     bounds,
+    obstacles: blastObstacles,
     supports: slabSupports,
     voids: gapVoids,
     getCarriageVolumes: () => listCarriageVolumes(spans),
@@ -1284,6 +1585,9 @@ export function createTimewreckLevel({
       }
 
       const pp = player.mesh.position
+      updateVaultGates(envDt, pp)
+      updateElectricalSurges(envDt, pp)
+      updateBlastDoors(envDt, pp)
       const modeInt = MODE_INT[mode] ?? 0
 
       if (fractureArmed && pp.z > FRACTURE_Z) {
@@ -1462,10 +1766,16 @@ export function createTimewreckLevel({
         }
       }
 
+      hint('vault-lasers', pp.z, spans.vault.center + 0.6,
+        `Use ${bindingLabel(settings.getBinding('slow'))} to Slow the security lasers`)
+      hint('convergence-surges', pp.z, spans.convergence.maxZ - 3,
+        `Use ${bindingLabel(settings.getBinding('slow'))} to slow the electrical surges`)
       hint('mechanical', pp.z, spans.mechanical.maxZ,
         'Mechanical car — the pistons are running at wrecked speed. [1]/Q SLOW is the only way through.')
       hint('cargo', pp.z, spans.cargo.maxZ,
         'Cargo car — this bulkhead is stuck in a time loop. Watch the ring and move on green.')
+      hint('relay-blast-doors', pp.z, doorZ + 4.2,
+        `Use ${bindingLabel(settings.getBinding('slow'))} or ${bindingLabel(settings.getBinding('freeze'))} to pass the blast doors`)
       hint('security', pp.z, spans.security.maxZ,
         'Security car — the floor is gone. [2]/F FREEZE the suspended wreckage into a walkway.')
       hint('passenger', pp.z, spans.passenger.maxZ,
