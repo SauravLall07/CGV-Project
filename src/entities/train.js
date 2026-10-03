@@ -80,7 +80,6 @@ function addWheels(carriage, shared) {
     }
   }
   wheels.instanceMatrix.needsUpdate = true
-  wheels.castShadow = true
   carriage.add(wheels)
 
   for (const bogieZ of [-1.9, 1.9]) {
@@ -117,7 +116,6 @@ function addDoor(carriage, shared, lowerMaterial) {
   // Step down to the platform.
   const step = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.9), shared.steel)
   step.position.set(-BODY_HALF_WIDTH - 0.14, FLOOR_Y - 0.22, 0)
-  step.castShadow = true
   carriage.add(step)
 }
 
@@ -218,7 +216,6 @@ function createCarriage(index, config, shared) {
     vents.setMatrixAt(i, dummy.matrix)
   })
   vents.instanceMatrix.needsUpdate = true
-  vents.castShadow = true
   carriage.add(vents)
 
   // Gangway connections at both ends.
@@ -356,7 +353,6 @@ function createLocomotive(shared) {
     }
   }
   drivers.instanceMatrix.needsUpdate = true
-  drivers.castShadow = true
   loco.add(drivers)
 
   const leading = new THREE.InstancedMesh(shared.wheel, shared.darkSteel, 4)
@@ -369,14 +365,12 @@ function createLocomotive(shared) {
     }
   }
   leading.instanceMatrix.needsUpdate = true
-  leading.castShadow = true
   loco.add(leading)
 
   // Running boards along both sides.
   for (const side of [-1, 1]) {
     const board = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 7), shared.steel)
     board.position.set(side * 1.45, 1.25, -0.4)
-    board.castShadow = true
     loco.add(board)
   }
 

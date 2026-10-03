@@ -71,7 +71,6 @@ export function createDistractionSystem({
 
     projectile = new THREE.Mesh(projectileGeometry, projectileMaterial)
     projectile.name = 'thrown-distraction'
-    projectile.castShadow = true
 
     const crouched = Boolean(player.isCrouching?.())
     projectile.position.copy(player.mesh.position)

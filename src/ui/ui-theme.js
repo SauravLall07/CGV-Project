@@ -262,6 +262,71 @@ function createRow(label, hint) {
   return { row, text }
 }
 
+export function createChoiceRow({ label, hint, value, choices, onChange }) {
+  const { row } = createRow(label, hint)
+
+  const group = document.createElement('div')
+  Object.assign(group.style, {
+    display: 'flex',
+    flex: '0 0 auto',
+    border: `1px solid ${THEME.brassSoft}`,
+    borderRadius: '4px',
+    overflow: 'hidden'
+  })
+
+  let current = value
+  const buttons = choices.map((choice) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = choice.label
+    Object.assign(button.style, {
+      border: 'none',
+      borderRight: `1px solid ${THEME.brassSoft}`,
+      background: 'transparent',
+      color: THEME.parchmentDim,
+      font: 'inherit',
+      fontSize: '11px',
+      letterSpacing: '0.06em',
+      padding: '6px 10px',
+      cursor: 'pointer'
+    })
+    button.addEventListener('click', () => {
+      if (button.disabled || current === choice.value) return
+      current = choice.value
+      paint()
+      if (onChange) onChange(choice.value)
+    })
+    group.appendChild(button)
+    return { choice, button }
+  })
+  const last = buttons[buttons.length - 1]
+  if (last) last.button.style.borderRight = 'none'
+
+  function paint() {
+    for (const { choice, button } of buttons) {
+      const selected = choice.value === current
+      button.style.background = selected ? 'rgba(176, 141, 63, 0.28)' : 'transparent'
+      button.style.color = selected ? THEME.brass : THEME.parchmentDim
+      button.setAttribute('aria-pressed', String(selected))
+    }
+  }
+  paint()
+
+  row.appendChild(group)
+
+  return {
+    row,
+    setValue(v) {
+      current = v
+      paint()
+    },
+    setEnabled(enabled) {
+      for (const { button } of buttons) button.disabled = !enabled
+      row.style.opacity = enabled ? '1' : '0.4'
+    }
+  }
+}
+
 export function createSliderRow({ label, hint, min, max, step, value, format, onInput }) {
   const { row } = createRow(label, hint)
 

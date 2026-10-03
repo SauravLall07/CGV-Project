@@ -7,7 +7,8 @@ import {
   APPROACH_GATE_X,
   APPROACH_START_X,
   APPROACH_CENTER_Z,
-  JUNCTION_CHECKPOINT
+  JUNCTION_CHECKPOINT,
+  updateStationSunShadow
 } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
@@ -102,6 +103,7 @@ export function createBoardingLevel({
 
   const { train } = createTrain()
   const lights = createStationLighting()
+  const sunlight = lights.find((node) => node.name === 'station-sun')
   const outdoorEnv = createOutdoorEnvironment({ mode: 'station', stationSpotLights: lights.spotLights })
 
   scene.add(outdoorEnv.group, station, train, ...lights)
@@ -181,7 +183,6 @@ export function createBoardingLevel({
 
     const body = new THREE.Mesh(stationPickupGeometry, stationPickupMaterial)
     body.position.y = 0.16
-    body.castShadow = true
     pickup.add(body)
     station.add(pickup)
 
@@ -643,6 +644,7 @@ export function createBoardingLevel({
     },
 
     update(delta) {
+      updateStationSunShadow(sunlight, player.mesh.position)
       outdoorEnv.update(delta)
       onboardingPassage.update(delta)
       tutorialPassage.update(delta)

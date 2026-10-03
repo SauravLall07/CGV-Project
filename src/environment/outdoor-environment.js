@@ -248,8 +248,6 @@ export function createOutdoorEnvironment(options = {}) {
 
   pineMesh.castShadow = true
   decMesh.castShadow = true
-  bushMesh.castShadow = true
-  rockMesh.castShadow = true
 
   const dummy = new THREE.Object3D()
   
@@ -403,7 +401,6 @@ export function createOutdoorEnvironment(options = {}) {
 
   polesInst.instanceMatrix.needsUpdate = true
   crossarmInst.instanceMatrix.needsUpdate = true
-  polesInst.castShadow = true
   tracksideGroup.add(polesInst, crossarmInst)
 
   // Generate sagging catenary telegraph line wires

@@ -562,7 +562,6 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     group.add(fixture)
 
     const housing = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.38, 0.46), stairHousingMat)
-    housing.castShadow = true
     fixture.add(housing)
 
     const lens = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.23, 0.30), stairLensMat)

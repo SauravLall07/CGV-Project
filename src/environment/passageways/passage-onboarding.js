@@ -183,7 +183,6 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     for (const y of [0.55, 1.05]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(exteriorLength, 0.07, 0.07), railMat)
       rail.position.set((EXTERIOR_START_X + PASSAGE_START_X) / 2, y, railZ)
-      rail.castShadow = true
       group.add(rail)
     }
     // Rail collision is intentionally thin; the circle-vs-box player

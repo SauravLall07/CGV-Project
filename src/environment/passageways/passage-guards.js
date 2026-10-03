@@ -333,7 +333,6 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.26, 10), bodyMat)
     body.rotation.z = Math.PI / 2
     body.position.y = 0.16
-    body.castShadow = true
     pickup.add(body)
     group.add(pickup)
 

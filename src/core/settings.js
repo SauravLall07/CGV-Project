@@ -53,19 +53,17 @@ export const OPTION_DEFS = [
     format: (v) => `${Math.round(v * 100)}%`
   },
   {
-    id: 'shadows',
-    label: 'Shadows',
-    hint: 'Dynamic shadow casting from lamps and the train shed.',
+    id: 'shadowQuality',
+    label: 'Shadow Quality',
+    hint: 'PCF shadows on the evening sun. Off, or a 1024, 2048, or 4096 map. Applies immediately.',
     group: 'Display',
-    type: 'toggle'
-  },
-  {
-    id: 'softShadows',
-    label: 'Soft Shadows',
-    hint: 'Percentage-closer filtering. Costs a little performance.',
-    group: 'Display',
-    type: 'toggle',
-    dependsOn: 'shadows'
+    type: 'choice',
+    choices: [
+      { value: 'off', label: 'Off' },
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High' }
+    ]
   },
   {
     id: 'showStats',
@@ -130,12 +128,17 @@ export const OPTION_DEFS = [
   }
 ]
 
+export const SHADOW_MAP_SIZES = { low: 1024, medium: 2048, high: 4096 }
+
+export function shadowMapSize(quality) {
+  return SHADOW_MAP_SIZES[quality] ?? 0
+}
+
 export const DEFAULT_OPTIONS = {
   brightness: 1.15,
   fov: 60,
   renderScale: 1,
-  shadows: true,
-  softShadows: true,
+  shadowQuality: 'medium',
   showStats: false,
   captureShortcuts: true,
   mouseSensitivity: 1,
@@ -290,7 +293,16 @@ function createSettingsStore() {
       values[def.id] = value
     } else if (def.type === 'slider' && typeof value === 'number' && Number.isFinite(value)) {
       values[def.id] = Math.min(def.max, Math.max(def.min, value))
+    } else if (def.type === 'choice' && def.choices.some((choice) => choice.value === value)) {
+      values[def.id] = value
     }
+  }
+
+  // Older saves had a Shadows toggle and a Soft Shadows toggle. Soft shadows
+  // were already rewritten to hard PCF by Three r185, so a saved "on" becomes
+  // Medium and a saved "off" stays off.
+  if (stored.options && stored.options.shadowQuality === undefined && stored.options.shadows === false) {
+    values.shadowQuality = 'off'
   }
 
   const storedBindings = { ...(stored.bindings ?? {}) }

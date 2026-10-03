@@ -19,7 +19,7 @@ import {
 import { BROWSER_RESERVED_CODES } from '../input/keyboard-lock.js'
 import {
   THEME, createButton, createHeading, createSectionLabel,
-  createSliderRow, createToggleRow, createKeyCap, createOverlayRoot,
+  createSliderRow, createToggleRow, createChoiceRow, createKeyCap, createOverlayRoot,
   applyScrollbarTheme
 } from './ui-theme.js'
 
@@ -222,7 +222,13 @@ export function createSettingsMenu() {
       const shared = { label: def.label, hint: def.hint, value: settings.get(def.id) }
       const control = def.type === 'toggle'
         ? createToggleRow({ ...shared, onChange: (v) => { settings.set(def.id, v); syncDependencies() } })
-        : createSliderRow({
+        : def.type === 'choice'
+          ? createChoiceRow({
+            ...shared,
+            choices: def.choices,
+            onChange: (v) => settings.set(def.id, v)
+          })
+          : createSliderRow({
           ...shared,
           min: def.min,
           max: def.max,

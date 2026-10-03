@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { TRACK_LEVEL, TRACK_X } from '../entities/train.js'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
+import { SUN_SHADOW_LAYER } from '../core/stairs.js'
 import {
   carpetMaterial,
   marbleFloorMaterial,
@@ -9,6 +10,7 @@ import {
   signMaterial,
   woodMaterial
 } from './textures.js'
+import { settings, shadowMapSize } from '../core/settings.js'
 
 // Level 1's station: a covered platform with a marble concourse, cast-iron
 // columns under a glazed train shed, a panelled rear wall with lit arched
@@ -138,7 +140,6 @@ function createTrackBed() {
   for (const offset of [-0.72, 0.72]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, length), railMaterial)
     rail.position.set(TRACK_X + offset, TRACK_LEVEL - 0.09, 0)
-    rail.castShadow = true
     group.add(rail)
   }
 
@@ -704,20 +705,17 @@ function createBench(z, { timber, iron }) {
     const slat = new THREE.Mesh(slatGeometry, timber)
     slat.position.set(0, 0.46, 0)
     slat.position.x = -0.18 + i * 0.18
-    slat.castShadow = true
     bench.add(slat)
   }
   // Backrest.
   for (let i = 0; i < 2; i++) {
     const slat = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 2), timber)
     slat.position.set(-0.3, 0.72 + i * 0.24, 0)
-    slat.castShadow = true
     bench.add(slat)
   }
   for (const side of [-0.85, 0.85]) {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.44, 0.1), iron)
     leg.position.set(0, 0.22, side)
-    leg.castShadow = true
     bench.add(leg)
   }
 
@@ -861,7 +859,6 @@ function createCameraPlaceholder(z) {
 
   const housing = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), bracketMaterial)
   housing.position.x = 0.55
-  housing.castShadow = true
   placeholder.add(housing)
 
   const lens = new THREE.Mesh(
@@ -947,7 +944,6 @@ function createExteriorLightFixtures() {
     // Base bracket attached to roof eave
     const base = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), metalMat)
     base.position.set(0.15, 0, 0)
-    base.castShadow = true
     fixture.add(base)
 
     // Swivel arm
@@ -960,7 +956,6 @@ function createExteriorLightFixtures() {
     const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.25, 0.55, 12), metalMat)
     housing.rotation.z = -Math.PI / 3.2
     housing.position.set(-0.35, 0.1, 0)
-    housing.castShadow = true
     fixture.add(housing)
 
     // Emissive Lens Face
@@ -1092,23 +1087,76 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
   }
 }
 
+// The sun's shadow camera follows the player. SUN_SHADOW_LAYER is the merged
+// stair volumes from core/stairs.js, which the main camera never draws.
+
+const SUN_SHADOW_HALF = 15
+const SUN_SHADOW_DISTANCE = 32
+const SUN_DIRECTION = new THREE.Vector3(16, 8, -10).normalize()
+const SUN_CAMERA_UP = new THREE.Vector3(0, 1, 0)
+const _camRight = new THREE.Vector3()
+const _camUp = new THREE.Vector3()
+const _camForward = new THREE.Vector3()
+const _snapped = new THREE.Vector3()
+const _delta = new THREE.Vector3()
+
+export function updateStationSunShadow(sunlight, focus) {
+  if (!sunlight || !focus) return
+  const target = sunlight.target
+  target.position.copy(focus)
+  sunlight.position.copy(focus).addScaledVector(SUN_DIRECTION, SUN_SHADOW_DISTANCE)
+
+  // Match the basis Three uses when it points the shadow camera at the target,
+  // then snap both the light and the target onto that camera's texel grid.
+  const cam = sunlight.shadow.camera
+  cam.position.copy(sunlight.position)
+  cam.up.copy(SUN_CAMERA_UP)
+  cam.lookAt(target.position)
+  cam.updateMatrixWorld()
+
+  _camRight.setFromMatrixColumn(cam.matrixWorld, 0)
+  _camUp.setFromMatrixColumn(cam.matrixWorld, 1)
+  _camForward.setFromMatrixColumn(cam.matrixWorld, 2)
+
+  const mapSize = Math.max(1, sunlight.shadow.mapSize.x)
+  const texel = (cam.right - cam.left) / mapSize
+  const x = Math.round(target.position.dot(_camRight) / texel) * texel
+  const y = Math.round(target.position.dot(_camUp) / texel) * texel
+  const z = target.position.dot(_camForward)
+  _snapped.set(0, 0, 0)
+    .addScaledVector(_camRight, x)
+    .addScaledVector(_camUp, y)
+    .addScaledVector(_camForward, z)
+  _delta.copy(_snapped).sub(target.position)
+  target.position.add(_delta)
+  sunlight.position.add(_delta)
+}
+
 // Warm, controlled station lighting for Level 1's visual identity. Base
 // exposure comes from the hemisphere + directional pair (both resolution- and
 // unit-stable); the pendant lamps inside the blockout add warm accents.
 export function createStationLighting() {
   // Low evening sun raking in under the shed from the open track side.
+  // The ortho window stays tight around the player so a 2048 map stays sharp.
   const sunlight = new THREE.DirectionalLight(0xffb173, 2.4)
-  sunlight.position.set(16, 8, -10)
+  sunlight.name = 'station-sun'
+  sunlight.position.copy(SUN_DIRECTION).multiplyScalar(SUN_SHADOW_DISTANCE)
   sunlight.castShadow = true
-  sunlight.shadow.mapSize.set(2048, 2048)
-  sunlight.shadow.camera.left = -34
-  sunlight.shadow.camera.right = 34
-  sunlight.shadow.camera.top = 34
-  sunlight.shadow.camera.bottom = -34
+  const shadowSize = shadowMapSize(settings.get('shadowQuality')) || 2048
+  sunlight.shadow.mapSize.set(shadowSize, shadowSize)
+  sunlight.shadow.camera.left = -SUN_SHADOW_HALF
+  sunlight.shadow.camera.right = SUN_SHADOW_HALF
+  sunlight.shadow.camera.top = SUN_SHADOW_HALF
+  sunlight.shadow.camera.bottom = -SUN_SHADOW_HALF
   sunlight.shadow.camera.near = 1
-  sunlight.shadow.camera.far = 70
-  sunlight.shadow.bias = -0.0008
-  sunlight.shadow.normalBias = 0.02
+  sunlight.shadow.camera.far = SUN_SHADOW_DISTANCE + SUN_SHADOW_HALF + 12
+  sunlight.shadow.camera.updateProjectionMatrix()
+  sunlight.shadow.camera.layers.enable(SUN_SHADOW_LAYER)
+  // Tight frustum, so a small normal bias is enough to keep acne off the
+  // detective and the guards without lifting their shadows off the floor.
+  sunlight.shadow.bias = -0.00015
+  sunlight.shadow.normalBias = 0.04
+  sunlight.target.position.set(0, 0, 0)
 
   const sky = new THREE.HemisphereLight(0x5e6f96, 0x2e241a, 0.85)
   const fill = new THREE.AmbientLight(0x3b3346, 0.35)
@@ -1128,17 +1176,14 @@ export function createStationLighting() {
   spotLights.push(spotLeft)
   spotTargets.push(targetLeft)
 
-  // Floodlight 2 — Center mountain peak (Primary shadow caster)
+  // Floodlight 2 — Center mountain peak. The light stays; it does not cast
+  // a shadow map. The sun is the only shadow caster on this level.
   const spotCenter = new THREE.SpotLight(0xffc480, 62.0, 165.0, Math.PI / 2.6, 0.8, 1.4)
   spotCenter.position.set(-5.0, 6.4, 0.0)
   const targetCenter = new THREE.Object3D()
   targetCenter.position.set(-75.0, 24.0, 0.0)
   spotCenter.target = targetCenter
-  spotCenter.castShadow = true
-  spotCenter.shadow.mapSize.set(1024, 1024)
-  spotCenter.shadow.camera.near = 2.0
-  spotCenter.shadow.camera.far = 170.0
-  spotCenter.shadow.bias = -0.0005
+  spotCenter.castShadow = false
   spotLights.push(spotCenter)
   spotTargets.push(targetCenter)
 
@@ -1159,7 +1204,7 @@ export function createStationLighting() {
     sconceLights.push(sconceLight)
   }
 
-  const allLights = [sunlight, sky, fill, ...spotLights, ...spotTargets, ...sconceLights]
+  const allLights = [sunlight, sunlight.target, sky, fill, ...spotLights, ...spotTargets, ...sconceLights]
   allLights.spotLights = spotLights
 
   return allLights

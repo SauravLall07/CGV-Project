@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { settings } from '../core/settings.js'
+import { settings, shadowMapSize } from '../core/settings.js'
 
 // Creates and owns the WebGLRenderer. Pixel ratio is capped to protect
 // performance on lab hardware; resize() keeps the renderer in sync with the
@@ -37,15 +37,35 @@ export function createRenderer(canvas) {
     })
   }
 
+  function applyShadowMapSize(size) {
+    if (!sceneRef || !size) return
+    sceneRef.traverse((node) => {
+      if (!node.isDirectionalLight || !node.castShadow) return
+      const shadow = node.shadow
+      if (shadow.mapSize.x === size && shadow.mapSize.y === size) return
+      shadow.mapSize.set(size, size)
+      // Three only allocates the depth target when shadow.map is null, so a
+      // live resolution change has to drop the old target first.
+      if (shadow.map) {
+        shadow.map.depthTexture?.dispose()
+        shadow.map.dispose()
+        shadow.map = null
+      }
+      shadow.needsUpdate = true
+    })
+  }
+
   function applySettings() {
     renderer.toneMappingExposure = settings.get('brightness')
 
-    const shadows = settings.get('shadows')
-    const type = settings.get('softShadows') ? THREE.PCFSoftShadowMap : THREE.BasicShadowMap
-    const shadowsChanged = renderer.shadowMap.enabled !== shadows || renderer.shadowMap.type !== type
-    renderer.shadowMap.enabled = shadows
-    renderer.shadowMap.type = type
-    if (shadowsChanged) {
+    const quality = settings.get('shadowQuality')
+    const enabled = quality !== 'off'
+    const enabledChanged = renderer.shadowMap.enabled !== enabled
+    const typeChanged = renderer.shadowMap.type !== THREE.PCFShadowMap
+    renderer.shadowMap.enabled = enabled
+    renderer.shadowMap.type = THREE.PCFShadowMap
+    applyShadowMapSize(shadowMapSize(quality) || 2048)
+    if (enabledChanged || typeChanged) {
       renderer.shadowMap.needsUpdate = true
       invalidateMaterials()
     }
