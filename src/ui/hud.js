@@ -766,7 +766,7 @@ export function createHud() {
   Object.assign(runTimer.style, {
     position: 'absolute',
     top: '18px',
-    left: '20px',
+    left: '152px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-start',

@@ -114,8 +114,8 @@ const skew = (n) => (Math.sin(n * 12.9898) * 43758.5453) % 1
 
 function makeShared(damaged) {
   return {
-    steel: metalMaterial({ repeat: [3, 2], base: damaged ? 0x565b62 : 0x6b7078, roughness: damaged ? 0.7 : 0.5, metalness: 0.85 }),
-    darkSteel: new THREE.MeshStandardMaterial({ color: damaged ? 0x1b1d22 : 0x23262c, roughness: 0.65, metalness: 0.6 }),
+    steel: metalMaterial({ repeat: [3, 2], base: damaged ? 0x626870 : 0x6b7078, roughness: damaged ? 0.7 : 0.5, metalness: 0.85 }),
+    darkSteel: new THREE.MeshStandardMaterial({ color: damaged ? 0x282c34 : 0x23262c, roughness: 0.65, metalness: 0.6 }),
     brass: new THREE.MeshStandardMaterial({ color: damaged ? 0x6d5628 : 0xb08d3f, roughness: damaged ? 0.62 : 0.3, metalness: 0.9 }),
     rivet: new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 0.5, metalness: 0.7 }),
     warmGlass: new THREE.MeshStandardMaterial({
@@ -131,7 +131,7 @@ function wallMaterialFor(key, length, damaged) {
   const r = [Math.max(1, Math.round(length / 4)), 1]
   switch (key) {
     case 'passenger':
-      return woodMaterial({ repeat: r, light: damaged ? 0x3a3938 : 0x8a5c33, dark: damaged ? 0x1a1b1d : 0x452a16 })
+      return woodMaterial({ repeat: r, light: damaged ? 0x454240 : 0x8a5c33, dark: damaged ? 0x242628 : 0x452a16 })
     case 'security':
       return damaged
         ? metalMaterial({ repeat: r, base: 0x2f343c, roughness: 0.7, metalness: 0.8 })
@@ -199,15 +199,15 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
   if (key === 'passenger' && damaged) {
     floorMat = carpetMaterial({
       repeat: [2, Math.round(length / 2)],
-      base: damaged ? 0x2a2428 : 0x5e1f28,
-      accent: damaged ? 0x3c3a38 : 0x9a7238
+      base: damaged ? 0x342e34 : 0x5e1f28,
+      accent: damaged ? 0x484448 : 0x9a7238
     })
   } else if (['passenger', 'security', 'relay', 'cargo', 'mechanical', 'convergence', 'freight', 'vault'].includes(key) && !damaged) {
     floorMat = woodMaterial({ repeat: [2, Math.round(length / 2)], light: 0x6b4526, dark: 0x2e1a0c })
   } else {
     floorMat = metalMaterial({
       repeat: [3, Math.round(length / 2)],
-      base: key === 'vault' ? (damaged ? 0x282c33 : 0x3a3f47) : (damaged ? 0x3a3e45 : 0x50555d),
+      base: key === 'vault' ? (damaged ? 0x323840 : 0x3a3f47) : (damaged ? 0x454b54 : 0x50555d),
       roughness: damaged ? 0.75 : 0.6,
       metalness: 0.7
     })
@@ -262,7 +262,14 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
 
   const ceilingMat = (key === 'security' || key === 'vault') && !damaged
     ? plasterMaterial({ repeat: [2, Math.round(length / 3)], base: 0xd8ccb0, roughness: 0.85 })
-    : wallMat
+    : damaged
+      ? metalMaterial({
+        repeat: [2, Math.round(length / 3)],
+        base: 0x424850,
+        roughness: 0.72,
+        metalness: 0.62
+      })
+      : wallMat
   if (hasCeiling) {
     const ceiling = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, length), ceilingMat)
     ceiling.position.y = CARRIAGE_CEILING_Y
@@ -424,6 +431,8 @@ function addWreckage(g, half, shared, fx, key) {
 function addLight(g, fx, light, damaged) {
   g.add(light)
   if (!damaged) return
+  light.intensity *= 1.45
+  light.distance *= 1.35
   const i = fx.lights.length
   fx.lights.push({
     light,
@@ -1519,6 +1528,17 @@ function dressMechanical(g, half, shared, damaged, fx) {
   return access
 }
 
+// Extra emergency lamps for the Timewreck Convergence car (the ladder room).
+// Registered through addLight so they pick up that car's flicker only.
+function addConvergenceFlickerLights(g, half, fx) {
+  const spots = [-half + 5, -half * 0.35, half * 0.15, half - 3.2]
+  for (const z of spots) {
+    const light = new THREE.PointLight(0xff6a40, 4.2, 6.5, 2)
+    light.position.set(0, 2.15, z)
+    addLight(g, fx, light, true)
+  }
+}
+
 // Roof hatch (a sliding cover in the ceiling) and the ladder up to it.
 function addRoofAccess(g, hatchZ, shared) {
   const rim = new THREE.Mesh(
@@ -2115,7 +2135,10 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     else if (cfg.key === 'mechanical' && !damaged) dressVintageMechanical(group, half, shared, fx)
     else if (cfg.key === 'mechanical') parts.mechanical = dressMechanical(group, half, shared, damaged, fx)
     else if (cfg.key === 'convergence' && !damaged) parts.convergence = dressVintageConvergence(group, half, shared, fx)
-    else if (cfg.key === 'convergence') parts.convergence = dressMechanical(group, half, shared, damaged, fx)
+    else if (cfg.key === 'convergence') {
+      parts.convergence = dressMechanical(group, half, shared, damaged, fx)
+      if (damaged) addConvergenceFlickerLights(group, half, fx)
+    }
     else if (cfg.key === 'vault' && !damaged) dressVintageVault(group, half, shared, fx)
     else if (cfg.key === 'vault') parts.vault = dressVault(group, half, shared, damaged, fx)
 
@@ -2140,11 +2163,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   }
 
   // Base exposure so no corner falls to pure black between the point lights.
-  const ambient = new THREE.AmbientLight(damaged ? 0x2a323c : 0x5b5750, damaged ? 0.28 : 0.5)
+  const ambient = new THREE.AmbientLight(damaged ? 0x343c48 : 0x5b5750, damaged ? 0.58 : 0.5)
   const hemi = new THREE.HemisphereLight(
-    damaged ? 0x5a6e88 : 0x8a8272,
-    damaged ? 0x12151a : 0x2a2620,
-    damaged ? 0.32 : 0.55
+    damaged ? 0x6a7e98 : 0x8a8272,
+    damaged ? 0x1e242c : 0x2a2620,
+    damaged ? 0.62 : 0.55
   )
   root.add(ambient, hemi)
 
@@ -2213,6 +2236,17 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
         mul = 0.55 + 0.45 * Math.abs(Math.sin(t * 8.4 + seed) * Math.sin(t * 3.05 + seed))
       } else {
         mul = 0.9 + 0.1 * Math.sin(t * 2.2 + seed)
+      }
+      if (damaged) mul = Math.max(mul, 0.65)
+      // Convergence is the second car on the Timewreck run (after the Vault).
+      // Extra irregular electrical flicker on its existing lamps only.
+      if (entry.car === 'convergence') {
+        const buzz = Math.sin(t * 23 + seed * 4) * Math.sin(t * 9.4 + seed)
+        const stutter = Math.sin(t * 1.7 + seed * 1.6)
+        let dip = 0.9 + 0.1 * buzz
+        if (stutter > 0.62 && buzz > 0.1) dip = 0.58
+        else if (stutter > 0.38) dip = 0.74
+        mul = Math.max(0.55, mul * dip)
       }
       entry.light.intensity = entry.base * mul
     }
