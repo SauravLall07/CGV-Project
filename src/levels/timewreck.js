@@ -7,6 +7,7 @@ import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
+import { createLightPool, POINT_LIGHT_POOL_SIZE } from '../core/light-pool.js'
 
 // Level 3 — "The Timewreck". The escape run: the player now sprints BACK down
 // the train they just robbed, from the vault to the locomotive, as the Chrono
@@ -1195,6 +1196,8 @@ export function createTimewreckLevel({
     }
   }
 
+  const lightPool = createLightPool({ root, size: POINT_LIGHT_POOL_SIZE })
+
   return {
     objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
     checkpoint: {
@@ -1413,8 +1416,11 @@ export function createTimewreckLevel({
           braking = false
           root.rotation.z = 0
           root.position.y = 0
+          lightPool.update(player.mesh.position, delta)
           advance()
+          return
         }
+        lightPool.update(player.mesh.position, delta)
         return
       }
 
@@ -1594,6 +1600,7 @@ export function createTimewreckLevel({
           waveZ = DEPLETE_Z + WAVE_LEAD
         }
       }
+      lightPool.update(player.mesh.position, delta)
     },
 
     dispose() {

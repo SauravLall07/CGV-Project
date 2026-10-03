@@ -18,6 +18,7 @@ import { createBridgePassage } from '../environment/passageways/passage-bridge.j
 import { createStealthSystem } from '../systems/stealth.js'
 import { createDistractionSystem } from '../systems/distraction.js'
 import { disposeObject } from '../core/dispose.js'
+import { createLightPool, POINT_LIGHT_POOL_SIZE, TORCH_SPOT_POOL_SIZE } from '../core/light-pool.js'
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -583,6 +584,29 @@ export function createBoardingLevel({
   const passage4CheckpointPos = bridgePassage.exitCheckpoint.clone()
   let passage4CheckpointActive = false
 
+  // Sources stay hidden. These slots are the only point lights and guard
+  // torches the shader ever sees, and the count does not change at runtime.
+  const lightPools = new THREE.Group()
+  lightPools.name = 'boarding-light-pools'
+  scene.add(lightPools)
+  const pointRoots = [station, train]
+  for (const node of lights) {
+    if (node.isPointLight) pointRoots.push(node)
+  }
+  const pointPool = createLightPool({
+    roots: pointRoots,
+    host: lightPools,
+    size: POINT_LIGHT_POOL_SIZE
+  })
+  const torchPool = createLightPool({
+    root: scene,
+    host: lightPools,
+    size: TORCH_SPOT_POOL_SIZE,
+    accept: (node) => node.name === 'torch-spot',
+    name: 'torch-pool',
+    kind: 'spot'
+  })
+
   return {
     objective: 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express',
     checkpoint: {
@@ -695,6 +719,8 @@ export function createBoardingLevel({
         cinematicTimer += delta
         // Move train smoothly forward along the tracks
         train.position.z += delta * (cinematicTimer * 6.5)
+        pointPool.update(player.mesh.position, delta)
+        torchPool.update(player.mesh.position, delta)
 
         if (cinematicTimer >= 2.4) {
           isBoardingCinematic = false
@@ -704,6 +730,8 @@ export function createBoardingLevel({
       }
 
       stealth.update(delta)
+      pointPool.update(player.mesh.position, delta)
+      torchPool.update(player.mesh.position, delta)
     },
 
     dispose() {
@@ -721,8 +749,8 @@ export function createBoardingLevel({
       stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()
-      scene.remove(outdoorEnv.group, station, train, ...lights)
-      disposeObject([station, train, ...lights])
+      scene.remove(outdoorEnv.group, station, train, ...lights, lightPools)
+      disposeObject([station, train, ...lights, lightPools])
     }
   }
 }

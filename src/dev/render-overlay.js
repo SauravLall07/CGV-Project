@@ -1,0 +1,447 @@
+// Temporary DEV-only readout and measurement toggles. Not shipped behaviour.
+// Digit1–5 are taken in the capture phase so they do not also fire the
+// number-row time abilities. Letter bindings (Q/F/C/G) are unchanged.
+
+import * as THREE from 'three'
+
+const TIMING_WINDOW = 60
+
+export function mountRenderOverlay(renderer) {
+  // The minimap renders its own icon scene with an orthographic camera after
+  // the main view. That pass replaces renderer.info, and it used to replace
+  // the scene the light and scenery toggles walk — the icon scene has neither
+  // the station lights nor `outdoor-environment`, so both toggles reported 0.
+  const render = renderer.render.bind(renderer)
+  let mainPass = null
+  let minimapPass = { calls: 0, triangles: 0 }
+  let worldScene = null
+  let minimapOff = false
+
+  // One sample per animation frame that actually draws the main view.
+  // `frame` is the gap since the previous such frame. `logic` is from the
+  // callback start until the main renderer.render() begins (the loop's
+  // update callbacks, then the viewport/clear just before that call).
+  const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window)
+  const frameTimes = new Float64Array(TIMING_WINDOW)
+  const logicTimes = new Float64Array(TIMING_WINDOW)
+  const mainTimes = new Float64Array(TIMING_WINDOW)
+  const minimapTimes = new Float64Array(TIMING_WINDOW)
+  let timingCount = 0
+  let previousFrameStart = 0
+  let activeFrame = null
+
+  function recordFrame(sample) {
+    const slot = timingCount % TIMING_WINDOW
+    frameTimes[slot] = sample.frame
+    logicTimes[slot] = sample.logic
+    mainTimes[slot] = sample.main
+    minimapTimes[slot] = sample.minimap
+    timingCount += 1
+  }
+
+  function average(samples) {
+    const n = Math.min(timingCount, TIMING_WINDOW)
+    if (!n) return 0
+    let sum = 0
+    for (let i = 0; i < n; i++) sum += samples[i]
+    return sum / n
+  }
+
+  window.requestAnimationFrame = function devOverlayFrame(callback) {
+    return nativeRequestAnimationFrame(function (timestamp) {
+      const start = performance.now()
+      const sample = {
+        frame: previousFrameStart ? start - previousFrameStart : 0,
+        logic: 0,
+        main: 0,
+        minimap: 0,
+        start,
+        sawMain: false
+      }
+      activeFrame = sample
+      try {
+        return callback(timestamp)
+      } finally {
+        if (sample.sawMain && previousFrameStart) recordFrame(sample)
+        if (sample.sawMain) previousFrameStart = start
+        if (activeFrame === sample) activeFrame = null
+      }
+    })
+  }
+
+  renderer.render = function (scene, camera) {
+    const perspective = Boolean(camera && camera.isPerspectiveCamera)
+    if (!perspective && minimapOff) {
+      if (activeFrame) activeFrame.minimap = 0
+      minimapPass = { calls: 0, triangles: 0 }
+      return
+    }
+
+    if (perspective && activeFrame && !activeFrame.sawMain) {
+      activeFrame.logic = performance.now() - activeFrame.start
+    }
+
+    const started = performance.now()
+    render(scene, camera)
+    const elapsed = performance.now() - started
+
+    if (perspective) {
+      worldScene = scene
+      if (activeFrame) {
+        activeFrame.main = elapsed
+        activeFrame.sawMain = true
+      }
+      mainPass = {
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures
+      }
+      return
+    }
+
+    if (activeFrame) activeFrame.minimap = elapsed
+    minimapPass = {
+      calls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles
+    }
+  }
+
+  const panel = document.createElement('div')
+  panel.id = 'dev-render-overlay'
+  Object.assign(panel.style, {
+    position: 'fixed',
+    top: '8px',
+    right: '8px',
+    zIndex: '100000',
+    padding: '8px 10px',
+    background: 'rgba(6, 8, 14, 0.82)',
+    border: '1px solid rgba(255, 255, 255, 0.16)',
+    borderRadius: '4px',
+    color: '#d6deea',
+    font: '12px/1.45 ui-monospace, Consolas, monospace',
+    whiteSpace: 'pre',
+    pointerEvents: 'none'
+  })
+  panel.textContent = 'FPS …'
+  document.body.appendChild(panel)
+
+  let accum = 0
+  let frames = 0
+  let fps = 0
+
+  // Key 1. `savedPixelRatio` is whatever was active at the moment the
+  // override turned on, so a later toggle restores that value exactly.
+  let pixelRatioForced = false
+  let savedPixelRatio = renderer.getPixelRatio()
+
+  // Key 2. Forces the shadow map off, then restores whatever enabled
+  // state was in effect when the override turned on. Materials recompile.
+  let shadowsOff = false
+  let savedShadowEnabled = renderer.shadowMap.enabled
+
+  // Key 3. Original `visible` for every point/spot light we have touched,
+  // so turning the limit off puts the light pool's hidden sources back.
+  const lightOriginal = new Map()
+  let lightsLimited = false
+  let limitedLightCount = 0
+  let totalLocalLights = 0
+  const playerPos = new THREE.Vector3()
+  const lightPos = new THREE.Vector3()
+
+  // Key 4. Trees, bushes, and rocks are the instanced meshes parented
+  // directly under `outdoor-environment`. Poles are the cylinder instances
+  // under `trackside-infrastructure` (crossarms and fences are boxes).
+  const sceneryOriginal = new Map()
+  let sceneryHidden = false
+  let hiddenSceneryCount = 0
+
+  function resizeToPixelRatio(ratio) {
+    if (Math.abs(renderer.getPixelRatio() - ratio) < 1e-4) return
+    renderer.setPixelRatio(ratio)
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  }
+
+  function invalidateMaterials(scene) {
+    if (!scene) return
+    scene.traverse((node) => {
+      const material = node.material
+      if (!material) return
+      for (const entry of Array.isArray(material) ? material : [material]) entry.needsUpdate = true
+    })
+  }
+
+  function applyPixelRatio() {
+    resizeToPixelRatio(pixelRatioForced ? 1 : savedPixelRatio)
+  }
+
+  function applyShadows() {
+    const enabled = shadowsOff ? false : savedShadowEnabled
+    if (renderer.shadowMap.enabled === enabled) return
+    renderer.shadowMap.enabled = enabled
+    renderer.shadowMap.needsUpdate = true
+    invalidateMaterials(worldScene)
+  }
+
+  function syncLights() {
+    if (!lightsLimited) {
+      if (lightOriginal.size > 0) {
+        for (const [light, visible] of lightOriginal) light.visible = visible
+        lightOriginal.clear()
+      }
+      limitedLightCount = 0
+      totalLocalLights = 0
+      return
+    }
+    if (!worldScene) return
+
+    const player = worldScene.getObjectByName('player')
+    if (player) player.getWorldPosition(playerPos)
+    else playerPos.set(0, 0, 0)
+
+    const found = []
+    worldScene.traverse((obj) => {
+      if (!obj.isPointLight && !obj.isSpotLight) return
+      if (!lightOriginal.has(obj)) lightOriginal.set(obj, obj.visible)
+      obj.getWorldPosition(lightPos)
+      const dx = lightPos.x - playerPos.x
+      const dy = lightPos.y - playerPos.y
+      const dz = lightPos.z - playerPos.z
+      found.push({
+        obj,
+        distance: dx * dx + dy * dy + dz * dz,
+        // Level 2 parks a hidden source on top of each pooled light. Prefer
+        // the originally visible one so a tie does not spend a slot on a
+        // light the pool has already switched off.
+        hidden: lightOriginal.get(obj) ? 0 : 1
+      })
+    })
+
+    const live = new Set(found.map((entry) => entry.obj))
+    for (const light of lightOriginal.keys()) {
+      if (!live.has(light)) lightOriginal.delete(light)
+    }
+
+    found.sort((a, b) => a.distance - b.distance || a.hidden - b.hidden)
+    totalLocalLights = found.length
+    limitedLightCount = Math.min(8, found.length)
+    for (let i = 0; i < found.length; i++) {
+      const light = found[i].obj
+      light.visible = i < 8 ? lightOriginal.get(light) : false
+    }
+  }
+
+  function sceneryMeshes(scene) {
+    const meshes = []
+    if (!scene) return meshes
+    scene.traverse((obj) => {
+      if (obj.name !== 'outdoor-environment') return
+      for (const child of obj.children) {
+        if (child.isInstancedMesh) meshes.push(child)
+      }
+      const trackside = obj.getObjectByName('trackside-infrastructure')
+      if (!trackside) return
+      trackside.traverse((node) => {
+        if (node.isInstancedMesh && node.geometry?.type === 'CylinderGeometry') meshes.push(node)
+      })
+    })
+    return meshes
+  }
+
+  function syncScenery() {
+    if (!sceneryHidden) {
+      if (sceneryOriginal.size > 0) {
+        for (const [mesh, visible] of sceneryOriginal) mesh.visible = visible
+        sceneryOriginal.clear()
+      }
+      hiddenSceneryCount = 0
+      return
+    }
+    const meshes = sceneryMeshes(worldScene)
+    const live = new Set(meshes)
+    for (const mesh of sceneryOriginal.keys()) {
+      if (!live.has(mesh)) sceneryOriginal.delete(mesh)
+    }
+    for (const mesh of meshes) {
+      if (!sceneryOriginal.has(mesh)) sceneryOriginal.set(mesh, mesh.visible)
+      mesh.visible = false
+    }
+    hiddenSceneryCount = meshes.length
+  }
+
+  function ms(samples) {
+    return `${average(samples).toFixed(1)} ms`
+  }
+
+  function paint() {
+    const pass = mainPass ?? {
+      calls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
+      geometries: renderer.info.memory.geometries,
+      textures: renderer.info.memory.textures
+    }
+    const ratio = renderer.getPixelRatio()
+    const active = []
+    if (pixelRatioForced) active.push(`1  pixel ratio ${ratio.toFixed(2)} (saved ${savedPixelRatio.toFixed(2)})`)
+    if (shadowsOff) active.push('2  shadows off')
+    if (lightsLimited) active.push(`3  point/spot lights ${limitedLightCount}/${totalLocalLights} nearest`)
+    if (sceneryHidden) active.push(`4  outdoor scenery hidden (${hiddenSceneryCount})`)
+    if (minimapOff) active.push('5  minimap off')
+    panel.textContent = [
+      `${fps} FPS`,
+      `frame    ${ms(frameTimes)}`,
+      `update   ${ms(logicTimes)}`,
+      `render   ${ms(mainTimes)}`,
+      `minimap  ${ms(minimapTimes)}`,
+      `draw calls  ${pass.calls}`,
+      `triangles   ${pass.triangles}`,
+      `geometries  ${pass.geometries}`,
+      `textures    ${pass.textures}`,
+      `minimap draws  ${minimapPass.calls}`,
+      `minimap tris   ${minimapPass.triangles}`,
+      active.length ? active.join('\n') : 'toggles off  (1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap)'
+    ].join('\n')
+  }
+
+  // Pointer lock retargets keys at the canvas, and keyboard lock can deliver
+  // the number row with `key` set and `code` left Unidentified. The same
+  // event also reaches window (capture, then bubble). One handled event
+  // must not flip the toggle again from the second listener.
+  const handledKeys = new WeakSet()
+  const keyTargets = [window, document, renderer.domElement].filter(Boolean)
+
+  function measurementKey(event) {
+    switch (event.code) {
+      case 'Digit1':
+      case 'Numpad1':
+        return 1
+      case 'Digit2':
+      case 'Numpad2':
+        return 2
+      case 'Digit3':
+      case 'Numpad3':
+        return 3
+      case 'Digit4':
+      case 'Numpad4':
+        return 4
+      case 'Digit5':
+      case 'Numpad5':
+        return 5
+      default:
+        break
+    }
+    switch (event.key) {
+      case '1': return 1
+      case '2': return 2
+      case '3': return 3
+      case '4': return 4
+      case '5': return 5
+      default:
+        break
+    }
+    // Last resort when lock/pointer-lock leaves both key and code blank.
+    const which = event.keyCode || event.which || 0
+    if (which === 49 || which === 97) return 1
+    if (which === 50 || which === 98) return 2
+    if (which === 51 || which === 99) return 3
+    if (which === 52 || which === 100) return 4
+    if (which === 53 || which === 101) return 5
+    return 0
+  }
+
+  // Only a visible text field should swallow the measurement keys. Hidden
+  // settings sliders and workshop inputs are still <input> elements; treating
+  // every input as typing made Digit1–4 fall through to Slow/Freeze/Rewind/Ghost.
+  function isVisibleTextEntry(target) {
+    if (!target || target.nodeType !== 1) return false
+    const tag = target.tagName
+    if (tag === 'INPUT') {
+      const type = (target.type || 'text').toLowerCase()
+      if (type === 'range' || type === 'checkbox' || type === 'radio' || type === 'button' || type === 'color' || type === 'file') {
+        return false
+      }
+    } else if (tag !== 'TEXTAREA' && tag !== 'SELECT' && !target.isContentEditable) {
+      return false
+    }
+    for (let node = target; node && node.nodeType === 1; node = node.parentElement) {
+      const style = window.getComputedStyle(node)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+    }
+    return true
+  }
+
+  function onKeyDown(event) {
+    if (handledKeys.has(event) || event.repeat) return
+    const index = measurementKey(event)
+    if (!index) return
+    handledKeys.add(event)
+    if (isVisibleTextEntry(event.target)) return
+
+    if (index === 1) {
+      pixelRatioForced = !pixelRatioForced
+      if (pixelRatioForced) savedPixelRatio = renderer.getPixelRatio()
+      applyPixelRatio()
+      console.log(`[dev overlay] toggle 1 (pixel ratio 1.0): ${pixelRatioForced ? 'ON' : 'OFF'}`)
+    } else if (index === 2) {
+      if (!shadowsOff) savedShadowEnabled = renderer.shadowMap.enabled
+      shadowsOff = !shadowsOff
+      applyShadows()
+      console.log(`[dev overlay] toggle 2 (shadows off): ${shadowsOff ? 'ON' : 'OFF'}`)
+    } else if (index === 3) {
+      lightsLimited = !lightsLimited
+      syncLights()
+      console.log(`[dev overlay] toggle 3 (8 nearest lights): ${lightsLimited ? 'ON' : 'OFF'}`)
+    } else if (index === 4) {
+      sceneryHidden = !sceneryHidden
+      syncScenery()
+      console.log(`[dev overlay] toggle 4 (hide outdoor scenery): ${sceneryHidden ? 'ON' : 'OFF'}`)
+    } else if (index === 5) {
+      minimapOff = !minimapOff
+      console.log(`[dev overlay] toggle 5 (minimap off): ${minimapOff ? 'ON' : 'OFF'}`)
+    }
+
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    paint()
+  }
+
+  for (const target of keyTargets) target.addEventListener('keydown', onKeyDown, true)
+
+  function update(delta) {
+    // Settings and the window resize listener write the pixel ratio and the
+    // shadow flag back. Re-apply only when one of those has drifted.
+    if (pixelRatioForced) applyPixelRatio()
+    if (shadowsOff) applyShadows()
+    if (lightsLimited) syncLights()
+    if (sceneryHidden) syncScenery()
+
+    accum += delta
+    frames += 1
+    if (accum < 0.5) return
+    fps = Math.round(frames / accum)
+    accum = 0
+    frames = 0
+    paint()
+  }
+
+  return {
+    update,
+    dispose() {
+      for (const target of keyTargets) target.removeEventListener('keydown', onKeyDown, true)
+      window.requestAnimationFrame = nativeRequestAnimationFrame
+      const restoreRatio = pixelRatioForced
+      const restoreShadows = shadowsOff
+      pixelRatioForced = false
+      shadowsOff = false
+      lightsLimited = false
+      sceneryHidden = false
+      minimapOff = false
+      if (restoreRatio) applyPixelRatio()
+      if (restoreShadows) applyShadows()
+      syncLights()
+      syncScenery()
+      renderer.render = render
+      panel.remove()
+    }
+  }
+}

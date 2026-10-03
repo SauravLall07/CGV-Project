@@ -246,10 +246,29 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   topTrim.position.set(PASSAGE_START_X - 0.02, serviceDoorHeight, CORRIDOR_Z)
   group.add(topTrim)
 
-  // Warm exterior utility lamps lead the eye toward the doorway.
+  // Warm exterior utility lamps lead the eye toward the doorway. The bulb
+  // stays emissive so the fixture still reads as lit when the light pool
+  // gives this lamp's real light to something closer to the player.
+  const utilityHousingMat = new THREE.MeshStandardMaterial({
+    color: 0x2a3036,
+    roughness: 0.45,
+    metalness: 0.75
+  })
+  const utilityBulbMat = new THREE.MeshStandardMaterial({
+    color: 0xffe0b0,
+    emissive: 0xffb66d,
+    emissiveIntensity: 2.4,
+    roughness: 0.2
+  })
   for (const x of [EXTERIOR_START_X + 2.2, EXTERIOR_START_X + 7.2]) {
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.14, 8), utilityHousingMat)
+    housing.position.set(x, 2.78, CORRIDOR_Z)
+    group.add(housing)
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), utilityBulbMat)
+    bulb.position.set(x, 2.66, CORRIDOR_Z)
+    group.add(bulb)
     const lamp = new THREE.PointLight(0xffb66d, 9, 7, 2)
-    lamp.position.set(x, 2.7, CORRIDOR_Z)
+    lamp.position.copy(bulb.position)
     group.add(lamp)
   }
 

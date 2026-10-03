@@ -30,6 +30,7 @@ import { createMovingHeistLevel } from './levels/moving-heist.js'
 import { createTimewreckLevel } from './levels/timewreck.js'
 import { createCompleteLevel } from './levels/complete.js'
 import { createModelEditor } from './dev/model-editor.js'
+import { mountRenderOverlay } from './dev/render-overlay.js'
 
 // Composition root. Everything persistent (renderer, camera, loop, input,
 // HUD, menus, asset loader, interaction/respawn/time systems) is created here
@@ -257,9 +258,13 @@ const levelManager = createLevelManager({
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })
+let renderOverlay = null
 if (import.meta.env.DEV) {
   window.levelManager = levelManager
   window.musicSystem = musicSystem
+  window.renderer = renderer
+  window.scene = scene
+  renderOverlay = mountRenderOverlay(renderer)
 }
 
 // Disabled: running out of lives on Level 2 must not send the player back to
@@ -592,6 +597,7 @@ loop.add((delta) => {
   player.updateVisual(delta)
 
   hud.updateStats(delta)
+  renderOverlay?.update(delta)
 
   // The model workshop owns the same render camera while open. Gameplay is
   // frozen, but the normal renderer keeps drawing the live level behind its

@@ -1,37 +1,74 @@
 import * as THREE from 'three'
 
 // Forward rendering evaluates every point light in the scene for every lit
-// pixel, so a train full of lanterns and sconces costs frame rate everywhere.
-// The pool keeps a fixed handful of real PointLights and, each frame, hands
-// them to the placed lights nearest the viewer. The placed lights stay in the
-// scene graph, hidden, as the source of truth: anything that animates their
-// intensity or colour, or hides one of their parents, still works.
+// pixel, so a station or a wreck full of lamps costs frame rate everywhere.
+// The pool keeps a fixed handful of real lights and hands them to the placed
+// lights nearest the viewer. The placed lights stay in the scene graph,
+// hidden, as the source of truth: anything that animates their intensity or
+// colour, or hides one of their parents, still works.
 //
-// The real-light count never changes, so no material ever recompiles. Lights
-// near the edge of the selected set fade out rather than popping on and off.
+// Pool lights are created once and stay visible. An unused slot is intensity
+// 0, never removed or hidden, because a changing visible-light count rebuilds
+// every lit shader. Which sources own those slots is refreshed on a timer,
+// when the viewer moves, or when a source switches on or off. Colour and
+// intensity are copied from the assigned source every frame, so a pulsing
+// lamp still animates between refreshes. The update path does not allocate.
 
+// Boarding and Timewreck. Moving Heist passes its own size.
+export const POINT_LIGHT_POOL_SIZE = 8
+// Boarding guard torches only. The three mountain floods stay real lights.
+export const TORCH_SPOT_POOL_SIZE = 4
+
+const REASSIGN_SECONDS = 0.25
+const REASSIGN_MOVE_SQ = 3 * 3
 const FADE_METRES = 3
 
-export function createLightPool({ root, size = 12 }) {
-  const sources = []
-  root.traverse((node) => {
-    if (!node.isPointLight) return
-    node.visible = false
-    sources.push({ light: node, distance: 0 })
-  })
+export function createLightPool({ root, roots, host, size = POINT_LIGHT_POOL_SIZE, accept, name = 'light-pool', kind = 'point' }) {
+  const search = roots && roots.length ? roots : [root]
+  const parent = host || root
+  const wants = accept || ((node) => node.isPointLight)
 
+  const sources = []
+  for (const node of search) {
+    if (!node) continue
+    node.traverse((child) => {
+      if (!wants(child) || child.userData.lightPoolSlot) return
+      child.visible = false
+      child.userData.lightPoolSource = true
+      sources.push({ light: child, distance: Infinity, wasOn: child.intensity > 0 })
+    })
+  }
+
+  const spotMode = kind === 'spot'
   const pool = []
   for (let i = 0; i < size; i++) {
-    const light = new THREE.PointLight(0xffffff, 0, 1, 2)
-    light.name = `light-pool-${i}`
-    root.add(light)
+    const light = spotMode
+      ? new THREE.SpotLight(0xffffff, 0, 1, Math.PI / 4, 0, 2)
+      : new THREE.PointLight(0xffffff, 0, 1, 2)
+    light.name = `${name}-${i}`
+    light.castShadow = false
+    light.userData.lightPoolSlot = true
+    if (spotMode) {
+      const target = new THREE.Object3D()
+      target.name = `${name}-target-${i}`
+      parent.add(target)
+      light.target = target
+    }
+    parent.add(light)
     pool.push(light)
   }
 
+  const ranked = new Array(sources.length)
+  const assigned = new Array(size)
+  const slotFade = new Float64Array(size)
   const world = new THREE.Vector3()
   const local = new THREE.Vector3()
+  const lastViewer = new THREE.Vector3()
+  let since = 0
+  let assignedOnce = false
 
   // A source whose own ancestors are hidden (a collected pickup, say) is off.
+  // The source light itself stays hidden for the life of the pool.
   function ancestorsVisible(light) {
     for (let node = light.parent; node; node = node.parent) {
       if (!node.visible) return false
@@ -39,35 +76,100 @@ export function createLightPool({ root, size = 12 }) {
     return true
   }
 
-  function update(viewer) {
-    const live = []
-    for (const source of sources) {
-      const { light } = source
-      if (light.intensity <= 0 || !ancestorsVisible(light)) continue
-      light.getWorldPosition(world)
-      source.distance = world.distanceTo(viewer)
-      live.push(source)
-    }
-    live.sort((a, b) => a.distance - b.distance)
-    const cutoff = live.length > size ? live[size].distance : Infinity
+  function sourceOn(source) {
+    return source.light.intensity > 0 && ancestorsVisible(source.light)
+  }
 
-    for (let i = 0; i < size; i++) {
-      const target = pool[i]
-      const source = live[i]
-      if (!source) {
-        target.intensity = 0
-        continue
-      }
-      const { light } = source
-      light.getWorldPosition(world)
-      target.position.copy(target.parent ? target.parent.worldToLocal(local.copy(world)) : world)
-      target.color.copy(light.color)
-      target.distance = light.distance
-      target.decay = light.decay
-      const fade = cutoff === Infinity ? 1 : THREE.MathUtils.clamp((cutoff - source.distance) / FADE_METRES, 0, 1)
-      target.intensity = light.intensity * fade
+  function place(object, from) {
+    from.getWorldPosition(world)
+    if (object.parent) {
+      local.copy(world)
+      object.parent.worldToLocal(local)
+      object.position.copy(local)
+    } else {
+      object.position.copy(world)
     }
   }
 
-  return { update, sourceCount: sources.length }
+  function reassign(viewer) {
+    let live = 0
+    for (let i = 0; i < sources.length; i++) {
+      const source = sources[i]
+      const on = sourceOn(source)
+      source.wasOn = on
+      if (!on) continue
+      source.light.getWorldPosition(world)
+      const dx = world.x - viewer.x
+      const dy = world.y - viewer.y
+      const dz = world.z - viewer.z
+      source.distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      ranked[live++] = source
+    }
+    for (let i = 1; i < live; i++) {
+      const item = ranked[i]
+      let j = i - 1
+      while (j >= 0 && ranked[j].distance > item.distance) {
+        ranked[j + 1] = ranked[j]
+        j--
+      }
+      ranked[j + 1] = item
+    }
+
+    const cutoff = live > size ? ranked[size].distance : Infinity
+    for (let i = 0; i < size; i++) {
+      const source = i < live ? ranked[i] : null
+      assigned[i] = source
+      slotFade[i] = !source || cutoff === Infinity
+        ? (source ? 1 : 0)
+        : THREE.MathUtils.clamp((cutoff - source.distance) / FADE_METRES, 0, 1)
+    }
+  }
+
+  function apply() {
+    for (let i = 0; i < size; i++) {
+      const slot = pool[i]
+      const source = assigned[i]
+      if (!source || !sourceOn(source)) {
+        slot.intensity = 0
+        continue
+      }
+      const light = source.light
+      place(slot, light)
+      slot.color.copy(light.color)
+      slot.distance = light.distance
+      slot.decay = light.decay
+      if (slot.isSpotLight && light.target) {
+        slot.angle = light.angle
+        slot.penumbra = light.penumbra
+        place(slot.target, light.target)
+      }
+      slot.intensity = light.intensity * slotFade[i]
+    }
+  }
+
+  function update(viewer, delta = 0) {
+    since += delta
+    const dx = viewer.x - lastViewer.x
+    const dy = viewer.y - lastViewer.y
+    const dz = viewer.z - lastViewer.z
+    let due = !assignedOnce || since >= REASSIGN_SECONDS || dx * dx + dy * dy + dz * dz >= REASSIGN_MOVE_SQ
+    if (!due) {
+      for (let i = 0; i < sources.length; i++) {
+        const on = sourceOn(sources[i])
+        if (on !== sources[i].wasOn) {
+          due = true
+          break
+        }
+      }
+    }
+    if (due) {
+      reassign(viewer)
+      since = 0
+      lastViewer.copy(viewer)
+      assignedOnce = true
+    }
+    apply()
+  }
+
+  return { update, sourceCount: sources.length, size }
 }

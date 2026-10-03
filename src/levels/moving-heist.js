@@ -2602,7 +2602,7 @@ export function createMovingHeistLevel({
       outdoorEnv.update(delta)
       env.update(delta)
       corridorStealth.update(delta)
-      lightPool.update(player.mesh.position)
+      lightPool.update(player.mesh.position, delta)
       elapsed += delta
       // Draw the player's eye toward the Chrono Interface until collected.
       for (const pickup of powerPickups) {
