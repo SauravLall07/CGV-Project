@@ -18,7 +18,7 @@ const FILES = {
   walk: new URL('../assets/models/police/Walking With Shopping Bag.fbx', import.meta.url),
   idle: new URL('../assets/models/police/Unarmed Idle Looking Ver. 2.fbx', import.meta.url),
   turn: new URL('../assets/models/police/Catwalk Twist L To Walk 180.fbx', import.meta.url),
-  torch: new URL('../assets/models/props/torch/scene.gltf', import.meta.url)
+  torch: new URL('../assets/models/props/torch/guard-torch.glb', import.meta.url)
 }
 
 const HIPS_POSITION = /(?:^|mixamorig[:.]?)Hips\.position$/
