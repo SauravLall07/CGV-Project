@@ -427,15 +427,27 @@ export function createOutdoorEnvironment(options = {}) {
   }
 
   // Rock Geometry
-  function createRockGeometry() {
-    // Non-indexed so each face keeps its own normal. Smooth shading was
-    // what made the old stones read as blobs.
+  function displaceRock(geo, amount, seed) {
+    const pos = geo.attributes.position
+    for (let i = 0; i < pos.count; i += 1) {
+      const x = pos.getX(i)
+      const y = pos.getY(i)
+      const z = pos.getZ(i)
+      const n = Math.sin(x * 4.1 + seed) * Math.cos(z * 3.4 + y * 2.2 + seed)
+      pos.setXYZ(i, x * (1 + n * amount), y * (1 + n * amount * 0.45), z * (1 + n * amount))
+    }
+    geo.computeVertexNormals()
+    return geo
+  }
+
+  function createRockGeometry(scale = [1.4, 0.68, 1.08], amount = 0.22, seed = 1) {
+    // Non-indexed so each face keeps its own normal. Noise pushes the
+    // vertices so one mesh is not a repeated crystal.
     const rock = new THREE.DodecahedronGeometry(0.95, 0)
-    rock.scale(1.4, 0.68, 1.08)
+    rock.scale(scale[0], scale[1], scale[2])
     const flat = rock.toNonIndexed()
-    flat.computeVertexNormals()
     rock.dispose()
-    return flat
+    return displaceRock(flat, amount, seed)
   }
 
   const pineGeo = createConiferGeometry({ tiers: 7, trunkHeight: 2.6, tierRadius: 1.85, tierHeight: 1.45, droop: 0.22, jitter: 0.2 })
@@ -444,7 +456,14 @@ export function createOutdoorEnvironment(options = {}) {
   const deadGeo = createDeadTreeGeometry()
   const decGeo = createDeciduousTreeGeometry()
   const bushGeo = createBushGeometry()
-  const rockGeo = createRockGeometry()
+  const rockGeo = createRockGeometry([1.4, 0.68, 1.08], 0.22, 1.2)
+  const outcropGeo = createRockGeometry([1.8, 1.15, 1.1], 0.35, 4.4)
+  const slabGeo = createRockGeometry([2.1, 0.38, 1.4], 0.16, 8.1)
+  const logGeo = new THREE.CylinderGeometry(0.16, 0.2, 2.4, 6)
+  logGeo.rotateZ(Math.PI / 2)
+  logGeo.translate(0, 0.18, 0)
+  const stumpGeo = new THREE.CylinderGeometry(0.28, 0.34, 0.45, 6)
+  stumpGeo.translate(0, 0.18, 0)
 
   function createTuftGeometry(spread, height) {
     const parts = []
@@ -535,9 +554,22 @@ export function createOutdoorEnvironment(options = {}) {
     rockColor: new THREE.Color(mode === 'station' ? 0x6e685f : 0x4a4742),
     ambient: mode === 'station' ? 0.72 : 0.4
   })
+  const woodRock = createRockShaderMaterial({
+    sunDirection: sunPosition.clone().normalize(),
+    sunColor,
+    skyColor,
+    rockColor: new THREE.Color(0x4a3424),
+    ambient: mode === 'station' ? 0.6 : 0.35
+  })
   const rockMesh = new THREE.InstancedMesh(rockGeo, rockMaterial, rockCount)
-  rockMesh.castShadow = false
-  rockMesh.receiveShadow = false
+  const outcropMesh = new THREE.InstancedMesh(outcropGeo, rockMaterial, mode === 'station' ? 48 : 1)
+  const slabMesh = new THREE.InstancedMesh(slabGeo, rockMaterial, mode === 'station' ? 28 : 1)
+  const logMesh = new THREE.InstancedMesh(logGeo, woodRock, mode === 'station' ? 36 : 1)
+  const stumpMesh = new THREE.InstancedMesh(stumpGeo, woodRock, mode === 'station' ? 24 : 1)
+  for (const mesh of [rockMesh, outcropMesh, slabMesh, logMesh, stumpMesh]) {
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+  }
 
   // Moonlight shadows stay on the station and the characters. Trees and the
   // rest of the distant scenery would fill the shadow map with noise.
@@ -561,6 +593,7 @@ export function createOutdoorEnvironment(options = {}) {
   }
 
   let pineIdx = 0, spruceIdx = 0, youngIdx = 0, deadIdx = 0, decIdx = 0, bushIdx = 0, rockIdx = 0
+  let outcropIdx = 0, slabIdx = 0, logIdx = 0, stumpIdx = 0
   const rangeX = 320, rangeZ = 360
   const pineCap = Math.floor(treeCount * 0.5)
   const spruceCap = Math.floor(treeCount * 0.28)
@@ -640,6 +673,49 @@ export function createOutdoorEnvironment(options = {}) {
       dummy.scale.set(scale * 1.2, scale * 0.55, scale * 0.9)
       dummy.updateMatrix()
       rockMesh.setMatrixAt(rockIdx++, dummy.matrix)
+    }
+    for (let i = 0; i < 500 && (outcropIdx < outcropMesh.count || logIdx < logMesh.count); i += 1) {
+      const rx = -300 + rand() * 560
+      const rz = -300 + rand() * 560
+      if (isSceneryBlocked(rx, rz) || lakeDrop(rx, rz) > 0.15) continue
+      const ry = getTerrainHeight(rx, rz)
+      const slope = Math.abs(getTerrainHeight(rx + 2, rz) - ry) + Math.abs(getTerrainHeight(rx, rz + 2) - ry)
+      const mask = forestMask(rx, rz)
+      if (slope > 1.1 && outcropIdx < 36 && ry > 2 && ry < 18) {
+        const mesh = outcropIdx % 3 === 0 ? slabMesh : outcropMesh
+        const index = mesh === slabMesh ? slabIdx : outcropIdx
+        if (mesh === slabMesh && slabIdx >= slabMesh.count) continue
+        dummy.position.set(rx, ry - 0.3, rz)
+        dummy.rotation.set(rand() * 0.2, rand() * Math.PI * 2, rand() * 0.2)
+        const s = 0.8 + rand() * 1.4
+        dummy.scale.set(s, s * (0.7 + rand() * 0.5), s)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(index, dummy.matrix)
+        if (mesh === slabMesh) slabIdx += 1
+        else outcropIdx += 1
+        if (rand() < 0.45 && outcropIdx < 36) {
+          dummy.position.set(rx + (rand() - 0.5) * 2.2, ry - 0.25, rz + (rand() - 0.5) * 2.2)
+          dummy.scale.set(s * 0.7, s * 0.55, s * 0.7)
+          dummy.updateMatrix()
+          outcropMesh.setMatrixAt(outcropIdx, dummy.matrix)
+          outcropIdx += 1
+        }
+      }
+      if (mask > 0.5 && logIdx < logMesh.count && ry > 0.3 && ry < 12) {
+        dummy.position.set(rx, ry, rz)
+        dummy.rotation.set(0, rand() * Math.PI, (rand() - 0.5) * 0.2)
+        dummy.scale.set(0.8 + rand() * 0.6, 0.8 + rand() * 0.5, 0.8 + rand() * 0.6)
+        dummy.updateMatrix()
+        logMesh.setMatrixAt(logIdx, dummy.matrix)
+        logIdx += 1
+      } else if (mask > 0.48 && stumpIdx < stumpMesh.count && ry > 0.2 && ry < 10) {
+        dummy.position.set(rx, ry - 0.05, rz)
+        dummy.rotation.set(0, rand() * Math.PI, 0)
+        dummy.scale.set(0.7 + rand() * 0.6, 0.6 + rand() * 0.5, 0.7 + rand() * 0.6)
+        dummy.updateMatrix()
+        stumpMesh.setMatrixAt(stumpIdx, dummy.matrix)
+        stumpIdx += 1
+      }
     }
     // Grass and ferns only within about 40 m of the playable run, so the
     // valley floor near the gantry is not a flat sheet.
@@ -768,6 +844,10 @@ export function createOutdoorEnvironment(options = {}) {
   decMesh.count = decIdx
   bushMesh.count = bushIdx
   rockMesh.count = rockIdx
+  outcropMesh.count = outcropIdx
+  slabMesh.count = slabIdx
+  logMesh.count = logIdx
+  stumpMesh.count = stumpIdx
 
   for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh, rockMesh]) {
     mesh.instanceMatrix.needsUpdate = true
@@ -778,7 +858,7 @@ export function createOutdoorEnvironment(options = {}) {
     grassMesh.count = 0
     fernMesh.count = 0
   }
-  group.add(pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh, rockMesh)
+  group.add(pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh, rockMesh, outcropMesh, slabMesh, logMesh, stumpMesh)
 
   // -------------------------------------------------------------
   // 4. Trackside Infrastructure (Telegraph Poles, Wires, Gantries, Fences)
