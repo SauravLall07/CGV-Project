@@ -213,7 +213,7 @@ export function addPassageShell(parent, {
       height: 160,
       background: 0x2a120e,
       foreground: 0xf0e6d4,
-      emissiveIntensity: 0.45
+      emissiveIntensity: 1.05
     }))
     small.position.set(minX - skin - 0.02, base + 2.55, cz - 1.55)
     small.rotation.y = -Math.PI / 2

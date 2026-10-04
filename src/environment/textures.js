@@ -381,27 +381,60 @@ function passingNightCanvas(width, height, seed) {
 }
 
 // Station signage / departure board.
+function signFont(ctx, size) {
+  ctx.font = `700 ${size}px Arial, Helvetica, sans-serif`
+}
+
+function fitSignSize(ctx, text, maxWidth, startSize) {
+  let size = startSize
+  signFont(ctx, size)
+  while (size > 18 && ctx.measureText(text).width > maxWidth) {
+    size -= 2
+    signFont(ctx, size)
+  }
+  return size
+}
+
 function signCanvas(text, background, foreground, width, height) {
   const canvas = makeCanvas(width, height)
   const ctx = canvas.getContext('2d')
-  ctx.fillStyle = `#${new THREE.Color(background).getHexString()}`
+  const bg = `#${new THREE.Color(background).getHexString()}`
+  const fg = `#${new THREE.Color(foreground).getHexString()}`
+  ctx.fillStyle = bg
   ctx.fillRect(0, 0, width, height)
 
-  ctx.strokeStyle = `#${new THREE.Color(foreground).getHexString()}`
-  ctx.lineWidth = 4
-  ctx.strokeRect(8, 8, width - 16, height - 16)
+  const pad = Math.max(10, Math.floor(width * 0.035))
+  ctx.strokeStyle = fg
+  ctx.lineWidth = Math.max(3, Math.floor(height * 0.035))
+  ctx.strokeRect(pad * 0.45, pad * 0.45, width - pad * 0.9, height - pad * 0.9)
 
-  ctx.fillStyle = `#${new THREE.Color(foreground).getHexString()}`
+  const maxWidth = width - pad * 2
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const margin = Math.max(24, Math.floor(width * 0.04))
-  let fontSize = Math.floor(height * 0.46)
-  ctx.font = `bold ${fontSize}px Georgia, serif`
-  while (fontSize > 14 && ctx.measureText(text).width > width - margin * 2) {
-    fontSize -= 2
-    ctx.font = `bold ${fontSize}px Georgia, serif`
+  ctx.fillStyle = fg
+  // One line when it stays large enough to read from the gantry. A long
+  // title drops to two lines, split on the dash, instead of shrinking
+  // until the letters disappear.
+  const splitAt = text.indexOf(' - ')
+  let lines = [text]
+  let size = fitSignSize(ctx, text, maxWidth, Math.floor(height * 0.46))
+  if (splitAt > 0 && size < height * 0.3) {
+    lines = [text.slice(0, splitAt), text.slice(splitAt + 3)]
+    size = Math.min(
+      fitSignSize(ctx, lines[0], maxWidth, Math.floor(height * 0.34)),
+      fitSignSize(ctx, lines[1], maxWidth, Math.floor(height * 0.34))
+    )
   }
-  ctx.fillText(text, width / 2, height / 2)
+  signFont(ctx, size)
+  const lineGap = size * 1.15
+  const top = height / 2 - ((lines.length - 1) * lineGap) / 2
+  ctx.lineWidth = Math.max(3, size * 0.12)
+  ctx.strokeStyle = '#140e08'
+  for (let i = 0; i < lines.length; i += 1) {
+    const y = top + i * lineGap
+    ctx.strokeText(lines[i], width / 2, y)
+    ctx.fillText(lines[i], width / 2, y)
+  }
   return canvas
 }
 
