@@ -20,6 +20,8 @@ export function createVegetationShaderMaterial(options = {}) {
     uTime: { value: 0.0 },
     uWindSpeed: { value: options.windSpeed ?? 1.8 },
     uWindStrength: { value: options.windStrength ?? 0.15 },
+    // Height at which sway is full. Trees use ~7.5. Grass uses the blade height.
+    uSwayHeight: { value: options.swayHeight ?? 7.5 },
     uSunDirection: { value: options.sunDirection || new THREE.Vector3(1, 1, -0.5).normalize() },
     uSunColor: { value: new THREE.Color(options.sunColor || 0xffb173) },
     uSkyColor: { value: new THREE.Color(options.skyColor || 0x5e6f96) },
@@ -43,6 +45,7 @@ export function createVegetationShaderMaterial(options = {}) {
     uniform float uTime;
     uniform float uWindSpeed;
     uniform float uWindStrength;
+    uniform float uSwayHeight;
 
     varying vec3 vWorldPosition;
     varying vec3 vNormal;
@@ -60,7 +63,7 @@ export function createVegetationShaderMaterial(options = {}) {
 
       // Sway grows toward the crown. The phase is the tree's own position,
       // so neighbours do not rock in lockstep. Trunks (low y) stay still.
-      float heightFactor = smoothstep(0.35, 7.5, pos.y);
+      float heightFactor = smoothstep(0.05, uSwayHeight, pos.y);
       heightFactor *= heightFactor;
       vec4 instanceWorldPos = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
       float phase = instanceWorldPos.x * 0.37 + instanceWorldPos.z * 0.23;

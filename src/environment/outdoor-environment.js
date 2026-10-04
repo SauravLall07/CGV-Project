@@ -446,6 +446,21 @@ export function createOutdoorEnvironment(options = {}) {
   const bushGeo = createBushGeometry()
   const rockGeo = createRockGeometry()
 
+  function createTuftGeometry(spread, height) {
+    const parts = []
+    for (let i = 0; i < 3; i += 1) {
+      const blade = new THREE.PlaneGeometry(spread, height, 1, 2)
+      blade.translate(0, height * 0.5, 0)
+      blade.rotateY((i * Math.PI) / 3)
+      parts.push(blade)
+    }
+    const merged = mergeBufferGeometries(parts)
+    parts.forEach((part) => part.dispose())
+    return merged
+  }
+  const grassGeo = createTuftGeometry(0.28, 0.42)
+  const fernGeo = createTuftGeometry(0.55, 0.32)
+
 
   // Tree distribution & instance count based on Quality
   const treeCount = quality === 'HIGH' ? 900 : (quality === 'MEDIUM' ? 500 : 250)
@@ -469,9 +484,26 @@ export function createOutdoorEnvironment(options = {}) {
   })
   // Boarding shares the sky clock. Writing elapsed here would ignore Slow,
   // Freeze and Rewind. Moving levels have no sky time, so they keep elapsed.
+  const grassMaterial = createVegetationShaderMaterial({
+    windSpeed: 2.2,
+    windStrength: 0.55,
+    swayHeight: 0.48,
+    sunDirection: sunPosition.clone().normalize(),
+    sunColor,
+    skyColor,
+    foliageColor: new THREE.Color(0x1a2a16),
+    highlightColor: new THREE.Color(0x3a4a28),
+    fogColor,
+    fogNear,
+    fogFar,
+    fogMax,
+    ambient: options.vegAmbient ?? 0.6,
+    mist: mode === 'station' ? 0.2 : 0
+  })
   if (options.skyTime) {
     vegMaterial.customUniforms.uTime = options.skyTime
     deadMaterial.customUniforms.uTime = options.skyTime
+    grassMaterial.customUniforms.uTime = options.skyTime
   }
 
   function attachTint(mesh, count) {
@@ -486,7 +518,11 @@ export function createOutdoorEnvironment(options = {}) {
   const deadMesh = new THREE.InstancedMesh(deadGeo, deadMaterial, Math.floor(treeCount * 0.12))
   const decMesh = new THREE.InstancedMesh(decGeo, vegMaterial, Math.floor(treeCount * 0.4))
   const bushMesh = new THREE.InstancedMesh(bushGeo, vegMaterial, bushCount)
-  for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh]) {
+  const grassCount = mode === 'station' ? 420 : 1
+  const fernCount = mode === 'station' ? 140 : 1
+  const grassMesh = new THREE.InstancedMesh(grassGeo, grassMaterial, grassCount)
+  const fernMesh = new THREE.InstancedMesh(fernGeo, grassMaterial, fernCount)
+  for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh]) {
     attachTint(mesh, mesh.instanceColor ? mesh.count : mesh.count)
     mesh.castShadow = false
     mesh.receiveShadow = false
@@ -572,7 +608,7 @@ export function createOutdoorEnvironment(options = {}) {
         deadIdx += 1
       }
     }
-    const bushCap = Math.min(bushCount, 160)
+    const bushCap = Math.min(bushCount, 260)
     for (let i = 0; i < bushCap * 8 && bushIdx < bushCap; i++) {
       const rx = -340 + rand() * 680
       const rz = -340 + rand() * 680
@@ -605,6 +641,46 @@ export function createOutdoorEnvironment(options = {}) {
       dummy.updateMatrix()
       rockMesh.setMatrixAt(rockIdx++, dummy.matrix)
     }
+    // Grass and ferns only within about 40 m of the playable run, so the
+    // valley floor near the gantry is not a flat sheet.
+    let grassI = 0
+    let fernI = 0
+    const near = (x, z) => (
+      x > PLAY_MIN_X - 40 && x < PLAY_MAX_X + 40 &&
+      z > PLAY_MIN_Z - 40 && z < PLAY_MAX_Z + 40
+    )
+    for (let i = 0; i < 2400 && (grassI < grassCount || fernI < fernCount); i += 1) {
+      const rx = PLAY_MIN_X - 40 + rand() * (PLAY_MAX_X - PLAY_MIN_X + 80)
+      const rz = PLAY_MIN_Z - 40 + rand() * (PLAY_MAX_Z - PLAY_MIN_Z + 80)
+      const gap = gapOutsideFootprints(rx, rz)
+      if (!near(rx, rz) || gap < 0.4 || gap > 14 || lakeDrop(rx, rz) > 0.2) continue
+      if (rx < -168 && Math.abs(rz + 24.5) < 2.7) continue
+      const ry = getTerrainHeight(rx, rz)
+      if (ry < -0.2 || ry > 6) continue
+      const mask = forestMask(rx, rz)
+      const tint = 0.72 + rand() * 0.45
+      if (mask < 0.5 && grassI < grassCount) {
+        dummy.position.set(rx, ry, rz)
+        dummy.rotation.set(0, rand() * Math.PI, 0)
+        const s = 0.7 + rand() * 0.8
+        dummy.scale.set(s, 0.65 + rand() * 0.7, s)
+        dummy.updateMatrix()
+        grassMesh.setMatrixAt(grassI, dummy.matrix)
+        grassMesh.instanceColor.setXYZ(grassI, tint * 0.9, tint, tint * 0.7)
+        grassI += 1
+      } else if (mask >= 0.42 && mask < 0.62 && fernI < fernCount) {
+        dummy.position.set(rx, ry, rz)
+        dummy.rotation.set((rand() - 0.5) * 0.3, rand() * Math.PI, 0)
+        const s = 0.8 + rand() * 0.7
+        dummy.scale.set(s, 0.5 + rand() * 0.4, s)
+        dummy.updateMatrix()
+        fernMesh.setMatrixAt(fernI, dummy.matrix)
+        fernMesh.instanceColor.setXYZ(fernI, tint * 0.7, tint * 0.95, tint * 0.65)
+        fernI += 1
+      }
+    }
+    grassMesh.count = grassI
+    fernMesh.count = fernI
   } else {
   for (let i = 0; i < treeCount * 2; i++) {
     let rx = (Math.random() - 0.5) * rangeX * 2
@@ -693,12 +769,16 @@ export function createOutdoorEnvironment(options = {}) {
   bushMesh.count = bushIdx
   rockMesh.count = rockIdx
 
-  for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, rockMesh]) {
+  for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh, rockMesh]) {
     mesh.instanceMatrix.needsUpdate = true
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
   }
 
-  group.add(pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, rockMesh)
+  if (mode !== 'station') {
+    grassMesh.count = 0
+    fernMesh.count = 0
+  }
+  group.add(pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh, rockMesh)
 
   // -------------------------------------------------------------
   // 4. Trackside Infrastructure (Telegraph Poles, Wires, Gantries, Fences)
@@ -906,6 +986,7 @@ export function createOutdoorEnvironment(options = {}) {
       if (terrainMaterial.customUniforms) terrainMaterial.customUniforms.uTime.value = elapsed
       if (vegMaterial.customUniforms && !options.skyTime) vegMaterial.customUniforms.uTime.value = elapsed
       if (deadMaterial.customUniforms && !options.skyTime) deadMaterial.customUniforms.uTime.value = elapsed
+      if (grassMaterial.customUniforms && !options.skyTime) grassMaterial.customUniforms.uTime.value = elapsed
       // Shared with the sky when Boarding passes skyTime, so time powers
       // already drive the twinkle. This is only the fallback.
       if (valleyLightMaterial && !options.skyTime) {
