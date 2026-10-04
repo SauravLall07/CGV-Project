@@ -238,6 +238,7 @@ const levelManager = createLevelManager({
   player,
   camera: playerView,
   respawn,
+  renderer,
   timeSystem,
   loadingScreen,
   onEnter: (state) => {
@@ -317,7 +318,7 @@ keyboard.setEnabled(false)
 // the menu overlay.
 function buildTitleBackdrop() {
   const ctx = {
-    scene, interaction, assets, hud, timeSystem,
+    scene, interaction, assets, hud, timeSystem, renderer,
     player, camera: playerView, respawn,
     advance: () => levelManager.advance()
   }
@@ -612,6 +613,7 @@ loop.add((delta) => {
   // While the menu is visible, drift the camera and skip gameplay.
   if (!gameStarted) {
     menu.updateCinematicCamera(delta)
+    titleBackdrop?.updateAtmosphere?.(delta)
     return
   }
 

@@ -414,7 +414,7 @@ export function woodMaterial({ repeat = [1, 1], seed = 11, light = 0x8a5a33, dar
   })
 }
 
-export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab97, vein = 0x6d6255, grout = 0x4a4238, tiles = 4 } = {}) {
+export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab97, vein = 0x6d6255, grout = 0x4a4238, tiles = 4, roughness = 0.82 } = {}) {
   const key = `marble:${seed}:${base}:${vein}:${tiles}`
   const colour = cachedCanvas(key, () => marbleTileCanvas(512, seed, base, vein, grout, tiles))
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 2.2))
@@ -422,7 +422,7 @@ export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab9
   return new THREE.MeshStandardMaterial({
     map: toTexture(key, colour, repeat),
     normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
-    roughness: 0.34,
+    roughness,
     metalness: 0.02
   })
 }

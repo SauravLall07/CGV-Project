@@ -19,7 +19,7 @@ import * as THREE from 'three'
 const DEFAULT_CHECKPOINT = { position: new THREE.Vector3(0, 0, 0), yaw: 0 }
 
 export function createLevelManager({
-  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, levels,
+  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, renderer, levels,
   onEnter, onLeave, onInputStateChange
 }) {
   const sequence = levels.map((l) => l.state)
@@ -36,7 +36,7 @@ export function createLevelManager({
   let currentOptions = null
 
   const ctx = {
-    scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance,
+    scene, interaction, assets, hud, timeSystem, player, camera, respawn, renderer, advance,
     beginCinematic() {
       respawn.cancel()
       onInputStateChange?.()

@@ -8,10 +8,13 @@ import {
   APPROACH_START_X,
   APPROACH_CENTER_Z,
   JUNCTION_CHECKPOINT,
-  updateStationSunShadow
+  updateStationSunShadow,
+  SUN_DIRECTION
 } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { createSkyDome } from '../environment/sky-dome.js'
+import { captureSkyEnvironment } from '../environment/sky-environment.js'
 import { createOnboardingPassage } from '../environment/passageways/passage-onboarding.js'
 import { createTutorialPassage } from '../environment/passageways/passage-tutorial.js'
 import { createGuardPassage } from '../environment/passageways/passage-guards.js'
@@ -38,7 +41,8 @@ export function createBoardingLevel({
   respawn,
   timeSystem,
   advance,
-  beginCinematic
+  beginCinematic,
+  renderer
 }) {
   // Level 1 is pure stealth. The Chrono Interface has not been stolen yet, so
   // all temporal abilities are genuinely unavailable and the Chrono HUD stays hidden.
@@ -104,16 +108,44 @@ export function createBoardingLevel({
   const { train } = createTrain()
   const lights = createStationLighting()
   const sunlight = lights.find((node) => node.name === 'station-sun')
-  const outdoorEnv = createOutdoorEnvironment({ mode: 'station', stationSpotLights: lights.spotLights })
+  const sky = createSkyDome('boarding')
+  const outdoorEnv = createOutdoorEnvironment({
+    mode: 'station',
+    stationSpotLights: lights.spotLights,
+    // Darker than the sky's purple horizon tint, so the mountain fades out
+    // instead of picking up the afterglow.
+    fogColor: 0x121022,
+    sunPosition: SUN_DIRECTION,
+    sunColor: 0x9aafd0,
+    skyColor: 0x1a2844,
+    groundColor: 0x0c0a10,
+    fogNear: 50,
+    fogFar: 260,
+    fogMax: 0.88,
+    terrainAmbient: 0.7,
+    vegAmbient: 0.5
+  })
 
-  scene.add(outdoorEnv.group, station, train, ...lights)
+  scene.add(sky.mesh, outdoorEnv.group, station, train, ...lights)
+
+  // One environment map from the sky dome. Dim, so a shadowed wall is a
+  // dark blue-grey and rough metal does not pick up a bright reflection.
+  // Regenerated only here, when the level is built.
+  let skyTarget = null
+  if (renderer) {
+    skyTarget = captureSkyEnvironment(renderer, sky.mesh)
+    scene.environment = skyTarget.texture
+    scene.environmentIntensity = 0.4
+  }
+
   const unregisterStationBlocker = interaction.registerBlocker(station)
   const unregisterTrainBlocker = interaction.registerBlocker(train)
 
-  // Dusk atmosphere. Set on entry so a previous level (Timewreck's night
-  // sky) cannot leave its background behind.
+  // Blue hour. The dome covers the main view. Fog is a dark twilight, not
+  // the sky's afterglow, so the far mountain reads as a silhouette. The
+  // clear stays dark: the minimap copies scene.background.
   scene.background = new THREE.Color(0x1a1a2e)
-  scene.fog = new THREE.Fog(0x241d24, 30, 250)
+  scene.fog = new THREE.Fog(0x121022, 40, 240)
 
   // Collect solid obstacles for line-of-sight raycasts
   const collidables = []
@@ -641,12 +673,19 @@ export function createBoardingLevel({
 
     getGuards: () => stealth.getGuards(),
 
+    // Title screen: the level update does not run, but the sky should still
+    // twinkle while the menu camera drifts. The dome recentres itself.
+    updateAtmosphere(delta) {
+      sky.update(delta, null)
+    },
+
     get isCinematic() {
       return isBoardingCinematic
     },
 
     update(delta) {
       updateStationSunShadow(sunlight, player.mesh.position)
+      sky.update(delta, timeSystem)
       outdoorEnv.update(delta)
       onboardingPassage.update(delta)
       tutorialPassage.update(delta)
@@ -753,7 +792,16 @@ export function createBoardingLevel({
       stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()
-      scene.remove(outdoorEnv.group, station, train, ...lights, lightPools)
+      sky.dispose()
+      if (skyTarget) {
+        if (scene.environment === skyTarget.texture) {
+          scene.environment = null
+          scene.environmentIntensity = 1
+        }
+        skyTarget.dispose()
+        skyTarget = null
+      }
+      scene.remove(sky.mesh, outdoorEnv.group, station, train, ...lights, lightPools)
       disposeObject([station, train, ...lights, lightPools])
     }
   }

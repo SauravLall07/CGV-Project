@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { createSkyDome } from '../environment/sky-dome.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
@@ -34,9 +35,13 @@ import { createLightPool, POINT_LIGHT_POOL_SIZE } from '../core/light-pool.js'
 // car" test is a descending-Z comparison.
 
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
-const NIGHT_COLOR = new THREE.Color(0x0d1218)
 const DAWN_COLOR = new THREE.Color(0x2c3a56)
 const FINALE_FREEZE_COLOR = new THREE.Color(0x1a3358)
+const FINALE_FREEZE_ZENITH = new THREE.Color(0x2e4d78)
+const RESUME_HORIZON = new THREE.Color(0x241814)
+const RESUME_ZENITH = new THREE.Color(0x3a221c)
+const _dawnHorizon = new THREE.Color()
+const _dawnZenith = new THREE.Color()
 // Inset from the shell wall, so floor voids, lips and the collapse slab stop
 // just short of the panelling. Derived from the shell rather than hardcoded:
 // the wreck is built at the same width as Level 2, and these set pieces have
@@ -111,16 +116,30 @@ export function createTimewreckLevel({
 
   const env = createCarriageEnvironment({ damaged: true })
   const { root, spans, carriages } = env
-  const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 45.0, stormy: true })
+  const sky = createSkyDome('timewreck')
+  const outdoorEnv = createOutdoorEnvironment({
+    mode: 'moving',
+    speed: 45.0,
+    stormy: true,
+    fogColor: sky.horizonColor
+  })
   const wreckExterior = createTimewreckExterior({
     minZ: spans.cab.minZ - 10,
     maxZ: spans.vault.maxZ + 12,
     speed: 45
   })
-  scene.add(outdoorEnv.group, wreckExterior.group, root)
-  scene.background = new THREE.Color().copy(NIGHT_COLOR)
-  // Wide enough to keep the storm-lit scenery outside readable.
-  scene.fog = new THREE.Fog(0x10141c, 10, 120)
+  scene.add(sky.mesh, outdoorEnv.group, wreckExterior.group, root)
+  // Unstable night. Fog shares the horizon colour, so the finale recolours
+  // the fog by copying into that one object. The clear stays the old night
+  // colour: the dome covers the view, and the minimap uses this backdrop.
+  scene.background = new THREE.Color(0x0d1218)
+  scene.fog = new THREE.Fog(sky.horizonColor, 10, 120)
+  scene.fog.color = sky.horizonColor
+
+  function applySky({ horizon, zenith, glitch, grade = 0 }) {
+    sky.setLook({ horizon, zenith, glitch, grade })
+    outdoorEnv.setFogColor(sky.horizonColor)
+  }
 
   const unregisters = []
   unregisters.push(interaction.registerBlocker(root))
@@ -1237,6 +1256,7 @@ export function createTimewreckLevel({
       const exteriorScale = braking
         ? Math.max(0, 1 - brakeT / 2.5)
         : mode === 'FREEZE' ? 0 : resumeBoost * (mode === 'SLOW' ? 0.2 : 1)
+      sky.update(delta, timeSystem)
       outdoorEnv.update(envDt)
       wreckExterior.update(delta, exteriorScale)
       env.update(envDt)
@@ -1345,8 +1365,12 @@ export function createTimewreckLevel({
       }
 
       if (finaleFreeze) {
-        scene.background.copy(FINALE_FREEZE_COLOR)
-        scene.fog.color.copy(FINALE_FREEZE_COLOR)
+        applySky({
+          horizon: FINALE_FREEZE_COLOR,
+          zenith: FINALE_FREEZE_ZENITH,
+          glitch: 0,
+          grade: 1
+        })
         scene.fog.near = 6
         scene.fog.far = 88
         chunkMat.color.setHex(0x64748b)
@@ -1368,8 +1392,12 @@ export function createTimewreckLevel({
         sparks.material.size = 0.085
         sparks.material.opacity = 1
       } else if (!braking) {
-        scene.background.setHex(resumeWarm > 0.08 ? 0x1a1412 : NIGHT_COLOR.getHex())
-        scene.fog.color.set(resumeWarm > 0.08 ? 0x241814 : 0x10141c)
+        applySky({
+          horizon: resumeWarm > 0.08 ? RESUME_HORIZON : sky.baseHorizon,
+          zenith: resumeWarm > 0.08 ? RESUME_ZENITH : sky.baseZenith,
+          glitch: sky.baseGlitch,
+          grade: resumeWarm > 0.08 ? 1 : 0
+        })
         scene.fog.near = 10
         scene.fog.far = resumeWarm > 0 ? 55 + (1 - resumeWarm) * 65 : 120
         chunkMat.color.setHex(0x3d4248)
@@ -1407,9 +1435,16 @@ export function createTimewreckLevel({
         }
 
         // Night gives way to first light as the train settles on the bridge.
+        // Both sky stops move toward the old dawn colour, and the tear bands fade.
         const dawn = Math.min(1, Math.max(0, (brakeT - 2.2) / 2.0))
-        scene.background.lerpColors(NIGHT_COLOR, DAWN_COLOR, dawn)
-        scene.fog.color.copy(scene.background)
+        _dawnHorizon.copy(sky.baseHorizon).lerp(DAWN_COLOR, dawn)
+        _dawnZenith.copy(sky.baseZenith).lerp(DAWN_COLOR, dawn)
+        applySky({
+          horizon: _dawnHorizon,
+          zenith: _dawnZenith,
+          glitch: sky.baseGlitch * (1 - dawn),
+          grade: dawn
+        })
         scene.fog.far = 40 + dawn * 70
 
         if (brakeT > 4.8) {
@@ -1608,8 +1643,9 @@ export function createTimewreckLevel({
       // outdoorEnv.dispose() only frees GPU resources — the group still has to
       // come out of the scene here or it survives every level teardown.
       outdoorEnv.dispose()
+      sky.dispose()
       wreckExterior.dispose()
-      scene.remove(outdoorEnv.group, wreckExterior.group, root)
+      scene.remove(sky.mesh, outdoorEnv.group, wreckExterior.group, root)
       disposeObject(root)
     }
   }

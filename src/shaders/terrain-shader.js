@@ -26,6 +26,9 @@ export function createTerrainShaderMaterial(options = {}) {
     uFogColor: { value: new THREE.Color(options.fogColor || 0x241d24) },
     uFogNear: { value: options.fogNear ?? 30.0 },
     uFogFar: { value: options.fogFar ?? 250.0 },
+    // 1 replaces the surface completely at uFogFar. Lower keeps shading.
+    uFogMax: { value: options.fogMax ?? 1.0 },
+    uAmbient: { value: options.ambient ?? 0.7 },
 
     uStationSpotLightCount: { value: 0 },
     uStationSpotLightPos: { value: defaultLightPos },
@@ -69,6 +72,8 @@ export function createTerrainShaderMaterial(options = {}) {
     uniform vec3 uFogColor;
     uniform float uFogNear;
     uniform float uFogFar;
+    uniform float uFogMax;
+    uniform float uAmbient;
 
     uniform int uStationSpotLightCount;
     uniform vec3 uStationSpotLightPos[3];
@@ -126,7 +131,7 @@ export function createTerrainShaderMaterial(options = {}) {
       float skyDiff = clamp(0.5 + 0.5 * normal.y, 0.0, 1.0);
 
       vec3 diffuse = NdotL * uSunColor * 1.2;
-      vec3 ambient = mix(uGroundColor, uSkyColor, skyDiff) * 0.7;
+      vec3 ambient = mix(uGroundColor, uSkyColor, skyDiff) * uAmbient;
 
       // Station Exterior Spotlight Illumination
       vec3 stationLightContrib = vec3(0.0);
@@ -161,10 +166,15 @@ export function createTerrainShaderMaterial(options = {}) {
       vec3 litColor = baseColor * (diffuse + ambient + stationLightContrib);
 
       // Distance fog calculation
-      float fogFactor = smoothstep(uFogNear, uFogFar, vViewDistance);
+      float fogFactor = min(smoothstep(uFogNear, uFogFar, vViewDistance), uFogMax);
       vec3 finalColor = mix(litColor, uFogColor, fogFactor);
 
       gl_FragColor = vec4(finalColor, 1.0);
+      // Same ACES curve and sRGB output as the standard materials. Without
+      // this, a shadowed slope's linear colour is stored as if it were already
+      // display-ready and reads as black.
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
     }
   `
 

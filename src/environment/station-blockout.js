@@ -79,7 +79,7 @@ function createConcourse() {
   // Coping stone and the tactile safety strip that runs along the edge.
   const coping = new THREE.Mesh(
     new THREE.BoxGeometry(0.45, 0.1, PLATFORM_LENGTH),
-    new THREE.MeshStandardMaterial({ color: 0xb9b09c, roughness: 0.72 })
+    new THREE.MeshStandardMaterial({ color: 0xb9b09c, roughness: 0.92 })
   )
   coping.position.set(HALF_WIDTH - 0.22, 0.05, 0)
   coping.receiveShadow = true
@@ -136,7 +136,7 @@ function createTrackBed() {
   sleepers.receiveShadow = true
   group.add(sleepers)
 
-  const railMaterial = metalMaterial({ repeat: [1, 30], base: 0x8d8a83, roughness: 0.34, metalness: 0.95 })
+  const railMaterial = metalMaterial({ repeat: [1, 30], base: 0x8d8a83, roughness: 0.78, metalness: 0.45 })
   for (const offset of [-0.72, 0.72]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, length), railMaterial)
     rail.position.set(TRACK_X + offset, TRACK_LEVEL - 0.09, 0)
@@ -684,7 +684,7 @@ function createPendantLamps() {
     bulb.position.set(0.4, ROOF_Y - 1.62, z)
     group.add(bulb)
 
-    // Accent only — the platform's base exposure comes from the directional
+    // The warm pool on the platform. Moonlight is only a cool fill.
     // and hemisphere lights, and none of these cast shadows.
     const lamp = new THREE.PointLight(0xffc98a, 22, 13, 2)
     lamp.position.set(0.4, ROOF_Y - 1.7, z)
@@ -1090,9 +1090,19 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
 // The sun's shadow camera follows the player. SUN_SHADOW_LAYER is the merged
 // stair volumes from core/stairs.js, which the main camera never draws.
 
-const SUN_SHADOW_HALF = 15
-const SUN_SHADOW_DISTANCE = 32
-const SUN_DIRECTION = new THREE.Vector3(16, 8, -10).normalize()
+// Moonlight, not the sunset. 32° up, on a different compass bearing from the
+// afterglow (that glow still sits on (16, 0, -10), just below the horizon,
+// in the sky dome). A 6 m wall then throws a shadow of about 10 m, so the
+// ortho window can sit back around the player.
+const SUN_ELEVATION = 32 * Math.PI / 180
+const SUN_AZIMUTH = new THREE.Vector3(-8, 0, 14).normalize()
+const SUN_SHADOW_HALF = 16
+const SUN_SHADOW_DISTANCE = 36
+export const SUN_DIRECTION = new THREE.Vector3(
+  SUN_AZIMUTH.x * Math.cos(SUN_ELEVATION),
+  Math.sin(SUN_ELEVATION),
+  SUN_AZIMUTH.z * Math.cos(SUN_ELEVATION)
+)
 const SUN_CAMERA_UP = new THREE.Vector3(0, 1, 0)
 const _camRight = new THREE.Vector3()
 const _camUp = new THREE.Vector3()
@@ -1136,9 +1146,9 @@ export function updateStationSunShadow(sunlight, focus) {
 // exposure comes from the hemisphere + directional pair (both resolution- and
 // unit-stable); the pendant lamps inside the blockout add warm accents.
 export function createStationLighting() {
-  // Low evening sun raking in under the shed from the open track side.
-  // The ortho window stays tight around the player so a 2048 map stays sharp.
-  const sunlight = new THREE.DirectionalLight(0xffb173, 2.4)
+  // Cool, weak moonlight. The lamps and torches are meant to be brighter
+  // than this. The sky's afterglow is a different direction, below the horizon.
+  const sunlight = new THREE.DirectionalLight(0xb4c4e4, 0.65)
   sunlight.name = 'station-sun'
   sunlight.position.copy(SUN_DIRECTION).multiplyScalar(SUN_SHADOW_DISTANCE)
   sunlight.castShadow = true
@@ -1149,17 +1159,19 @@ export function createStationLighting() {
   sunlight.shadow.camera.top = SUN_SHADOW_HALF
   sunlight.shadow.camera.bottom = -SUN_SHADOW_HALF
   sunlight.shadow.camera.near = 1
-  sunlight.shadow.camera.far = SUN_SHADOW_DISTANCE + SUN_SHADOW_HALF + 12
+  sunlight.shadow.camera.far = SUN_SHADOW_DISTANCE + SUN_SHADOW_HALF + 16
   sunlight.shadow.camera.updateProjectionMatrix()
   sunlight.shadow.camera.layers.enable(SUN_SHADOW_LAYER)
-  // Tight frustum, so a small normal bias is enough to keep acne off the
-  // detective and the guards without lifting their shadows off the floor.
-  sunlight.shadow.bias = -0.00015
-  sunlight.shadow.normalBias = 0.04
+  // Tight window again, and the moon is high enough that a small bias holds
+  // acne off the platform without lifting feet off the floor.
+  sunlight.shadow.bias = -0.0002
+  sunlight.shadow.normalBias = 0.045
   sunlight.target.position.set(0, 0, 0)
 
-  const sky = new THREE.HemisphereLight(0x5e6f96, 0x2e241a, 0.85)
-  const fill = new THREE.AmbientLight(0x3b3346, 0.35)
+  // Blue-hour fill. Cool dark sky, near-black ground, kept low so a shadowed
+  // wall is a dark blue-grey and the warm lamps still read as the light.
+  const sky = new THREE.HemisphereLight(0x1a2748, 0x0a090e, 0.32)
+  const fill = new THREE.AmbientLight(0x10131c, 0.06)
 
   // -------------------------------------------------------------
   // Exterior Mountain Floodlights & Architectural Spotlights
@@ -1168,7 +1180,7 @@ export function createStationLighting() {
   const spotTargets = []
 
   // Floodlight 1 — Left mountain sector
-  const spotLeft = new THREE.SpotLight(0xffb86c, 48.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
+  const spotLeft = new THREE.SpotLight(0xffb86c, 6.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
   spotLeft.position.set(-5.0, 6.2, -12.0)
   const targetLeft = new THREE.Object3D()
   targetLeft.position.set(-65.0, 18.0, -25.0)
@@ -1178,7 +1190,7 @@ export function createStationLighting() {
 
   // Floodlight 2 — Center mountain peak. The light stays; it does not cast
   // a shadow map. The sun is the only shadow caster on this level.
-  const spotCenter = new THREE.SpotLight(0xffc480, 62.0, 165.0, Math.PI / 2.6, 0.8, 1.4)
+  const spotCenter = new THREE.SpotLight(0xffc480, 8.0, 165.0, Math.PI / 2.6, 0.8, 1.4)
   spotCenter.position.set(-5.0, 6.4, 0.0)
   const targetCenter = new THREE.Object3D()
   targetCenter.position.set(-75.0, 24.0, 0.0)
@@ -1188,7 +1200,7 @@ export function createStationLighting() {
   spotTargets.push(targetCenter)
 
   // Floodlight 3 — Right mountain sector
-  const spotRight = new THREE.SpotLight(0xffb86c, 48.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
+  const spotRight = new THREE.SpotLight(0xffb86c, 6.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
   spotRight.position.set(-5.0, 6.2, 12.0)
   const targetRight = new THREE.Object3D()
   targetRight.position.set(-65.0, 18.0, 25.0)

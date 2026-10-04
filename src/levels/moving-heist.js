@@ -23,6 +23,7 @@ import {
   routeControlLayout
 } from '../environment/carriage-bounds.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { createSkyDome } from '../environment/sky-dome.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
@@ -306,12 +307,21 @@ export function createMovingHeistLevel({
   hud?.setChronoVisible?.(false)
 
   const env = createCarriageEnvironment()
-  const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 38.0 })
+  const sky = createSkyDome('moving-heist')
+  const outdoorEnv = createOutdoorEnvironment({
+    mode: 'moving',
+    speed: 38.0,
+    fogColor: sky.horizonColor
+  })
   const { root, spans, roof } = env
 
-  scene.add(outdoorEnv.group, root)
+  scene.add(sky.mesh, outdoorEnv.group, root)
+  // Night sky. Fog matches the horizon so the hills don't drop to black
+  // under the moon. The dome itself is unfogged, so the stars stay visible.
+  // The clear stays dark so the minimap inset does not fill with the sky.
   scene.background = new THREE.Color(0x1a1a2e)
-  scene.fog = new THREE.Fog(0x241d24, 30, 250)
+  scene.fog = new THREE.Fog(sky.horizonColor, 30, 250)
+  scene.fog.color = sky.horizonColor
 
   // Geometry that can block the Passenger guard's vision.
   // This includes walls, seats, luggage, bulkheads, etc.
@@ -2600,6 +2610,7 @@ export function createMovingHeistLevel({
     get isCinematic() { return taken },
 
     update(delta) {
+      sky.update(delta, timeSystem)
       outdoorEnv.update(delta)
       env.update(delta)
       corridorStealth.update(delta)
@@ -3040,8 +3051,9 @@ export function createMovingHeistLevel({
       unregisters.forEach((fn) => fn())
       timeSystem?.setStrainEnabled?.(false)
       outdoorEnv.dispose()
+      sky.dispose()
       corridorStealth.dispose()
-      scene.remove(outdoorEnv.group, root)
+      scene.remove(sky.mesh, outdoorEnv.group, root)
       disposeObject(root)
     }
   }

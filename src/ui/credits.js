@@ -148,7 +148,11 @@ function buildRollContent() {
   addBlock(roll, [
     label('Additional Assets'),
     line('Physics library: cannon-es'),
-    line('Built with Three.js', { size: '13px' })
+    line('Built with Three.js', { size: '13px' }),
+    spacer(8),
+    line('Sky scattering adapted from the three.js Sky example'),
+    line('Preetham daylight model (Rayleigh + Mie), MIT License', { dim: true }),
+    line('github.com/mrdoob/three.js — examples/jsm/objects/Sky.js', { dim: true, size: '13px' })
   ])
 
 

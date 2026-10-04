@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { createSkyShaderMaterial } from '../shaders/sky-shader.js'
 import { createTerrainShaderMaterial } from '../shaders/terrain-shader.js'
 import { createVegetationShaderMaterial } from '../shaders/vegetation-shader.js'
 import { disposeObject } from '../core/dispose.js'
@@ -7,7 +6,6 @@ import { disposeObject } from '../core/dispose.js'
 /**
  * 3D Realistic Outdoor Environment System
  * Builds a multi-layered surrounding environment around the train scene:
- * - Atmospheric Sky Dome with Rayleigh scattering & sun bloom
  * - Multi-tiered 3D Terrain (distant mountain peaks, midground rolling hills, ballast embankment)
  * - Instanced Forests (Pine & Deciduous trees), wild bushes, jagged rocks
  * - Trackside railway infrastructure (Telegraph poles, sagging wires, signal gantries, fence posts)
@@ -60,31 +58,28 @@ export function createOutdoorEnvironment(options = {}) {
   let disposed = false
 
   // -------------------------------------------------------------
-  // 1. Sky Dome & Atmosphere Setup
+  // 1. Sun and fog colours for the terrain and trees. The visible sky is the
+  //    dome from sky-dome.js, added by the level, not a mesh in this group.
   // -------------------------------------------------------------
   const sunPosition = options.sunPosition || new THREE.Vector3(120, 35, -90)
-  
-  const skyTopColor = isStormy ? new THREE.Color(0x0c1018) : new THREE.Color(0x14192d)
-  const skyBottomColor = isStormy ? new THREE.Color(0x1c2433) : new THREE.Color(0xef7d43)
-  const sunColor = isStormy ? new THREE.Color(0x8a9bb4) : new THREE.Color(0xffd194)
-  const atmosphereColor = isStormy ? new THREE.Color(0x1a2230) : new THREE.Color(0x69547d)
-  const fogColor = isStormy ? new THREE.Color(0x10141c) : new THREE.Color(0x241d24)
 
-  const skyMaterial = createSkyShaderMaterial({
-    sunPosition,
-    topColor: skyTopColor,
-    bottomColor: skyBottomColor,
-    sunColor,
-    atmosphereColor,
-    cloudColor: isStormy ? new THREE.Color(0x141820) : new THREE.Color(0x2b2236),
-    hazeDensity: isStormy ? 0.9 : 0.6
-  })
-
-  const skyDome = new THREE.Mesh(
-    new THREE.SphereGeometry(650, 24, 16),
-    skyMaterial
-  )
-  group.add(skyDome)
+  const sunColor = options.sunColor
+    ? new THREE.Color(options.sunColor)
+    : new THREE.Color(isStormy ? 0x8a9bb4 : 0xffd194)
+  // The sky dome lives in sky-dome.js now. This colour is only the fog the
+  // terrain and trees fade into, and it is meant to match that sky's horizon.
+  const fogColor = options.fogColor
+    ? new THREE.Color(options.fogColor)
+    : new THREE.Color(isStormy ? 0x182430 : 0xf0946a)
+  const skyColor = options.skyColor
+    ? new THREE.Color(options.skyColor)
+    : new THREE.Color(0x5e6f96)
+  const groundColor = options.groundColor
+    ? new THREE.Color(options.groundColor)
+    : new THREE.Color(0x2a221b)
+  const fogNear = options.fogNear ?? (isStormy ? 15.0 : 35.0)
+  const fogFar = options.fogFar ?? (isStormy ? 120.0 : 260.0)
+  const fogMax = options.fogMax ?? 1.0
 
   // -------------------------------------------------------------
   // 2. Procedural 3D Terrain (Hills & Mountains)
@@ -92,14 +87,16 @@ export function createOutdoorEnvironment(options = {}) {
   const terrainMaterial = createTerrainShaderMaterial({
     sunDirection: sunPosition.clone().normalize(),
     sunColor,
-    skyColor: new THREE.Color(0x5e6f96),
-    groundColor: new THREE.Color(0x2a221b),
+    skyColor,
+    groundColor,
     grassColor: isStormy ? new THREE.Color(0x1b2416) : new THREE.Color(0x2e3d26),
     rockColor: isStormy ? new THREE.Color(0x332c28) : new THREE.Color(0x4d4944),
     gravelColor: new THREE.Color(0x3d3830),
     fogColor,
-    fogNear: isStormy ? 15.0 : 35.0,
-    fogFar: isStormy ? 120.0 : 260.0
+    fogNear,
+    fogFar,
+    fogMax,
+    ambient: options.terrainAmbient ?? 0.7
   })
 
   // Trigonometric procedural height calculation
@@ -164,12 +161,14 @@ export function createOutdoorEnvironment(options = {}) {
     windStrength: isStormy ? 0.35 : 0.15,
     sunDirection: sunPosition.clone().normalize(),
     sunColor,
-    skyColor: new THREE.Color(0x5e6f96),
+    skyColor,
     foliageColor: isStormy ? new THREE.Color(0x162414) : new THREE.Color(0x1e331a),
     highlightColor: isStormy ? new THREE.Color(0x324d29) : new THREE.Color(0x416334),
     fogColor,
-    fogNear: isStormy ? 15.0 : 35.0,
-    fogFar: isStormy ? 120.0 : 260.0
+    fogNear,
+    fogFar,
+    fogMax,
+    ambient: options.vegAmbient ?? 0.6
   })
 
   // Low-poly Pine Tree Geometry
@@ -246,8 +245,10 @@ export function createOutdoorEnvironment(options = {}) {
   const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x484440, roughness: 0.8, metalness: 0.2 })
   const rockMesh = new THREE.InstancedMesh(rockGeo, rockMaterial, rockCount)
 
-  pineMesh.castShadow = true
-  decMesh.castShadow = true
+  // Moonlight shadows stay on the station and the characters. Trees and the
+  // rest of the distant scenery would fill the shadow map with noise.
+  pineMesh.castShadow = false
+  decMesh.castShadow = false
 
   const dummy = new THREE.Object3D()
   
@@ -352,7 +353,7 @@ export function createOutdoorEnvironment(options = {}) {
   tracksideGroup.name = 'trackside-infrastructure'
 
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3d2717, roughness: 0.9 })
-  const metalMat = new THREE.MeshStandardMaterial({ color: 0x22262a, metalness: 0.8, roughness: 0.4 })
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x22262a, metalness: 0.35, roughness: 0.78 })
   const wireMat = new THREE.LineBasicMaterial({ color: 0x111115 })
 
   const poleZSpacing = 28.0
@@ -515,11 +516,16 @@ export function createOutdoorEnvironment(options = {}) {
     applySpotLights(options.stationSpotLights)
   }
 
+  function setFogColor(color) {
+    terrainMaterial.customUniforms.uFogColor.value.copy(color)
+    vegMaterial.customUniforms.uFogColor.value.copy(color)
+  }
+
   return {
     group,
-    skyDome,
     terrainMesh,
     setStationSpotLights: applySpotLights,
+    setFogColor,
 
     update(delta) {
       elapsed += delta
@@ -529,7 +535,6 @@ export function createOutdoorEnvironment(options = {}) {
       }
 
       // Update shader time uniforms
-      if (skyMaterial.customUniforms) skyMaterial.customUniforms.uTime.value = elapsed
       if (terrainMaterial.customUniforms) terrainMaterial.customUniforms.uTime.value = elapsed
       if (vegMaterial.customUniforms) vegMaterial.customUniforms.uTime.value = elapsed
 
