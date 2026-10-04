@@ -116,14 +116,16 @@ export function createBoardingLevel({
     // instead of picking up the afterglow.
     fogColor: 0x121022,
     sunPosition: SUN_DIRECTION,
-    sunColor: 0x9aafd0,
-    skyColor: 0x1a2844,
+    // Terrain and trees ignore the real directional light. This is the
+    // same moonlight colour, at 3×, so the hills pick up its shading.
+    sunColor: new THREE.Color(0x9aafd0).multiplyScalar(3),
+    skyColor: 0x243656,
     groundColor: 0x0c0a10,
     fogNear: 50,
     fogFar: 260,
     fogMax: 0.88,
-    terrainAmbient: 0.7,
-    vegAmbient: 0.5,
+    terrainAmbient: 0.88,
+    vegAmbient: 0.64,
     // Same clock as the sky, so valley-light twinkle and the lake follow
     // Slow/Freeze/Rewind. The lake also shares the sky colour uniforms.
     skyTime: sky.timeUniform,

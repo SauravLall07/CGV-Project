@@ -183,6 +183,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     for (const y of [0.55, 1.05]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(exteriorLength, 0.07, 0.07), railMat)
       rail.position.set((EXTERIOR_START_X + PASSAGE_START_X) / 2, y, railZ)
+      rail.userData.cameraClearance = 0.22
       group.add(rail)
     }
     // Rail collision is intentionally thin; the circle-vs-box player
@@ -200,6 +201,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   for (const y of [0.55, 1.05]) {
     const rearRail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, EXTERIOR_WIDTH), railMat)
     rearRail.position.set(EXTERIOR_START_X, y, CORRIDOR_Z)
+    rearRail.userData.cameraClearance = 0.22
     group.add(rearRail)
   }
   colliders.push({
@@ -213,11 +215,35 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   for (const side of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 3.0, 0.16), liftFrameMat)
     post.position.set(EXTERIOR_START_X - 0.15, 1.5, CORRIDOR_Z + side * (EXTERIOR_WIDTH / 2 - 0.18))
+    post.userData.cameraClearance = 0.22
     group.add(post)
   }
   const liftHeader = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, EXTERIOR_WIDTH), liftFrameMat)
   liftHeader.position.set(EXTERIOR_START_X - 0.15, 2.95, CORRIDOR_Z)
+  liftHeader.userData.cameraClearance = 0.22
   group.add(liftHeader)
+
+  // The follow camera spawns west of this gate. A centre ray at head height
+  // misses the 7 cm rails, so these invisible slabs are what pull it back
+  // onto the deck, in front of the rails and the lift frame.
+  const rearBlock = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.4, EXTERIOR_WIDTH + 0.5))
+  rearBlock.visible = false
+  rearBlock.position.set(EXTERIOR_START_X - 0.02, 2.1, CORRIDOR_Z)
+  rearBlock.userData.cameraClearance = 0.22
+  rearBlock.name = 'onboarding-gantry-rear-camera-block'
+  group.add(rearBlock)
+  for (const side of [-1, 1]) {
+    const sideBlock = new THREE.Mesh(new THREE.BoxGeometry(exteriorLength, 4.4, 0.24))
+    sideBlock.visible = false
+    sideBlock.position.set(
+      (EXTERIOR_START_X + PASSAGE_START_X) / 2,
+      2.1,
+      CORRIDOR_Z + side * EXTERIOR_WIDTH / 2
+    )
+    sideBlock.userData.cameraClearance = 0.22
+    sideBlock.name = `onboarding-gantry-side-camera-block-${side}`
+    group.add(sideBlock)
+  }
 
   for (let x = EXTERIOR_START_X + 0.6; x < PASSAGE_START_X; x += 2.2) {
     for (const side of [-1, 1]) {

@@ -1147,9 +1147,10 @@ export function updateStationSunShadow(sunlight, focus) {
 // exposure comes from the hemisphere + directional pair (both resolution- and
 // unit-stable); the pendant lamps inside the blockout add warm accents.
 export function createStationLighting() {
-  // Cool, weak moonlight. The lamps and torches are meant to be brighter
-  // than this. The sky's afterglow is a different direction, below the horizon.
-  const sunlight = new THREE.DirectionalLight(0xb4c4e4, 0.65)
+  // Day-for-night moonlight: about 3× the old 0.65, cool silver-blue.
+  // Lamps and torches stay warmer and brighter than this. The sky's
+  // afterglow is a different direction, below the horizon.
+  const sunlight = new THREE.DirectionalLight(0xc8daf6, 1.95)
   sunlight.name = 'station-sun'
   sunlight.position.copy(SUN_DIRECTION).multiplyScalar(SUN_SHADOW_DISTANCE)
   sunlight.castShadow = true
@@ -1169,9 +1170,9 @@ export function createStationLighting() {
   sunlight.shadow.normalBias = 0.045
   sunlight.target.position.set(0, 0, 0)
 
-  // Blue-hour fill. Cool dark sky, near-black ground, kept low so a shadowed
-  // wall is a dark blue-grey and the warm lamps still read as the light.
-  const sky = new THREE.HemisphereLight(0x1a2748, 0x0a090e, 0.32)
+  // A little more sky fill than the old 0.32, so shadowed faces keep a
+  // shape. The ground stays near-black and the warm lamps still lead.
+  const sky = new THREE.HemisphereLight(0x2a4068, 0x0a090e, 0.48)
   const fill = new THREE.AmbientLight(0x10131c, 0.06)
 
   // -------------------------------------------------------------

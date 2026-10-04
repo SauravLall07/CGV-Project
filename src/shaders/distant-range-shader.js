@@ -108,8 +108,9 @@ export function createDistantRangeMaterial({
       // opposite face falls off into dark rock.
       float moonL = smoothstep(0.12, 0.62, max(dot(normal, normalize(uMoonDir)), 0.0));
       float glowL = smoothstep(0.25, 0.8, max(dot(normal, normalize(uAfterglowDir)), 0.0));
-      vec3 fill = vec3(0.035, 0.04, 0.055);
-      vec3 lit = albedo * (fill + uMoonColor * moonL * 1.25);
+      vec3 fill = vec3(0.07, 0.08, 0.11);
+      // 3× the previous moon term so a ridge facing the moon has a readable face.
+      vec3 lit = albedo * (fill + uMoonColor * moonL * 3.75);
       // Afterglow stays a faint tint on sunset-facing slopes only.
       lit += uGlowColor * glowL * 0.16;
 

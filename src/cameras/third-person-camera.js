@@ -139,7 +139,16 @@ export function createThirdPersonCamera(camera, domElement) {
       for (const hit of hits) {
         if (isDescendantOf(hit.object, playerMesh)) continue
         if (hit.object.userData.noCameraCollision) continue
-        allowed = Math.max(minDistance, hit.distance - collisionPadding)
+        const clearance = hit.object.userData.cameraClearance
+        if (typeof clearance === 'number') {
+          // Thin rails. The usual minimum follow distance would leave the
+          // camera on the far side of a gantry rail, so stay in front of
+          // the hit even when that is close to the player.
+          const gap = Math.min(clearance, hit.distance * 0.55)
+          allowed = Math.max(0.05, hit.distance - gap)
+        } else {
+          allowed = Math.max(minDistance, hit.distance - collisionPadding)
+        }
         break
       }
     }
