@@ -187,7 +187,8 @@ export function createOutdoorEnvironment(options = {}) {
     fogFar,
     fogMax,
     ambient: options.terrainAmbient ?? 0.7,
-    mist: mode === 'station' ? 0.42 : 0
+    mist: mode === 'station' ? 0.42 : 0,
+    paths: mode === 'station' ? 1 : 0
   })
 
   // Moving Heist and Timewreck scroll this same mesh. They keep the original
@@ -984,7 +985,10 @@ export function createOutdoorEnvironment(options = {}) {
   if (mode === 'station') {
     addDistantRanges(group)
     valleyLightMaterial = addValleyLights(group, getTerrainHeight, options.skyTime)
-    if (options.skyUniforms) addLake(group, options.skyUniforms, getTerrainHeight)
+    if (options.skyUniforms) {
+      addLake(group, options.skyUniforms, getTerrainHeight)
+      addCreek(group, options.skyUniforms, getTerrainHeight)
+    }
   }
 
   // -------------------------------------------------------------
@@ -1259,6 +1263,79 @@ function addLake(group, skyUniforms, getTerrainHeight) {
   mesh.receiveShadow = false
   mesh.raycast = () => {}
   group.add(mesh)
+}
+
+// A narrow ribbon of the same lake shader, plus stones on the banks.
+// The points run off the eastern hillside into the north shore of the lake.
+const CREEK_POINTS = [
+  [70, 108],
+  [28, 88],
+  [-8, 68],
+  [-42, 54],
+  [-62, 48]
+]
+
+function addCreek(group, skyUniforms, getTerrainHeight) {
+  const half = 1.7
+  const positions = []
+  const indices = []
+  for (let i = 0; i < CREEK_POINTS.length; i += 1) {
+    const [x, z] = CREEK_POINTS[i]
+    const prev = CREEK_POINTS[Math.max(0, i - 1)]
+    const next = CREEK_POINTS[Math.min(CREEK_POINTS.length - 1, i + 1)]
+    let tx = next[0] - prev[0]
+    let tz = next[1] - prev[1]
+    const len = Math.hypot(tx, tz) || 1
+    tx /= len
+    tz /= len
+    const y = getTerrainHeight(x, z) - 0.45
+    positions.push(x - tz * half, y, z + tx * half, x + tz * half, y, z - tx * half)
+    if (i < CREEK_POINTS.length - 1) {
+      const a = i * 2
+      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  const mesh = new THREE.Mesh(geometry, createLakeMaterial(skyUniforms))
+  mesh.name = 'valley-creek'
+  mesh.castShadow = false
+  mesh.receiveShadow = false
+  mesh.raycast = () => {}
+  group.add(mesh)
+
+  const stone = new THREE.DodecahedronGeometry(0.35, 0)
+  const flat = stone.toNonIndexed()
+  flat.computeVertexNormals()
+  stone.dispose()
+  const material = createRockShaderMaterial({
+    sunDirection: SUN_DIRECTION,
+    sunColor: new THREE.Color(0x9aafd0).multiplyScalar(3),
+    skyColor: new THREE.Color(0x243656),
+    rockColor: new THREE.Color(0x6e685f),
+    ambient: 0.7
+  })
+  const rocks = new THREE.InstancedMesh(flat, material, CREEK_POINTS.length * 4)
+  const dummy = new THREE.Object3D()
+  let n = 0
+  for (let i = 0; i < CREEK_POINTS.length; i += 1) {
+    const [x, z] = CREEK_POINTS[i]
+    for (const side of [-1, 1]) {
+      dummy.position.set(x + side * 2.1, getTerrainHeight(x + side * 2.1, z) - 0.1, z + side * 0.4)
+      dummy.rotation.set(0, i, 0)
+      dummy.scale.set(0.8 + (i % 3) * 0.25, 0.45, 0.7)
+      dummy.updateMatrix()
+      rocks.setMatrixAt(n, dummy.matrix)
+      n += 1
+    }
+  }
+  rocks.count = n
+  rocks.castShadow = false
+  rocks.receiveShadow = false
+  rocks.instanceMatrix.needsUpdate = true
+  group.add(rocks)
 }
 
 // Eastern valley only. Spawn looks along +X, so the clusters and the

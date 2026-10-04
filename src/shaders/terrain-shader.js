@@ -31,6 +31,8 @@ export function createTerrainShaderMaterial(options = {}) {
     uAmbient: { value: options.ambient ?? 0.7 },
     // 0 leaves the surface alone. Boarding raises this for valley mist.
     uMist: { value: options.mist ?? 0 },
+    // 1 draws the worn valley tracks. 0 on the moving levels.
+    uPaths: { value: options.paths ?? 0 },
 
     uStationSpotLightCount: { value: 0 },
     uStationSpotLightPos: { value: defaultLightPos },
@@ -77,6 +79,7 @@ export function createTerrainShaderMaterial(options = {}) {
     uniform float uFogMax;
     uniform float uAmbient;
     uniform float uMist;
+    uniform float uPaths;
     uniform float uTime;
 
     uniform int uStationSpotLightCount;
@@ -87,6 +90,13 @@ export function createTerrainShaderMaterial(options = {}) {
 
     float hash(vec2 p) {
       return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
+    float segDist(vec2 p, vec2 a, vec2 b) {
+      vec2 pa = p - a;
+      vec2 ba = b - a;
+      float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+      return length(pa - ba * h);
     }
 
     float noise(vec2 p) {
@@ -127,6 +137,13 @@ export function createTerrainShaderMaterial(options = {}) {
       baseColor = mix(baseColor, gravelCol, trackGravelFactor * (1.0 - cliffFactor * 0.5));
 
       // Mountain peak snow/grey rock highlight for tall hills
+      // Worn earth. Two segments leave the station area and head up the
+      // valley. uPaths is 0 on the moving levels, so this stays off there.
+      float pathA = segDist(vWorldPosition.xz, vec2(-168.0, -18.0), vec2(-30.0, 28.0));
+      float pathB = segDist(vWorldPosition.xz, vec2(-30.0, 28.0), vec2(55.0, 78.0));
+      float worn = 1.0 - smoothstep(1.1, 3.4, min(pathA, pathB));
+      baseColor = mix(baseColor, uGravelColor * 0.72 + vec3(0.06, 0.04, 0.02), worn * uPaths);
+
       float peakFactor = smoothstep(25.0, 60.0, height);
       baseColor = mix(baseColor, uRockColor * 1.3 + vec3(0.1, 0.1, 0.12), peakFactor * (1.0 - slope * 0.4));
 
