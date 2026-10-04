@@ -14,6 +14,7 @@ const pillar = new THREE.MeshStandardMaterial({
 })
 const roofMat = metalMaterial({ repeat: [6, 2], seed: 61, base: 0x3a4048, roughness: 0.55, metalness: 0.72 })
 const iron = metalMaterial({ repeat: [2, 1], seed: 44, base: 0x1c2228, roughness: 0.42, metalness: 0.8 })
+const railIron = metalMaterial({ repeat: [2, 1], seed: 48, base: 0x3e4854, roughness: 0.55, metalness: 0.35 })
 const warmGlass = new THREE.MeshStandardMaterial({
   color: 0xffe2b0,
   emissive: 0xffb15a,
@@ -260,11 +261,11 @@ export function addPassageShell(parent, {
 export function addIronRailing(parent, { min, max, fixed, axis = 'x', y = 0, height = 1.05 }) {
   const length = max - min
   const postCount = Math.max(2, Math.floor(length / 1.7) + 1)
-  const balusterCount = Math.max(2, Math.floor(length / 0.22))
-  const postGeo = new THREE.BoxGeometry(0.07, height, 0.07)
-  const balusterGeo = new THREE.BoxGeometry(0.025, height - 0.18, 0.025)
-  const posts = new THREE.InstancedMesh(postGeo, iron, postCount)
-  const balusters = new THREE.InstancedMesh(balusterGeo, iron, balusterCount)
+  const balusterCount = Math.max(2, Math.floor(length / 0.58))
+  const postGeo = new THREE.BoxGeometry(0.055, height, 0.055)
+  const balusterGeo = new THREE.BoxGeometry(0.014, height - 0.18, 0.014)
+  const posts = new THREE.InstancedMesh(postGeo, railIron, postCount)
+  const balusters = new THREE.InstancedMesh(balusterGeo, railIron, balusterCount)
   const dummy = new THREE.Object3D()
   const place = (t, meshY) => {
     const along = min + t * length
@@ -282,8 +283,8 @@ export function addIronRailing(parent, { min, max, fixed, axis = 'x', y = 0, hei
     balusters.setMatrixAt(i, dummy.matrix)
   }
   const rail = new THREE.Mesh(
-    new THREE.BoxGeometry(axis === 'x' ? length : 0.05, 0.05, axis === 'x' ? 0.05 : length),
-    iron
+    new THREE.BoxGeometry(axis === 'x' ? length : 0.04, 0.04, axis === 'x' ? 0.04 : length),
+    railIron
   )
   rail.position.set(
     axis === 'x' ? (min + max) / 2 : fixed,
