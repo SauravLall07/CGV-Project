@@ -8,6 +8,7 @@ import { createRockShaderMaterial } from '../shaders/rock-shader.js'
 import { createLakeMaterial } from '../shaders/lake-shader.js'
 import { SUN_DIRECTION } from './station-blockout.js'
 import { disposeObject } from '../core/dispose.js'
+import { createGrassField, grassDistance } from './grass-field.js'
 
 /**
  * 3D Realistic Outdoor Environment System
@@ -147,6 +148,7 @@ export function createOutdoorEnvironment(options = {}) {
   group.name = 'outdoor-environment'
 
   let disposed = false
+  let grassField = null
 
   // -------------------------------------------------------------
   // 1. Sun and fog colours for the terrain and trees. The visible sky is the
@@ -729,46 +731,10 @@ export function createOutdoorEnvironment(options = {}) {
         stumpIdx += 1
       }
     }
-    // Grass and ferns only within about 40 m of the playable run, so the
-    // valley floor near the gantry is not a flat sheet.
-    let grassI = 0
-    let fernI = 0
-    const near = (x, z) => (
-      x > PLAY_MIN_X - 40 && x < PLAY_MAX_X + 40 &&
-      z > PLAY_MIN_Z - 40 && z < PLAY_MAX_Z + 40
-    )
-    for (let i = 0; i < 2400 && !options.nature && (grassI < grassCount || fernI < fernCount); i += 1) {
-      const rx = PLAY_MIN_X - 40 + rand() * (PLAY_MAX_X - PLAY_MIN_X + 80)
-      const rz = PLAY_MIN_Z - 40 + rand() * (PLAY_MAX_Z - PLAY_MIN_Z + 80)
-      const gap = gapOutsideFootprints(rx, rz)
-      if (!near(rx, rz) || gap < 0.4 || gap > 14 || lakeDrop(rx, rz) > 0.2) continue
-      if (rx < -168 && Math.abs(rz + 24.5) < 2.7) continue
-      const ry = getTerrainHeight(rx, rz)
-      if (ry < -0.2 || ry > 6) continue
-      const mask = forestMask(rx, rz)
-      const tint = 0.72 + rand() * 0.45
-      if (mask < 0.5 && grassI < grassCount) {
-        dummy.position.set(rx, ry, rz)
-        dummy.rotation.set(0, rand() * Math.PI, 0)
-        const s = 0.7 + rand() * 0.8
-        dummy.scale.set(s, 0.65 + rand() * 0.7, s)
-        dummy.updateMatrix()
-        grassMesh.setMatrixAt(grassI, dummy.matrix)
-        grassMesh.instanceColor.setXYZ(grassI, tint * 0.9, tint, tint * 0.7)
-        grassI += 1
-      } else if (mask >= 0.42 && mask < 0.62 && fernI < fernCount) {
-        dummy.position.set(rx, ry, rz)
-        dummy.rotation.set((rand() - 0.5) * 0.3, rand() * Math.PI, 0)
-        const s = 0.8 + rand() * 0.7
-        dummy.scale.set(s, 0.5 + rand() * 0.4, s)
-        dummy.updateMatrix()
-        fernMesh.setMatrixAt(fernI, dummy.matrix)
-        fernMesh.instanceColor.setXYZ(fernI, tint * 0.7, tint * 0.95, tint * 0.65)
-        fernI += 1
-      }
-    }
-    grassMesh.count = grassI
-    fernMesh.count = fernI
+    // Flat crossed-plane tufts. The spawn meadow is the blade field, so
+    // these cards stay undrawn on Boarding.
+    grassMesh.count = 0
+    fernMesh.count = 0
   } else {
   for (let i = 0; i < treeCount * 2; i++) {
     let rx = (Math.random() - 0.5) * rangeX * 2
@@ -952,13 +918,16 @@ export function createOutdoorEnvironment(options = {}) {
 
     const ferns = buckets.fern
     let fernN = 0
-    for (let i = 0; i < 4500 && fernN < 180 && ferns.length; i += 1) {
-      const rx = PLAY_MIN_X - 16 + rand() * (PLAY_MAX_X - PLAY_MIN_X + 32)
-      const rz = PLAY_MIN_Z - 16 + rand() * (PLAY_MAX_Z - PLAY_MIN_Z + 32)
+    // A few ferns in the meadow, as accents. The blade field is the ground cover.
+    const FERN_ACCENTS = 16
+    for (let i = 0; i < 4000 && fernN < FERN_ACCENTS && ferns.length; i += 1) {
+      const rx = -224 + rand() * 120
+      const rz = -72 + rand() * 90
       const gap = gapOutsideFootprints(rx, rz)
-      if (gap < 0.35 || gap > 11 || onDeck(rx, rz) || lakeDrop(rx, rz) > 0.15) continue
+      if (gap < 1.4 || gap > 9 || onDeck(rx, rz) || lakeDrop(rx, rz) > 0.15) continue
+      if (grassDistance(rx, rz) > 24) continue
       const groundY = getTerrainHeight(rx, rz)
-      if (groundY < -0.2 || groundY > 6) continue
+      if (groundY < -0.45 || groundY > 3) continue
       const entry = ferns[fernN % ferns.length]
       const [lo, hi] = entry.prop.scale
       const s = lo + rand() * (hi - lo)
@@ -1005,6 +974,22 @@ export function createOutdoorEnvironment(options = {}) {
   }
 
   if (mode === 'station' && options.nature?.props?.length) placeRealNature(options.nature.props)
+
+  // Spawn meadow. One draw, no shadows. Moving levels do not build it.
+  if (mode === 'station') {
+    grassField = createGrassField({
+      getTerrainHeight,
+      gapOutsideFootprints,
+      skyTime: options.skyTime || null,
+      sunDirection: sunPosition.clone().normalize(),
+      fogColor,
+      fogNear,
+      fogFar,
+      fogMax,
+      mist: 0.36
+    })
+    group.add(grassField.mesh)
+  }
 
   group.add(pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh, rockMesh, outcropMesh, slabMesh, logMesh, stumpMesh)
 
@@ -1199,6 +1184,7 @@ export function createOutdoorEnvironment(options = {}) {
   function setFogColor(color) {
     terrainMaterial.customUniforms.uFogColor.value.copy(color)
     vegMaterial.customUniforms.uFogColor.value.copy(color)
+    if (grassField) grassField.material.customUniforms.uFogColor.value.copy(color)
   }
 
   return {
@@ -1219,6 +1205,8 @@ export function createOutdoorEnvironment(options = {}) {
       if (vegMaterial.customUniforms && !options.skyTime) vegMaterial.customUniforms.uTime.value = elapsed
       if (deadMaterial.customUniforms && !options.skyTime) deadMaterial.customUniforms.uTime.value = elapsed
       if (grassMaterial.customUniforms && !options.skyTime) grassMaterial.customUniforms.uTime.value = elapsed
+      // Boarding grass shares the sky clock. This is only the fallback.
+      if (grassField && !options.skyTime) grassField.material.customUniforms.uTime.value = elapsed
       // Shared with the sky when Boarding passes skyTime, so time powers
       // already drive the twinkle. This is only the fallback.
       if (valleyLightMaterial && !options.skyTime) {
@@ -1243,6 +1231,7 @@ export function createOutdoorEnvironment(options = {}) {
     dispose() {
       if (disposed) return
       disposed = true
+      if (grassField) grassField.dispose()
       disposeObject(group)
     }
   }

@@ -66,6 +66,18 @@ export const OPTION_DEFS = [
     ]
   },
   {
+    id: 'grassDensity',
+    label: 'Grass Density',
+    hint: 'How many blades are drawn around the Boarding spawn. Applies immediately.',
+    group: 'Display',
+    type: 'choice',
+    choices: [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High' }
+    ]
+  },
+  {
     id: 'showStats',
     label: 'Performance Counter',
     hint: 'Shows frames per second in the corner of the HUD.',
@@ -139,6 +151,7 @@ export const DEFAULT_OPTIONS = {
   fov: 60,
   renderScale: 1,
   shadowQuality: 'medium',
+  grassDensity: 'medium',
   showStats: false,
   captureShortcuts: true,
   mouseSensitivity: 1,

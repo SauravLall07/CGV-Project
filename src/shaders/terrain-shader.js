@@ -180,7 +180,15 @@ export function createTerrainShaderMaterial(options = {}) {
       if (nearPlay > 0.001) {
         vec2 groundUv = vWorldPosition.xz * 0.11;
         vec2 rockUv = vWorldPosition.xz * 0.07;
-        vec3 groundTex = pow(texture2D(uGroundMap, groundUv).rgb, vec3(2.2));
+        // Two scales of the same photo. The broad sample breaks the
+        // repeat that shows in the gaps between grass blades.
+        vec3 groundFine = pow(texture2D(uGroundMap, groundUv).rgb, vec3(2.2));
+        vec3 groundBroad = pow(texture2D(uGroundMap, vWorldPosition.xz * 0.027).rgb, vec3(2.2));
+        float tileMix = 0.38 + 0.28 * noise(vWorldPosition.xz * 0.041);
+        vec3 groundTex = mix(groundFine, groundBroad, tileMix);
+        // Patches many metres across, so the soil is not one flat tint.
+        float patch = noise(vWorldPosition.xz * 0.011);
+        groundTex *= mix(vec3(0.74, 0.80, 0.70), vec3(1.08, 1.00, 0.88), patch);
         vec3 rockTex = pow(texture2D(uRockMap, rockUv).rgb, vec3(2.2));
         vec3 photo = mix(groundTex, rockTex, cliffFactor);
         // Daylight photos are too green and too saturated for moonlight.
@@ -188,6 +196,15 @@ export function createTerrainShaderMaterial(options = {}) {
         float photoLuma = dot(photo, vec3(0.299, 0.587, 0.114));
         photo = mix(photo, vec3(photoLuma), 0.32);
         photo *= vec3(0.82, 0.88, 1.0);
+        // Meadow bed under the spawn grass. Gaps were reading as bright
+        // dirt. This pulls that band toward a dark cool green-brown
+        // while the patch variation above still shows through.
+        float bedSpawn = length(vWorldPosition.xz - vec2(-182.1, -24.5));
+        float bedDoor = length(vWorldPosition.xz - vec2(-166.0, -24.5));
+        float bedDist = min(bedSpawn, bedDoor);
+        float grassBed = (1.0 - smoothstep(5.0, 40.0, bedDist)) * (1.0 - cliffFactor);
+        vec3 bedSoil = vec3(0.030, 0.042, 0.024);
+        photo = mix(photo, photo * vec3(0.48, 0.58, 0.46) + bedSoil, grassBed * 0.85);
         baseColor = mix(baseColor, photo * (0.9 + detailNoise * 0.16), nearPlay);
         vec3 groundN = texture2D(uGroundNormal, groundUv).xyz * 2.0 - 1.0;
         vec3 rockN = texture2D(uRockNormal, rockUv).xyz * 2.0 - 1.0;
