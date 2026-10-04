@@ -339,27 +339,65 @@ export function createOutdoorEnvironment(options = {}) {
     mist: mode === 'station' ? 0.36 : 0
   })
 
-  // Low-poly Pine Tree Geometry
-  function createPineTreeGeometry() {
+  // One merged mesh per variant. Tiers are short wide cones, offset and
+  // tilted so the silhouette droops instead of stacking as a perfect pyramid.
+  function createConiferGeometry({
+    tiers = 7,
+    trunkHeight = 2.4,
+    trunkRadius = 0.28,
+    tierRadius = 1.7,
+    tierHeight = 1.35,
+    droop = 0.18,
+    jitter = 0.16,
+    lean = 0
+  } = {}) {
     const parts = []
-    
-    // Trunk
-    const trunk = new THREE.CylinderGeometry(0.2, 0.35, 1.8, 6)
-    trunk.translate(0, 0.9, 0)
+    const trunk = new THREE.CylinderGeometry(trunkRadius * 0.55, trunkRadius, trunkHeight, 6)
+    trunk.translate(0, trunkHeight * 0.5, 0)
     parts.push(trunk)
-
-    // 3 Tiers of foliage cones
-    for (let i = 0; i < 3; i++) {
-      const radius = 1.6 - i * 0.35
-      const height = 2.2 - i * 0.3
-      const cone = new THREE.ConeGeometry(radius, height, 7)
-      cone.translate(0, 1.8 + i * 1.3, 0)
+    for (let i = 0; i < tiers; i += 1) {
+      const t = tiers === 1 ? 0 : i / (tiers - 1)
+      const cone = new THREE.ConeGeometry(
+        tierRadius * (1 - t * 0.7),
+        tierHeight * (0.85 + (i % 3) * 0.08),
+        6
+      )
+      const y = trunkHeight * 0.42 + i * tierHeight * 0.46
+      cone.translate(Math.sin(i * 2.4) * jitter, y, Math.cos(i * 1.7) * jitter)
+      cone.rotateZ(Math.sin(i * 1.9) * droop)
+      cone.rotateX(Math.cos(i * 1.3) * droop * 0.8)
       parts.push(cone)
     }
-
-    // Merge geometries manually for low overhead
     const merged = mergeBufferGeometries(parts)
-    parts.forEach(p => p.dispose())
+    if (lean) merged.rotateZ(lean)
+    parts.forEach((part) => part.dispose())
+    return merged
+  }
+
+  // Bare trunk and a few branches. No foliage, so it reads as a dead tree
+  // against the conifers. Shares the vegetation shader with a brown tint.
+  function createDeadTreeGeometry() {
+    const parts = []
+    const trunk = new THREE.CylinderGeometry(0.12, 0.26, 4.2, 5)
+    trunk.translate(0, 2.1, 0)
+    trunk.rotateZ(0.08)
+    parts.push(trunk)
+    const branches = [
+      [0.9, 2.2, 0.5, 0.4],
+      [1.5, 2.8, -0.35, -0.2],
+      [2.1, 1.1, 0.15, 0.7],
+      [2.7, 0.8, -0.5, 0.15]
+    ]
+    for (const [y, length, rx, rz] of branches) {
+      const branch = new THREE.CylinderGeometry(0.035, 0.06, length, 4)
+      branch.translate(0, length * 0.5, 0)
+      branch.rotateZ(rz)
+      branch.rotateX(rx)
+      branch.translate(0, y, 0)
+      parts.push(branch)
+    }
+    const merged = mergeBufferGeometries(parts)
+    parts.forEach((part) => part.dispose())
     return merged
   }
 
@@ -400,7 +438,10 @@ export function createOutdoorEnvironment(options = {}) {
     return flat
   }
 
-  const pineGeo = createPineTreeGeometry()
+  const pineGeo = createConiferGeometry({ tiers: 7, trunkHeight: 2.6, tierRadius: 1.85, tierHeight: 1.45, droop: 0.22, jitter: 0.2 })
+  const spruceGeo = createConiferGeometry({ tiers: 8, trunkHeight: 3.4, trunkRadius: 0.18, tierRadius: 0.95, tierHeight: 1.15, droop: 0.08, jitter: 0.06 })
+  const youngGeo = createConiferGeometry({ tiers: 4, trunkHeight: 1.1, trunkRadius: 0.12, tierRadius: 0.7, tierHeight: 0.7, droop: 0.16, jitter: 0.08 })
+  const deadGeo = createDeadTreeGeometry()
   const decGeo = createDeciduousTreeGeometry()
   const bushGeo = createBushGeometry()
   const rockGeo = createRockGeometry()
@@ -411,9 +452,45 @@ export function createOutdoorEnvironment(options = {}) {
   const bushCount = quality === 'HIGH' ? 400 : (quality === 'MEDIUM' ? 200 : 100)
   const rockCount = quality === 'HIGH' ? 250 : (quality === 'MEDIUM' ? 120 : 60)
 
+  const deadMaterial = createVegetationShaderMaterial({
+    windSpeed: 1.1,
+    windStrength: isStormy ? 0.22 : 0.1,
+    sunDirection: sunPosition.clone().normalize(),
+    sunColor,
+    skyColor,
+    foliageColor: new THREE.Color(0x3a3228),
+    highlightColor: new THREE.Color(0x5a4a38),
+    fogColor,
+    fogNear,
+    fogFar,
+    fogMax,
+    ambient: options.vegAmbient ?? 0.6,
+    mist: mode === 'station' ? 0.36 : 0
+  })
+  // Boarding shares the sky clock. Writing elapsed here would ignore Slow,
+  // Freeze and Rewind. Moving levels have no sky time, so they keep elapsed.
+  if (options.skyTime) {
+    vegMaterial.customUniforms.uTime = options.skyTime
+    deadMaterial.customUniforms.uTime = options.skyTime
+  }
+
+  function attachTint(mesh, count) {
+    const colors = new Float32Array(count * 3)
+    colors.fill(1)
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
+  }
+
   const pineMesh = new THREE.InstancedMesh(pineGeo, vegMaterial, treeCount)
+  const spruceMesh = new THREE.InstancedMesh(spruceGeo, vegMaterial, treeCount)
+  const youngMesh = new THREE.InstancedMesh(youngGeo, vegMaterial, treeCount)
+  const deadMesh = new THREE.InstancedMesh(deadGeo, deadMaterial, Math.floor(treeCount * 0.12))
   const decMesh = new THREE.InstancedMesh(decGeo, vegMaterial, Math.floor(treeCount * 0.4))
   const bushMesh = new THREE.InstancedMesh(bushGeo, vegMaterial, bushCount)
+  for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh]) {
+    attachTint(mesh, mesh.instanceColor ? mesh.count : mesh.count)
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+  }
   
   const rockMaterial = createRockShaderMaterial({
     sunDirection: sunPosition.clone().normalize(),
@@ -447,31 +524,53 @@ export function createOutdoorEnvironment(options = {}) {
     )
   }
 
-  let pineIdx = 0, decIdx = 0, bushIdx = 0, rockIdx = 0
+  let pineIdx = 0, spruceIdx = 0, youngIdx = 0, deadIdx = 0, decIdx = 0, bushIdx = 0, rockIdx = 0
   const rangeX = 320, rangeZ = 360
+  const pineCap = Math.floor(treeCount * 0.5)
+  const spruceCap = Math.floor(treeCount * 0.28)
+  const youngCap = Math.floor(treeCount * 0.16)
+  const deadCap = Math.min(deadMesh.count, Math.floor(treeCount * 0.06))
+
+  function placeTree(mesh, index, x, y, z, scale, rand, tint) {
+    dummy.position.set(x, y - (0.18 + scale * 0.28), z)
+    dummy.rotation.set((rand() - 0.5) * 0.22, rand() * Math.PI * 2, (rand() - 0.5) * 0.22)
+    const spread = 0.86 + rand() * 0.28
+    dummy.scale.set(scale * spread, scale, scale * (1.72 - spread))
+    dummy.updateMatrix()
+    mesh.setMatrixAt(index, dummy.matrix)
+    mesh.instanceColor.setXYZ(index, tint, tint * (0.92 + rand() * 0.16), tint * 0.82)
+  }
 
   if (mode === 'station') {
-    // Noise mask, not an even lawn. Pines only, sunk into the slope.
-    // Broadleaf count stays 0; the mesh still exists for the moving-mode update.
+    // Noise mask. Tall pines and spruce sit in the dense centres.
+    // Young pines sit on the thinner edge of the mask. Dead trees are rare.
+    // Broadleaf count stays 0; that mesh still exists for the moving-mode update.
     const rand = makeRng(0x5eed01)
-    for (let i = 0; i < treeCount * 16 && pineIdx < treeCount; i++) {
+    for (let i = 0; i < treeCount * 18 && (pineIdx < pineCap || spruceIdx < spruceCap || youngIdx < youngCap || deadIdx < deadCap); i++) {
       const rx = -360 + rand() * 720
       const rz = -360 + rand() * 720
       if (isSceneryBlocked(rx, rz)) continue
       if (lakeDrop(rx, rz) > 0.35) continue
       const mask = forestMask(rx, rz)
-      if (mask < 0.48) continue
+      if (mask < 0.46) continue
       const ry = getTerrainHeight(rx, rz)
       if (ry < 0.4 || ry > 20) continue
       const hillside = THREE.MathUtils.smoothstep(ry, 1.2, 7)
-      if (rand() > mask * (0.45 + hillside * 0.7)) continue
-      const scale = 0.48 + rand() * 1.2
-      dummy.position.set(rx, ry - (0.2 + scale * 0.34), rz)
-      dummy.rotation.y = rand() * Math.PI * 2
-      const spread = 0.82 + rand() * 0.36
-      dummy.scale.set(scale * spread, scale, scale * (1.7 - spread))
-      dummy.updateMatrix()
-      pineMesh.setMatrixAt(pineIdx++, dummy.matrix)
+      if (rand() > mask * (0.5 + hillside * 0.65)) continue
+      const tint = 0.78 + rand() * 0.36
+      if (mask > 0.66 && pineIdx < pineCap) {
+        placeTree(pineMesh, pineIdx, rx, ry, rz, 1.05 + rand() * 0.75, rand, tint)
+        pineIdx += 1
+      } else if (mask > 0.58 && spruceIdx < spruceCap) {
+        placeTree(spruceMesh, spruceIdx, rx, ry, rz, 1.15 + rand() * 0.7, rand, tint * 0.9)
+        spruceIdx += 1
+      } else if (mask < 0.58 && youngIdx < youngCap) {
+        placeTree(youngMesh, youngIdx, rx, ry, rz, 0.4 + rand() * 0.35, rand, tint * 1.05)
+        youngIdx += 1
+      } else if (deadIdx < deadCap && rand() < 0.08) {
+        placeTree(deadMesh, deadIdx, rx, ry, rz, 0.7 + rand() * 0.45, rand, 0.85 + rand() * 0.2)
+        deadIdx += 1
+      }
     }
     const bushCap = Math.min(bushCount, 160)
     for (let i = 0; i < bushCap * 8 && bushIdx < bushCap; i++) {
@@ -587,16 +686,19 @@ export function createOutdoorEnvironment(options = {}) {
   // leftovers pile into one black blob in the middle of the station and, in the
   // moving levels, slide straight through the carriage interiors.
   pineMesh.count = pineIdx
+  spruceMesh.count = spruceIdx
+  youngMesh.count = youngIdx
+  deadMesh.count = deadIdx
   decMesh.count = decIdx
   bushMesh.count = bushIdx
   rockMesh.count = rockIdx
 
-  pineMesh.instanceMatrix.needsUpdate = true
-  decMesh.instanceMatrix.needsUpdate = true
-  bushMesh.instanceMatrix.needsUpdate = true
-  rockMesh.instanceMatrix.needsUpdate = true
+  for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, rockMesh]) {
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  }
 
-  group.add(pineMesh, decMesh, bushMesh, rockMesh)
+  group.add(pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, rockMesh)
 
   // -------------------------------------------------------------
   // 4. Trackside Infrastructure (Telegraph Poles, Wires, Gantries, Fences)
@@ -802,7 +904,8 @@ export function createOutdoorEnvironment(options = {}) {
 
       // Update shader time uniforms
       if (terrainMaterial.customUniforms) terrainMaterial.customUniforms.uTime.value = elapsed
-      if (vegMaterial.customUniforms) vegMaterial.customUniforms.uTime.value = elapsed
+      if (vegMaterial.customUniforms && !options.skyTime) vegMaterial.customUniforms.uTime.value = elapsed
+      if (deadMaterial.customUniforms && !options.skyTime) deadMaterial.customUniforms.uTime.value = elapsed
       // Shared with the sky when Boarding passes skyTime, so time powers
       // already drive the twinkle. This is only the fallback.
       if (valleyLightMaterial && !options.skyTime) {
