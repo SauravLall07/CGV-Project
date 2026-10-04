@@ -183,7 +183,12 @@ export function createTerrainShaderMaterial(options = {}) {
         vec3 groundTex = pow(texture2D(uGroundMap, groundUv).rgb, vec3(2.2));
         vec3 rockTex = pow(texture2D(uRockMap, rockUv).rgb, vec3(2.2));
         vec3 photo = mix(groundTex, rockTex, cliffFactor);
-        baseColor = mix(baseColor, photo * (0.82 + detailNoise * 0.28), nearPlay);
+        // Daylight photos are too green and too saturated for moonlight.
+        // Pull them toward a cool grey so the grain stays and the hue does not.
+        float photoLuma = dot(photo, vec3(0.299, 0.587, 0.114));
+        photo = mix(photo, vec3(photoLuma), 0.32);
+        photo *= vec3(0.82, 0.88, 1.0);
+        baseColor = mix(baseColor, photo * (0.9 + detailNoise * 0.16), nearPlay);
         vec3 groundN = texture2D(uGroundNormal, groundUv).xyz * 2.0 - 1.0;
         vec3 rockN = texture2D(uRockNormal, rockUv).xyz * 2.0 - 1.0;
         vec3 photoN = mix(groundN, rockN, cliffFactor);
@@ -196,6 +201,17 @@ export function createTerrainShaderMaterial(options = {}) {
 
       vec3 diffuse = NdotL * uSunColor * 1.2;
       vec3 ambient = mix(uGroundColor, uSkyColor, skyDiff) * uAmbient;
+
+      // Textured Boarding ground uses the same diffuse model as a standard
+      // material: station moonlight (0xc8daf6 at 1.95), the hemisphere
+      // (0x2a4068 over 0x0a090e at 0.48), and a dim cool fill for the
+      // environment map at intensity 0.4. Diffuse is divided by PI.
+      // nearPlay is 0 on the moving levels, so they keep the line above.
+      vec3 moonIrradiance = vec3(0.784, 0.855, 0.965) * 1.95 * NdotL;
+      vec3 hemiIrradiance = mix(vec3(0.039, 0.035, 0.055), vec3(0.165, 0.251, 0.408), skyDiff) * 0.48;
+      vec3 envIrradiance = vec3(0.10, 0.12, 0.18) * 0.4;
+      vec3 standardLit = baseColor * (moonIrradiance + hemiIrradiance + envIrradiance) * 0.3183;
+      vec3 legacyLit = baseColor * (diffuse + ambient);
 
       // Station Exterior Spotlight Illumination
       vec3 stationLightContrib = vec3(0.0);
@@ -227,7 +243,7 @@ export function createTerrainShaderMaterial(options = {}) {
         }
       }
 
-      vec3 litColor = baseColor * (diffuse + ambient + stationLightContrib);
+      vec3 litColor = mix(legacyLit, standardLit, nearPlay) + baseColor * stationLightContrib;
 
       // Distance fog calculation
       float fogFactor = min(smoothstep(uFogNear, uFogFar, vViewDistance), uFogMax);
