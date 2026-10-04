@@ -152,7 +152,23 @@ function buildRollContent() {
     spacer(8),
     line('Sky scattering adapted from the three.js Sky example'),
     line('Preetham daylight model (Rayleigh + Mie), MIT License', { dim: true }),
-    line('github.com/mrdoob/three.js — examples/jsm/objects/Sky.js', { dim: true, size: '13px' })
+    line('github.com/mrdoob/three.js — examples/jsm/objects/Sky.js', { dim: true, size: '13px' }),
+    spacer(8),
+    line('Nature models and surface textures from Poly Haven'),
+    line('polyhaven.com — CC0', { dim: true }),
+    line('Pine Sapling Small', { size: '13px' }),
+    line('Fir Sapling', { size: '13px' }),
+    line('Fir Sapling Medium', { size: '13px' }),
+    line('Pine Sapling Medium', { size: '13px' }),
+    line('Fern 02', { size: '13px' }),
+    line('Rock Moss Set 01', { size: '13px' }),
+    line('Rock Moss Set 02', { size: '13px' }),
+    line('Dead Tree Trunk', { size: '13px' }),
+    line('Tree Stump 01', { size: '13px' }),
+    line('Castle Brick 02 Red', { size: '13px' }),
+    line('Corrugated Iron', { size: '13px' }),
+    line('Forest Ground 01', { size: '13px' }),
+    line('Rock Face', { size: '13px' })
   ])
 
 
