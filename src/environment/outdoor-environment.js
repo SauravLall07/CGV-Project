@@ -914,8 +914,13 @@ export function createOutdoorEnvironment(options = {}) {
     }
 
     const trees = buckets.tree
-    let treeN = 0
-    for (let i = 0; i < 7000 && treeN < 150 && trees.length; i += 1) {
+    // Gantry spawn. Keep the real trees that sit closest to this point,
+    // and prefer the side the opening view looks along (east, +X).
+    const SPAWN_X = -182.1
+    const SPAWN_Z = -24.5
+    const TREE_CAP = 60
+    const spots = []
+    for (let i = 0; i < 8000 && spots.length < 500 && trees.length; i += 1) {
       const rx = PLAY_MIN_X - 80 + rand() * (PLAY_MAX_X - PLAY_MIN_X + 160)
       const rz = PLAY_MIN_Z - 80 + rand() * (PLAY_MAX_Z - PLAY_MIN_Z + 160)
       if (distOutsideRect(rx, rz, PLAY_MIN_X, PLAY_MAX_X, PLAY_MIN_Z, PLAY_MAX_Z) > 80) continue
@@ -924,14 +929,25 @@ export function createOutdoorEnvironment(options = {}) {
       if (forestMask(rx, rz) < 0.3 && rand() > 0.4) continue
       const groundY = getTerrainHeight(rx, rz)
       if (groundY < 0.15 || groundY > 16) continue
-      const entry = trees[treeN % trees.length]
+      const behind = rx < SPAWN_X - 6 ? 30 : 0
+      spots.push({
+        rx, rz, groundY,
+        score: Math.hypot(rx - SPAWN_X, rz - SPAWN_Z) + behind,
+        yaw: rand(), lean: rand(), sink: rand(), spread: rand()
+      })
+    }
+    spots.sort((a, b) => a.score - b.score)
+    const treeN = Math.min(TREE_CAP, spots.length)
+    for (let n = 0; n < treeN; n += 1) {
+      const spot = spots[n]
+      const entry = trees[n % trees.length]
       const [lo, hi] = entry.prop.scale
-      const s = lo + rand() * (hi - lo)
-      if (put(
-        entry, rx, groundY - (0.16 + rand() * 0.22), rz,
-        (rand() - 0.5) * 0.08, rand() * Math.PI * 2, (rand() - 0.5) * 0.08,
-        s, s * (0.92 + rand() * 0.16), s
-      )) treeN += 1
+      const s = lo + (hi - lo) * spot.spread
+      put(
+        entry, spot.rx, spot.groundY - (0.16 + spot.sink * 0.22), spot.rz,
+        (spot.lean - 0.5) * 0.08, spot.yaw * Math.PI * 2, (spot.spread - 0.5) * 0.08,
+        s, s * (0.92 + spot.lean * 0.16), s
+      )
     }
 
     const ferns = buckets.fern

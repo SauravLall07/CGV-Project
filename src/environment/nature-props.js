@@ -27,10 +27,10 @@ import rockNorUrl from '../assets/textures/nature/rock-face-nor.jpg?url'
 // range. swayHeight is the model's own height in metres, before that scale,
 // because the wind offset is applied in local space.
 const MODELS = [
-  { key: 'pine-sapling-small', url: pineSmallUrl, kind: 'tree', swayHeight: 1.3, windStrength: 0.035, scale: [7.2, 10.2], capacity: 48 },
-  { key: 'fir-sapling', url: firSmallUrl, kind: 'tree', swayHeight: 1.29, windStrength: 0.04, scale: [9.5, 13], capacity: 48 },
-  { key: 'pine-sapling-medium', url: pineMediumUrl, kind: 'tree', swayHeight: 6.78, windStrength: 0.14, scale: [1.15, 1.85], capacity: 48 },
-  { key: 'fir-sapling-medium', url: firMediumUrl, kind: 'tree', swayHeight: 8.61, windStrength: 0.16, scale: [1.25, 1.9], capacity: 48 },
+  { key: 'pine-sapling-small', url: pineSmallUrl, kind: 'tree', swayHeight: 1.3, windStrength: 0.035, scale: [7.2, 10.2], capacity: 20 },
+  { key: 'fir-sapling', url: firSmallUrl, kind: 'tree', swayHeight: 1.29, windStrength: 0.04, scale: [9.5, 13], capacity: 20 },
+  { key: 'pine-sapling-medium', url: pineMediumUrl, kind: 'tree', swayHeight: 6.78, windStrength: 0.14, scale: [1.15, 1.85], capacity: 20 },
+  { key: 'fir-sapling-medium', url: firMediumUrl, kind: 'tree', swayHeight: 8.61, windStrength: 0.16, scale: [1.25, 1.9], capacity: 20 },
   { key: 'fern', url: fernUrl, kind: 'fern', swayHeight: 0.43, windStrength: 0.05, scale: [0.75, 1.45], capacity: 100 },
   { key: 'fern-b', url: fernBUrl, kind: 'fern', swayHeight: 0.35, windStrength: 0.045, scale: [0.85, 1.6], capacity: 100 },
   { key: 'rock-moss-a', url: rockAUrl, kind: 'rock', scale: [0.55, 1.35], capacity: 16 },
