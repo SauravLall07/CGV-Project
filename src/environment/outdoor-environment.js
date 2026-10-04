@@ -989,6 +989,7 @@ export function createOutdoorEnvironment(options = {}) {
       addLake(group, options.skyUniforms, getTerrainHeight)
       addCreek(group, options.skyUniforms, getTerrainHeight)
     }
+    addValleySetDressing(group, getTerrainHeight)
   }
 
   // -------------------------------------------------------------
@@ -1336,6 +1337,124 @@ function addCreek(group, skyUniforms, getTerrainHeight) {
   rocks.receiveShadow = false
   rocks.instanceMatrix.needsUpdate = true
   group.add(rocks)
+}
+
+// Cabins, a signal box, a water tower and a fenced field. All east of the
+// playable run, in the direction the spawn camera looks. No colliders,
+// no real lights, no shadows. Windows are emissive only.
+function addValleySetDressing(group, getTerrainHeight) {
+  const wood = new THREE.MeshStandardMaterial({ color: 0x4a3424, roughness: 0.86 })
+  const roof = new THREE.MeshStandardMaterial({ color: 0x2a3036, roughness: 0.55, metalness: 0.45 })
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0xffe2b0,
+    emissive: 0xffb15a,
+    emissiveIntensity: 1.5,
+    roughness: 0.3
+  })
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1a1e22, roughness: 0.4, metalness: 0.6 })
+  const walls = []
+  const roofs = []
+  const windows = []
+  const chimneys = []
+
+  function pushBox(list, w, h, d, x, y, z) {
+    const geo = new THREE.BoxGeometry(w, h, d)
+    geo.translate(x, y, z)
+    list.push(geo)
+  }
+
+  function cabin(x, z, w, d, h) {
+    const y = getTerrainHeight(x, z)
+    pushBox(walls, w, h, d, x, y + h / 2, z)
+    pushBox(roofs, w + 0.45, 0.16, d + 0.45, x, y + h + 0.08, z)
+    pushBox(windows, 0.7, 0.7, 0.06, x, y + h * 0.55, z + d / 2 + 0.02)
+    pushBox(windows, 0.55, 0.55, 0.06, x + w / 2 + 0.02, y + h * 0.55, z)
+    pushBox(chimneys, 0.28, 0.9, 0.28, x + w * 0.3, y + h + 0.7, z)
+  }
+
+  cabin(32, 24, 4.2, 3.2, 2.6)
+  cabin(78, 46, 3.4, 2.8, 2.3)
+  // Signal box beside the eastern track, and a water tower just beyond it.
+  const boxY = getTerrainHeight(46, -10)
+  pushBox(walls, 2.2, 2.4, 2.2, 46, boxY + 1.6, -10)
+  pushBox(windows, 0.8, 0.6, 0.06, 46, boxY + 2.0, -10 + 1.12)
+  pushBox(roofs, 2.6, 0.1, 2.6, 46, boxY + 2.9, -10)
+  const towerY = getTerrainHeight(64, 4)
+  const tank = new THREE.CylinderGeometry(1.3, 1.3, 1.5, 8)
+  tank.translate(64, towerY + 6.2, 4)
+  roofs.push(tank)
+  pushBox(walls, 0.18, 5.2, 0.18, 63.1, towerY + 2.6, 3.1)
+  pushBox(walls, 0.18, 5.2, 0.18, 64.9, towerY + 2.6, 3.1)
+  pushBox(walls, 0.18, 5.2, 0.18, 63.1, towerY + 2.6, 4.9)
+  pushBox(walls, 0.18, 5.2, 0.18, 64.9, towerY + 2.6, 4.9)
+
+  function mergeList(parts, material, name) {
+    const usable = parts.filter(Boolean)
+    if (!usable.length) return
+    const geometry = mergeBufferGeometries(usable)
+    usable.forEach((geo) => geo.dispose())
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.name = name
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+    group.add(mesh)
+  }
+  mergeList(walls, wood, 'valley-walls')
+  mergeList(roofs, roof, 'valley-roofs')
+  mergeList(windows, glass, 'valley-windows')
+  mergeList(chimneys, dark, 'valley-chimneys')
+
+  // A small field just east of the station, in the spawn view.
+  const fenceX0 = 18
+  const fenceX1 = 58
+  const fenceZ0 = 8
+  const fenceZ1 = 30
+  const posts = []
+  const rails = []
+  const step = 2.4
+  function fenceRun(x0, z0, x1, z1) {
+    const len = Math.hypot(x1 - x0, z1 - z0)
+    const n = Math.max(1, Math.round(len / step))
+    for (let i = 0; i <= n; i += 1) {
+      const t = i / n
+      const x = x0 + (x1 - x0) * t
+      const z = z0 + (z1 - z0) * t
+      const y = getTerrainHeight(x, z)
+      posts.push([x, y, z])
+      if (i < n) {
+        const x2 = x0 + (x1 - x0) * ((i + 1) / n)
+        const z2 = z0 + (z1 - z0) * ((i + 1) / n)
+        rails.push([(x + x2) / 2, (y + getTerrainHeight(x2, z2)) / 2, (z + z2) / 2, Math.atan2(x2 - x, z2 - z), Math.hypot(x2 - x, z2 - z)])
+      }
+    }
+  }
+  fenceRun(fenceX0, fenceZ0, fenceX1, fenceZ0)
+  fenceRun(fenceX1, fenceZ0, fenceX1, fenceZ1)
+  fenceRun(fenceX1, fenceZ1, fenceX0, fenceZ1)
+  fenceRun(fenceX0, fenceZ1, fenceX0, fenceZ0)
+  const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 1.05, 0.1), wood, posts.length)
+  const railMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.08, 1), wood, rails.length)
+  const dummy = new THREE.Object3D()
+  posts.forEach(([x, y, z], i) => {
+    dummy.position.set(x, y + 0.5, z)
+    dummy.rotation.set(0, 0, 0)
+    dummy.scale.set(1, 1, 1)
+    dummy.updateMatrix()
+    postMesh.setMatrixAt(i, dummy.matrix)
+  })
+  rails.forEach(([x, y, z, rot, len], i) => {
+    dummy.position.set(x, y + 0.85, z)
+    dummy.rotation.set(0, rot, 0)
+    dummy.scale.set(1, 1, len)
+    dummy.updateMatrix()
+    railMesh.setMatrixAt(i, dummy.matrix)
+  })
+  for (const mesh of [postMesh, railMesh]) {
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+    mesh.instanceMatrix.needsUpdate = true
+  }
+  group.add(postMesh, railMesh)
 }
 
 // Eastern valley only. Spawn looks along +X, so the clusters and the
