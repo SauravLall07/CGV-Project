@@ -72,32 +72,54 @@ export function createDistantRangeMaterial({
     varying vec3 vNormal;
     varying vec3 vWorld;
 
+    float hash(vec2 p) {
+      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    }
+
+    float noise(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+        mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
+        f.y
+      );
+    }
+
     void main() {
       vec3 normal = normalize(vNormal);
       vec3 viewDir = normalize(cameraPosition - vWorld);
       // The ring is double-sided. Flip so the face we see is the lit one.
       if (dot(normal, viewDir) < 0.0) normal = -normal;
 
-      float forest = smoothstep(0.48, 0.08, vAlong) * uForest;
-      float snow = smoothstep(0.62, 0.92, vAlong);
-      // Ridgelines stay white a little further down the slope than the face.
-      snow = max(snow, smoothstep(0.78, 0.98, vAlong));
+      float forest = smoothstep(0.42, 0.06, vAlong) * uForest;
+      // Snow only on the upper slope. Noise shifts the line so it is a
+      // broken contour, not a soft band around the whole ring.
+      float line = 0.84 + (noise(vWorld.xz * 0.006) - 0.5) * 0.1;
+      float snow = smoothstep(line, line + 0.045, vAlong);
+      snow = max(snow, smoothstep(0.96, 0.995, vAlong));
 
-      vec3 albedo = mix(uBaseColor, uForestColor, forest);
+      vec3 rock = uBaseColor * 0.42;
+      vec3 albedo = mix(rock, uForestColor * 0.75, forest);
       albedo = mix(albedo, uSnowColor, snow);
 
-      float moonL = max(dot(normal, normalize(uMoonDir)), 0.0);
-      float glowL = max(dot(normal, normalize(uAfterglowDir)), 0.0);
-      vec3 fill = vec3(0.07, 0.08, 0.12);
-      vec3 lit = albedo * (fill + uMoonColor * moonL * 0.85 + uGlowColor * glowL * 0.7);
-      // Snow takes the tint more clearly than the rock.
-      lit += uSnowColor * (uMoonColor * moonL * 0.22 + uGlowColor * glowL * 0.4) * snow;
+      // A short ramp so a ridge facing the moon is bright and the
+      // opposite face falls off into dark rock.
+      float moonL = smoothstep(0.12, 0.62, max(dot(normal, normalize(uMoonDir)), 0.0));
+      float glowL = smoothstep(0.25, 0.8, max(dot(normal, normalize(uAfterglowDir)), 0.0));
+      vec3 fill = vec3(0.035, 0.04, 0.055);
+      vec3 lit = albedo * (fill + uMoonColor * moonL * 1.25);
+      // Afterglow stays a faint tint on sunset-facing slopes only.
+      lit += uGlowColor * glowL * 0.16;
 
       vec3 color = mix(lit, uHazeColor, clamp(uHaze, 0.0, 1.0));
 
-      // Mist at the foot of the range. Subtle, and only low down.
-      float mist = smoothstep(55.0, 8.0, vWorld.y) * uMist * 0.45;
-      color = mix(color, uHazeColor * 0.55 + vec3(0.03, 0.035, 0.05), mist);
+      // Foot mist only. vAlong keeps it off the faces, so it cannot
+      // draw a band across the ridge.
+      float mist = smoothstep(12.0, 3.0, vWorld.y) * smoothstep(0.16, 0.0, vAlong);
+      mist *= uMist * 0.12;
+      color = mix(color, uHazeColor * 0.45 + vec3(0.02, 0.022, 0.03), mist);
 
       gl_FragColor = vec4(color, 1.0);
       #include <tonemapping_fragment>

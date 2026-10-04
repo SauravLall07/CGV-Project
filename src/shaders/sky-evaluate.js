@@ -129,9 +129,11 @@ export const SKY_EVALUATE_GLSL = /* glsl */ `
     skyColor += (warm + cool) * streak * uCloudAmount;
 
     float moonFacing = dot(direction, moonDir);
-    float moonDisc = smoothstep(0.99955, 0.9998, moonFacing);
-    float moonHalo = pow(max(moonFacing, 0.0), 48.0);
-    skyColor += vec3(0.85, 0.9, 1.0) * (moonDisc * 8.0 + moonHalo * 0.28) * uMoonStrength;
+    // Disc is about 1.5° across. The halo is a thin ring just outside it,
+    // not a wide pow() glow.
+    float moonDisc = smoothstep(0.9998, 0.99992, moonFacing);
+    float moonHalo = smoothstep(0.9988, 0.9998, moonFacing) * (1.0 - moonDisc);
+    skyColor += vec3(0.92, 0.94, 1.0) * (moonDisc * 5.0 + moonHalo * 0.22) * uMoonStrength;
 
     // Stars on a 3D grid of the view direction. The old atan2 cell
     // wrapped at one meridian and drew a vertical line of mismatched stars.
