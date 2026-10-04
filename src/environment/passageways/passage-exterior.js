@@ -40,20 +40,66 @@ function merge(parts) {
   for (const geo of parts) count += geo.attributes.position.count
   const positions = new Float32Array(count * 3)
   const normals = new Float32Array(count * 3)
+  const uvs = new Float32Array(count * 2)
   let offset = 0
   for (const geo of parts) {
-    const pos = geo.attributes.position
     if (!geo.attributes.normal) geo.computeVertexNormals()
+    const pos = geo.attributes.position
     const norm = geo.attributes.normal
-    positions.set(pos.array, offset * 3)
-    normals.set(norm.array, offset * 3)
+    for (let i = 0; i < pos.count; i += 1) {
+      const x = pos.getX(i)
+      const y = pos.getY(i)
+      const z = pos.getZ(i)
+      const nx = Math.abs(norm.getX(i))
+      const ny = Math.abs(norm.getY(i))
+      const nz = Math.abs(norm.getZ(i))
+      // Project onto the face so a photo tiles in metres, including the
+      // sloped roof, instead of stretching one 0–1 UV across each box.
+      let u
+      let v
+      if (ny >= nx && ny >= nz) {
+        u = x
+        v = z
+      } else if (nx >= nz) {
+        u = z
+        v = y
+      } else {
+        u = x
+        v = y
+      }
+      const o = offset + i
+      positions[o * 3] = x
+      positions[o * 3 + 1] = y
+      positions[o * 3 + 2] = z
+      normals[o * 3] = norm.getX(i)
+      normals[o * 3 + 1] = norm.getY(i)
+      normals[o * 3 + 2] = norm.getZ(i)
+      uvs[o * 2] = u * 0.42
+      uvs[o * 2 + 1] = v * 0.42
+    }
     offset += pos.count
     geo.dispose()
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
   return geometry
+}
+
+export function applyPassageSurfaceMaps({ brickMap, brickNormal, roofMap, roofNormal }) {
+  brick.color.set(0xffffff)
+  brick.map = brickMap
+  brick.normalMap = brickNormal
+  brick.roughness = 0.84
+  brick.metalness = 0.02
+  brick.needsUpdate = true
+  roofMat.color.set(0xffffff)
+  roofMat.map = roofMap
+  roofMat.normalMap = roofNormal
+  roofMat.roughness = 0.58
+  roofMat.metalness = 0.55
+  roofMat.needsUpdate = true
 }
 
 function addMerged(group, parts, material, name) {

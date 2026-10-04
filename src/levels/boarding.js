@@ -13,6 +13,7 @@ import {
 } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { getBoardingAssets } from '../environment/nature-props.js'
 import { createSkyDome } from '../environment/sky-dome.js'
 import { captureSkyEnvironment } from '../environment/sky-environment.js'
 import { createOnboardingPassage } from '../environment/passageways/passage-onboarding.js'
@@ -129,7 +130,8 @@ export function createBoardingLevel({
     // Same clock as the sky, so valley-light twinkle and the lake follow
     // Slow/Freeze/Rewind. The lake also shares the sky colour uniforms.
     skyTime: sky.timeUniform,
-    skyUniforms: sky.uniforms
+    skyUniforms: sky.uniforms,
+    nature: getBoardingAssets()
   })
 
   scene.add(sky.mesh, outdoorEnv.group, station, train, ...lights)

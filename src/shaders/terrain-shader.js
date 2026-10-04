@@ -1,5 +1,15 @@
 import * as THREE from 'three'
 
+function solidTexture(r, g, b) {
+  const data = new Uint8Array([r, g, b, 255])
+  const texture = new THREE.DataTexture(data, 1, 1)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.colorSpace = THREE.NoColorSpace
+  texture.needsUpdate = true
+  return texture
+}
+
 /**
  * Custom Terrain GLSL Shader Material
  * Features:
@@ -33,6 +43,13 @@ export function createTerrainShaderMaterial(options = {}) {
     uMist: { value: options.mist ?? 0 },
     // 1 draws the worn valley tracks. 0 on the moving levels.
     uPaths: { value: options.paths ?? 0 },
+    // Forest-floor and rock photos near Boarding's playable run.
+    // 0 keeps the procedural colour on the moving levels.
+    uPhoto: { value: options.photo ?? 0 },
+    uGroundMap: { value: options.groundMap || solidTexture(80, 90, 60) },
+    uGroundNormal: { value: options.groundNormal || solidTexture(128, 128, 255) },
+    uRockMap: { value: options.rockMap || solidTexture(90, 86, 80) },
+    uRockNormal: { value: options.rockNormal || solidTexture(128, 128, 255) },
 
     uStationSpotLightCount: { value: 0 },
     uStationSpotLightPos: { value: defaultLightPos },
@@ -80,6 +97,11 @@ export function createTerrainShaderMaterial(options = {}) {
     uniform float uAmbient;
     uniform float uMist;
     uniform float uPaths;
+    uniform float uPhoto;
+    uniform sampler2D uGroundMap;
+    uniform sampler2D uGroundNormal;
+    uniform sampler2D uRockMap;
+    uniform sampler2D uRockNormal;
     uniform float uTime;
 
     uniform int uStationSpotLightCount;
@@ -146,6 +168,27 @@ export function createTerrainShaderMaterial(options = {}) {
 
       float peakFactor = smoothstep(25.0, 60.0, height);
       baseColor = mix(baseColor, uRockColor * 1.3 + vec3(0.1, 0.1, 0.12), peakFactor * (1.0 - slope * 0.4));
+
+      // Photo ground near the walkable run. The maps are sRGB stored as
+      // raw texels, so they are converted before the moonlight multiply.
+      // uPhoto is 0 on the moving levels and this block stays off.
+      vec2 playMin = vec2(-189.0, -52.0);
+      vec2 playMax = vec2(4.3, 27.0);
+      vec2 clampedXZ = clamp(vWorldPosition.xz, playMin, playMax);
+      float playGap = length(vWorldPosition.xz - clampedXZ);
+      float nearPlay = (1.0 - smoothstep(6.0, 40.0, playGap)) * uPhoto;
+      if (nearPlay > 0.001) {
+        vec2 groundUv = vWorldPosition.xz * 0.11;
+        vec2 rockUv = vWorldPosition.xz * 0.07;
+        vec3 groundTex = pow(texture2D(uGroundMap, groundUv).rgb, vec3(2.2));
+        vec3 rockTex = pow(texture2D(uRockMap, rockUv).rgb, vec3(2.2));
+        vec3 photo = mix(groundTex, rockTex, cliffFactor);
+        baseColor = mix(baseColor, photo * (0.82 + detailNoise * 0.28), nearPlay);
+        vec3 groundN = texture2D(uGroundNormal, groundUv).xyz * 2.0 - 1.0;
+        vec3 rockN = texture2D(uRockNormal, rockUv).xyz * 2.0 - 1.0;
+        vec3 photoN = mix(groundN, rockN, cliffFactor);
+        normal = normalize(normal + vec3(photoN.x, photoN.z, photoN.y) * nearPlay * 0.5);
+      }
 
       // Hemisphere & Directional Lighting
       float NdotL = max(0.0, dot(normal, uSunDirection));

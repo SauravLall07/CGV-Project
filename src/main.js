@@ -26,6 +26,7 @@ import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
 import { createCredits } from './ui/credits.js'
 import { createBoardingLevel } from './levels/boarding.js'
+import { loadBoardingAssets } from './environment/nature-props.js'
 import { createMovingHeistLevel } from './levels/moving-heist.js'
 import { createTimewreckLevel } from './levels/timewreck.js'
 import { createCompleteLevel } from './levels/complete.js'
@@ -316,7 +317,8 @@ keyboard.setEnabled(false)
 // Build the first level silently (no loading-screen flash) so the
 // station geometry, lighting and outdoor environment render behind
 // the menu overlay.
-function buildTitleBackdrop() {
+async function buildTitleBackdrop() {
+  await loadBoardingAssets()
   const ctx = {
     scene, interaction, assets, hud, timeSystem, renderer,
     player, camera: playerView, respawn,
@@ -528,7 +530,7 @@ function devStartOptions() {
 // Quit to title: tear the run down and rebuild the title screen's backdrop,
 // so the player lands back on the same live station shot they started from
 // without a page refresh.
-function quitToTitle() {
+async function quitToTitle() {
   gameStarted = false
   paused = false
   elapsed = 0
@@ -546,7 +548,7 @@ function quitToTitle() {
   hud.setObjective('')
   hud.resetRunTimer()
 
-  titleBackdrop = buildTitleBackdrop()
+  titleBackdrop = await buildTitleBackdrop()
   disposeGameplayDrone()
   menu.show()
   unlockAudio()
@@ -556,7 +558,7 @@ function quitToTitle() {
 // the second runs the synchronous station build. This matches the
 // pattern used by levelManager.enter() — see core/level-manager.js.
 requestAnimationFrame(() => requestAnimationFrame(async () => {
-  titleBackdrop = buildTitleBackdrop()
+  titleBackdrop = await buildTitleBackdrop()
 
   // Compile Ghost materials/lights while the loading overlay still covers
   // the canvas — first Ghost press must not pay that shader cost in-game.

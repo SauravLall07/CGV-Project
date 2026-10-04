@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createTerrainShaderMaterial } from '../shaders/terrain-shader.js'
 import { createVegetationShaderMaterial } from '../shaders/vegetation-shader.js'
+import { enableWind } from './nature-props.js'
 import { createDistantRangeMaterial } from '../shaders/distant-range-shader.js'
 import { createValleyLightsMaterial } from '../shaders/valley-lights-shader.js'
 import { createRockShaderMaterial } from '../shaders/rock-shader.js'
@@ -188,7 +189,12 @@ export function createOutdoorEnvironment(options = {}) {
     fogMax,
     ambient: options.terrainAmbient ?? 0.7,
     mist: mode === 'station' ? 0.42 : 0,
-    paths: mode === 'station' ? 1 : 0
+    paths: mode === 'station' ? 1 : 0,
+    photo: mode === 'station' && options.nature?.groundMap ? 1 : 0,
+    groundMap: options.nature?.groundMap || null,
+    groundNormal: options.nature?.groundNormal || null,
+    rockMap: options.nature?.rockMap || null,
+    rockNormal: options.nature?.rockNormal || null
   })
 
   // Moving Heist and Timewreck scroll this same mesh. They keep the original
@@ -621,6 +627,9 @@ export function createOutdoorEnvironment(options = {}) {
       const rz = -360 + rand() * 720
       if (isSceneryBlocked(rx, rz)) continue
       if (lakeDrop(rx, rz) > 0.35) continue
+      // Real models cover the band around the walkable run. The procedural
+      // forest stays beyond it.
+      if (options.nature && distOutsideRect(rx, rz, PLAY_MIN_X, PLAY_MAX_X, PLAY_MIN_Z, PLAY_MAX_Z) <= 80) continue
       const mask = forestMask(rx, rz)
       if (mask < 0.46) continue
       const ry = getTerrainHeight(rx, rz)
@@ -665,6 +674,7 @@ export function createOutdoorEnvironment(options = {}) {
       const rz = -320 + rand() * 640
       if (isSceneryBlocked(rx, rz)) continue
       if (lakeDrop(rx, rz) > 0.12) continue
+      if (options.nature && distOutsideRect(rx, rz, PLAY_MIN_X, PLAY_MAX_X, PLAY_MIN_Z, PLAY_MAX_Z) <= 55) continue
       if (forestMask(rx, rz) > 0.4) continue
       const ry = getTerrainHeight(rx, rz)
       if (ry < 0 || ry > 16) continue
@@ -679,6 +689,7 @@ export function createOutdoorEnvironment(options = {}) {
       const rx = -300 + rand() * 560
       const rz = -300 + rand() * 560
       if (isSceneryBlocked(rx, rz) || lakeDrop(rx, rz) > 0.15) continue
+      if (options.nature && distOutsideRect(rx, rz, PLAY_MIN_X, PLAY_MAX_X, PLAY_MIN_Z, PLAY_MAX_Z) <= 55) continue
       const ry = getTerrainHeight(rx, rz)
       const slope = Math.abs(getTerrainHeight(rx + 2, rz) - ry) + Math.abs(getTerrainHeight(rx, rz + 2) - ry)
       const mask = forestMask(rx, rz)
@@ -726,7 +737,7 @@ export function createOutdoorEnvironment(options = {}) {
       x > PLAY_MIN_X - 40 && x < PLAY_MAX_X + 40 &&
       z > PLAY_MIN_Z - 40 && z < PLAY_MAX_Z + 40
     )
-    for (let i = 0; i < 2400 && (grassI < grassCount || fernI < fernCount); i += 1) {
+    for (let i = 0; i < 2400 && !options.nature && (grassI < grassCount || fernI < fernCount); i += 1) {
       const rx = PLAY_MIN_X - 40 + rand() * (PLAY_MAX_X - PLAY_MIN_X + 80)
       const rz = PLAY_MIN_Z - 40 + rand() * (PLAY_MAX_Z - PLAY_MIN_Z + 80)
       const gap = gapOutsideFootprints(rx, rz)
@@ -859,6 +870,126 @@ export function createOutdoorEnvironment(options = {}) {
     grassMesh.count = 0
     fernMesh.count = 0
   }
+
+  // Real Poly Haven props. One InstancedMesh per file, so one draw each.
+  // Geometries are clones: level teardown can release them, and the loaded
+  // source stays for the next visit. Nothing here casts a shadow.
+  function placeRealNature(props) {
+    const buckets = { tree: [], fern: [], rock: [], log: [], stump: [] }
+    for (const prop of props) {
+      const material = prop.material.clone()
+      if (prop.swayHeight) {
+        enableWind(material, {
+          swayHeight: prop.swayHeight,
+          windStrength: prop.windStrength,
+          timeUniform: options.skyTime
+        })
+      }
+      const mesh = new THREE.InstancedMesh(prop.geometry.clone(), material, prop.capacity)
+      mesh.name = `nature-${prop.key}`
+      mesh.castShadow = false
+      mesh.receiveShadow = false
+      mesh.count = 0
+      const colors = new Float32Array(prop.capacity * 3)
+      colors.fill(1)
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
+      group.add(mesh)
+      buckets[prop.kind].push({ prop, mesh, index: 0 })
+    }
+
+    const rand = makeRng(0x0a55e7)
+    const onDeck = (x, z) => x < -168 && Math.abs(z + 24.5) < 3.1
+
+    function put(entry, x, y, z, rotX, rotY, rotZ, sx, sy, sz) {
+      if (!entry || entry.index >= entry.prop.capacity) return false
+      dummy.position.set(x, y, z)
+      dummy.rotation.set(rotX, rotY, rotZ)
+      dummy.scale.set(sx, sy, sz)
+      dummy.updateMatrix()
+      entry.mesh.setMatrixAt(entry.index, dummy.matrix)
+      const tint = 0.84 + rand() * 0.22
+      entry.mesh.instanceColor.setXYZ(entry.index, tint, tint * (0.94 + rand() * 0.1), tint * 0.9)
+      entry.index += 1
+      return true
+    }
+
+    const trees = buckets.tree
+    let treeN = 0
+    for (let i = 0; i < 7000 && treeN < 150 && trees.length; i += 1) {
+      const rx = PLAY_MIN_X - 80 + rand() * (PLAY_MAX_X - PLAY_MIN_X + 160)
+      const rz = PLAY_MIN_Z - 80 + rand() * (PLAY_MAX_Z - PLAY_MIN_Z + 160)
+      if (distOutsideRect(rx, rz, PLAY_MIN_X, PLAY_MAX_X, PLAY_MIN_Z, PLAY_MAX_Z) > 80) continue
+      if (isSceneryBlocked(rx, rz) || onDeck(rx, rz) || gapOutsideFootprints(rx, rz) < 1.4) continue
+      if (lakeDrop(rx, rz) > 0.2) continue
+      if (forestMask(rx, rz) < 0.3 && rand() > 0.4) continue
+      const groundY = getTerrainHeight(rx, rz)
+      if (groundY < 0.15 || groundY > 16) continue
+      const entry = trees[treeN % trees.length]
+      const [lo, hi] = entry.prop.scale
+      const s = lo + rand() * (hi - lo)
+      if (put(
+        entry, rx, groundY - (0.16 + rand() * 0.22), rz,
+        (rand() - 0.5) * 0.08, rand() * Math.PI * 2, (rand() - 0.5) * 0.08,
+        s, s * (0.92 + rand() * 0.16), s
+      )) treeN += 1
+    }
+
+    const ferns = buckets.fern
+    let fernN = 0
+    for (let i = 0; i < 4500 && fernN < 180 && ferns.length; i += 1) {
+      const rx = PLAY_MIN_X - 16 + rand() * (PLAY_MAX_X - PLAY_MIN_X + 32)
+      const rz = PLAY_MIN_Z - 16 + rand() * (PLAY_MAX_Z - PLAY_MIN_Z + 32)
+      const gap = gapOutsideFootprints(rx, rz)
+      if (gap < 0.35 || gap > 11 || onDeck(rx, rz) || lakeDrop(rx, rz) > 0.15) continue
+      const groundY = getTerrainHeight(rx, rz)
+      if (groundY < -0.2 || groundY > 6) continue
+      const entry = ferns[fernN % ferns.length]
+      const [lo, hi] = entry.prop.scale
+      const s = lo + rand() * (hi - lo)
+      if (put(
+        entry, rx, groundY - 0.05, rz,
+        (rand() - 0.5) * 0.22, rand() * Math.PI * 2, (rand() - 0.5) * 0.18,
+        s, 0.75 + rand() * 0.65, s
+      )) fernN += 1
+    }
+
+    function scatter(list, limit, radius, upright) {
+      let n = 0
+      for (let i = 0; i < limit * 50 && n < limit && list.length; i += 1) {
+        const rx = PLAY_MIN_X - radius + rand() * (PLAY_MAX_X - PLAY_MIN_X + radius * 2)
+        const rz = PLAY_MIN_Z - radius + rand() * (PLAY_MAX_Z - PLAY_MIN_Z + radius * 2)
+        if (distOutsideRect(rx, rz, PLAY_MIN_X, PLAY_MAX_X, PLAY_MIN_Z, PLAY_MAX_Z) > radius) continue
+        if (isSceneryBlocked(rx, rz) || onDeck(rx, rz) || gapOutsideFootprints(rx, rz) < 0.9) continue
+        if (lakeDrop(rx, rz) > 0.12) continue
+        const groundY = getTerrainHeight(rx, rz)
+        if (groundY < -0.3 || groundY > 14) continue
+        const entry = list[n % list.length]
+        const [lo, hi] = entry.prop.scale
+        const s = lo + rand() * (hi - lo)
+        const sink = upright ? 0.08 : 0.08 + s * 0.12
+        const tilt = upright ? 0.04 : 0.4
+        if (put(
+          entry, rx, groundY - sink, rz,
+          (rand() - 0.5) * tilt, rand() * Math.PI * 2, (rand() - 0.5) * tilt,
+          s * (0.85 + rand() * 0.35), s * (upright ? 0.85 + rand() * 0.3 : 0.75 + rand() * 0.45), s * (0.85 + rand() * 0.35)
+        )) n += 1
+      }
+    }
+    scatter(buckets.rock, 36, 50, false)
+    scatter(buckets.log, 14, 45, true)
+    scatter(buckets.stump, 10, 45, true)
+
+    for (const list of Object.values(buckets)) {
+      for (const entry of list) {
+        entry.mesh.count = entry.index
+        entry.mesh.instanceMatrix.needsUpdate = true
+        if (entry.mesh.instanceColor) entry.mesh.instanceColor.needsUpdate = true
+      }
+    }
+  }
+
+  if (mode === 'station' && options.nature?.props?.length) placeRealNature(options.nature.props)
+
   group.add(pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh, rockMesh, outcropMesh, slabMesh, logMesh, stumpMesh)
 
   // -------------------------------------------------------------
