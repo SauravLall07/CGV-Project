@@ -110,8 +110,23 @@ float gustWave = cos(uTime * 1.12 + windPhase * 1.7);
 transformed.x += (windWave + gustWave * 0.45) * uWindStrength * windHeight;
 transformed.z += cos(windWave) * 0.55 * uWindStrength * windHeight;`
       )
+    // The standard chunks already flip normals on back faces when the
+    // material is double sided. Leaves still go black on the moon's far
+    // side, so add light transmitted through the card plus a soft wrap.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `#if NUM_DIR_LIGHTS > 0
+  float leafFront = gl_FrontFacing ? 1.0 : 0.0;
+  vec3 leafLight = directionalLights[0].color;
+  float throughLeaf = clamp(dot(-normal, directionalLights[0].direction), 0.0, 1.0);
+  float wrapLeaf = clamp(dot(normal, directionalLights[0].direction) + 0.55, 0.0, 1.0) / 1.55;
+  outgoingLight += diffuseColor.rgb * leafLight * (throughLeaf * (1.0 - leafFront) * 0.62 + wrapLeaf * 0.16);
+#endif
+#include <opaque_fragment>`
+    )
   }
-  material.customProgramCacheKey = () => `nature-wind-${swayHeight}`
+  material.side = THREE.DoubleSide
+  material.customProgramCacheKey = () => `nature-wind-leaf-${swayHeight}`
   return material
 }
 
