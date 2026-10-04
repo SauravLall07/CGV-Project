@@ -145,7 +145,9 @@ export function createThirdPersonCamera(camera, domElement) {
           // camera on the far side of a gantry rail, so stay in front of
           // the hit even when that is close to the player.
           const gap = Math.min(clearance, hit.distance * 0.55)
-          allowed = Math.max(0.05, hit.distance - gap)
+          // Never further out than the player's follow distance. The rail
+          // only pulls the camera in when it would otherwise sit past it.
+          allowed = Math.min(maxDistance, Math.max(0.35, hit.distance - gap))
         } else {
           allowed = Math.max(minDistance, hit.distance - collisionPadding)
         }

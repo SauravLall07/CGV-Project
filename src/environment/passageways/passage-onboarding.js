@@ -24,8 +24,10 @@ const EXTERIOR_START_X = PASSAGE_START_X - 11.5
 const EXTERIOR_WIDTH = 4.8
 const EXIT_DOOR_X = PASSAGE_END_X - 2.15
 
+// Far enough along the gantry that the normal 4.8 m follow camera sits on
+// the deck, in front of the rear rail, instead of crowding the detective.
 export const ONBOARDING_PASSAGE_SPAWN = new THREE.Vector3(
-  EXTERIOR_START_X + 1.7,
+  EXTERIOR_START_X + 6.4,
   FLOOR_Y,
   CORRIDOR_Z
 )

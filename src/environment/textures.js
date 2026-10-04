@@ -392,9 +392,15 @@ function signCanvas(text, background, foreground, width, height) {
   ctx.strokeRect(8, 8, width - 16, height - 16)
 
   ctx.fillStyle = `#${new THREE.Color(foreground).getHexString()}`
-  ctx.font = `bold ${Math.floor(height * 0.34)}px Georgia, serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
+  const margin = Math.max(24, Math.floor(width * 0.04))
+  let fontSize = Math.floor(height * 0.46)
+  ctx.font = `bold ${fontSize}px Georgia, serif`
+  while (fontSize > 14 && ctx.measureText(text).width > width - margin * 2) {
+    fontSize -= 2
+    ctx.font = `bold ${fontSize}px Georgia, serif`
+  }
   ctx.fillText(text, width / 2, height / 2)
   return canvas
 }
