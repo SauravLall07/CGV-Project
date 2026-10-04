@@ -14,6 +14,7 @@ import {
   createSweepingLaser,
   createTimedLaserController
 } from './passage-components.js'
+import { addPassageShell } from './passage-exterior.js'
 
 const PASSAGE_X_SHIFT = -66
 const worldX = (x) => x + PASSAGE_X_SHIFT
@@ -312,6 +313,17 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     grout: 0x27252a
   })
   const wallMat = plasterMaterial({ repeat: [18, 3], base: 0x4d5155, roughness: 0.92 })
+  addPassageShell(group, {
+    name: 'guards-exterior',
+    minX: ENTRY_X,
+    maxX: STAGE3_WALL_X,
+    minZ: CORRIDOR_Z - MAIN_WIDTH / 2,
+    maxZ: CORRIDOR_Z + MAIN_WIDTH / 2,
+    floorY: GUARD_PASSAGE_FLOOR_Y,
+    wallHeight: ROOM_HEIGHT,
+    skipWest: true,
+    skipEast: true
+  })
   const ceilingMat = plasterMaterial({ repeat: [16, 2], base: 0x292d31, roughness: 0.98 })
   const ironMat = metalMaterial({ repeat: [10, 2], base: 0x293540, roughness: 0.5, metalness: 0.75 })
   const woodMat = woodMaterial({ repeat: [6, 2], light: 0x5c402c, dark: 0x2b1d15 })

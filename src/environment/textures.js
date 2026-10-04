@@ -453,6 +453,43 @@ export function metalMaterial({ repeat = [1, 1], seed = 53, base = 0x8c8f96, rou
   })
 }
 
+function brickCanvas(size, seed, mortar, brick) {
+  const canvas = makeCanvas(size)
+  const ctx = canvas.getContext('2d')
+  const random = createRandom(seed)
+  ctx.fillStyle = `#${new THREE.Color(mortar).getHexString()}`
+  ctx.fillRect(0, 0, size, size)
+  const cols = 8
+  const rows = 20
+  const bw = size / cols
+  const bh = size / rows
+  const color = new THREE.Color(brick)
+  for (let row = 0; row < rows; row += 1) {
+    const offset = row % 2 ? bw * 0.5 : 0
+    for (let col = -1; col <= cols; col += 1) {
+      const shade = 0.78 + random() * 0.32
+      const r = Math.min(255, color.r * shade * 255)
+      const g = Math.min(255, color.g * shade * 255)
+      const b = Math.min(255, color.b * shade * 255)
+      ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`
+      ctx.fillRect(col * bw + offset + 1.5, row * bh + 1.5, bw - 3, bh - 3)
+    }
+  }
+  return canvas
+}
+
+export function brickMaterial({ repeat = [1, 1], seed = 17, mortar = 0x6a645c, brick = 0x7a3b32, roughness = 0.86 } = {}) {
+  const key = `brick:${seed}:${mortar}:${brick}`
+  const colour = cachedCanvas(key, () => brickCanvas(256, seed, mortar, brick))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 2.4))
+  return new THREE.MeshStandardMaterial({
+    map: toTexture(key, colour, repeat),
+    normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
+    roughness,
+    metalness: 0.02
+  })
+}
+
 export function plasterMaterial({ repeat = [1, 1], seed = 71, base = 0xa79c8a, roughness = 0.82 } = {}) {
   const key = `plaster:${seed}:${base}`
   const colour = cachedCanvas(key, () => plasterCanvas(256, seed, base))

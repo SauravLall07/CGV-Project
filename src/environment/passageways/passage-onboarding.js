@@ -7,6 +7,7 @@ import {
 } from '../textures.js'
 import { createTutorialHintSystem } from '../../systems/tutorial-hints.js'
 import { createAxisAlignedCorridor, createPuzzleDoor } from './passage-components.js'
+import { addIronRailing, addPassageShell } from './passage-exterior.js'
 import { TUTORIAL_PASSAGE_WEST_ENTRY_X } from './passage-tutorial.js'
 
 // Passageway 0 — a short, completely safe onboarding gallery.
@@ -184,6 +185,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(exteriorLength, 0.07, 0.07), railMat)
       rail.position.set((EXTERIOR_START_X + PASSAGE_START_X) / 2, y, railZ)
       rail.userData.cameraClearance = 0.22
+      rail.visible = false
       group.add(rail)
     }
     // Rail collision is intentionally thin; the circle-vs-box player
@@ -202,6 +204,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     const rearRail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, EXTERIOR_WIDTH), railMat)
     rearRail.position.set(EXTERIOR_START_X, y, CORRIDOR_Z)
     rearRail.userData.cameraClearance = 0.22
+    rearRail.visible = false
     group.add(rearRail)
   }
   colliders.push({
@@ -245,13 +248,31 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     group.add(sideBlock)
   }
 
-  for (let x = EXTERIOR_START_X + 0.6; x < PASSAGE_START_X; x += 2.2) {
-    for (const side of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.15, 0.09), railMat)
-      post.position.set(x, 0.575, CORRIDOR_Z + side * EXTERIOR_WIDTH / 2)
-      group.add(post)
-    }
+  for (const side of [-1, 1]) {
+    addIronRailing(group, {
+      min: EXTERIOR_START_X,
+      max: PASSAGE_START_X,
+      fixed: CORRIDOR_Z + side * EXTERIOR_WIDTH / 2
+    })
   }
+  addIronRailing(group, {
+    min: CORRIDOR_Z - EXTERIOR_WIDTH / 2,
+    max: CORRIDOR_Z + EXTERIOR_WIDTH / 2,
+    fixed: EXTERIOR_START_X,
+    axis: 'z'
+  })
+
+  addPassageShell(group, {
+    name: 'onboarding-exterior',
+    minX: PASSAGE_START_X,
+    maxX: PASSAGE_END_X,
+    minZ: CORRIDOR_Z - CORRIDOR_WIDTH / 2,
+    maxZ: CORRIDOR_Z + CORRIDOR_WIDTH / 2,
+    floorY: FLOOR_Y,
+    wallHeight: ROOM_HEIGHT,
+    skipEast: true,
+    signs: true
+  })
 
   // Heavy portal trim makes the open doorway read as the point where the
   // player physically enters the building, rather than another arbitrary gap.
