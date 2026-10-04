@@ -180,7 +180,14 @@ export function loadBoardingAssets() {
         loadSurface(rockNorUrl, false)
       ])
       if (brickMap && brickNormal && roofMap && roofNormal) {
-        applyPassageSurfaceMaps({ brickMap, brickNormal, roofMap, roofNormal })
+        applyPassageSurfaceMaps({
+          brickMap,
+          brickNormal,
+          roofMap,
+          roofNormal,
+          pillarMap: rockMap ? prepTexture(rockMap.clone(), true) : null,
+          pillarNormal: rockNormal ? prepTexture(rockNormal.clone(), false) : null
+        })
       }
       assets = { props, groundMap, groundNormal, rockMap, rockNormal }
       return assets

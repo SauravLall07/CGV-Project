@@ -7,6 +7,11 @@ import { brickMaterial, metalMaterial, signMaterial, woodMaterial } from '../tex
 
 const brick = brickMaterial({ repeat: [3, 1.2], brick: 0x6e342c, mortar: 0x5c584e })
 const stone = brickMaterial({ repeat: [1.5, 0.4], seed: 19, brick: 0x6e6a62, mortar: 0x4a4844 })
+const pillar = new THREE.MeshStandardMaterial({
+  color: 0x6a645c,
+  roughness: 0.94,
+  metalness: 0.02
+})
 const roofMat = metalMaterial({ repeat: [6, 2], seed: 61, base: 0x3a4048, roughness: 0.55, metalness: 0.72 })
 const iron = metalMaterial({ repeat: [2, 1], seed: 44, base: 0x1c2228, roughness: 0.42, metalness: 0.8 })
 const warmGlass = new THREE.MeshStandardMaterial({
@@ -87,7 +92,7 @@ function merge(parts) {
   return geometry
 }
 
-export function applyPassageSurfaceMaps({ brickMap, brickNormal, roofMap, roofNormal }) {
+export function applyPassageSurfaceMaps({ brickMap, brickNormal, roofMap, roofNormal, pillarMap, pillarNormal }) {
   brick.color.set(0xffffff)
   brick.map = brickMap
   brick.normalMap = brickNormal
@@ -100,6 +105,12 @@ export function applyPassageSurfaceMaps({ brickMap, brickNormal, roofMap, roofNo
   roofMat.roughness = 0.58
   roofMat.metalness = 0.55
   roofMat.needsUpdate = true
+  if (pillarMap && pillarNormal) {
+    pillar.map = pillarMap
+    pillar.normalMap = pillarNormal
+    pillar.color.set(0x6a645c)
+    pillar.needsUpdate = true
+  }
 }
 
 function addMerged(group, parts, material, name) {
@@ -190,7 +201,7 @@ export function addPassageShell(parent, {
 
   addMerged(group, walls, brick, `${name}-brick`)
   addMerged(group, plinth, stone, `${name}-plinth`)
-  addMerged(group, quoins, stone, `${name}-quoins`)
+  addMerged(group, quoins, pillar, `${name}-quoins`)
   addMerged(group, roofParts, roofMat, `${name}-roof`)
   addMerged(group, gutter, iron, `${name}-gutter`)
   addMerged(group, frames, iron, `${name}-frames`)
