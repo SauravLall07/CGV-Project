@@ -29,6 +29,8 @@ export function createTerrainShaderMaterial(options = {}) {
     // 1 replaces the surface completely at uFogFar. Lower keeps shading.
     uFogMax: { value: options.fogMax ?? 1.0 },
     uAmbient: { value: options.ambient ?? 0.7 },
+    // 0 leaves the surface alone. Boarding raises this for valley mist.
+    uMist: { value: options.mist ?? 0 },
 
     uStationSpotLightCount: { value: 0 },
     uStationSpotLightPos: { value: defaultLightPos },
@@ -74,6 +76,8 @@ export function createTerrainShaderMaterial(options = {}) {
     uniform float uFogFar;
     uniform float uFogMax;
     uniform float uAmbient;
+    uniform float uMist;
+    uniform float uTime;
 
     uniform int uStationSpotLightCount;
     uniform vec3 uStationSpotLightPos[3];
@@ -168,6 +172,14 @@ export function createTerrainShaderMaterial(options = {}) {
       // Distance fog calculation
       float fogFactor = min(smoothstep(uFogNear, uFogFar, vViewDistance), uFogMax);
       vec3 finalColor = mix(litColor, uFogColor, fogFactor);
+
+      // Low mist. Stronger in the valley floor, drifting slowly with uTime.
+      // uMist is 0 on the moving levels.
+      float drift = noise(vWorldPosition.xz * 0.02 + vec2(uTime * 0.012, 0.0));
+      float mist = smoothstep(9.0, 0.4, vWorldPosition.y);
+      mist *= smoothstep(30.0, 110.0, vViewDistance);
+      mist *= (0.55 + 0.45 * drift) * uMist;
+      finalColor = mix(finalColor, uFogColor * 0.72 + vec3(0.025, 0.03, 0.045), mist);
 
       gl_FragColor = vec4(finalColor, 1.0);
       // Same ACES curve and sRGB output as the standard materials. Without

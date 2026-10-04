@@ -86,6 +86,7 @@ export function createPlayerView({ camera, domElement, player, hud }) {
     // Pass-throughs: third-person owns look angles and pointer lock in both
     // views, so these are simply forwarded.
     setYaw: (value) => third.setYaw(value),
+    setPitch: (value) => third.setPitch(value),
     getYaw: () => third.getYaw(),
     getPitch: () => third.getPitch(),
     setEnabled: (value) => third.setEnabled(value),

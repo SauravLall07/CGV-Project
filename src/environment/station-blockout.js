@@ -1090,12 +1090,13 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
 // The sun's shadow camera follows the player. SUN_SHADOW_LAYER is the merged
 // stair volumes from core/stairs.js, which the main camera never draws.
 
-// Moonlight, not the sunset. 32° up, on a different compass bearing from the
-// afterglow (that glow still sits on (16, 0, -10), just below the horizon,
-// in the sky dome). A 6 m wall then throws a shadow of about 10 m, so the
-// ortho window can sit back around the player.
-const SUN_ELEVATION = 32 * Math.PI / 180
-const SUN_AZIMUTH = new THREE.Vector3(-8, 0, 14).normalize()
+// Moonlight, not the sunset. 30° up, a few degrees north of east, so it is
+// ahead of the Boarding spawn camera (that camera looks along +X). The
+// afterglow stays on (16, 0, -10), south of east and just below the horizon.
+// tan(30°) is about 0.58, so a 6 m wall throws about 10 m of shadow and the
+// ±16 m window still covers it. Bias stays at the previous 32° values.
+const SUN_ELEVATION = 30 * Math.PI / 180
+const SUN_AZIMUTH = new THREE.Vector3(16, 0, 3).normalize()
 const SUN_SHADOW_HALF = 16
 const SUN_SHADOW_DISTANCE = 36
 export const SUN_DIRECTION = new THREE.Vector3(
@@ -1162,8 +1163,8 @@ export function createStationLighting() {
   sunlight.shadow.camera.far = SUN_SHADOW_DISTANCE + SUN_SHADOW_HALF + 16
   sunlight.shadow.camera.updateProjectionMatrix()
   sunlight.shadow.camera.layers.enable(SUN_SHADOW_LAYER)
-  // Tight window again, and the moon is high enough that a small bias holds
-  // acne off the platform without lifting feet off the floor.
+  // 30° is still steep enough that this bias holds acne off the platform.
+  // A grazing moon would need more; this one does not.
   sunlight.shadow.bias = -0.0002
   sunlight.shadow.normalBias = 0.045
   sunlight.target.position.set(0, 0, 0)

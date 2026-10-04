@@ -81,6 +81,8 @@ export function createLevelManager({
       // Movement is camera-relative, so the spawn yaw has to reach the camera or
       // "forward" would still mean whatever the previous level was facing.
       if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
+      // Levels omit pitch. Boarding sets one so the opening view includes the moon.
+      if (camera.setPitch) camera.setPitch(checkpoint.pitch)
       camera.snap()
       hud.setObjective(current.objective ?? '')
     }

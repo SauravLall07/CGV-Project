@@ -10,7 +10,9 @@ export function createCamera() {
     settings.get('fov'),
     window.innerWidth / window.innerHeight,
     0.1,
-    1000
+    // Boarding's farthest range sits about 1060 m from the origin, and the
+    // spawn is near x = -187, so the east side of that ring is past 1200 m.
+    1800
   )
   camera.position.set(3, 3, 5)
   camera.lookAt(0, 0, 0)

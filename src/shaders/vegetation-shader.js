@@ -28,6 +28,7 @@ export function createVegetationShaderMaterial(options = {}) {
     uFogFar: { value: options.fogFar ?? 250.0 },
     uFogMax: { value: options.fogMax ?? 1.0 },
     uAmbient: { value: options.ambient ?? 0.6 },
+    uMist: { value: options.mist ?? 0 },
 
     uStationSpotLightCount: { value: 0 },
     uStationSpotLightPos: { value: defaultLightPos },
@@ -96,6 +97,8 @@ export function createVegetationShaderMaterial(options = {}) {
     uniform float uFogFar;
     uniform float uFogMax;
     uniform float uAmbient;
+    uniform float uMist;
+    uniform float uTime;
 
     uniform int uStationSpotLightCount;
     uniform vec3 uStationSpotLightPos[3];
@@ -154,6 +157,10 @@ export function createVegetationShaderMaterial(options = {}) {
       // Distance fog calculation
       float fogFactor = min(smoothstep(uFogNear, uFogFar, vViewDistance), uFogMax);
       vec3 finalColor = mix(litColor, uFogColor, fogFactor);
+      float drift = 0.5 + 0.5 * sin(vWorldPosition.x * 0.03 + vWorldPosition.z * 0.021 + uTime * 0.08);
+      float mist = smoothstep(8.0, 0.6, vWorldPosition.y) * smoothstep(18.0, 80.0, vViewDistance);
+      mist *= (0.65 + 0.35 * drift) * uMist;
+      finalColor = mix(finalColor, uFogColor * 0.7 + vec3(0.02, 0.025, 0.04), mist);
 
       gl_FragColor = vec4(finalColor, 1.0);
       #include <tonemapping_fragment>

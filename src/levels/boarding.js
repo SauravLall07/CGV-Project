@@ -123,7 +123,11 @@ export function createBoardingLevel({
     fogFar: 260,
     fogMax: 0.88,
     terrainAmbient: 0.7,
-    vegAmbient: 0.5
+    vegAmbient: 0.5,
+    // Same clock as the sky, so valley-light twinkle and the lake follow
+    // Slow/Freeze/Rewind. The lake also shares the sky colour uniforms.
+    skyTime: sky.timeUniform,
+    skyUniforms: sky.uniforms
   })
 
   scene.add(sky.mesh, outdoorEnv.group, station, train, ...lights)
@@ -647,6 +651,9 @@ export function createBoardingLevel({
     checkpoint: {
       position: onboardingPassage.spawn.clone(),
       yaw: Math.PI / 2, // face east through the onboarding approach
+      // Default look is 14° down, which puts a 30° moon above the frame.
+      // This starts a few degrees above the horizon so that moon is in view.
+      pitch: -0.08,
       restore: () => stealth.reset()
     },
     bounds: levelBounds,

@@ -170,6 +170,14 @@ export function createThirdPersonCamera(camera, domElement) {
     if (typeof value === 'number') yaw = value
   }
 
+  // Optional spawn pitch. Undefined restores the usual slight downward look
+  // so a level that asked to start looking up does not leak into the next one.
+  function setPitch(value) {
+    pitch = typeof value === 'number'
+      ? THREE.MathUtils.clamp(value, PITCH_MIN, PITCH_MAX)
+      : 0.25
+  }
+
   // Menus (pause, settings, title) turn the camera off: no mouse look, no
   // pointer-lock grab when the player clicks a button that happens to sit
   // over the canvas, and no lock-lost callback while the lock is released on
@@ -195,6 +203,7 @@ export function createThirdPersonCamera(camera, domElement) {
     update,
     snap,
     setYaw,
+    setPitch,
     setEnabled,
     onLockLost,
     requestLock,
