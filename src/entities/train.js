@@ -6,26 +6,33 @@ import trainUrl from '../assets/models/train/chrono-express-train.glb?url'
 import crestUrl from '../assets/textures/chrono-express-crest.png?url'
 import crestPlacements from '../assets/models/train/crest-placements.json'
 
-// Level 1's Chrono Express. The group stays at the station track
-// (TRACK_X, TRACK_LEVEL, 0) and the departure cinematic still slides that
-// group along +Z. The GLB is the visual only: each car is one mesh, crests
-// are decals, and the hidden boxes are what interaction line-of-sight hits.
+// Level 1's Chrono Express. The group sits on the station track and the
+// departure cinematic still slides it along +Z. The GLB is the visual only:
+// each car is one mesh, crests are decals, and the hidden boxes are what
+// interaction line-of-sight hits.
 //
-// Model units are centimetres, but the wheel treads are 175.9 units apart
-// rather than a perfect 144. MODEL_SCALE puts those treads on the rail
-// centres (1.44 m). Wheel bottoms in the file sit at y = -165.065; the
-// visual root is lifted so they rest on the rail head.
+// Idle.fbx stands 183.48 cm; the detective visual scales that by 0.01, so
+// the figure is 1.8348 m. A DRB 01.10 is about 4.5 m tall — 2.5× a 1.8 m
+// person — and about 24 m with its tender. MODEL_SCALE fits the locomotive
+// height to this detective. The coupled length lands about 5% over the
+// matching 24 m, inside the 10% band. Wheel bottoms in the file sit at
+// y = -165.065; the visual root is lifted so they rest on the rail head.
+// RAIL_OFFSET is half the scaled tread gauge, so the rails move with it.
 
 export const TRACK_X = 7
 export const TRACK_LEVEL = -1
 
-const RAIL_GAUGE = 1.44
-const MODEL_WHEEL_GAUGE = 175.9
-const MODEL_SCALE = RAIL_GAUGE / MODEL_WHEEL_GAUGE
+const DETECTIVE_HEIGHT = 1.8348
 const WHEEL_BOTTOM_Y = -165.065
+const LOCO_TOP_Y = 295.82501220703125
+const LOCO_HEIGHT_UNITS = LOCO_TOP_Y - WHEEL_BOTTOM_Y
+const MODEL_SCALE = (DETECTIVE_HEIGHT * (4.5 / 1.8)) / LOCO_HEIGHT_UNITS
+const MODEL_WHEEL_GAUGE = 175.9
 const RAIL_CLEARANCE = 0.012
 const COUPLING_GAP = 16
 const WINDOW_EMISSIVE = 2.75
+
+export const RAIL_OFFSET = (MODEL_WHEEL_GAUGE * MODEL_SCALE) / 2
 
 // Front (+Z, the direction the train departs) to rear. Bounds are the
 // part meshes' own local Z, which is where the crest positions live too.
@@ -51,6 +58,12 @@ function consistUnits() {
 
 // Rest length in metres. The track bed adds clearance for the departure roll.
 export const TRAIN_LENGTH = consistUnits() * MODEL_SCALE
+
+// Platform runs z = ±28, and the playable edge is z ≈ 27. The nose sits just
+// inside that end, beside the boarding pedestal at z = 25. The group origin
+// is the consist centre, so the long tail hangs off the back of the platform.
+export const LOCO_NOSE_Z = 26
+export const TRAIN_Z = LOCO_NOSE_Z - TRAIN_LENGTH / 2
 
 const gltfLoader = new GLTFLoader()
 const textureLoader = new THREE.TextureLoader()
@@ -311,12 +324,23 @@ export function createTrain() {
   }
 
   train.add(visual)
-  train.position.set(TRACK_X, TRACK_LEVEL, 0)
+  train.position.set(TRACK_X, TRACK_LEVEL, TRAIN_Z)
+  train.updateMatrixWorld(true)
 
   const stats = countVisual(visual)
   train.userData.drawCalls = stats.drawCalls
   train.userData.triangles = stats.triangles
-  console.info(`[train] Chrono Express visual: ${stats.drawCalls} draw calls, ${stats.triangles} triangles`)
+  const bodyBox = (name) => new THREE.Box3().setFromObject(firstMesh(train.getObjectByName(name)))
+  const locoBox = bodyBox('locomotive')
+  const tenderBox = bodyBox('tender')
+  const carriageBox = bodyBox('carriage-0')
+  const locoSize = locoBox.getSize(new THREE.Vector3())
+  const carriageSize = carriageBox.getSize(new THREE.Vector3())
+  console.info(
+    `[train] Chrono Express visual: ${stats.drawCalls} draw calls, ${stats.triangles} triangles. ` +
+    `Locomotive ${locoSize.y.toFixed(2)} m tall, with tender ${(locoBox.max.z - tenderBox.min.z).toFixed(2)} m. ` +
+    `Carriage ${carriageSize.z.toFixed(2)} m long, ${carriageSize.y.toFixed(2)} m tall.`
+  )
 
   return { train }
 }

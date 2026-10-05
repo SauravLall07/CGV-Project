@@ -1,12 +1,17 @@
-// Temporary DEV-only readout and measurement toggles. Not shipped behaviour.
-// Digit1–5 are taken in the capture phase so they do not also fire the
+// Temporary DEV-only readout, measurement toggles and teleports. Not shipped.
+// Digit1–7 are taken in the capture phase so they do not also fire the
 // number-row time abilities. Letter bindings (Q/F/C/G) are unchanged.
 
 import * as THREE from 'three'
+import { bounds as stationBounds } from '../environment/station-blockout.js'
+import { ONBOARDING_PASSAGE_SPAWN } from '../environment/passageways/passage-onboarding.js'
 
 const TIMING_WINDOW = 60
+const TRAIN_YAW = Math.PI / 2
+const SPAWN_YAW = Math.PI / 2
+const SPAWN_PITCH = -0.08
 
-export function mountRenderOverlay(renderer) {
+export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } = {}) {
   // The minimap renders its own icon scene with an orthographic camera after
   // the main view. That pass replaces renderer.info, and it used to replace
   // the scene the light and scenery toggles walk — the icon scene has neither
@@ -299,7 +304,7 @@ export function mountRenderOverlay(renderer) {
       `textures    ${pass.textures}`,
       `minimap draws  ${minimapPass.calls}`,
       `minimap tris   ${minimapPass.triangles}`,
-      active.length ? active.join('\n') : 'toggles off  (1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap)'
+      active.length ? active.join('\n') : 'toggles off  (1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 spawn)'
     ].join('\n')
   }
 
@@ -327,6 +332,12 @@ export function mountRenderOverlay(renderer) {
       case 'Digit5':
       case 'Numpad5':
         return 5
+      case 'Digit6':
+      case 'Numpad6':
+        return 6
+      case 'Digit7':
+      case 'Numpad7':
+        return 7
       default:
         break
     }
@@ -336,6 +347,8 @@ export function mountRenderOverlay(renderer) {
       case '3': return 3
       case '4': return 4
       case '5': return 5
+      case '6': return 6
+      case '7': return 7
       default:
         break
     }
@@ -346,6 +359,8 @@ export function mountRenderOverlay(renderer) {
     if (which === 51 || which === 99) return 3
     if (which === 52 || which === 100) return 4
     if (which === 53 || which === 101) return 5
+    if (which === 54 || which === 102) return 6
+    if (which === 55 || which === 103) return 7
     return 0
   }
 
@@ -398,12 +413,63 @@ export function mountRenderOverlay(renderer) {
     } else if (index === 5) {
       minimapOff = !minimapOff
       console.log(`[dev overlay] toggle 5 (minimap off): ${minimapOff ? 'ON' : 'OFF'}`)
+    } else if (index === 6) {
+      devTeleport('train')
+    } else if (index === 7) {
+      devTeleport('spawn')
     }
 
     event.preventDefault()
     event.stopImmediatePropagation()
     paint()
   }
+
+  const locoBox = new THREE.Box3()
+
+  function placePlayer(position, yaw, pitch) {
+    if (!gamePlayer) {
+      console.warn('[dev overlay] teleport: player is not wired')
+      return
+    }
+    gamePlayer.setPose(position, yaw)
+    playerView?.setYaw(yaw)
+    playerView?.setPitch(pitch)
+    playerView?.snap()
+  }
+
+  // Platform side of the locomotive nose, on the concourse, facing the train.
+  // The playable station clamps X/Z, so a nose that has already rolled past
+  // the platform end still drops the player on the platform beside it.
+  function teleportBesideLocomotive() {
+    const loco = worldScene?.getObjectByName('locomotive')
+    const mesh = loco?.getObjectByProperty?.('isMesh', true) ?? null
+    let x = stationBounds.maxX - 0.35
+    let z = stationBounds.maxZ - 0.4
+    if (mesh) {
+      locoBox.setFromObject(mesh)
+      x = Math.min(stationBounds.maxX - 0.35, locoBox.min.x - 1.2)
+      z = THREE.MathUtils.clamp(locoBox.max.z, stationBounds.minZ + 0.4, stationBounds.maxZ - 0.4)
+    } else {
+      console.warn('[dev overlay] teleport train: locomotive not in the scene yet')
+    }
+    x = THREE.MathUtils.clamp(x, stationBounds.minX + 0.4, stationBounds.maxX - 0.35)
+    placePlayer(new THREE.Vector3(x, 0, z), TRAIN_YAW, 0.12)
+    console.log(`[dev overlay] teleport train (${x.toFixed(1)}, 0, ${z.toFixed(1)})`)
+  }
+
+  function teleportToSpawn() {
+    placePlayer(ONBOARDING_PASSAGE_SPAWN.clone(), SPAWN_YAW, SPAWN_PITCH)
+    const spawn = ONBOARDING_PASSAGE_SPAWN
+    console.log(`[dev overlay] teleport spawn (${spawn.x.toFixed(1)}, ${spawn.y.toFixed(1)}, ${spawn.z.toFixed(1)})`)
+  }
+
+  function devTeleport(which) {
+    if (which === 'train') teleportBesideLocomotive()
+    else if (which === 'spawn') teleportToSpawn()
+    else console.warn(`[dev overlay] devTeleport: expected 'train' or 'spawn', got ${which}`)
+  }
+
+  window.devTeleport = devTeleport
 
   for (const target of keyTargets) target.addEventListener('keydown', onKeyDown, true)
 
@@ -428,6 +494,7 @@ export function mountRenderOverlay(renderer) {
     update,
     dispose() {
       for (const target of keyTargets) target.removeEventListener('keydown', onKeyDown, true)
+      if (window.devTeleport === devTeleport) delete window.devTeleport
       window.requestAnimationFrame = nativeRequestAnimationFrame
       const restoreRatio = pixelRatioForced
       const restoreShadows = shadowsOff

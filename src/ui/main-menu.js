@@ -13,15 +13,18 @@
 // starts. While that panel is open it swallows key presses, which is why
 // Enter-to-start cannot fire underneath it.
 
+import { LOCO_NOSE_Z, TRACK_X } from '../entities/train.js'
 import { createButton } from './ui-theme.js'
 
 const TITLE = 'CHRONO EXPRESS'
 const SUBTITLE = 'THE LAST HEIST'
 
-// Cinematic camera — elevated on the platform side, looking across at the
-// station. The slow drift keeps the background alive without being distracting.
-const CAM_POS = { x: 7, y: 4.8, z: 28 }
-const CAM_TARGET = { x: 0, y: 2.2, z: -4 }
+// Low 3/4 of the locomotive nose, just ahead of it on the platform side.
+// The aim sits above the boiler so the nose, lamps and crest fall in the
+// lower frame, the carriages trail back along the platform, and the open
+// sky clears the shed roof behind the title. Drift stays small.
+const CAM_POS = { x: TRACK_X - 5.8, y: 1.15, z: LOCO_NOSE_Z + 10.5 }
+const CAM_TARGET = { x: TRACK_X + 3.5, y: 11.5, z: LOCO_NOSE_Z - 22 }
 const DRIFT_X = 0.35
 const DRIFT_Y = 0.12
 const DRIFT_SPEED = 0.07
@@ -47,18 +50,19 @@ export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio, on
     overflow: 'hidden'
   })
 
-  // Gradient scrim — darkens the bottom half so the title and button stay
-  // readable regardless of what the 3D scene is doing behind it.
+  // Gradient scrim — darkens the title band and the buttons, and stays
+  // light across the locomotive so the nose still reads.
   const scrim = document.createElement('div')
   Object.assign(scrim.style, {
     position: 'absolute',
     inset: '0',
     background: [
       'linear-gradient(to bottom,',
-      'rgba(6, 6, 16, 0.10) 0%,',
-      'rgba(6, 6, 16, 0.20) 35%,',
-      'rgba(6, 6, 16, 0.55) 65%,',
-      'rgba(6, 6, 16, 0.88) 100%)'
+      'rgba(6, 6, 16, 0.34) 0%,',
+      'rgba(6, 6, 16, 0.16) 24%,',
+      'rgba(6, 6, 16, 0.08) 52%,',
+      'rgba(6, 6, 16, 0.62) 80%,',
+      'rgba(6, 6, 16, 0.90) 100%)'
     ].join(' '),
     pointerEvents: 'none'
   })

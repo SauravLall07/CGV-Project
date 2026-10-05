@@ -772,7 +772,8 @@ export function createBoardingLevel({
 
       if (isBoardingCinematic) {
         cinematicTimer += delta
-        // Move train smoothly forward along the tracks
+        // Same +Z roll as before (~19 m over 2.4 s). The track is centered on
+        // the scaled consist, so the nose still has rail under it as it leaves.
         train.position.z += delta * (cinematicTimer * 6.5)
         pointPool.update(player.mesh.position, delta)
         torchPool.update(player.mesh.position, delta)

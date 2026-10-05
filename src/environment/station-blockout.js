@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { TRACK_LEVEL, TRACK_X, TRAIN_LENGTH } from '../entities/train.js'
+import { RAIL_OFFSET, TRACK_LEVEL, TRACK_X, TRAIN_LENGTH, TRAIN_Z } from '../entities/train.js'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import { SUN_SHADOW_LAYER } from '../core/stairs.js'
 import {
@@ -107,8 +107,9 @@ function createConcourse() {
 
 function createTrackBed() {
   const group = new THREE.Group()
-  // The consist is longer than the platform. The extra length covers the
-  // cars at rest plus the departure roll, which drives the train about 19 m
+  // The consist is longer than the platform and is centered on TRAIN_Z, with
+  // the nose at the forward platform end. The extra length covers the cars
+  // at rest plus the departure roll, which drives the train about 19 m
   // toward +Z.
   const length = Math.max(PLATFORM_LENGTH + 16, TRAIN_LENGTH + 48)
 
@@ -118,7 +119,7 @@ function createTrackBed() {
     new THREE.BoxGeometry(4.4, 0.4, length),
     plasterMaterial({ repeat: [3, Math.round(length / 3)], base: 0x3b3830, roughness: 1 })
   )
-  ballast.position.set(TRACK_X, TRACK_LEVEL - 0.5, 0)
+  ballast.position.set(TRACK_X, TRACK_LEVEL - 0.5, TRAIN_Z)
   ballast.receiveShadow = true
   group.add(ballast)
 
@@ -131,7 +132,7 @@ function createTrackBed() {
   )
   const dummy = new THREE.Object3D()
   for (let i = 0; i < sleeperCount; i++) {
-    dummy.position.set(TRACK_X, TRACK_LEVEL - 0.25, -length / 2 + i * 0.8 + 0.4)
+    dummy.position.set(TRACK_X, TRACK_LEVEL - 0.25, TRAIN_Z - length / 2 + i * 0.8 + 0.4)
     dummy.updateMatrix()
     sleepers.setMatrixAt(i, dummy.matrix)
   }
@@ -140,9 +141,9 @@ function createTrackBed() {
   group.add(sleepers)
 
   const railMaterial = metalMaterial({ repeat: [1, Math.round(length / 2.4)], base: 0x8d8a83, roughness: 0.78, metalness: 0.45 })
-  for (const offset of [-0.72, 0.72]) {
+  for (const offset of [-RAIL_OFFSET, RAIL_OFFSET]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, length), railMaterial)
-    rail.position.set(TRACK_X + offset, TRACK_LEVEL - 0.09, 0)
+    rail.position.set(TRACK_X + offset, TRACK_LEVEL - 0.09, TRAIN_Z)
     group.add(rail)
   }
 
@@ -885,9 +886,9 @@ function createCameraPlaceholder(z) {
 }
 
 function createBoardingControl() {
-  // Brass pedestal with a lit screen, on the platform edge opposite the
-  // train's doors. Target for the Phase 1 interaction system; interacting
-  // with it triggers the level-manager transition into Level 2.
+  // Brass pedestal with a lit screen, on the platform edge beside the
+  // locomotive's front (the nose rests at z = 26). Interacting with it
+  // triggers the level-manager transition into Level 2.
   const control = new THREE.Group()
   control.name = 'boarding-control'
 
