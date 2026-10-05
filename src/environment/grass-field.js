@@ -146,6 +146,11 @@ export function createGrassField({
   mesh.castShadow = false
   mesh.receiveShadow = false
   mesh.frustumCulled = true
+  // Not a collider. InstancedMesh.raycast rebuilds a world matrix and
+  // tests every blade, and the third-person camera fires that ray every
+  // frame. The empty Object3D raycast is what near-raycast already skips.
+  mesh.raycast = THREE.Object3D.prototype.raycast
+  mesh.userData.noCameraCollision = true
 
   const rand = makeRng(0x6a55e1)
   const dummy = new THREE.Object3D()

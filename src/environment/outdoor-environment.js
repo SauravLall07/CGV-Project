@@ -855,6 +855,10 @@ export function createOutdoorEnvironment(options = {}) {
       mesh.name = `nature-${prop.key}`
       mesh.castShadow = false
       mesh.receiveShadow = false
+      // Same as the grass: a per-frame camera ray must not walk every
+      // instance. These props have no gameplay collider.
+      mesh.raycast = THREE.Object3D.prototype.raycast
+      mesh.userData.noCameraCollision = true
       mesh.count = 0
       const colors = new Float32Array(prop.capacity * 3)
       colors.fill(1)
