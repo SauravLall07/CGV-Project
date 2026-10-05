@@ -26,6 +26,7 @@ import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
 import { createCredits } from './ui/credits.js'
 import { createBoardingLevel } from './levels/boarding.js'
+import { loadTrainModel } from './entities/train.js'
 import { loadBoardingAssets } from './environment/nature-props.js'
 import { createMovingHeistLevel } from './levels/moving-heist.js'
 import { createTimewreckLevel } from './levels/timewreck.js'
@@ -318,7 +319,7 @@ keyboard.setEnabled(false)
 // station geometry, lighting and outdoor environment render behind
 // the menu overlay.
 async function buildTitleBackdrop() {
-  await loadBoardingAssets()
+  await Promise.all([loadBoardingAssets(), loadTrainModel()])
   const ctx = {
     scene, interaction, assets, hud, timeSystem, renderer,
     player, camera: playerView, respawn,

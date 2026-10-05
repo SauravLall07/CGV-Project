@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { TRACK_LEVEL, TRACK_X } from '../entities/train.js'
+import { TRACK_LEVEL, TRACK_X, TRAIN_LENGTH } from '../entities/train.js'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import { SUN_SHADOW_LAYER } from '../core/stairs.js'
 import {
@@ -107,13 +107,16 @@ function createConcourse() {
 
 function createTrackBed() {
   const group = new THREE.Group()
-  const length = PLATFORM_LENGTH + 16
+  // The consist is longer than the platform. The extra length covers the
+  // cars at rest plus the departure roll, which drives the train about 19 m
+  // toward +Z.
+  const length = Math.max(PLATFORM_LENGTH + 16, TRAIN_LENGTH + 48)
 
   // TRACK_LEVEL is the top of the rail head — the height the train's wheel
   // treads rest on — so everything here stacks downwards from it.
   const ballast = new THREE.Mesh(
     new THREE.BoxGeometry(4.4, 0.4, length),
-    plasterMaterial({ repeat: [3, 24], base: 0x3b3830, roughness: 1 })
+    plasterMaterial({ repeat: [3, Math.round(length / 3)], base: 0x3b3830, roughness: 1 })
   )
   ballast.position.set(TRACK_X, TRACK_LEVEL - 0.5, 0)
   ballast.receiveShadow = true
@@ -136,7 +139,7 @@ function createTrackBed() {
   sleepers.receiveShadow = true
   group.add(sleepers)
 
-  const railMaterial = metalMaterial({ repeat: [1, 30], base: 0x8d8a83, roughness: 0.78, metalness: 0.45 })
+  const railMaterial = metalMaterial({ repeat: [1, Math.round(length / 2.4)], base: 0x8d8a83, roughness: 0.78, metalness: 0.45 })
   for (const offset of [-0.72, 0.72]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, length), railMaterial)
     rail.position.set(TRACK_X + offset, TRACK_LEVEL - 0.09, 0)

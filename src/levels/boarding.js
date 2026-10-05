@@ -627,8 +627,9 @@ export function createBoardingLevel({
   const passage4CheckpointPos = bridgePassage.exitCheckpoint.clone()
   let passage4CheckpointActive = false
 
-  // Sources stay hidden. These slots are the only point lights and guard
-  // torches the shader ever sees, and the count does not change at runtime.
+  // Sources stay hidden. These slots are the only point lights, guard
+  // torches and the locomotive headlamp the shader ever sees, and the count
+  // does not change at runtime.
   const lightPools = new THREE.Group()
   lightPools.name = 'boarding-light-pools'
   scene.add(lightPools)
@@ -645,7 +646,7 @@ export function createBoardingLevel({
     root: scene,
     host: lightPools,
     size: TORCH_SPOT_POOL_SIZE,
-    accept: (node) => node.name === 'torch-spot',
+    accept: (node) => node.name === 'torch-spot' || node.name === 'headlamp-spot',
     name: 'torch-pool',
     kind: 'spot'
   })
