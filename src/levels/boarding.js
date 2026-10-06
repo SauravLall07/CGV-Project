@@ -24,6 +24,7 @@ import { createStealthSystem } from '../systems/stealth.js'
 import { createDistractionSystem } from '../systems/distraction.js'
 import { disposeObject } from '../core/dispose.js'
 import { createLightPool, POINT_LIGHT_POOL_SIZE, TORCH_SPOT_POOL_SIZE } from '../core/light-pool.js'
+import { createLandingScene } from '../environment/landing/index.js'
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -51,6 +52,9 @@ export function createBoardingLevel({
   timeSystem?.setAbilityAvailability?.({ SLOW: false, FREEZE: false, REWIND: false, GHOST: false })
   hud?.setChronoVisible?.(false)
   const { group: station, boardingControl, wallColliders } = createStationBlockout({ includePlaceholders: false })
+  // East of the rails, outside the walkable bounds. Not a child of `station`,
+  // so it is not an interaction blocker and guards do not treat it as cover.
+  const landing = createLandingScene()
 
   // Shared finite inventory for throwable guard distractions. Passageways 2
   // and 3 both read/write this same object, so pickups carry across the vent.
@@ -134,7 +138,7 @@ export function createBoardingLevel({
     nature: getBoardingAssets()
   })
 
-  scene.add(sky.mesh, outdoorEnv.group, station, train, ...lights)
+  scene.add(sky.mesh, outdoorEnv.group, station, train, landing.group, ...lights)
 
   // One environment map from the sky dome. Dim, so a shadowed wall is a
   // dark blue-grey and rough metal does not pick up a bright reflection.
@@ -633,7 +637,7 @@ export function createBoardingLevel({
   const lightPools = new THREE.Group()
   lightPools.name = 'boarding-light-pools'
   scene.add(lightPools)
-  const pointRoots = [station, train]
+  const pointRoots = [station, train, landing.group]
   for (const node of lights) {
     if (node.isPointLight) pointRoots.push(node)
   }
@@ -687,8 +691,15 @@ export function createBoardingLevel({
 
     // Title screen: the level update does not run, but the sky should still
     // twinkle while the menu camera drifts. The dome recentres itself.
-    updateAtmosphere(delta) {
+    updateAtmosphere(delta, viewer) {
       sky.update(delta, null)
+      landing.update(delta)
+      // The title camera is not the player, so the pool and the moon shadow
+      // have to follow it or the facade stays unlit until the run starts.
+      if (viewer) {
+        updateStationSunShadow(sunlight, landing.shadowFocus)
+        pointPool.update(viewer, delta)
+      }
     },
 
     get isCinematic() {
@@ -699,6 +710,7 @@ export function createBoardingLevel({
       updateStationSunShadow(sunlight, player.mesh.position)
       sky.update(delta, timeSystem)
       outdoorEnv.update(delta)
+      landing.update(delta)
       onboardingPassage.update(delta)
       tutorialPassage.update(delta)
       guardPassage.update(delta)
@@ -814,8 +826,8 @@ export function createBoardingLevel({
         skyTarget.dispose()
         skyTarget = null
       }
-      scene.remove(sky.mesh, outdoorEnv.group, station, train, ...lights, lightPools)
-      disposeObject([station, train, ...lights, lightPools])
+      scene.remove(sky.mesh, outdoorEnv.group, station, train, landing.group, ...lights, lightPools)
+      disposeObject([station, train, landing.group, ...lights, lightPools])
     }
   }
 }

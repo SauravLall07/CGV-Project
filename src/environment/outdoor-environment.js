@@ -7,6 +7,7 @@ import { createValleyLightsMaterial } from '../shaders/valley-lights-shader.js'
 import { createRockShaderMaterial } from '../shaders/rock-shader.js'
 import { createLakeMaterial } from '../shaders/lake-shader.js'
 import { SUN_DIRECTION } from './station-blockout.js'
+import { insideLanding, LANDING_CLEAR } from './landing/layout.js'
 import { disposeObject } from '../core/dispose.js'
 import { createGrassField, grassDistance } from './grass-field.js'
 
@@ -297,7 +298,17 @@ export function createOutdoorEnvironment(options = {}) {
     )
     const drop = lakeDrop(x, z)
     if (drop > 0) height -= drop
-    return THREE.MathUtils.lerp(-2.5, height, corridorFactor)
+    height = THREE.MathUtils.lerp(-2.5, height, corridorFactor)
+    // The head house and its plaza sit on a built pad. Without this the
+    // corridor floor is y = -2.5 and the house would hang in the air.
+    const dx = x < LANDING_CLEAR.minX ? LANDING_CLEAR.minX - x : x > LANDING_CLEAR.maxX ? x - LANDING_CLEAR.maxX : 0
+    const dz = z < LANDING_CLEAR.minZ ? LANDING_CLEAR.minZ - z : z > LANDING_CLEAR.maxZ ? z - LANDING_CLEAR.maxZ : 0
+    const padDist = Math.hypot(dx, dz)
+    if (padDist < 8) {
+      const t = 1 - THREE.MathUtils.smoothstep(padDist, 0, 8)
+      height = THREE.MathUtils.lerp(height, LANDING_CLEAR.y, t)
+    }
+    return height
   }
 
   function getTerrainHeight(x, z) {
@@ -593,6 +604,7 @@ export function createOutdoorEnvironment(options = {}) {
   function isSceneryBlocked(x, z) {
     if (isInsideWestWingClearance(x, z)) return true
     if (mode !== 'station') return false
+    if (insideLanding(x, z, 3)) return true
     return (
       x >= WEST_WING_CLEAR_MIN_X - 10 &&
       x <= WEST_WING_CLEAR_MAX_X + 10 &&
@@ -1022,10 +1034,16 @@ export function createOutdoorEnvironment(options = {}) {
   )
 
   let poleIdx = 0
-  const wirePoints = []
-
+  const wireRuns = [[], []]
   for (let z = -rangeZ; z <= rangeZ; z += poleZSpacing) {
     const px = 11.5 // Parallel to track at X = 7
+    // The forecourt occupies this side of the rails. A pole here would
+    // stand in the plaza, and the wire would cut the facade.
+    if (mode === 'station' && insideLanding(px, z, 1)) {
+      wireRuns[0].push(null)
+      wireRuns[1].push(null)
+      continue
+    }
     const py = getTerrainHeight(px, z) + 3.25
 
     dummy.position.set(px, py, z)
@@ -1039,9 +1057,8 @@ export function createOutdoorEnvironment(options = {}) {
     dummy.updateMatrix()
     crossarmInst.setMatrixAt(poleIdx, dummy.matrix)
 
-    // Collect wire attachment points for sagging telegraph wires
-    wirePoints.push(new THREE.Vector3(px - 0.75, py + 2.85, z))
-    wirePoints.push(new THREE.Vector3(px + 0.75, py + 2.85, z))
+    wireRuns[0].push(new THREE.Vector3(px - 0.75, py + 2.85, z))
+    wireRuns[1].push(new THREE.Vector3(px + 0.75, py + 2.85, z))
 
     poleIdx++
   }
@@ -1055,23 +1072,33 @@ export function createOutdoorEnvironment(options = {}) {
   crossarmInst.instanceMatrix.needsUpdate = true
   tracksideGroup.add(polesInst, crossarmInst)
 
-  // Generate sagging catenary telegraph line wires
-  for (let side = 0; side < 2; side++) {
-    const points = []
-    for (let i = side; i < wirePoints.length - 2; i += 2) {
-      const p1 = wirePoints[i]
-      const p2 = wirePoints[i + 2]
-      const midZ = (p1.z + p2.z) / 2
-      const midY = (p1.y + p2.y) / 2 - 0.85 // Sag
-
-      points.push(p1, new THREE.Vector3(p1.x, midY, midZ), p2)
-    }
-    if (points.length > 1) {
+  // Each contiguous run of poles gets its own wire, so a gap at the
+  // forecourt does not sling a cable through the head house.
+  for (const run of wireRuns) {
+    let span = []
+    function flushSpan() {
+      if (span.length < 2) {
+        span = []
+        return
+      }
+      const points = []
+      for (let i = 0; i < span.length - 1; i += 1) {
+        const p1 = span[i]
+        const p2 = span[i + 1]
+        const mid = new THREE.Vector3().lerpVectors(p1, p2, 0.5)
+        mid.y -= 0.85
+        points.push(p1, mid, p2)
+      }
       const curve = new THREE.CatmullRomCurve3(points)
       const wireGeo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(points.length * 4))
-      const wireLine = new THREE.Line(wireGeo, wireMat)
-      tracksideGroup.add(wireLine)
+      tracksideGroup.add(new THREE.Line(wireGeo, wireMat))
+      span = []
     }
+    for (const point of run) {
+      if (!point) flushSpan()
+      else span.push(point)
+    }
+    flushSpan()
   }
 
   // Rustic Wooden Fence Lines along railway corridor
@@ -1086,6 +1113,7 @@ export function createOutdoorEnvironment(options = {}) {
   for (const sideX of [2.0, 12.5]) { // Fence on left and right of track corridor
     for (let z = -140; z <= 140; z += 3.8) {
       if (fIdx >= fencePostsCount * 2) break
+      if (mode === 'station' && sideX > 8 && insideLanding(sideX, z, 2)) continue
 
       const fy = getTerrainHeight(sideX, z) + 0.6
       dummy.position.set(sideX, fy, z)
@@ -1512,7 +1540,7 @@ function addValleySetDressing(group, getTerrainHeight) {
     pushBox(chimneys, 0.28, 0.9, 0.28, x + w * 0.3, y + h + 0.7, z)
   }
 
-  cabin(32, 24, 4.2, 3.2, 2.6)
+  cabin(58, 40, 4.2, 3.2, 2.6)
   cabin(78, 46, 3.4, 2.8, 2.3)
   // Signal box beside the eastern track, and a water tower just beyond it.
   const boxY = getTerrainHeight(46, -10)
@@ -1545,10 +1573,10 @@ function addValleySetDressing(group, getTerrainHeight) {
   mergeList(chimneys, dark, 'valley-chimneys')
 
   // A small field just east of the station, in the spawn view.
-  const fenceX0 = 18
-  const fenceX1 = 58
-  const fenceZ0 = 8
-  const fenceZ1 = 30
+  const fenceX0 = 46
+  const fenceX1 = 78
+  const fenceZ0 = -28
+  const fenceZ1 = -8
   const posts = []
   const rails = []
   const step = 2.4

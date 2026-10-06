@@ -619,7 +619,7 @@ loop.add((delta) => {
   // While the menu is visible, drift the camera and skip gameplay.
   if (!gameStarted) {
     menu.updateCinematicCamera(delta)
-    titleBackdrop?.updateAtmosphere?.(delta)
+    titleBackdrop?.updateAtmosphere?.(delta, camera.position)
     return
   }
 
