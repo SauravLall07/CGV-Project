@@ -344,6 +344,7 @@ const credits = createCredits({
 })
 const menu = createMainMenu({
   camera,
+  player,
   renderer,
   settingsMenu,
   unlockAudio,

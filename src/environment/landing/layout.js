@@ -29,21 +29,24 @@ export const LANDING_FOCUS = new THREE.Vector3(FACADE_X - 1.5, 6.2, CENTER_Z)
 
 // Title camera stands on the plaza, a little south of the arch, looking up
 // the west face. Drift stays small so the sign and the buttons hold still.
+// A little south of due east, so the moon (nearly due east) sits in the
+// upper right and the locomotive, further +Z, sits on the right.
 export const LANDING_CAMERA = {
-  position: { x: 10.15, y: 1.62, z: 11.35 },
-  target: { x: 23.55, y: 7.35, z: 17.15 },
-  driftX: 0.18,
-  driftY: 0.07,
+  position: { x: 9.9, y: 1.64, z: 19.8 },
+  target: { x: 23.55, y: 6.9, z: 15.6 },
+  driftX: 0.16,
+  driftY: 0.06,
   driftZ: 0.1,
-  driftSpeed: 0.055
+  driftSpeed: 0.05
 }
 
 // Left foreground: lower Z is screen-left when the camera looks east, and a
-// larger X puts him between the camera and the doors. Yaw π/2 faces +X.
+// larger X puts him between the camera and the doors. Yaw π/2 faces +X,
+// so the shot sees his back.
 export const LANDING_FIGURE = {
-  x: 13.85,
+  x: 13.55,
   y: 0.06,
-  z: 6.15,
+  z: 14.35,
   yaw: Math.PI / 2
 }
 

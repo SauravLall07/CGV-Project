@@ -86,11 +86,10 @@ export function createPostProcessing(renderer) {
 
   function resize() {
     renderer.getSize(size)
-    // setPixelRatio() also resizes using the previous logical size, which is
-    // still the target's pixel size until setSize() below. Call both: the
-    // second one is the size that sticks, at the renderer's current ratio,
-    // so the Bloom setting and the resolution slider stay in step.
-    composer.setPixelRatio(renderer.getPixelRatio())
+    // Assign the ratio directly. setPixelRatio() also resizes from the
+    // previous logical size, and on the first call that size is still the
+    // target's pixel dimensions, which would allocate a huge buffer first.
+    composer._pixelRatio = renderer.getPixelRatio()
     composer.setSize(Math.max(1, size.x), Math.max(1, size.y))
   }
 

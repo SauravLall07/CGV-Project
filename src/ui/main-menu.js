@@ -1,9 +1,9 @@
 // Main Menu / Title Screen for Chrono Express.
 //
 // Displays a cinematic title overlay on top of the existing Three.js station
-// scene. The station geometry (platform, train, outdoor environment) renders
-// live behind the menu from a slow-drifting cinematic camera angle, giving the
-// menu a real game-world backdrop rather than a static image.
+// scene. The head house on the east side of the rails renders live behind the
+// menu from a slow-drifting camera, with the detective idle in the left
+// foreground. The run itself still starts at the west-wing checkpoint.
 //
 // Flow: loading screen → main menu → NEW GAME → menu fades → third-person
 // camera lerps to the player → gameplay begins.
@@ -13,23 +13,13 @@
 // starts. While that panel is open it swallows key presses, which is why
 // Enter-to-start cannot fire underneath it.
 
-import { LOCO_NOSE_Z, TRACK_X } from '../entities/train.js'
+import { LANDING_CAMERA, LANDING_FIGURE } from '../environment/landing/layout.js'
 import { createButton } from './ui-theme.js'
 
 const TITLE = 'CHRONO EXPRESS'
 const SUBTITLE = 'THE LAST HEIST'
 
-// Low 3/4 of the locomotive nose, just ahead of it on the platform side.
-// The aim sits above the boiler so the nose, lamps and crest fall in the
-// lower frame, the carriages trail back along the platform, and the open
-// sky clears the shed roof behind the title. Drift stays small.
-const CAM_POS = { x: TRACK_X - 5.8, y: 1.15, z: LOCO_NOSE_Z + 10.5 }
-const CAM_TARGET = { x: TRACK_X + 3.5, y: 11.5, z: LOCO_NOSE_Z - 22 }
-const DRIFT_X = 0.35
-const DRIFT_Y = 0.12
-const DRIFT_SPEED = 0.07
-
-export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio, onCredits, isCreditsOpen }) {
+export function createMainMenu({ camera, player, renderer, settingsMenu, unlockAudio, onCredits, isCreditsOpen }) {
   // ---------------------------------------------------------------
   // DOM overlay
   // ---------------------------------------------------------------
@@ -58,10 +48,10 @@ export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio, on
     inset: '0',
     background: [
       'linear-gradient(to bottom,',
-      'rgba(6, 6, 16, 0.34) 0%,',
-      'rgba(6, 6, 16, 0.16) 24%,',
-      'rgba(6, 6, 16, 0.08) 52%,',
-      'rgba(6, 6, 16, 0.62) 80%,',
+      'rgba(6, 6, 16, 0.58) 0%,',
+      'rgba(6, 6, 16, 0.26) 16%,',
+      'rgba(6, 6, 16, 0.04) 40%,',
+      'rgba(6, 6, 16, 0.55) 78%,',
       'rgba(6, 6, 16, 0.90) 100%)'
     ].join(' '),
     pointerEvents: 'none'
@@ -271,8 +261,14 @@ export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio, on
   // ---------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------
+  function placeFigure() {
+    if (!player?.setPose) return
+    player.setPose(LANDING_FIGURE, LANDING_FIGURE.yaw)
+  }
+
   function show() {
     isVisible = true
+    placeFigure()
     // Reset the start latch: the menu is shown again when the player quits a
     // run from the pause menu, and a stuck latch would make NEW GAME dead.
     isTransitioning = false
@@ -311,13 +307,16 @@ export function createMainMenu({ camera, renderer, settingsMenu, unlockAudio, on
     if (!isVisible) return
     menuElapsed += delta
     const t = menuElapsed
+    const speed = LANDING_CAMERA.driftSpeed
+    const home = LANDING_CAMERA.position
+    const aim = LANDING_CAMERA.target
 
     camera.position.set(
-      CAM_POS.x + Math.sin(t * DRIFT_SPEED) * DRIFT_X,
-      CAM_POS.y + Math.sin(t * DRIFT_SPEED * 1.4 + 0.7) * DRIFT_Y,
-      CAM_POS.z + Math.cos(t * DRIFT_SPEED * 0.6) * DRIFT_X * 0.5
+      home.x + Math.sin(t * speed) * LANDING_CAMERA.driftX,
+      home.y + Math.sin(t * speed * 1.35 + 0.6) * LANDING_CAMERA.driftY,
+      home.z + Math.cos(t * speed * 0.65) * LANDING_CAMERA.driftZ
     )
-    camera.lookAt(CAM_TARGET.x, CAM_TARGET.y, CAM_TARGET.z)
+    camera.lookAt(aim.x, aim.y, aim.z)
   }
 
   function dispose() {
