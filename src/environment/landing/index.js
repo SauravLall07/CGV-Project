@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { buildFacade } from './facade.js'
+import { buildForecourt } from './forecourt.js'
 import { emptyStats } from './geom.js'
 import { LANDING_FOCUS } from './layout.js'
 import { createLandingMaterials } from './materials.js'
@@ -13,6 +14,7 @@ export function createLandingScene() {
   const stats = emptyStats()
 
   buildFacade(group, materials, stats)
+  const forecourt = buildForecourt(group, materials, stats)
 
   group.traverse((node) => {
     node.userData.noCameraCollision = true
@@ -25,6 +27,6 @@ export function createLandingScene() {
     group,
     stats,
     shadowFocus: focus,
-    update() {}
+    update(delta) { forecourt.update(delta) }
   }
 }

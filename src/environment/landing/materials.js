@@ -181,6 +181,23 @@ export function createLandingMaterials() {
       metalness: 0.05,
       side: THREE.DoubleSide
     }),
+    cobble: (() => {
+      const maps = cobbleMaps(256)
+      return new THREE.MeshStandardMaterial({
+        map: canvasTexture(maps.color, [1, 1], true),
+        normalMap: canvasTexture(maps.normal, [1, 1], false),
+        roughnessMap: canvasTexture(maps.rough, [1, 1], false),
+        roughness: 1,
+        metalness: 0.14
+      })
+    })(),
+    shrub: new THREE.MeshStandardMaterial({ color: 0x243328, roughness: 0.92 }),
+    crate: new THREE.MeshStandardMaterial({ color: 0x6a4630, roughness: 0.84 }),
+    banner: new THREE.MeshStandardMaterial({
+      map: canvasTexture(bannerCanvas(), [1, 1], true),
+      roughness: 0.8,
+      side: THREE.DoubleSide
+    }),
     sign: signMaterial({
       text: 'CHRONO EXPRESS',
       background: 0x121610,
@@ -191,6 +208,60 @@ export function createLandingMaterials() {
     }),
     lantern: glassMaterial(0xffd7a2, 4.2)
   }
+}
+
+function cobbleMaps(size) {
+  const canvas = makeCanvas(size)
+  const rough = makeCanvas(size)
+  const ctx = canvas.getContext('2d')
+  const rctx = rough.getContext('2d')
+  const cols = 8
+  const rows = 8
+  const cw = size / cols
+  const ch = size / rows
+  ctx.fillStyle = '#3a342c'
+  ctx.fillRect(0, 0, size, size)
+  rctx.fillStyle = '#c8c8c8'
+  rctx.fillRect(0, 0, size, size)
+  for (let row = 0; row < rows; row += 1) {
+    const offset = row % 2 ? cw * 0.5 : 0
+    for (let col = -1; col <= cols; col += 1) {
+      const n = Math.sin((row + 1) * 12.1 + (col + 3) * 4.7) * 43758.5453
+      const h = n - Math.floor(n)
+      const v = Math.floor(78 + h * 58)
+      ctx.fillStyle = `rgb(${v + 18},${v + 8},${v - 6})`
+      const inset = 3
+      ctx.fillRect(col * cw + offset + inset, row * ch + inset, cw - inset * 2, ch - inset * 2)
+      const wet = Math.floor(28 + h * 36)
+      rctx.fillStyle = `rgb(${wet},${wet},${wet})`
+      rctx.fillRect(col * cw + offset + inset, row * ch + inset, cw - inset * 2, ch - inset * 2)
+    }
+  }
+  return {
+    color: canvas,
+    normal: normalFromCanvas(canvas, 3.4),
+    rough
+  }
+}
+
+function bannerCanvas() {
+  const canvas = makeCanvas(256, 512)
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#1c3a32'
+  ctx.fillRect(0, 0, 256, 512)
+  ctx.fillStyle = '#c6a15a'
+  ctx.fillRect(18, 0, 16, 512)
+  ctx.strokeStyle = '#c6a15a'
+  ctx.lineWidth = 8
+  ctx.strokeRect(48, 70, 160, 200)
+  ctx.beginPath()
+  ctx.moveTo(128, 110)
+  ctx.lineTo(168, 170)
+  ctx.lineTo(128, 230)
+  ctx.lineTo(88, 170)
+  ctx.closePath()
+  ctx.fill()
+  return canvas
 }
 
 export function shadeOf(index) {
