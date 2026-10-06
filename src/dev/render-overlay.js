@@ -76,7 +76,9 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
 
   renderer.render = function (scene, camera) {
     const perspective = Boolean(camera && camera.isPerspectiveCamera)
-    if (!perspective && minimapOff) {
+    // Only the inset map is optional. Bloom and the grade draw with
+    // orthographic quads; skipping every non-perspective camera kills them.
+    if (!perspective && minimapOff && camera?.name === 'minimap') {
       if (activeFrame) activeFrame.minimap = 0
       minimapPass = { calls: 0, triangles: 0 }
       return

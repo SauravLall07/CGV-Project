@@ -53,6 +53,13 @@ export const OPTION_DEFS = [
     format: (v) => `${Math.round(v * 100)}%`
   },
   {
+    id: 'bloom',
+    label: 'Bloom',
+    hint: 'Soft glow on lamps, lit windows and the moon. The blur is half resolution.',
+    group: 'Display',
+    type: 'toggle'
+  },
+  {
     id: 'shadowQuality',
     label: 'Shadow Quality',
     hint: 'PCF shadows on the evening sun. Off, or a 1024, 2048, or 4096 map. Applies immediately.',
@@ -150,6 +157,7 @@ export const DEFAULT_OPTIONS = {
   brightness: 1.15,
   fov: 60,
   renderScale: 1,
+  bloom: true,
   shadowQuality: 'medium',
   grassDensity: 'medium',
   showStats: false,

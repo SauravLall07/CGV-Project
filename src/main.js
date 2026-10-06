@@ -1,4 +1,5 @@
 import { createRenderer } from './core/renderer.js'
+import { createPostProcessing } from './core/postprocessing.js'
 import { createScene } from './core/scene.js'
 import { createCamera } from './core/camera.js'
 import { createClock } from './core/clock.js'
@@ -42,6 +43,7 @@ import { mountRenderOverlay } from './dev/render-overlay.js'
 const canvas = document.querySelector('#app')
 
 const { renderer, setScene } = createRenderer(canvas)
+const post = createPostProcessing(renderer)
 const scene = createScene()
 setScene(scene) // lets display settings recompile materials on a shadow toggle
 const { camera } = createCamera()
@@ -583,6 +585,7 @@ const loop = createLoop({
   scene,
   camera,
   clock,
+  render: post.render,
 
   afterRender: (gl) => {
     const show = gameStarted && !credits.isOpen
