@@ -136,6 +136,40 @@ export function createBoardingLevel({
   const NIGHT_SHADER_FOG = { color: 0x121022, near: 50, far: 260, max: 0.88 }
   const PLAZA_SHADER_FOG = { color: 0x05060c, near: 20, far: 62, max: 0.98 }
 
+  // Guards, cameras and lasers are added to the scene later, not under the
+  // station group. Named so the forecourt can drop them without a second list.
+  const OUTSIDE_NAMES = new Set([
+    'guard',
+    'guard-shielded',
+    'security-camera',
+    'laser-grid',
+    'thrown-distraction',
+    'distraction-noise-pulse'
+  ])
+  // Visibility each object had when the plaza hid it, so leaving restores
+  // whatever other systems had set rather than forcing everything on.
+  const hiddenOutside = new Map()
+  let outsideHidden = false
+
+  function setOutsideHidden(hide) {
+    if (hide === outsideHidden) return
+    outsideHidden = hide
+    if (hide) {
+      const targets = [outdoorEnv.group, station, train]
+      for (const child of scene.children) {
+        if (OUTSIDE_NAMES.has(child.name)) targets.push(child)
+      }
+      for (const node of targets) {
+        hiddenOutside.set(node, node.visible)
+        node.visible = false
+      }
+    } else {
+      for (const [node, visible] of hiddenOutside) node.visible = visible
+      hiddenOutside.clear()
+    }
+    sky.uniforms.uGroundBlack.value = hide ? 1 : 0
+  }
+
   function applyForecourtFill(viewer) {
     if (!viewer) return
     const onPlaza = viewer.x > 6 && viewer.x < 36 && viewer.z > -10 && viewer.z < 48
@@ -144,6 +178,10 @@ export function createBoardingLevel({
     scene.environmentIntensity = onPlaza ? 0.06 : FORECOURT_FILL.environment
     scene.fog = onPlaza ? plazaFog : nightFog
     outdoorEnv.setFog(onPlaza ? PLAZA_SHADER_FOG : NIGHT_SHADER_FOG)
+    // Not drawn at all past the cobbles: terrain, ranges, the platform and
+    // the train. The sky and the landing stay. The door teleport leaves this
+    // box on the same frame, which puts the station back before the fade-in.
+    setOutsideHidden(onPlaza)
   }
   const sky = createSkyDome('boarding')
   const outdoorEnv = createOutdoorEnvironment({

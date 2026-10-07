@@ -178,7 +178,10 @@ export function createSkyDome(presetName) {
     // Horizon tint for fog, the night lift, and the finale grade.
     uHorizonColor: { value: new THREE.Color(preset.horizon) },
     // Zenith tint for the night lift and the finale grade.
-    uZenithColor: { value: new THREE.Color(preset.zenith) }
+    uZenithColor: { value: new THREE.Color(preset.zenith) },
+    // 1 turns everything below the horizon black, for scenes that hide the
+    // terrain. The environment capture ignores it.
+    uGroundBlack: { value: 0 }
   }
 
   const vertexShader = /* glsl */ `
@@ -274,6 +277,7 @@ export function createSkyDome(presetName) {
     uniform float uGrade;
     uniform vec3 uHorizonColor;
     uniform vec3 uZenithColor;
+    uniform float uGroundBlack;
 
     ${SKY_EVALUATE_GLSL}
 
@@ -282,8 +286,9 @@ export function createSkyDome(presetName) {
       // inside evaluateSky(), not from an azimuth, so the sky has no seam.
       vec3 direction = normalize(vWorldPosition - cameraPosition);
       vec3 skyColor = evaluateSky(direction);
+      float ground = 1.0 - smoothstep(-0.015, 0.05, direction.y);
 
-      gl_FragColor = vec4(skyColor, 1.0);
+      gl_FragColor = vec4(skyColor * (1.0 - uGroundBlack * ground), 1.0);
 
       // Same ACES curve and output colour space as every other material.
       // Both chunks are what the three.js Sky example includes.
