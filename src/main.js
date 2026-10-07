@@ -29,7 +29,7 @@ import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
 import { createCredits } from './ui/credits.js'
 import { createBoardingLevel } from './levels/boarding.js'
-import { LANDING_FIGURE } from './environment/landing/layout.js'
+import { LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
 import { loadBoardingAssets } from './environment/nature-props.js'
 import { createMovingHeistLevel } from './levels/moving-heist.js'
 import { createTimewreckLevel } from './levels/timewreck.js'
@@ -495,16 +495,18 @@ function showCompleteCredits() {
   keyboardLock.release({ exitFullscreen: false })
 }
 
-// Third-person offset, matching cameras/third-person-camera.js (pivot 1.5 m,
-// default pitch 0.25). The glide ends on that pose so control starts with no pop.
-const ARRIVAL_PIVOT_Y = 1.5
-const ARRIVAL_PITCH = 0.25
+// Third-person offset, matching cameras/third-person-camera.js (pivot 1.5 m)
+// at the spawn's own pitch. The glide ends on that pose so control starts
+// with no pop. The distance is capped where the camera's collision pass
+// would stop it against the shop fronts behind the spawn.
+const ARRIVAL_PIVOT_Y = LANDING_VIEW.pivotHeight
+const ARRIVAL_PITCH = LANDING_FIGURE.pitch
 const ARRIVAL_UP = new THREE.Vector3(0, 1, 0)
 const arrivalEndMatrix = new THREE.Matrix4()
 
 function beginForecourtArrival() {
   const yaw = LANDING_FIGURE.yaw
-  const distance = settings.get('cameraDistance')
+  const distance = Math.min(settings.get('cameraDistance'), LANDING_VIEW.maxDistance)
   const pivot = new THREE.Vector3(
     LANDING_FIGURE.x,
     LANDING_FIGURE.y + ARRIVAL_PIVOT_Y,

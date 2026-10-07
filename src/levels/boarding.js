@@ -891,6 +891,7 @@ export function createBoardingLevel({
     checkpoint: {
       position: new THREE.Vector3(LANDING_FIGURE.x, LANDING_FIGURE.y, LANDING_FIGURE.z),
       yaw: LANDING_FIGURE.yaw,
+      pitch: LANDING_FIGURE.pitch,
       restore: () => stealth.reset()
     },
     bounds: levelBounds,

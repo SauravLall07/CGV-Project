@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { addBenches } from './bench.js'
 import { addCars } from './car.js'
 import { addInstances, addMesh, box, mergeParts, place } from './geom.js'
-import { FACADE_X, PLAZA } from './layout.js'
+import { CENTER_Z, FACADE_X, PLAZA } from './layout.js'
 import { addCentreLamp, CENTRE_LAMP_BASE } from './centre-lamp.js'
 import { addLampPosts, LAMP_GLOW } from './lamp-post.js'
 import { addLightPools } from './light-pools.js'
@@ -117,37 +117,6 @@ function addLuggage(parent, materials, stats) {
   addMesh(parent, mergeParts(iron), materials.iron, { name: 'landing-luggage-straps' }, stats)
 }
 
-function addFlags(parent, materials, stats) {
-  const poles = []
-  const banners = []
-  const spots = [
-    { x: 13.2, z: 8.4 },
-    { x: 12.6, z: 18.6 },
-    { x: 13.2, z: 29.4 }
-  ]
-  for (const spot of spots) {
-    const pole = new THREE.CylinderGeometry(0.045, 0.06, 6.2, 8)
-    pole.translate(spot.x, 3.1, spot.z)
-    poles.push(pole)
-    const finial = new THREE.SphereGeometry(0.09, 8, 6)
-    finial.translate(spot.x, 6.25, spot.z)
-    poles.push(finial)
-
-    const cloth = new THREE.PlaneGeometry(0.72, 1.7)
-    cloth.translate(0.36, -0.85, 0)
-    const banner = new THREE.Mesh(cloth, materials.banner)
-    banner.position.set(spot.x, 5.7, spot.z)
-    banner.castShadow = false
-    banner.name = 'landing-banner'
-    parent.add(banner)
-    banners.push(banner)
-    stats.draws += 1
-    stats.triangles += 2
-  }
-  addMesh(parent, mergeParts(poles), materials.iron, { name: 'landing-flagpoles' }, stats)
-  return banners
-}
-
 function addShelter(parent, materials, stats) {
   // Open roof beside the right wing, over the rails' north end, so the
   // steam reads as coming from the trains rather than from a chimney.
@@ -158,23 +127,28 @@ function addShelter(parent, materials, stats) {
 }
 
 // The pair flanks the street opening behind the spawn; the southern one
-// flickers. The centrepiece sits south of the door axis so the title shot
-// and the walk to the doors stay clear, and its pool covers the spawn.
+// flickers. The two tall standards on stone bases mirror each other across
+// the door axis, so the walk to the doors stays clear and both halves of the
+// square are lit; their pools meet at the spawn.
 const LAMPS = [
   { x: 9.55, y: 0.05, z: 9.4, flicker: true },
   { x: 9.55, y: 0.05, z: 17.8 }
 ]
 
-const CENTRE_LAMP = { x: 16.2, y: 0.05, z: 13.4 }
+const CENTRE_LAMPS = [
+  { x: 16.2, y: 0.05, z: 13.4 },
+  { x: 16.2, y: 0.05, z: 2 * CENTER_Z - 13.4 }
+]
 
 // Painted pools, in the order the flicker expects: index 1 is the
 // flickering post.
 const POOL_STRENGTH = { centre: 2.1, entrance: 1.55, steps: 0.75 }
 const POOLS = [
-  { x: CENTRE_LAMP.x, z: CENTRE_LAMP.z, radius: 5.6, strength: POOL_STRENGTH.centre },
+  { x: CENTRE_LAMPS[0].x, z: CENTRE_LAMPS[0].z, radius: 5.6, strength: POOL_STRENGTH.centre },
   { x: LAMPS[0].x, z: LAMPS[0].z, radius: 4.3, strength: POOL_STRENGTH.entrance },
   { x: LAMPS[1].x, z: LAMPS[1].z, radius: 4.3, strength: POOL_STRENGTH.entrance },
-  { x: 19.3, z: 18.6, radius: 3.4, strength: POOL_STRENGTH.steps }
+  { x: 19.3, z: 18.6, radius: 3.4, strength: POOL_STRENGTH.steps },
+  { x: CENTRE_LAMPS[1].x, z: CENTRE_LAMPS[1].z, radius: 5.6, strength: POOL_STRENGTH.centre }
 ]
 
 const BENCHES = [
@@ -222,7 +196,7 @@ function yawBox(x, z, halfX, halfZ, yaw = 0, pad = 0.12) {
 function forecourtColliders() {
   const boxes = []
   for (const lamp of LAMPS) boxes.push(yawBox(lamp.x, lamp.z, 0.24, 0.24))
-  boxes.push(yawBox(CENTRE_LAMP.x, CENTRE_LAMP.z, CENTRE_LAMP_BASE, CENTRE_LAMP_BASE, 0, 0.06))
+  for (const lamp of CENTRE_LAMPS) boxes.push(yawBox(lamp.x, lamp.z, CENTRE_LAMP_BASE, CENTRE_LAMP_BASE, 0, 0.06))
   for (const bench of BENCHES) boxes.push(yawBox(bench.x, bench.z, 0.28, 0.78, bench.yaw || 0))
   for (const planter of PLANTERS) boxes.push(yawBox(planter.x, planter.z, 0.52, 0.52))
   for (const car of CARS) boxes.push(yawBox(car.x, car.z, 0.85, 2.2, car.yaw || 0, 0.2))
@@ -252,13 +226,11 @@ export function buildForecourt(parent, materials, stats) {
   addShelter(parent, materials, stats)
 
   const flickerGlow = addLampPosts(parent, LAMPS, materials, stats)
-  addCentreLamp(parent, CENTRE_LAMP, materials, stats)
+  for (const lamp of CENTRE_LAMPS) addCentreLamp(parent, lamp, materials, stats)
   const pools = addLightPools(parent, POOLS, materials.cobble.map, stats)
   addBenches(parent, BENCHES, materials, stats)
   addPlanters(parent, PLANTERS, materials, stats)
   addCars(parent, CARS, materials, stats)
-
-  const banners = addFlags(parent, materials, stats)
 
   const steam = createSteam()
   steam.points.position.set(6.5, 3.3, 27.2)
@@ -269,9 +241,6 @@ export function buildForecourt(parent, materials, stats) {
   function update(delta) {
     time += delta
     steam.update(delta)
-    for (let i = 0; i < banners.length; i += 1) {
-      banners[i].rotation.y = Math.sin(time * 0.65 + i * 1.7) * 0.12
-    }
     if (flickerGlow) {
       const a = Math.sin(time * 2.3)
       const b = Math.sin(time * 7.1 + 1.4)

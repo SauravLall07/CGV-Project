@@ -27,27 +27,46 @@ export const LANDING_CLEAR = { minX: 8.4, maxX: 38.2, minZ: -7.5, maxZ: 46, y: -
 
 export const LANDING_FOCUS = new THREE.Vector3(FACADE_X - 1.5, 6.2, CENTER_Z)
 
-// Title camera stands on the plaza, a little south of the arch, looking up
-// the west face. Drift stays small so the sign and the buttons hold still.
-// A little south of due east, so the moon (nearly due east) sits in the
-// upper right and the locomotive, further +Z, sits on the right.
-export const LANDING_CAMERA = {
-  position: { x: 9.9, y: 1.64, z: 19.8 },
-  target: { x: 23.55, y: 6.9, z: 15.6 },
-  driftX: 0.16,
-  driftY: 0.06,
-  driftZ: 0.1,
-  driftSpeed: 0.05
+// The detective spawns on the door axis facing the doors (yaw π/2 faces +X).
+// The follow camera sits behind him, a little low and looking up (negative
+// pitch), so the doors, the sign on the canopy and the clock (top ≈ 10.6 m)
+// all fit in a 60° view. He stands far enough forward that the camera, at
+// the default 4.8 m follow distance, stays clear of the shops on the quay.
+export const LANDING_FIGURE = {
+  x: 13.6,
+  y: 0.05,
+  z: CENTER_Z,
+  yaw: Math.PI / 2,
+  pitch: -0.15
 }
 
-// Left foreground: lower Z is screen-left when the camera looks east, and a
-// larger X puts him between the camera and the doors. Yaw π/2 faces +X,
-// so the shot sees his back.
-export const LANDING_FIGURE = {
-  x: 13.55,
-  y: 0.05,
-  z: 14.35,
-  yaw: Math.PI / 2
+// Third-person pivot height and the default `cameraDistance` setting; the
+// title shot is the same pose the New Game glide ends on. The shop fronts at
+// x = 8.4 leave room for at most `maxDistance` behind the spawn.
+export const LANDING_VIEW = {
+  pivotHeight: 1.5,
+  distance: 4.8,
+  maxDistance: 5.0
+}
+
+function spawnCameraPosition() {
+  const pitch = LANDING_FIGURE.pitch
+  return {
+    x: LANDING_FIGURE.x - Math.cos(pitch) * LANDING_VIEW.distance,
+    y: LANDING_FIGURE.y + LANDING_VIEW.pivotHeight + Math.sin(pitch) * LANDING_VIEW.distance,
+    z: LANDING_FIGURE.z
+  }
+}
+
+// Drift runs along the door axis and up and down only, so the shot stays
+// centred.
+export const LANDING_CAMERA = {
+  position: spawnCameraPosition(),
+  target: { x: LANDING_FIGURE.x, y: LANDING_FIGURE.y + LANDING_VIEW.pivotHeight, z: LANDING_FIGURE.z },
+  driftX: 0.08,
+  driftY: 0.04,
+  driftZ: 0,
+  driftSpeed: 0.05
 }
 
 // Cobbles in front of the west face. The west edge is the quay above the

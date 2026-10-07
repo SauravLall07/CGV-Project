@@ -194,11 +194,6 @@ export function createLandingMaterials() {
     })(),
     shrub: new THREE.MeshStandardMaterial({ color: 0x243328, roughness: 0.92 }),
     crate: new THREE.MeshStandardMaterial({ color: 0x6a4630, roughness: 0.84 }),
-    banner: new THREE.MeshStandardMaterial({
-      map: canvasTexture(bannerCanvas(), [1, 1], true),
-      roughness: 0.8,
-      side: THREE.DoubleSide
-    }),
     sign: signMaterial({
       text: 'CHRONO EXPRESS',
       background: 0x121610,
@@ -243,26 +238,6 @@ function cobbleMaps(size) {
     normal: normalFromCanvas(canvas, 3.4),
     rough
   }
-}
-
-function bannerCanvas() {
-  const canvas = makeCanvas(256, 512)
-  const ctx = canvas.getContext('2d')
-  ctx.fillStyle = '#1c3a32'
-  ctx.fillRect(0, 0, 256, 512)
-  ctx.fillStyle = '#c6a15a'
-  ctx.fillRect(18, 0, 16, 512)
-  ctx.strokeStyle = '#c6a15a'
-  ctx.lineWidth = 8
-  ctx.strokeRect(48, 70, 160, 200)
-  ctx.beginPath()
-  ctx.moveTo(128, 110)
-  ctx.lineTo(168, 170)
-  ctx.lineTo(128, 230)
-  ctx.lineTo(88, 170)
-  ctx.closePath()
-  ctx.fill()
-  return canvas
 }
 
 export function shadeOf(index) {
