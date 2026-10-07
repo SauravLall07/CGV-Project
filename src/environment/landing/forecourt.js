@@ -4,7 +4,9 @@ import { addBenches } from './bench.js'
 import { addCars } from './car.js'
 import { addInstances, addMesh, box, mergeParts, place } from './geom.js'
 import { FACADE_X, PLAZA } from './layout.js'
-import { addLampPosts, LAMP_INTENSITY } from './lamp-post.js'
+import { addCentreLamp, CENTRE_LAMP_BASE } from './centre-lamp.js'
+import { addLampPosts, LAMP_GLOW } from './lamp-post.js'
+import { addLightPools } from './light-pools.js'
 import { addPlanters } from './planter.js'
 
 // Cobbles in front of the west facade, plus the street furniture. The plaza
@@ -148,15 +150,24 @@ function addShelter(parent, materials, stats) {
   addMesh(parent, mergeParts(posts), materials.iron, { name: 'landing-shelter-posts' }, stats)
 }
 
-// Five posts, none of them on the walk from the spawn to the doors.
-// Two mark the west edge of the plaza, two sit beside the steps, and the
-// south-west one flickers. The sight line stays dark between the pools.
+// The pair flanks the street opening behind the spawn; the southern one
+// flickers. The centrepiece sits south of the door axis so the title shot
+// and the walk to the doors stay clear, and its pool covers the spawn.
 const LAMPS = [
-  { x: 10.55, y: 0.05, z: 7.2 },
-  { x: 10.55, y: 0.05, z: 31.6 },
-  { x: 10.35, y: 0.05, z: 12.4, flicker: true },
-  { x: 19.5, y: 0.05, z: 12.6 },
-  { x: 19.5, y: 0.05, z: 24.8 }
+  { x: 9.55, y: 0.05, z: 9.4, flicker: true },
+  { x: 9.55, y: 0.05, z: 17.8 }
+]
+
+const CENTRE_LAMP = { x: 16.2, y: 0.05, z: 13.4 }
+
+// Painted pools, in the order the flicker expects: index 1 is the
+// flickering post.
+const POOL_STRENGTH = { centre: 2.1, entrance: 1.55, steps: 0.75 }
+const POOLS = [
+  { x: CENTRE_LAMP.x, z: CENTRE_LAMP.z, radius: 5.6, strength: POOL_STRENGTH.centre },
+  { x: LAMPS[0].x, z: LAMPS[0].z, radius: 4.3, strength: POOL_STRENGTH.entrance },
+  { x: LAMPS[1].x, z: LAMPS[1].z, radius: 4.3, strength: POOL_STRENGTH.entrance },
+  { x: 19.3, z: 18.6, radius: 3.4, strength: POOL_STRENGTH.steps }
 ]
 
 const BENCHES = [
@@ -204,6 +215,7 @@ function yawBox(x, z, halfX, halfZ, yaw = 0, pad = 0.12) {
 function forecourtColliders() {
   const boxes = []
   for (const lamp of LAMPS) boxes.push(yawBox(lamp.x, lamp.z, 0.24, 0.24))
+  boxes.push(yawBox(CENTRE_LAMP.x, CENTRE_LAMP.z, CENTRE_LAMP_BASE, CENTRE_LAMP_BASE, 0, 0.06))
   for (const bench of BENCHES) boxes.push(yawBox(bench.x, bench.z, 0.28, 0.78, bench.yaw || 0))
   for (const planter of PLANTERS) boxes.push(yawBox(planter.x, planter.z, 0.52, 0.52))
   for (const car of CARS) boxes.push(yawBox(car.x, car.z, 0.85, 2.2, car.yaw || 0, 0.2))
@@ -232,7 +244,9 @@ export function buildForecourt(parent, materials, stats) {
   addLuggage(parent, materials, stats)
   addShelter(parent, materials, stats)
 
-  addLampPosts(parent, LAMPS, materials, stats)
+  const flickerGlow = addLampPosts(parent, LAMPS, materials, stats)
+  addCentreLamp(parent, CENTRE_LAMP, materials, stats)
+  const pools = addLightPools(parent, POOLS, materials.cobble.map, stats)
   addBenches(parent, BENCHES, materials, stats)
   addPlanters(parent, PLANTERS, materials, stats)
   addCars(parent, CARS, materials, stats)
@@ -254,7 +268,6 @@ export function buildForecourt(parent, materials, stats) {
   parent.add(steam.points)
   stats.draws += 1
 
-  const flicker = parent.getObjectByName('landing-lamp-flicker')
   let time = 0
   function update(delta) {
     time += delta
@@ -262,7 +275,7 @@ export function buildForecourt(parent, materials, stats) {
     for (let i = 0; i < banners.length; i += 1) {
       banners[i].rotation.y = Math.sin(time * 0.65 + i * 1.7) * 0.12
     }
-    if (flicker) {
+    if (flickerGlow) {
       const a = Math.sin(time * 2.3)
       const b = Math.sin(time * 7.1 + 1.4)
       const c = Math.sin(time * 14.2 + Math.sin(time * 0.6) * 3.0)
@@ -270,9 +283,10 @@ export function buildForecourt(parent, materials, stats) {
       let level = 0.72 + 0.28 * (0.5 + 0.5 * b)
       if (mix > 0.62) level *= 0.08
       else if (mix > 0.38) level *= 0.4
-      flicker.intensity = LAMP_INTENSITY * level
+      flickerGlow.emissiveIntensity = LAMP_GLOW * Math.max(0.12, level)
+      pools.setStrength(1, POOL_STRENGTH.entrance * level)
     }
   }
 
-  return { update, colliders: forecourtColliders() }
+  return { update, pools, colliders: forecourtColliders() }
 }

@@ -358,16 +358,16 @@ export function buildFacade(parent, materials, stats) {
   }
   for (const z of [leftZs[0], leftZs[leftZs.length - 1], rightZs[0], rightZs[rightZs.length - 1]]) {
     lanterns.push({ x: FACADE_X - 0.28, y: 3.15, z, light: false })
-    lanterns.push({ x: FACADE_X - 0.28, y: 7.15, z, light: z === leftZs[0] || z === rightZs[rightZs.length - 1] })
+    lanterns.push({ x: FACADE_X - 0.28, y: 7.15, z, light: false })
   }
-  // Two lamps tucked under the canopy, plus one low spill across the treads.
-  for (const side of [-1, 1]) {
-    const light = new THREE.PointLight(0xffb56a, 5, 3.4, 2)
-    light.name = 'landing-canopy-light'
-    light.castShadow = false
-    light.position.set(FACADE_X - 1.8, 3.6, canopyZ + side * 1.6)
-    parent.add(light)
-  }
+  // The forecourt keeps its real lights to the doors and the centre lamp,
+  // few enough that every one holds a light-pool slot permanently. One lamp
+  // under the canopy, plus one low spill across the treads.
+  const canopyLight = new THREE.PointLight(0xffb56a, 8, 4.4, 2)
+  canopyLight.name = 'landing-canopy-light'
+  canopyLight.castShadow = false
+  canopyLight.position.set(FACADE_X - 1.8, 3.6, canopyZ)
+  parent.add(canopyLight)
   const spill = new THREE.PointLight(0xffb060, 6, 3.2, 2)
   spill.name = 'landing-door-spill'
   spill.castShadow = false
