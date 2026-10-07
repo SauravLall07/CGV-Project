@@ -129,11 +129,13 @@ export const SKY_EVALUATE_GLSL = /* glsl */ `
     skyColor += (warm + cool) * streak * uCloudAmount;
 
     float moonFacing = dot(direction, moonDir);
-    // Disc is about 1.5° across. The halo is a thin ring just outside it,
-    // not a wide pow() glow.
+    // Disc is about 1.5° across. The halo is a thin ring just outside it.
+    // The disc used to be written at 5× linear, which bloom turned into a
+    // blob. It now sits just above the bloom threshold, so the disc stays
+    // white and only a small halo blooms.
     float moonDisc = smoothstep(0.9998, 0.99992, moonFacing);
-    float moonHalo = smoothstep(0.9988, 0.9998, moonFacing) * (1.0 - moonDisc);
-    skyColor += vec3(0.92, 0.94, 1.0) * (moonDisc * 5.0 + moonHalo * 0.22) * uMoonStrength;
+    float moonHalo = smoothstep(0.99955, 0.9998, moonFacing) * (1.0 - moonDisc);
+    skyColor += vec3(0.96, 0.97, 1.0) * (moonDisc * 1.28 + moonHalo * 0.2) * uMoonStrength;
 
     // Stars on a 3D grid of the view direction. The old atan2 cell
     // wrapped at one meridian and drew a vertical line of mismatched stars.

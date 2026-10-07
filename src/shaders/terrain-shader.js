@@ -188,14 +188,19 @@ export function createTerrainShaderMaterial(options = {}) {
         vec3 groundTex = mix(groundFine, groundBroad, tileMix);
         // Patches many metres across, so the soil is not one flat tint.
         float patch = noise(vWorldPosition.xz * 0.011);
-        groundTex *= mix(vec3(0.74, 0.80, 0.70), vec3(1.08, 1.00, 0.88), patch);
+        // Stay in the green. The old high end (1.08, 1.00, 0.88) lifted the
+        // red leaf-litter in the photo, and the blue night multiply turned
+        // those patches magenta.
+        groundTex *= mix(vec3(0.66, 0.86, 0.60), vec3(0.80, 1.06, 0.68), patch);
         vec3 rockTex = pow(texture2D(uRockMap, rockUv).rgb, vec3(2.2));
         vec3 photo = mix(groundTex, rockTex, cliffFactor);
         // Daylight photos are too green and too saturated for moonlight.
         // Pull them toward a cool grey so the grain stays and the hue does not.
         float photoLuma = dot(photo, vec3(0.299, 0.587, 0.114));
         photo = mix(photo, vec3(photoLuma), 0.32);
-        photo *= vec3(0.82, 0.88, 1.0);
+        photo.r = min(photo.r, max(photo.g, 0.02) * 0.88);
+        photo.b = min(photo.b, photo.g * 1.02);
+        photo *= vec3(0.76, 0.98, 0.78);
         // Meadow bed under the spawn grass. Gaps were reading as bright
         // dirt. This pulls that band toward a dark cool green-brown
         // while the patch variation above still shows through.

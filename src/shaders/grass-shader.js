@@ -105,7 +105,7 @@ export function createGrassShaderMaterial(options = {}) {
 
       // Colour is chosen here and only painted in the fragment shader.
       // A cool, slightly yellow tip over a bluer root.
-      vTint = mix(vec3(0.72, 0.82, 0.68), vec3(1.08, 1.16, 0.78), nC);
+      vTint = mix(vec3(0.52, 0.84, 0.50), vec3(0.68, 1.06, 0.58), nC);
 
       vec3 n = normalize(vec3(0.0, lean * 0.35, 1.0));
       vNormal = normalize(worldRot * n);
