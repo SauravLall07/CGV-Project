@@ -79,6 +79,14 @@ function createMaterials() {
   nightView.emissiveMap = nightView.map
   const carriageWindow = textured(drawCarriageWindow, 'carriage-window', [1, 1], { roughness: 0.12, metalness: 0.1, emissive: 0xffffff, emissiveIntensity: 1.25 })
   carriageWindow.emissiveMap = carriageWindow.map
+  const signs = new Map()
+  const sign = (text, options = {}) => {
+    const key = `${text}:${JSON.stringify(options)}`
+    if (!signs.has(key)) {
+      signs.set(key, signMaterial({ text, background: 0x14110d, foreground: 0xe0b45c, width: 512, height: 112, emissiveIntensity: 0.7, ...options }))
+    }
+    return signs.get(key)
+  }
 
   return {
     // Walls and floors.
@@ -121,6 +129,14 @@ function createMaterials() {
     departures,
     nightView,
     ticketSign: signMaterial({ text: 'TICKETS · BILLETS', background: 0x14110d, foreground: 0xe0b45c, width: 512, height: 96, emissiveIntensity: 0.8 }),
+    sign,
+    paper: standard({ color: 0xe2d8bf, roughness: 0.92 }),
+    newsprint: standard({ color: 0xb9b2a2, roughness: 0.95 }),
+    cork: standard({ color: 0x8a6440, roughness: 0.96 }),
+    coat: standard({ color: 0x24272e, roughness: 0.92 }),
+    coatTan: standard({ color: 0x6e5a3e, roughness: 0.9 }),
+    bakelite: standard({ color: 0x0e0d0c, roughness: 0.28, metalness: 0.1 }),
+    locker: standard({ color: 0x34503f, roughness: 0.5, metalness: 0.45 }),
     glass: standard({ color: 0x1a2228, roughness: 0.08, metalness: 0.6, transparent: true, opacity: 0.45 }),
     frond: standard({
       map: kitTexture('frond', drawFrond),

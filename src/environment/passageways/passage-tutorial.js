@@ -13,6 +13,7 @@ import {
   createTimedLaserController
 } from './passage-components.js'
 import { addPassageShell } from './passage-exterior.js'
+import { dressArrivalHall } from './arrival-hall.js'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import {
   at,
@@ -338,7 +339,8 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   const decor = createKitBuilder()
   const domeDown = new THREE.Matrix4().makeRotationX(Math.PI)
   for (const x of [-89, -84, -79, -74, -69].map(worldX)) {
-    bulkheadLamp(decor, k, at(x, ROOM_HEIGHT - 0.1, CORRIDOR_Z).multiply(domeDown))
+    // The first light sits over the arrival hall, under a brass pendant.
+    if (x !== worldX(-89)) bulkheadLamp(decor, k, at(x, ROOM_HEIGHT - 0.1, CORRIDOR_Z).multiply(domeDown))
 
     const light = new THREE.PointLight(0xffc98a, 15, 9, 2)
     light.position.set(x, 4.55, CORRIDOR_Z)
@@ -684,6 +686,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     name: 'tutorial-wall-dressing',
     clear: [{ minX: worldX(-83.5) - 0.7, maxX: worldX(-83.5) + 0.7, minZ: -28, maxZ: -27 }]
   })
+  dressArrivalHall(group, colliders)
   const northFace = CORRIDOR_Z - CORRIDOR_WIDTH / 2 + 0.12
   const southFace = CORRIDOR_Z + CORRIDOR_WIDTH / 2 - 0.12
 

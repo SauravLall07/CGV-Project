@@ -404,6 +404,172 @@ export function ticketBooth(b, k, M, width = 4) {
   b.add(k.leather, kbox(0.32, 0.03, 0.22, -width * 0.25, 1.125, depth - 0.02, 0), M)
 }
 
+// Ticket office against a wall: panelled counter, `windows` teller windows
+// behind arched brass bars, a banker's lamp, ledger and papers at each, a
+// bell, and the TICKETS fascia. Origin at the wall, centred, facing +Z.
+// Footprint x ±(width / 2 + 0.07), z 0..0.62.
+export function ticketOffice(b, k, M, width = 3, windows = 3) {
+  const depth = 0.5
+  const top = 2.5
+  const ww = width / windows
+  b.add(k.wood, kbox(width, 1.05, depth, 0, 0.525, depth / 2), M, true)
+  const panels = windows * 2
+  const pw = (width - 0.16) / panels
+  for (let i = 0; i < panels; i += 1) {
+    const x = -width / 2 + 0.08 + pw * (i + 0.5)
+    b.add(k.wainscot, kbox(pw - 0.1, 0.62, 0.025, x, 0.56, depth + 0.012), M)
+    b.add(k.brass, kbox(pw - 0.06, 0.02, 0.03, x, 0.9, depth + 0.015), M)
+  }
+  b.add(k.greenDark, kbox(width + 0.04, 0.14, 0.04, 0, 0.07, depth + 0.02), M)
+  b.add(k.wood, kbox(width + 0.14, 0.06, depth + 0.12, 0, 1.08, depth / 2 + 0.06), M)
+  b.add(k.brass, kbox(width + 0.16, 0.025, 0.03, 0, 1.1, depth + 0.12), M)
+
+  // Screen: posts between the windows, the lit office behind, the fascia.
+  for (let i = 0; i <= windows; i += 1) {
+    const x = THREE.MathUtils.clamp(-width / 2 + i * ww, -width / 2 + 0.06, width / 2 - 0.06)
+    b.add(k.wood, kbox(0.12, top - 1.11, 0.14, x, (top + 1.11) / 2, 0.1), M)
+  }
+  const office = new THREE.PlaneGeometry(width - 0.1, top - 1.12)
+  office.translate(0, (top + 1.12) / 2, 0.015)
+  b.add(k.lampShade, office, M)
+  b.add(k.wood, kbox(width + 0.1, 0.46, 0.22, 0, top + 0.23, 0.11), M)
+  b.add(k.brass, kbox(width + 0.12, 0.03, 0.04, 0, top + 0.01, 0.21), M)
+  const sign = new THREE.PlaneGeometry(Math.min(width - 0.3, 2.8), 0.3)
+  sign.translate(0, top + 0.24, 0.222)
+  b.add(k.ticketSign, sign, M)
+
+  for (let i = 0; i < windows; i += 1) {
+    const cx = -width / 2 + (i + 0.5) * ww
+    const half = ww / 2 - 0.08
+    const archY = top - 0.08 - half * 0.55
+    b.add(k.brass, kbox(half * 2, 0.03, 0.03, cx, 1.42, 0.14), M)
+    b.add(k.brass, kbox(half * 2, 0.03, 0.03, cx, top - 0.05, 0.14), M)
+    const arch = new THREE.TorusGeometry(half, 0.014, 5, 18, Math.PI)
+    arch.scale(1, 0.55, 1)
+    arch.translate(cx, archY, 0.14)
+    b.add(k.brass, arch, M)
+    for (let dx = -half + 0.07; dx < half - 0.04; dx += 0.075) {
+      const yTop = archY + 0.55 * Math.sqrt(Math.max(0, half * half - dx * dx))
+      b.add(k.brass, cylinder(0.006, 0.006, yTop - 1.42, 5, cx + dx, (yTop + 1.42) / 2, 0.14), M)
+    }
+    // Pass-through trough, lamp, ledger, papers.
+    b.add(k.brass, kbox(0.42, 0.012, 0.26, cx, 1.116, 0.26), M)
+    bankersLamp(b, k, local(M, cx + ww * 0.3, 1.11, 0.44))
+    b.add(k.leather, kbox(0.3, 0.035, 0.22, 0, 0, 0), local(M, cx - ww * 0.28, 1.128, 0.42, 0.12 * (i - 1)))
+    b.add(k.paper, kbox(0.21, 0.006, 0.29, 0, 0, 0), local(M, cx - ww * 0.05, 1.114, 0.5, -0.2 + 0.15 * i))
+    b.add(k.paper, kbox(0.21, 0.006, 0.29, 0, 0, 0), local(M, cx - ww * 0.07, 1.12, 0.48, 0.1))
+    const plaque = new THREE.CircleGeometry(0.07, 16)
+    plaque.translate(cx, top - 0.2, 0.16)
+    b.add(k.brass, plaque, M)
+  }
+  // Service bell on the middle window.
+  const bx = -width / 2 + (Math.floor(windows / 2) + 0.5) * ww + 0.18
+  b.add(k.iron, cylinder(0.055, 0.06, 0.018, 14, bx, 1.12, 0.52), M)
+  const dome = new THREE.SphereGeometry(0.045, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2)
+  dome.translate(bx, 1.128, 0.52)
+  b.add(k.brass, dome, M)
+  b.add(k.brass, cylinder(0.008, 0.008, 0.03, 6, bx, 1.185, 0.52), M)
+}
+
+// Upright suitcase: leather, brass corners and clasps, a handle on top.
+// Stands on y = 0; w along X, d along Z. `lying` puts the handle on the
+// front face, for a case laid flat in a stack.
+export function suitcase(b, k, M, w = 0.6, h = 0.42, d = 0.18, { material = null, lying = false } = {}) {
+  b.add(material ?? k.leather, kbox(w, h, d, 0, h / 2, 0), M, true)
+  if (lying) b.add(k.wood, kbox(w + 0.008, 0.02, d + 0.008, 0, h * 0.5, 0), M)
+  else b.add(k.wood, kbox(w + 0.008, h + 0.008, 0.02, 0, h / 2, 0), M)
+  const c = 0.04
+  for (const sx of [-1, 1]) {
+    for (const sy of [0, 1]) {
+      for (const sz of [-1, 1]) {
+        b.add(k.brass, kbox(c, c, c, sx * (w / 2 - c / 2 + 0.003), sy ? h - c / 2 + 0.003 : c / 2 - 0.003, sz * (d / 2 - c / 2 + 0.003)), M)
+      }
+    }
+  }
+  const handle = new THREE.TorusGeometry(0.065, 0.012, 5, 10, Math.PI)
+  if (lying) {
+    handle.rotateX(Math.PI / 2)
+    handle.translate(0, h / 2, d / 2)
+    for (const x of [-w * 0.3, w * 0.3]) b.add(k.brass, kbox(0.05, 0.035, 0.012, x, h - 0.04, d / 2 + 0.006), M)
+  } else {
+    handle.translate(0, h, 0)
+    for (const x of [-w * 0.3, w * 0.3]) b.add(k.brass, kbox(0.05, 0.012, 0.035, x, h + 0.006, 0), M)
+  }
+  b.add(k.leather, handle, M)
+}
+
+// Newspaper stand: green iron frame, two slanted tiers of papers, bundles
+// on the low shelf and a NEWSPAPERS header. Stands on y = 0 with its back
+// at z = 0, facing +Z. Footprint x ±0.36, z 0..0.46.
+export function newspaperStand(b, k, M) {
+  for (const x of [-0.33, 0.33]) {
+    b.add(k.green, kbox(0.04, 1.62, 0.04, x, 0.81, 0.04), M)
+    b.add(k.green, kbox(0.04, 0.95, 0.04, x, 0.475, 0.42), M)
+    b.add(k.green, kbox(0.04, 0.04, 0.42, x, 0.3, 0.23), M)
+  }
+  b.add(k.green, kbox(0.7, 0.03, 0.42, 0, 0.3, 0.23), M)
+  for (const [y, z] of [[0.72, 0.3], [1.08, 0.18]]) {
+    const tier = kbox(0.66, 0.02, 0.3, 0, 0, 0)
+    tier.rotateX(0.55)
+    tier.translate(0, y, z)
+    b.add(k.green, tier, M)
+    for (const x of [-0.16, 0.16]) {
+      const paper = kbox(0.28, 0.025, 0.24, 0, 0, 0)
+      paper.rotateX(0.55)
+      paper.translate(x, y + 0.025, z + 0.012)
+      b.add(k.newsprint, paper, M)
+      const masthead = new THREE.PlaneGeometry(0.24, 0.035)
+      masthead.rotateX(-Math.PI / 2 + 0.55)
+      masthead.translate(x, y + 0.08, z - 0.07)
+      b.add(k.iron, masthead, M)
+    }
+  }
+  for (const x of [-0.17, 0.17]) {
+    b.add(k.newsprint, kbox(0.3, 0.16, 0.24, x, 0.395, 0.24), M)
+    b.add(k.wood, kbox(0.02, 0.165, 0.245, x, 0.395, 0.24), M)
+  }
+  b.add(k.green, kbox(0.72, 0.2, 0.04, 0, 1.52, 0.04), M)
+  const header = new THREE.PlaneGeometry(0.66, 0.15)
+  header.translate(0, 1.52, 0.062)
+  b.add(k.sign('NEWSPAPERS', { height: 96 }), header, M)
+}
+
+// Station waste bin: an iron drum, a green band, a brass rim and a dark
+// mouth. Stands on y = 0; radius 0.19.
+export function wasteBin(b, k, M) {
+  b.add(k.iron, cylinder(0.18, 0.16, 0.72, 16, 0, 0.36, 0), M, true)
+  b.add(k.green, cylinder(0.186, 0.182, 0.14, 16, 0, 0.5, 0), M)
+  const rim = new THREE.TorusGeometry(0.18, 0.014, 5, 20)
+  rim.rotateX(Math.PI / 2)
+  rim.translate(0, 0.72, 0)
+  b.add(k.brass, rim, M)
+  b.add(k.soil, cylinder(0.168, 0.168, 0.01, 16, 0, 0.705, 0), M)
+  b.add(k.iron, cylinder(0.17, 0.17, 0.03, 16, 0, 0.015, 0), M)
+}
+
+// Enamel wall sign in a brass frame. Origin at the wall, centred, facing +Z.
+export function wallSign(b, k, M, material, w = 1.6, h = 0.34) {
+  b.add(k.greenDark, kbox(w + 0.08, h + 0.08, 0.04, 0, 0, 0.02), M)
+  b.add(k.brass, kbox(w + 0.02, h + 0.02, 0.045, 0, 0, 0.022), M)
+  const face = new THREE.PlaneGeometry(w, h)
+  face.translate(0, 0, 0.046)
+  b.add(material, face, M)
+}
+
+// Double-sided sign hung from the ceiling on two rods. Origin at the board
+// centre, faces along ±Z; the rods rise `hang` metres.
+export function hangingSign(b, k, M, material, w = 2, h = 0.4, hang = 1) {
+  b.add(k.greenDark, kbox(w + 0.08, h + 0.08, 0.06, 0, 0, 0), M)
+  for (const side of [1, -1]) {
+    const face = new THREE.PlaneGeometry(w, h)
+    if (side < 0) face.rotateY(Math.PI)
+    face.translate(0, 0, side * 0.032)
+    b.add(material, face, M)
+  }
+  b.add(k.brass, kbox(w + 0.1, 0.03, 0.08, 0, h / 2 + 0.05, 0), M)
+  for (const x of [-w * 0.4, w * 0.4]) b.add(k.brass, cylinder(0.012, 0.012, hang, 6, x, h / 2 + 0.05 + hang / 2, 0), M)
+}
+
 // Departure board on two hanging rods. Origin at the board centre, facing +Z.
 export function departureBoard(b, k, M, w = 2.4, h = 1.2, hang = 1.4) {
   b.add(k.iron, kbox(w + 0.16, h + 0.16, 0.12, 0, 0, -0.02), M)
