@@ -50,7 +50,7 @@ const ZONES = [
     name: 'p3',
     region: 'p3',
     box: { ...BRIDGE_PASSAGE_BOUNDS },
-    show: ['p2', 'p3', 'p4', 'platform']
+    show: ['p2', 'p3', 'p4']
   },
   {
     name: 'p4-west',

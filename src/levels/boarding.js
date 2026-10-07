@@ -27,6 +27,8 @@ import { createLightPool, POINT_LIGHT_POOL_SIZE, TORCH_SPOT_POOL_SIZE } from '..
 import { createLandingScene } from '../environment/landing/index.js'
 import { CENTER_Z, FACADE_X, LANDING_FIGURE, PLAZA } from '../environment/landing/layout.js'
 import { createZoneVisibility } from './boarding-zones.js'
+import { capRegionLights } from './boarding-lighting.js'
+import { resetKitMaterials } from '../environment/level1-kit/kit-materials.js'
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -53,15 +55,17 @@ export function createBoardingLevel({
   timeSystem?.setMode?.('NORMAL')
   timeSystem?.setAbilityAvailability?.({ SLOW: false, FREEZE: false, REWIND: false, GHOST: false })
   hud?.setChronoVisible?.(false)
-  const { group: station, boardingControl, wallColliders } = createStationBlockout({ includePlaceholders: false })
+  resetKitMaterials()
+  const { group: station, boardingControl, wallColliders, hallDressing } = createStationBlockout({ includePlaceholders: false })
   // East of the rails, outside the walkable bounds. Not a child of `station`,
   // so it is not an interaction blocker and guards do not treat it as cover.
   const landing = createLandingScene()
   landing.town.visible = false
-  let plazaPointLights = 0
+  const landingPointLights = []
   landing.group.traverse((node) => {
-    if (node.isPointLight) plazaPointLights += 1
+    if (node.isPointLight) landingPointLights.push(node)
   })
+  const plazaPointLights = landingPointLights.length
 
   // Shared finite inventory for throwable guard distractions. Passageways 2
   // and 3 both read/write this same object, so pickups carry across the vent.
@@ -157,9 +161,8 @@ export function createBoardingLevel({
 
   // Lights the forecourt never needs. Every visible light runs in every lit
   // shader, even at intensity 0: the mountain floods, the empty torch slots,
-  // and the point slots past the forecourt's own lights. The sconces are in
-  // the platform region, which the forecourt does not draw, so the forecourt
-  // lights always hold the first pool slots.
+  // and the point slots past the forecourt's own lights. The station regions
+  // are not drawn from the forecourt, so its lights hold the first slots.
   function plazaSpareLights() {
     const spare = [...lights.spotLights]
     for (const node of lightPools.children) {
@@ -201,6 +204,9 @@ export function createBoardingLevel({
     // after them with a depth test and only shades the pixels left over.
     sky.mesh.material.depthTest = !zone.outdoor
     sky.mesh.renderOrder = zone.outdoor ? -1000 : 1000
+    // Off the cobbles the landing is only scenery across the track; its
+    // lamps would take pool slots from the station's.
+    for (const light of landingPointLights) light.userData.lightPoolOff = zone.name !== 'plaza'
   }
   const zones = createZoneVisibility({
     dynamic: () => scene.children.filter((child) => STEALTH_NAMES.has(child.name)),
@@ -246,13 +252,7 @@ export function createBoardingLevel({
     nature: getBoardingAssets()
   })
 
-  // The concourse sconces, grouped so the forecourt can switch them off together.
-  const stationSconces = new THREE.Group()
-  stationSconces.name = 'station-sconces'
-  scene.add(sky.mesh, outdoorEnv.group, station, train, landing.group, stationSconces, ...lights)
-  for (const node of lights) {
-    if (node.isPointLight) stationSconces.add(node)
-  }
+  scene.add(sky.mesh, outdoorEnv.group, station, hallDressing, train, landing.group, ...lights)
 
   // One environment map from the sky dome. Dim, so a shadowed wall is a
   // dark blue-grey and rough metal does not pick up a bright reflection.
@@ -745,27 +745,6 @@ export function createBoardingLevel({
   const passage4CheckpointPos = bridgePassage.exitCheckpoint.clone()
   let passage4CheckpointActive = false
 
-  // Sources stay hidden. These slots are the only point lights, guard
-  // torches and the locomotive headlamp the shader ever sees, and the count
-  // does not change at runtime.
-  const lightPools = new THREE.Group()
-  lightPools.name = 'boarding-light-pools'
-  scene.add(lightPools)
-  const pointRoots = [station, train, landing.group, stationSconces]
-  const pointPool = createLightPool({
-    roots: pointRoots,
-    host: lightPools,
-    size: POINT_LIGHT_POOL_SIZE
-  })
-  const torchPool = createLightPool({
-    root: scene,
-    host: lightPools,
-    size: TORCH_SPOT_POOL_SIZE,
-    accept: (node) => node.name === 'torch-spot' || node.name === 'headlamp-spot',
-    name: 'torch-pool',
-    kind: 'spot'
-  })
-
   // Zone regions. The passages are already one group each. The rest of the
   // station is split into the hall (Passageway 4, west of the rear wall) and
   // the platform, by where each piece sits. Region groups, rather than the
@@ -790,15 +769,54 @@ export function createBoardingLevel({
     ;(x < -5 ? hallRegion : platformRegion).add(child)
   }
   station.add(hallRegion, platformRegion)
-  zones.addRegion('p0', onboardingPassage.group)
-  zones.addRegion('p1', tutorialPassage.group)
-  zones.addRegion('p2', guardPassage.group)
-  zones.addRegion('p3', bridgePassage.group)
-  zones.addRegion('p4', hallRegion)
-  zones.addRegion('platform', platformRegion, stationSconces)
+
+  // A fixed handful of real lights per region; see boarding-lighting.js.
+  // Worst case is the west hall: Passageway 3, the hall and the platform.
+  const lampPools = new THREE.Group()
+  lampPools.name = 'lamp-floor-glows'
+  scene.add(lampPools)
+  const regionLights = [
+    { root: onboardingPassage.group, keep: 2, pools: new THREE.Group() },
+    { root: tutorialPassage.group, keep: 3, pools: new THREE.Group() },
+    { root: guardPassage.group, keep: 2, pools: new THREE.Group() },
+    { root: bridgePassage.group, keep: 2, pools: new THREE.Group() },
+    { root: hallRegion, keep: 3, pools: new THREE.Group() },
+    { root: platformRegion, keep: 3, pools: new THREE.Group() }
+  ]
+  for (const region of regionLights) {
+    capRegionLights([region], region.pools)
+    lampPools.add(region.pools)
+  }
+
+  zones.addRegion('p0', onboardingPassage.group, regionLights[0].pools)
+  zones.addRegion('p1', tutorialPassage.group, regionLights[1].pools)
+  zones.addRegion('p2', guardPassage.group, regionLights[2].pools)
+  zones.addRegion('p3', bridgePassage.group, regionLights[3].pools)
+  zones.addRegion('p4', hallRegion, hallDressing, regionLights[4].pools)
+  zones.addRegion('platform', platformRegion, regionLights[5].pools)
   zones.addRegion('train', train)
   zones.addRegion('landing', landing.group)
   zones.addRegion('outdoor', outdoorEnv.group)
+
+  // Sources stay hidden. These slots are the only point lights, guard
+  // torches and the locomotive headlamp the shader ever sees, and the count
+  // does not change at runtime.
+  const lightPools = new THREE.Group()
+  lightPools.name = 'boarding-light-pools'
+  scene.add(lightPools)
+  const pointPool = createLightPool({
+    roots: [station, train, landing.group],
+    host: lightPools,
+    size: POINT_LIGHT_POOL_SIZE
+  })
+  const torchPool = createLightPool({
+    root: scene,
+    host: lightPools,
+    size: TORCH_SPOT_POOL_SIZE,
+    accept: (node) => node.name === 'torch-spot' || node.name === 'headlamp-spot',
+    name: 'torch-pool',
+    kind: 'spot'
+  })
 
   const stationObjective = 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express'
   const veil = document.createElement('div')
@@ -1044,8 +1062,8 @@ export function createBoardingLevel({
         skyTarget.dispose()
         skyTarget = null
       }
-      scene.remove(sky.mesh, outdoorEnv.group, station, train, landing.group, stationSconces, ...lights, lightPools)
-      disposeObject([station, train, landing.group, ...lights, lightPools])
+      scene.remove(sky.mesh, outdoorEnv.group, station, hallDressing, train, landing.group, ...lights, lightPools, lampPools)
+      disposeObject([station, hallDressing, train, landing.group, ...lights, lightPools, lampPools])
     }
   }
 }

@@ -76,8 +76,10 @@ export function createLightPool({ root, roots, host, size = POINT_LIGHT_POOL_SIZ
     return true
   }
 
+  // `lightPoolOff` lets a level park a source without touching its
+  // intensity, which an animation may own.
   function sourceOn(source) {
-    return source.light.intensity > 0 && ancestorsVisible(source.light)
+    return source.light.intensity > 0 && !source.light.userData.lightPoolOff && ancestorsVisible(source.light)
   }
 
   function place(object, from) {

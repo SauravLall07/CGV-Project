@@ -11,6 +11,24 @@ import {
   woodMaterial
 } from './textures.js'
 import { settings, shadowMapSize } from '../core/settings.js'
+import { getKitMaterials } from './level1-kit/kit-materials.js'
+import {
+  at,
+  createKitBuilder,
+  crate,
+  cushionedBench,
+  departureBoard,
+  framedPoster,
+  kbox,
+  luggageTrolley,
+  metreUv,
+  pendantLamp,
+  pottedPalm,
+  ticketBooth,
+  trunk,
+  wallClock
+} from './level1-kit/kit-props.js'
+import { addWallGlows } from './landing/light-pools.js'
 
 // Level 1's station: a covered platform with a marble concourse, cast-iron
 // columns under a glazed train shed, a panelled rear wall with lit arched
@@ -252,13 +270,18 @@ function createApproachCorridor() {
   const length = corridorEndX - APPROACH_START_X
   const centerX = (APPROACH_START_X + corridorEndX) / 2
 
-  const floorMat = marbleFloorMaterial({ repeat: [20, 3], base: 0xa89a86, vein: 0x6a6053, grout: 0x453e35 })
-  const wallMat = plasterMaterial({ repeat: [16, 3], base: 0x796d5e, roughness: 0.88 })
-  const panelMat = woodMaterial({ repeat: [14, 2], light: 0x7c5330, dark: 0x3d2615 })
-  const ironMat = metalMaterial({ repeat: [10, 1], base: 0x33413c, roughness: 0.55, metalness: 0.6 })
-  const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.9 })
+  // The ticket hall of reference 02: cream plaster over dark panelling, a
+  // checkerboard floor, green trim and brass. Shapes and colliders are the
+  // blockout's; only the surfaces and the dressing are new.
+  const k = getKitMaterials()
+  const kit = createKitBuilder()
+  const floorMat = k.checker
+  const wallMat = k.plaster
+  const panelMat = k.wainscot
+  const brassMat = k.brass
+  const trimMat = k.green
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(length, APPROACH_WIDTH), floorMat)
+  const floor = new THREE.Mesh(metreUv(new THREE.PlaneGeometry(length, APPROACH_WIDTH), 2.4), floorMat)
   floor.rotation.x = -Math.PI / 2
   floor.position.set(centerX, 0.01, APPROACH_CENTER_Z)
   floor.receiveShadow = true
@@ -268,13 +291,13 @@ function createApproachCorridor() {
   // no longer cuts a doorway into either side wall; it meets Passageway 4 at
   // the corridor's intended western entrance instead.
   for (const z of [APPROACH_Z_MIN, APPROACH_Z_MAX]) {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(length, ROOF_Y, 0.3), wallMat)
+    const wall = new THREE.Mesh(metreUv(new THREE.BoxGeometry(length, ROOF_Y, 0.3), 3), wallMat)
     wall.position.set(centerX, ROOF_Y / 2, z)
     wall.castShadow = true
     wall.receiveShadow = true
     group.add(wall)
 
-    const wainscot = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.1, length - 0.18), 1.45, 0.08), panelMat)
+    const wainscot = new THREE.Mesh(metreUv(new THREE.BoxGeometry(Math.max(0.1, length - 0.18), 1.45, 0.08), 1.4), panelMat)
     wainscot.position.set(centerX, 0.73, z + (z === APPROACH_Z_MIN ? 0.17 : -0.17))
     group.add(wainscot)
 
@@ -300,7 +323,7 @@ function createApproachCorridor() {
   ]) {
     const spanDepth = spanMaxZ - spanMinZ
     if (spanDepth <= 0.05) continue
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(0.3, ROOF_Y, spanDepth), wallMat)
+    const wall = new THREE.Mesh(metreUv(new THREE.BoxGeometry(0.3, ROOF_Y, spanDepth), 3), wallMat)
     wall.position.set(APPROACH_START_X, ROOF_Y / 2, (spanMinZ + spanMaxZ) / 2)
     wall.castShadow = true
     wall.receiveShadow = true
@@ -314,7 +337,7 @@ function createApproachCorridor() {
   }
 
   const entranceLintel = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, ROOF_Y - STAGE3_REJOIN_HEIGHT, STAGE3_REJOIN_WIDTH),
+    metreUv(new THREE.BoxGeometry(0.3, ROOF_Y - STAGE3_REJOIN_HEIGHT, STAGE3_REJOIN_WIDTH), 3),
     wallMat
   )
   entranceLintel.position.set(
@@ -327,18 +350,18 @@ function createApproachCorridor() {
 
   const entranceJambGeometry = new THREE.BoxGeometry(0.34, STAGE3_REJOIN_HEIGHT, 0.14)
   for (const z of [openingMinZ, openingMaxZ]) {
-    const jamb = new THREE.Mesh(entranceJambGeometry, brassMat)
+    const jamb = new THREE.Mesh(entranceJambGeometry, trimMat)
     jamb.position.set(APPROACH_START_X, STAGE3_REJOIN_HEIGHT / 2, z)
     group.add(jamb)
   }
-  const entranceHeader = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, STAGE3_REJOIN_WIDTH + 0.24), brassMat)
+  const entranceHeader = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, STAGE3_REJOIN_WIDTH + 0.24), trimMat)
   entranceHeader.position.set(APPROACH_START_X, STAGE3_REJOIN_HEIGHT, APPROACH_CENTER_Z)
   group.add(entranceHeader)
 
   // Ceiling and skylight strip continue the same luxury-station architecture.
   const ceiling = new THREE.Mesh(
-    new THREE.BoxGeometry(length, 0.22, APPROACH_WIDTH + 0.5),
-    plasterMaterial({ repeat: [18, 2], base: 0x453f38, roughness: 0.95 })
+    metreUv(new THREE.BoxGeometry(length, 0.22, APPROACH_WIDTH + 0.5), 3),
+    k.ceiling
   )
   ceiling.position.set(centerX, ROOF_Y, APPROACH_CENTER_Z)
   group.add(ceiling)
@@ -362,7 +385,7 @@ function createApproachCorridor() {
     const northDepth = APPROACH_Z_MAX - doorMax
 
     if (southDepth > 0.05) {
-      const south = new THREE.Mesh(new THREE.BoxGeometry(0.3, ROOF_Y, southDepth), wallMat)
+      const south = new THREE.Mesh(metreUv(new THREE.BoxGeometry(0.3, ROOF_Y, southDepth), 3), wallMat)
       south.position.set(x, ROOF_Y / 2, APPROACH_Z_MIN + southDepth / 2)
       south.castShadow = true
       group.add(south)
@@ -370,7 +393,7 @@ function createApproachCorridor() {
     }
 
     if (northDepth > 0.05) {
-      const north = new THREE.Mesh(new THREE.BoxGeometry(0.3, ROOF_Y, northDepth), wallMat)
+      const north = new THREE.Mesh(metreUv(new THREE.BoxGeometry(0.3, ROOF_Y, northDepth), 3), wallMat)
       north.position.set(x, ROOF_Y / 2, doorMax + northDepth / 2)
       north.castShadow = true
       group.add(north)
@@ -378,7 +401,7 @@ function createApproachCorridor() {
     }
 
     const lintel = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, ROOF_Y - DOOR_HEIGHT, doorMax - doorMin),
+      metreUv(new THREE.BoxGeometry(0.3, ROOF_Y - DOOR_HEIGHT, doorMax - doorMin), 3),
       wallMat
     )
     lintel.position.set(x, DOOR_HEIGHT + (ROOF_Y - DOOR_HEIGHT) / 2, (doorMin + doorMax) / 2)
@@ -387,51 +410,41 @@ function createApproachCorridor() {
 
     const jambGeometry = new THREE.BoxGeometry(0.34, DOOR_HEIGHT, 0.12)
     for (const z of [doorMin, doorMax]) {
-      const jamb = new THREE.Mesh(jambGeometry, brassMat)
+      const jamb = new THREE.Mesh(jambGeometry, trimMat)
       jamb.position.set(x, DOOR_HEIGHT / 2, z)
       group.add(jamb)
     }
-    const header = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, doorMax - doorMin + 0.24), brassMat)
+    const header = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, doorMax - doorMin + 0.24), trimMat)
     header.position.set(x, DOOR_HEIGHT, (doorMin + doorMax) / 2)
     group.add(header)
+    // Architrave: a green cornice and a brass bead over each doorway.
+    kit.add(trimMat, kbox(0.42, 0.16, doorMax - doorMin + 0.5, x, DOOR_HEIGHT + 0.14, (doorMin + doorMax) / 2))
+    kit.add(brassMat, kbox(0.44, 0.03, doorMax - doorMin + 0.52, x, DOOR_HEIGHT + 0.23, (doorMin + doorMax) / 2))
   }
 
   corridorDoors.forEach(addCrossGate)
 
-  // Warm pendant lights repeat the visual language of the existing platform.
-  const bulbMat = new THREE.MeshStandardMaterial({
-    color: 0xfff0cc,
-    emissive: 0xffdda0,
-    emissiveIntensity: 3.2
-  })
-  const rodGeometry = new THREE.CylinderGeometry(0.03, 0.03, 1.3, 6)
-  const shadeGeometry = new THREE.ConeGeometry(0.42, 0.36, 14, 1, true)
-  const bulbGeometry = new THREE.SphereGeometry(0.12, 10, 8)
-
+  // Brass pendants. Only some keep a real light (see boarding-lighting.js);
+  // the rest glow and paint a pool on the floor.
   for (let x = -48; x <= -8; x += 8) {
-    const rod = new THREE.Mesh(rodGeometry, brassMat)
-    rod.position.set(x, ROOF_Y - 0.75, APPROACH_CENTER_Z)
-    group.add(rod)
-
-    const shade = new THREE.Mesh(shadeGeometry, brassMat)
-    shade.position.set(x, ROOF_Y - 1.5, APPROACH_CENTER_Z)
-    group.add(shade)
-
-    const bulb = new THREE.Mesh(bulbGeometry, bulbMat)
-    bulb.position.set(x, ROOF_Y - 1.62, APPROACH_CENTER_Z)
-    group.add(bulb)
+    pendantLamp(kit, k, at(x, ROOF_Y - 0.11, APPROACH_CENTER_Z), 1.45)
 
     const lamp = new THREE.PointLight(0xffc98a, 18, 11, 2)
     lamp.position.set(x, ROOF_Y - 1.7, APPROACH_CENTER_Z)
     group.add(lamp)
   }
 
-  // Reuse the existing luggage trolley and bench models as physical cover.
-  function addLuggageObstacle(x, z, rotation = 0) {
-    const luggage = createLuggage()
-    luggage.position.set(x, 0, z)
-    luggage.rotation.y = rotation
-    group.add(luggage)
+  // Cover. Colliders are the blockout's fixed boxes; the props sit inside them.
+  function addLuggageObstacle(x, z, rotation = 0, stack = false) {
+    const M = at(x, 0, z, rotation)
+    if (stack) {
+      crate(kit, k, new THREE.Matrix4().multiplyMatrices(M, at(0, 0, -0.45, 0.04)), 0.95, 0.85, 0.9)
+      crate(kit, k, new THREE.Matrix4().multiplyMatrices(M, at(0.05, 0.85, -0.42, -0.18)), 0.55, 0.42, 0.55)
+      trunk(kit, k, new THREE.Matrix4().multiplyMatrices(M, at(0, 0, 0.52, Math.PI / 2)), 0.9, 0.5, 0.62)
+      trunk(kit, k, new THREE.Matrix4().multiplyMatrices(M, at(0, 0.5, 0.5, Math.PI / 2 + 0.1)), 0.72, 0.4, 0.5)
+    } else {
+      luggageTrolley(kit, k, M)
+    }
 
     const turned = Math.abs(Math.sin(rotation)) > 0.5
     const halfX = turned ? 1.0 : 0.7
@@ -439,15 +452,8 @@ function createApproachCorridor() {
     colliders.push({ minX: x - halfX, maxX: x + halfX, minZ: z - halfZ, maxZ: z + halfZ })
   }
 
-  const benchMaterials = {
-    timber: woodMaterial({ repeat: [2, 1], light: 0x8a5c33, dark: 0x452a16 }),
-    iron: ironMat
-  }
   function addBenchObstacle(x, z, rotation = 0) {
-    const bench = createBench(0, benchMaterials)
-    bench.position.set(x, 0, z)
-    bench.rotation.y = rotation
-    group.add(bench)
+    cushionedBench(kit, k, at(x, 0, z, rotation))
 
     const turned = Math.abs(Math.sin(rotation)) > 0.5
     const halfX = turned ? 1.1 : 0.45
@@ -460,9 +466,84 @@ function createApproachCorridor() {
   addBenchObstacle(-45.0, -22.65, Math.PI / 2)
   addLuggageObstacle(-35.0, -25.85, Math.PI / 2)
   addBenchObstacle(-24.0, -22.65, Math.PI / 2)
-  addLuggageObstacle(-21.0, -26.05, 0)
+  addLuggageObstacle(-21.0, -26.05, 0, true)
   addBenchObstacle(-12.0, -26.25, Math.PI / 2)
   addLuggageObstacle(-8.5, -22.95, Math.PI / 2)
+
+  // Wall dressing. Inner faces: plaster at ±0.15 from each wall line, the
+  // panelling 0.06 proud of it.
+  const wallRuns = [
+    { face: APPROACH_Z_MIN + 0.21, out: 1 },
+    { face: APPROACH_Z_MAX - 0.21, out: -1 }
+  ]
+  const gateNear = (x, pad) => APPROACH_GATE_X.some((g) => Math.abs(g - x) < pad)
+  const stile = () => new THREE.BoxGeometry(0.08, 1.24, 0.03)
+  for (const { face, out } of wallRuns) {
+    const runLength = length - 0.4
+    kit.add(trimMat, kbox(runLength, 0.2, 0.05, centerX, 0.1, face + out * 0.02))
+    kit.add(k.wood, kbox(runLength, 0.06, 0.07, centerX, 1.42, face + out * 0.02))
+    kit.add(trimMat, kbox(runLength, 0.16, 0.12, centerX, ROOF_Y - 0.19, face))
+    kit.add(brassMat, kbox(runLength, 0.025, 0.13, centerX, ROOF_Y - 0.28, face))
+    for (let x = APPROACH_START_X + 0.8; x < corridorEndX - 0.4; x += 1.15) {
+      if (gateNear(x, 0.35)) continue
+      kit.instance('stile', stile, k.wood, at(x, 0.83, face + out * 0.015))
+    }
+  }
+  // Dark beams across the ceiling, between the pendants.
+  for (let x = APPROACH_START_X + 2; x < corridorEndX - 1; x += 4) {
+    if (gateNear(x, 0.7)) continue
+    kit.add(k.wood, kbox(0.26, 0.3, APPROACH_WIDTH - 0.3, x, ROOF_Y - 0.26, APPROACH_CENTER_Z), null, true)
+  }
+
+  // Red runner between the gates, with brass edging.
+  const runnerStops = [APPROACH_START_X + 0.4, ...APPROACH_GATE_X.flatMap((g) => [g - 0.35, g + 0.35]), corridorEndX - 0.3]
+  for (let i = 0; i < runnerStops.length; i += 2) {
+    const x0 = runnerStops[i]
+    const x1 = runnerStops[i + 1]
+    const runnerGeometry = metreUv(new THREE.PlaneGeometry(x1 - x0, 1.5), 1.5)
+    runnerGeometry.rotateX(-Math.PI / 2)
+    runnerGeometry.translate((x0 + x1) / 2, 0.022, APPROACH_CENTER_Z)
+    kit.add(k.runner, runnerGeometry)
+    for (const side of [-1, 1]) {
+      kit.add(brassMat, kbox(x1 - x0, 0.012, 0.04, (x0 + x1) / 2, 0.022, APPROACH_CENTER_Z + side * 0.77))
+    }
+  }
+
+  // Ticket office on the south wall, opposite the first bench.
+  const southFace = APPROACH_Z_MIN + 0.15
+  const northFace = APPROACH_Z_MAX - 0.15
+  ticketBooth(kit, k, at(-44.6, 0, southFace + 0.06, 0), 3.8)
+  // Framed posters between the pendants, clear of the terminal and gates.
+  ;[-43, -35, -21, -13, -3].forEach((x, i) => framedPoster(kit, k, at(x, 2.55, northFace, Math.PI), i))
+  ;[-37, -24, -14, -5].forEach((x, i) => framedPoster(kit, k, at(x, 2.55, southFace, 0), i + 1))
+  // Clocks over the first and last gate, facing the way the player comes.
+  wallClock(kit, k, at(APPROACH_GATE_X[0] - 0.16, 3.7, -25.8, -Math.PI / 2), 0.42)
+  wallClock(kit, k, at(APPROACH_GATE_X[2] - 0.16, 3.7, -25.72, -Math.PI / 2), 0.42)
+  // Warm wash above each poster, as if from the pendants.
+  addWallGlows(group, [
+    ...[-43, -35, -21, -13, -3].map((x) => ({ x, y: 3.4, z: northFace - 0.02, yaw: Math.PI / 2, width: 2.6, height: 2.6, strength: 0.16 })),
+    ...[-37, -24, -14, -5].map((x) => ({ x, y: 3.4, z: southFace + 0.02, yaw: -Math.PI / 2, width: 2.6, height: 2.6, strength: 0.16 }))
+  ], null, 0xff9e52, 'hall-wall-glow')
+
+  // Free-standing pieces that should not block guard sight: palms and the
+  // hanging departure board. They go in a group outside the station.
+  const dressing = new THREE.Group()
+  dressing.name = 'hall-dressing'
+  const loose = createKitBuilder()
+  for (const [x, z] of [
+    [-47.0, southFace + 0.35],
+    [-42.2, southFace + 0.35],
+    [APPROACH_START_X + 0.5, southFace + 0.32],
+    [APPROACH_START_X + 0.5, northFace - 0.32],
+    [APPROACH_GATE_X[1] - 0.5, southFace + 0.35],
+    [APPROACH_GATE_X[2] - 0.5, northFace - 0.35]
+  ]) {
+    pottedPalm(loose, k, at(x, 0, z, x * 1.7), 0.9)
+  }
+  departureBoard(loose, k, at(-47.6, 4.35, APPROACH_CENTER_Z, -Math.PI / 2), 2.6, 1.05, 1.4)
+  loose.build(dressing, 'hall-dressing')
+
+  kit.build(group, 'hall-kit')
 
   // Brass threshold at the exact old spawn/junction. There is no solid wall
   // here: the player reaches this arch, activates the checkpoint, then turns
@@ -480,7 +561,7 @@ function createApproachCorridor() {
   exitHeader.position.set(JUNCTION_CHECKPOINT.x, DOOR_HEIGHT, APPROACH_CENTER_Z)
   group.add(exitHeader)
 
-  return { group, colliders }
+  return { group, colliders, dressing }
 }
 
 function createPillars() {
@@ -698,31 +779,13 @@ function createPendantLamps() {
   return group
 }
 
-// Materials are passed in rather than built per bench: four benches each
-// allocating their own wood texture would be four GPU uploads of identical
-// pixels.
-function createBench(z, { timber, iron }) {
+// The kit bench keeps the blockout footprint, so the collider taken from
+// its bounds is unchanged.
+function createBench(z) {
   const bench = new THREE.Group()
-
-  const slatGeometry = new THREE.BoxGeometry(0.5, 0.07, 2)
-  for (let i = 0; i < 3; i++) {
-    const slat = new THREE.Mesh(slatGeometry, timber)
-    slat.position.set(0, 0.46, 0)
-    slat.position.x = -0.18 + i * 0.18
-    bench.add(slat)
-  }
-  // Backrest.
-  for (let i = 0; i < 2; i++) {
-    const slat = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 2), timber)
-    slat.position.set(-0.3, 0.72 + i * 0.24, 0)
-    bench.add(slat)
-  }
-  for (const side of [-0.85, 0.85]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.44, 0.1), iron)
-    leg.position.set(0, 0.22, side)
-    bench.add(leg)
-  }
-
+  const kit = createKitBuilder()
+  cushionedBench(kit, getKitMaterials(), null)
+  kit.build(bench, 'bench')
   bench.position.set(WALL_X + 0.75, 0, z)
   return bench
 }
@@ -798,42 +861,13 @@ function createStationClock() {
   return clock
 }
 
+// Porter's trolley, same extents as the blockout one (its collider comes
+// from its bounds).
 function createLuggage() {
   const group = new THREE.Group()
-
-  const leather = new THREE.MeshStandardMaterial({ color: 0x5b3a22, roughness: 0.7, metalness: 0.1 })
-  const brass = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.35, metalness: 0.9 })
-  const crateMaterial = woodMaterial({ repeat: [1, 1], light: 0x8a6a40, dark: 0x4c3620 })
-
-  // A porter's trolley with stacked trunks.
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.1, 1.8), crateMaterial)
-  deck.position.set(0, 0.32, 0)
-  deck.castShadow = true
-  group.add(deck)
-
-  for (const z of [-0.6, 0.6]) {
-    const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.16, 12), leather)
-    axle.rotation.z = Math.PI / 2
-    axle.position.set(0, 0.16, z)
-    group.add(axle)
-  }
-
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.3, 8), brass)
-  handle.position.set(0, 0.95, -0.85)
-  group.add(handle)
-
-  const trunkGeometry = new THREE.BoxGeometry(0.8, 0.42, 1.2)
-  for (let i = 0; i < 2; i++) {
-    const trunk = new THREE.Mesh(trunkGeometry, leather)
-    trunk.position.set(0, 0.58 + i * 0.44, i * 0.12)
-    trunk.castShadow = true
-    group.add(trunk)
-
-    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.06, 0.1), brass)
-    strap.position.set(0, 0.58 + i * 0.44, i * 0.12)
-    group.add(strap)
-  }
-
+  const kit = createKitBuilder()
+  luggageTrolley(kit, getKitMaterials(), null)
+  kit.build(group, 'luggage')
   group.position.set(-3.4, 0, -13)
   group.rotation.y = 0.3
   return group
@@ -918,10 +952,6 @@ function createBoardingControl() {
   screen.position.set(0, 1.24, 0.19)
   screen.rotation.x = -0.32
   control.add(screen)
-
-  const glow = new THREE.PointLight(0x3ce0a8, 4, 3.5, 2)
-  glow.position.set(0, 1.3, 0.35)
-  control.add(glow)
 
   control.position.set(4, 0, 25)
   return control
@@ -1053,12 +1083,8 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
     group.add(createCameraPlaceholder(12))
   }
 
-  const benchMaterials = {
-    timber: woodMaterial({ repeat: [2, 1], light: 0x8a5c33, dark: 0x452a16 }),
-    iron: new THREE.MeshStandardMaterial({ color: 0x2c322f, roughness: 0.6, metalness: 0.6 })
-  }
   for (const z of [-12, -4, 4, 12]) {
-    const bench = createBench(z, benchMaterials)
+    const bench = createBench(z)
     group.add(bench)
     addFloorPropCollider(bench, 0.09)
   }
@@ -1082,6 +1108,7 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
     group,
     bounds,
     boardingControl,
+    hallDressing: approachCorridor.dressing,
     wallColliders: [
       ...rearWall.colliders,
       ...approachCorridor.colliders,
@@ -1216,15 +1243,9 @@ export function createStationLighting() {
   spotLights.push(spotRight)
   spotTargets.push(targetRight)
 
-  // Wall sconce accent pointlights on outer rear wall
-  const sconceLights = []
-  for (const z of [-12, -4, 4, 12]) {
-    const sconceLight = new THREE.PointLight(0xffb86c, 14.0, 12.0, 2.0)
-    sconceLight.position.set(-5.5, 3.8, z)
-    sconceLights.push(sconceLight)
-  }
-
-  const allLights = [sunlight, sunlight.target, sky, fill, ...spotLights, ...spotTargets, ...sconceLights]
+  // The outer-wall sconces are glow only: the walls hide them from every
+  // walkable spot, and a real light each would crowd the light pool.
+  const allLights = [sunlight, sunlight.target, sky, fill, ...spotLights, ...spotTargets]
   allLights.spotLights = spotLights
 
   return allLights

@@ -308,6 +308,30 @@ export function createStealthSystem({
     return responders
   }
 
+  // Direction from the nearest wall into the room, for the camera bracket.
+  // Falls back to the camera's resting look direction.
+  const wallProbe = new THREE.Raycaster()
+  const WALL_AXES = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(-1, 0, 0),
+    new THREE.Vector3(0, 0, 1),
+    new THREE.Vector3(0, 0, -1)
+  ]
+  function cameraWallNormal(position, baseAngle) {
+    let best = null
+    let bestDistance = 0.9
+    for (const axis of WALL_AXES) {
+      wallProbe.set(position.clone().addScaledVector(axis, -0.3), axis)
+      wallProbe.far = bestDistance + 0.3
+      const hit = wallProbe.intersectObjects(collidables, true)[0]
+      if (hit && hit.distance - 0.3 < bestDistance) {
+        bestDistance = hit.distance - 0.3
+        best = axis
+      }
+    }
+    return best ? best.clone().negate() : new THREE.Vector3(Math.sin(baseAngle), 0, Math.cos(baseAngle))
+  }
+
   // -----------------------------------------------------------------
   // Security Camera Factory
   // -----------------------------------------------------------------
@@ -323,23 +347,68 @@ export function createStealthSystem({
     camGroup.name = 'security-camera'
     camGroup.position.copy(position)
 
-    const bracketMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, metalness: 0.7 })
+    const bracketMat = new THREE.MeshStandardMaterial({ color: 0x23272a, roughness: 0.45, metalness: 0.75 })
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2e3a33, roughness: 0.4, metalness: 0.55 })
+    const lensMat = new THREE.MeshStandardMaterial({ color: 0x050608, roughness: 0.05, metalness: 0.9 })
 
-    const mount = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), bracketMat)
-    camGroup.add(mount)
+    // Wall bracket: the plate goes on the nearest wall, the arm reaches out
+    // into the room. Visual only; detection still uses camGroup's position.
+    const outward = cameraWallNormal(position, baseAngle)
+    const bracket = new THREE.Group()
+    bracket.rotation.y = Math.atan2(outward.x, outward.z)
+    camGroup.add(bracket)
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.34, 0.04), bracketMat)
+    plate.position.z = 0.02
+    bracket.add(plate)
+    for (const [x, y] of [[-0.09, 0.13], [0.09, 0.13], [-0.09, -0.13], [0.09, -0.13]]) {
+      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.02, 6), bracketMat)
+      bolt.rotation.x = Math.PI / 2
+      bolt.position.set(x, y, 0.045)
+      bracket.add(bolt)
+    }
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.3), bracketMat)
+    arm.position.set(0, 0.1, 0.19)
+    bracket.add(arm)
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), bracketMat)
+    strut.position.set(0, -0.02, 0.15)
+    strut.rotation.x = -0.75
+    bracket.add(strut)
 
     const pivot = new THREE.Group()
-    pivot.position.set(0.3, 0, 0)
+    pivot.position.copy(outward).multiplyScalar(0.34)
+    pivot.position.y = 0.1
     camGroup.add(pivot)
 
-    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.5, 14), bracketMat)
-    housing.rotation.z = Math.PI / 2
-    pivot.add(housing)
+    const swivel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.1, 10), bracketMat)
+    swivel.position.y = 0.0
+    pivot.add(swivel)
+
+    // Housing tilted down with the cone: a box body, sun hood, lens barrel.
+    const tilt = new THREE.Group()
+    tilt.position.y = -0.1
+    tilt.rotation.x = 0.55
+    pivot.add(tilt)
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.42), bodyMat)
+    housing.position.z = 0.08
+    tilt.add(housing)
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.02, 0.5), bracketMat)
+    hood.position.set(0, 0.1, 0.12)
+    tilt.add(hood)
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.08, 14), bracketMat)
+    barrel.rotation.x = Math.PI / 2
+    barrel.position.z = 0.32
+    tilt.add(barrel)
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.05, 14), lensMat)
+    lens.position.z = 0.361
+    tilt.add(lens)
+    const yoke = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.06), bracketMat)
+    yoke.position.set(0, 0.06, 0)
+    pivot.add(yoke)
 
     const ledMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
-    const led = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), ledMat)
-    led.position.set(0.26, 0, 0)
-    pivot.add(led)
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), ledMat)
+    led.position.set(0.06, 0.05, 0.3)
+    tilt.add(led)
 
     // Camera vision cone projecting downward diagonally
     const coneRadius = Math.tan(Math.PI / 6) * range
@@ -357,6 +426,7 @@ export function createStealthSystem({
 
     const coneMesh = new THREE.Mesh(coneGeo, coneMat)
     coneMesh.rotation.x = 0.55 // pitch down toward platform
+    coneMesh.position.y = -0.1
     pivot.add(coneMesh)
 
     const camera = {

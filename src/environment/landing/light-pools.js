@@ -131,7 +131,7 @@ function glowTexture() {
 
 // Faint warm wash on a wall beside a lamp. glows: { x, y, z, yaw, width, height, strength }
 // yaw 0 faces +X. One merged additive mesh.
-export function addWallGlows(parent, glows, stats) {
+export function addWallGlows(parent, glows, stats, color = 0xff9e52, name = 'landing-wall-glow') {
   if (!glows.length) return null
   const parts = []
   for (const glow of glows) {
@@ -142,10 +142,29 @@ export function addWallGlows(parent, glows, stats) {
     plane.setAttribute('color', new THREE.BufferAttribute(shade, 3))
     parts.push(plane)
   }
+  return glowMesh(parent, parts, color, name, stats, 2 * glows.length)
+}
+
+// Painted light pool on a floor under a lamp. glows: { x, y, z, radius, strength }
+export function addFloorGlows(parent, glows, stats, color = 0xff9e52, name = 'floor-glow') {
+  if (!glows.length) return null
+  const parts = []
+  for (const glow of glows) {
+    const plane = new THREE.PlaneGeometry(glow.radius * 2, glow.radius * 2)
+    plane.rotateX(-Math.PI / 2)
+    plane.translate(glow.x, glow.y + 0.015, glow.z)
+    const shade = new Float32Array(plane.attributes.position.count * 3).fill(glow.strength)
+    plane.setAttribute('color', new THREE.BufferAttribute(shade, 3))
+    parts.push(plane)
+  }
+  return glowMesh(parent, parts, color, name, stats, 2 * glows.length)
+}
+
+function glowMesh(parent, parts, color, name, stats, triangles) {
   const geometry = mergeParts(parts)
   const material = new THREE.MeshBasicMaterial({
     map: glowTexture(),
-    color: new THREE.Color(1.0, 0.62, 0.32),
+    color: new THREE.Color().setHex(color, THREE.LinearSRGBColorSpace),
     vertexColors: true,
     transparent: true,
     depthWrite: false,
@@ -156,12 +175,12 @@ export function addWallGlows(parent, glows, stats) {
     fog: false
   })
   const mesh = new THREE.Mesh(geometry, material)
-  mesh.name = 'landing-wall-glow'
+  mesh.name = name
   mesh.renderOrder = 2
   parent.add(mesh)
   if (stats) {
     stats.draws += 1
-    stats.triangles += 2 * glows.length
+    stats.triangles += triangles
   }
   return mesh
 }
