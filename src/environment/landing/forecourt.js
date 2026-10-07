@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { addBenches } from './bench.js'
-import { addCars } from './car.js'
 import { addMesh, box, mergeParts } from './geom.js'
 import { CENTER_Z, FACADE_X, PLAZA } from './layout.js'
 import { addCentreLamp, CENTRE_LAMP_BASE } from './centre-lamp.js'
@@ -116,12 +115,6 @@ const PLANTERS = [
   { x: 17.2, y: 0.05, z: 2.4 }
 ]
 
-const CARS = [
-  { x: 15.6, y: 0.05, z: 1.85, yaw: 0.08 },
-  { x: 14.2, y: 0.05, z: 36.4, yaw: -0.18 },
-  { x: 16.8, y: 0.05, z: 33.1, yaw: 0.35 }
-]
-
 const CRATES = [
   { w: 0.7, h: 0.55, d: 0.55, x: 21.6, y: 0.28, z: 13.4 },
   { w: 0.5, h: 0.4, d: 0.48, x: 21.9, y: 0.75, z: 13.15 },
@@ -150,7 +143,6 @@ function forecourtColliders() {
   for (const lamp of CENTRE_LAMPS) boxes.push(yawBox(lamp.x, lamp.z, CENTRE_LAMP_BASE, CENTRE_LAMP_BASE, 0, 0.06))
   for (const bench of BENCHES) boxes.push(yawBox(bench.x, bench.z, 0.28, 0.78, bench.yaw || 0))
   for (const planter of PLANTERS) boxes.push(yawBox(planter.x, planter.z, 0.52, 0.52))
-  for (const car of CARS) boxes.push(yawBox(car.x, car.z, 0.85, 2.2, car.yaw || 0, 0.2))
   for (const crate of CRATES) {
     boxes.push({
       minX: crate.x - crate.w / 2,
@@ -181,7 +173,6 @@ export function buildForecourt(parent, materials, stats) {
   const pools = addLightPools(parent, POOLS, materials.cobble.map, stats)
   addBenches(parent, BENCHES, materials, stats)
   addPlanters(parent, PLANTERS, materials, stats)
-  addCars(parent, CARS, materials, stats)
 
   // The engines stand behind the quay shops. The plume starts inside the
   // two-storey bakery block (roof at 7.7 m), so only what clears the roof

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { signMaterial } from '../textures.js'
+import { addBarricades } from './barricade.js'
 import { addCars } from './car.js'
 import { addInstances, addMesh, box, mergeParts, place } from './geom.js'
 import { PLAZA } from './layout.js'
@@ -197,31 +198,40 @@ function addStreet(parent, sinks, materials, stats, tiles) {
   addMesh(parent, mergeParts(veils), veil, { name: 'landing-street-veil' }, stats)
 }
 
-const SQUARE_CARS = [
-  { x: 20.7, y: 0.05, z: -2.35, yaw: Math.PI / 2 },
-  { x: 20.3, y: 0.05, z: 39.8, yaw: -Math.PI / 2 }
-]
-
+// Every car is parked in the street, west of the bollards; none stand on
+// the square. Kerbside on both sides, nose to tail.
 const STREET_CARS = [
   { x: 3.2, y: 0.05, z: 12.35, yaw: Math.PI / 2 },
+  { x: -2.4, y: 0.05, z: 12.35, yaw: Math.PI / 2 },
+  { x: -8.1, y: 0.05, z: 12.35, yaw: Math.PI / 2 },
+  { x: -13.8, y: 0.05, z: 12.35, yaw: Math.PI / 2 },
+  { x: -19.6, y: 0.05, z: 12.35, yaw: Math.PI / 2 },
+  { x: 0.2, y: 0.05, z: 14.85, yaw: -Math.PI / 2 },
   { x: -5.6, y: 0.05, z: 14.85, yaw: -Math.PI / 2 },
-  { x: -13.2, y: 0.05, z: 12.35, yaw: Math.PI / 2 },
+  { x: -11.3, y: 0.05, z: 14.85, yaw: -Math.PI / 2 },
   { x: -20.4, y: 0.05, z: 14.85, yaw: -Math.PI / 2 }
+]
+
+// Sawhorses just inside the street, behind the bollards: two across the
+// road, one on each pavement. The sign hangs on the first, the warning
+// lantern sits on the second.
+const BARRICADE_TEXT = 'STATION CLOSED - BY ORDER OF CHRONO RAIL CO.'
+const BARRICADES = [
+  { x: 7.35, y: 0.045, z: 12.65, yaw: Math.PI / 2 + 0.05, length: 2.0, sign: true },
+  { x: 7.0, y: 0.045, z: 14.6, yaw: Math.PI / 2 - 0.08, length: 2.0, lantern: true },
+  { x: 7.7, y: 0.15, z: 10.85, yaw: Math.PI / 2, length: 1.3 },
+  { x: 7.7, y: 0.15, z: 16.35, yaw: Math.PI / 2, length: 1.3 }
 ]
 
 function townColliders() {
   const south = PLAZA.minZ
   const north = PLAZA.maxZ
-  const boxes = [
+  return [
     { minX: QUAY_X, maxX: EAST_X, minZ: south - 9.4, maxZ: south },
     { minX: PLAZA.maxX - 0.05, maxX: EAST_X, minZ: south, maxZ: -1.42 },
     { minX: QUAY_X, maxX: EAST_X, minZ: north, maxZ: north + 9.4 },
     { minX: PLAZA.maxX - 0.05, maxX: EAST_X, minZ: 38.62, maxZ: north }
   ]
-  for (const car of SQUARE_CARS) {
-    boxes.push({ minX: car.x - 2.25, maxX: car.x + 2.25, minZ: car.z - 0.95, maxZ: car.z + 0.95 })
-  }
-  return boxes
 }
 
 export function buildTown(parent, materials, stats) {
@@ -333,7 +343,8 @@ export function buildTown(parent, materials, stats) {
     addMesh(group, sign.geometry, material, { name: 'landing-town-sign' }, stats)
   }
 
-  addCars(group, [...SQUARE_CARS, ...STREET_CARS], materials, stats)
+  addCars(group, STREET_CARS, materials, stats)
+  const barricadeColliders = addBarricades(group, BARRICADES, materials, stats, BARRICADE_TEXT)
 
   // The entrance lamps throw a faint wash on the shop fronts above them.
   addWallGlows(group, [
@@ -353,5 +364,5 @@ export function buildTown(parent, materials, stats) {
     if (group.visible) wallRaycast(raycaster, intersects)
   }
 
-  return { group, colliders: townColliders() }
+  return { group, colliders: [...townColliders(), ...barricadeColliders] }
 }
