@@ -134,14 +134,6 @@ function buildRollContent() {
     line('"Flashlight" by MAR.COS. (Sketchfab)'),
     line('Licensed under Creative Commons Attribution 4.0', { dim: true }),
     spacer(8),
-    line('Chrono Express train'),
-    line('Based on "DRB 01.10 Steam Locomotive (low poly)" by Götz von Berlichingen'),
-    line('Licensed under CC BY 4.0', { dim: true }),
-    line('creativecommons.org/licenses/by/4.0/', { dim: true, size: '13px' }),
-    line('sketchfab.com/3d-models/drb-0110-steam-locomotive-low-poly-b4e4252632f44492b6c018627a6b4a60', { dim: true, size: '13px' }),
-    line('Changes: historical emblems removed, dining-car lettering and logo replaced with Chrono Express branding, two cars repainted, new material maps (metal/roughness, normal, lit windows) added, track removed, converted to a single GLB.', { dim: true, size: '13px' }),
-    line('Chrono Express crest: original artwork by our team.', { italic: true }),
-    spacer(8),
     line('Character animations from Adobe Mixamo (mixamo.com)')
   ])
 

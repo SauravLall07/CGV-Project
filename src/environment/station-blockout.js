@@ -4,7 +4,6 @@ import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import { SUN_SHADOW_LAYER } from '../core/stairs.js'
 import {
   carpetMaterial,
-  marbleFloorMaterial,
   metalMaterial,
   plasterMaterial,
   signMaterial,
@@ -19,16 +18,19 @@ import {
   cushionedBench,
   departureBoard,
   framedPoster,
+  hangingClock,
   kbox,
+  lampPost,
   luggageTrolley,
   metreUv,
   pendantLamp,
   pottedPalm,
+  railwaySignal,
   ticketBooth,
   trunk,
   wallClock
 } from './level1-kit/kit-props.js'
-import { addWallGlows } from './landing/light-pools.js'
+import { addFloorGlows, addWallGlows } from './landing/light-pools.js'
 
 // Level 1's station: a covered platform with a marble concourse, cast-iron
 // columns under a glazed train shed, a panelled rear wall with lit arched
@@ -86,9 +88,10 @@ export const bounds = {
 function createConcourse() {
   const group = new THREE.Group()
 
+  // Damp concrete; the kit's roughness map leaves wet, glossy patches.
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(PLATFORM_WIDTH, PLATFORM_LENGTH),
-    marbleFloorMaterial({ repeat: [5, 20], base: 0xa89a86, vein: 0x6a6053, grout: 0x453e35 })
+    metreUv(new THREE.PlaneGeometry(PLATFORM_WIDTH, PLATFORM_LENGTH), 3),
+    getKitMaterials().concrete
   )
   floor.rotation.x = -Math.PI / 2
   floor.receiveShadow = true
@@ -105,7 +108,7 @@ function createConcourse() {
 
   const safetyLine = new THREE.Mesh(
     new THREE.BoxGeometry(0.35, 0.03, PLATFORM_LENGTH),
-    new THREE.MeshStandardMaterial({ color: 0xd8a63c, roughness: 0.6, emissive: 0x3a2a08, emissiveIntensity: 1 })
+    new THREE.MeshStandardMaterial({ color: 0xe8b81e, roughness: 0.55, emissive: 0x4a3404, emissiveIntensity: 1 })
   )
   safetyLine.position.set(HALF_WIDTH - 0.75, 0.03, 0)
   group.add(safetyLine)
@@ -574,7 +577,7 @@ function createPillars() {
   const shaftGeometry = new THREE.CylinderGeometry(0.24, 0.3, 5.1, 14)
   const collarGeometry = new THREE.CylinderGeometry(0.32, 0.32, 0.12, 14)
   const capitalGeometry = new THREE.BoxGeometry(0.75, 0.3, 0.75)
-  const bracketGeometry = new THREE.BoxGeometry(0.12, 0.1, 1.6)
+  const brackets = createKitBuilder()
 
   for (const z of PILLAR_Z) {
     const base = new THREE.Mesh(baseGeometry, ironMaterial)
@@ -599,14 +602,23 @@ function createPillars() {
     capital.castShadow = true
     group.add(capital)
 
-    // Decorative brackets fanning out to the roof deck.
+    // Arched cast-iron brackets up to the eaves beam, with a ring in each
+    // spandrel.
     for (const side of [-1, 1]) {
-      const bracket = new THREE.Mesh(bracketGeometry, ironMaterial)
-      bracket.position.set(PILLAR_X, 5.75, z + side * 0.8)
-      bracket.rotation.x = side * 0.35
-      group.add(bracket)
+      const arc = new THREE.TorusGeometry(0.85, 0.045, 6, 12, Math.PI / 2)
+      arc.rotateZ(Math.PI / 2)
+      arc.translate(0.85, 0, 0)
+      arc.rotateY(side > 0 ? -Math.PI / 2 : Math.PI / 2)
+      arc.translate(PILLAR_X, 4.55, z)
+      brackets.add(ironMaterial, arc)
+      const ring = new THREE.TorusGeometry(0.07, 0.014, 4, 14)
+      ring.rotateY(Math.PI / 2)
+      ring.translate(PILLAR_X, 5.31, z + side * 0.36)
+      brackets.add(ironMaterial, ring)
     }
   }
+  brackets.add(ironMaterial, kbox(0.2, 0.3, PLATFORM_LENGTH - 0.4, PILLAR_X, 5.55, 0))
+  brackets.build(group, 'pillar-brackets', { decor: true })
 
   return group
 }
@@ -693,9 +705,10 @@ function createTrainShed() {
   // Roof deck. Deliberately does NOT cast shadows: the sun rakes in from the
   // open track side, and a shadow-casting deck would flatten the whole
   // platform into darkness for no visual gain.
+  // Timber boarding, so the platform reads as a wooden canopy.
   const deck = new THREE.Mesh(
-    new THREE.BoxGeometry(PLATFORM_WIDTH + 2.4, 0.25, PLATFORM_LENGTH),
-    plasterMaterial({ repeat: [4, 16], base: 0x453f38, roughness: 0.95 })
+    metreUv(new THREE.BoxGeometry(PLATFORM_WIDTH + 2.4, 0.25, PLATFORM_LENGTH), 2.5),
+    getKitMaterials().wood
   )
   deck.position.set(-0.3, ROOF_Y, 0)
   group.add(deck)
@@ -744,36 +757,82 @@ function createTrainShed() {
 
 function createPendantLamps() {
   const group = new THREE.Group()
-
-  const brass = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.32, metalness: 0.9 })
-  const bulbMaterial = new THREE.MeshStandardMaterial({
-    color: 0xfff0cc,
-    emissive: 0xffdda0,
-    emissiveIntensity: 3.2
-  })
-  const rodGeometry = new THREE.CylinderGeometry(0.03, 0.03, 1.3, 6)
-  const shadeGeometry = new THREE.ConeGeometry(0.45, 0.38, 14, 1, true)
-  const bulbGeometry = new THREE.SphereGeometry(0.13, 10, 8)
+  const kit = createKitBuilder()
+  const k = getKitMaterials()
 
   for (const z of [-21, -14, -7, 0, 7, 14, 21]) {
-    const rod = new THREE.Mesh(rodGeometry, brass)
-    rod.position.set(0.4, ROOF_Y - 0.75, z)
-    group.add(rod)
-
-    // A cone's wide end is already its -Y end, so it hangs mouth-down as-is.
-    const shade = new THREE.Mesh(shadeGeometry, brass)
-    shade.position.set(0.4, ROOF_Y - 1.5, z)
-    group.add(shade)
-
-    const bulb = new THREE.Mesh(bulbGeometry, bulbMaterial)
-    bulb.position.set(0.4, ROOF_Y - 1.62, z)
-    group.add(bulb)
+    pendantLamp(kit, k, at(0.4, ROOF_Y - 0.125, z), 1.5)
 
     // The warm pool on the platform. Moonlight is only a cool fill.
     // and hemisphere lights, and none of these cast shadows.
     const lamp = new THREE.PointLight(0xffc98a, 22, 13, 2)
     lamp.position.set(0.4, ROOF_Y - 1.7, z)
     group.add(lamp)
+  }
+  kit.build(group, 'platform-pendants', { decor: true })
+
+  return group
+}
+
+// Platform dressing after ref 05: canopy valance and fascia, lamp posts, a
+// double-sided hanging clock, luggage waiting by the open carriage door and
+// a red signal past the platform end. All decor: no colliders, no sight
+// blocking, and no real lights (the lamps paint floor pools instead).
+function createPlatformDressing() {
+  const group = new THREE.Group()
+  group.name = 'platform-dressing'
+  const k = getKitMaterials()
+  const b = createKitBuilder()
+
+  const deckEdge = -0.3 + (PLATFORM_WIDTH + 2.4) / 2
+  const valanceTop = ROOF_Y - 0.125
+  const valance = (length) => {
+    const plane = new THREE.PlaneGeometry(length, 0.8)
+    const uv = plane.attributes.uv
+    for (let i = 0; i < uv.count; i += 1) uv.setX(i, uv.getX(i) * length / 0.3)
+    plane.translate(0, valanceTop - 0.4, 0)
+    return plane
+  }
+  const side = valance(PLATFORM_LENGTH)
+  side.rotateY(Math.PI / 2)
+  side.translate(deckEdge + 0.02, 0, 0)
+  b.add(k.valance, side)
+  for (const e of [-1, 1]) {
+    const end = valance(PLATFORM_WIDTH + 2.4)
+    end.translate(-0.3, 0, e * (HALF_LENGTH + 0.02))
+    b.add(k.valance, end)
+  }
+  b.add(k.green, kbox(0.06, 0.2, PLATFORM_LENGTH + 0.1, deckEdge + 0.03, ROOF_Y, 0))
+
+  // Lamp posts between the columns, clear of the gates.
+  const lampZ = [-20, -12, -4, 12]
+  for (const z of lampZ) lampPost(b, k, at(4.72, 0, z))
+
+  hangingClock(b, k, at(2.2, 4.3, -2), 0.45, 0.62)
+
+  // Luggage by the open door (z 22) and a hat box by the gate.
+  trunk(b, k, at(4.66, 0, 23.0, Math.PI / 2), 0.7, 0.42, 0.45)
+  trunk(b, k, at(4.66, 0.42, 22.98, Math.PI / 2 + 0.12), 0.55, 0.3, 0.38)
+  const hatBox = new THREE.CylinderGeometry(0.2, 0.2, 0.26, 18)
+  hatBox.translate(4.62, 0.13, 20.95)
+  b.add(k.leather, hatBox)
+  const band = new THREE.CylinderGeometry(0.205, 0.205, 0.04, 18)
+  band.translate(4.62, 0.2, 20.95)
+  b.add(k.brass, band)
+
+  const signalAt = new THREE.Vector3(TRACK_X + 3.6, TRACK_LEVEL, 62)
+  const lens = railwaySignal(b, k, at(signalAt.x, signalAt.y, signalAt.z), 5.6).add(signalAt)
+
+  b.build(group, 'platform-dressing', { decor: true })
+
+  const glows = [
+    addFloorGlows(group, lampZ.map((z) => ({ x: 3.7, y: 0, z, radius: 1.8, strength: 0.55 })), null, 0xff9e52, 'platform-lamp-glow'),
+    addWallGlows(group, [{ x: lens.x, y: lens.y, z: lens.z, yaw: Math.PI / 2, width: 2.6, height: 2.6, strength: 1 }], null, 0xff2010, 'signal-glow')
+  ]
+  for (const glow of glows) {
+    glow.userData.decor = true
+    glow.userData.noInteractionBlocker = true
+    glow.userData.noCameraCollision = true
   }
 
   return group
@@ -920,9 +979,8 @@ function createCameraPlaceholder(z) {
 }
 
 function createBoardingControl() {
-  // Brass pedestal with a lit screen, on the platform edge beside the
-  // locomotive's front (the nose rests at z = 26). Interacting with it
-  // triggers the level-manager transition into Level 2.
+  // Brass ticket pedestal with a lit screen near the platform end. Boarding
+  // itself is at the open carriage door (train.js).
   const control = new THREE.Group()
   control.name = 'boarding-control'
 
@@ -1069,6 +1127,7 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
   group.add(partitionWalls.group)
   group.add(createTrainShed())
   group.add(createPendantLamps())
+  group.add(createPlatformDressing())
   group.add(createDepartureBoard())
   group.add(createPlatformSign())
   group.add(createStationClock())

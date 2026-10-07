@@ -6,15 +6,18 @@ import {
   drawConcrete,
   drawConcreteRoughness,
   drawCrate,
+  drawCarriageWindow,
   drawDepartures,
   drawFrond,
   drawGlazedBrick,
   drawGreenTile,
   drawHazard,
+  drawLettering,
   drawNightPlatform,
   drawPoster,
   drawSteelDoor,
   drawStencil,
+  drawValance,
   kitTexture,
   POSTER_COUNT
 } from './kit-textures.js'
@@ -74,6 +77,8 @@ function createMaterials() {
   departures.emissiveMap = departures.map
   const nightView = textured(drawNightPlatform, 'night-platform', [1, 1], { roughness: 0.2, emissive: 0xffffff, emissiveIntensity: 0.85 })
   nightView.emissiveMap = nightView.map
+  const carriageWindow = textured(drawCarriageWindow, 'carriage-window', [1, 1], { roughness: 0.12, metalness: 0.1, emissive: 0xffffff, emissiveIntensity: 1.25 })
+  carriageWindow.emissiveMap = carriageWindow.map
 
   return {
     // Walls and floors.
@@ -124,7 +129,23 @@ function createMaterials() {
       roughness: 0.7
     }),
     pot: standard({ color: 0x6a3a22, roughness: 0.7 }),
-    soil: standard({ color: 0x1a120c, roughness: 1 })
+    soil: standard({ color: 0x1a120c, roughness: 1 }),
+    // The Chrono Express carriages.
+    carriageGreen: new THREE.MeshPhysicalMaterial({ color: 0x0f2e1c, roughness: 0.34, metalness: 0.2, clearcoat: 0.7, clearcoatRoughness: 0.22 }),
+    carriageRoof: standard({ color: 0x232527, roughness: 0.72, metalness: 0.25 }),
+    carriageWindow,
+    carriageLettering: decal(() => drawLettering('CHRONO EXPRESS'), 'lettering:chrono', { roughness: 0.35, metalness: 0.6, alphaTest: 0.4 }),
+    bellows: standard({ color: 0x15130f, roughness: 0.95 }),
+    tyre: standard({ color: 0x6d6b66, roughness: 0.35, metalness: 0.9 }),
+    // Platform canopy.
+    valance: standard({
+      map: kitTexture('valance', drawValance),
+      alphaTest: 0.5,
+      side: THREE.DoubleSide,
+      roughness: 0.75
+    }),
+    signalRed: glow(0xff1a0a, 9),
+    signalGreen: standard({ color: 0x08200f, roughness: 0.2, metalness: 0.1 })
   }
 }
 

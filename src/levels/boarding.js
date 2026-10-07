@@ -57,7 +57,7 @@ export function createBoardingLevel({
   timeSystem?.setAbilityAvailability?.({ SLOW: false, FREEZE: false, REWIND: false, GHOST: false })
   hud?.setChronoVisible?.(false)
   resetKitMaterials()
-  const { group: station, boardingControl, wallColliders, hallDressing } = createStationBlockout({ includePlaceholders: false })
+  const { group: station, wallColliders, hallDressing } = createStationBlockout({ includePlaceholders: false })
   // East of the rails, outside the walkable bounds. Not a child of `station`,
   // so it is not an interaction blocker and guards do not treat it as cover.
   const landing = createLandingScene()
@@ -135,7 +135,7 @@ export function createBoardingLevel({
     { minX: PLAZA.minX - 0.3, maxX: FACADE_X + 0.4, minZ: PLAZA.maxZ - 0.05, maxZ: 90 }
   )
 
-  const { train } = createTrain()
+  const { train, boardingDoor, closeDoor, update: updateTrain } = createTrain()
   const lights = createStationLighting()
   const sunlight = lights.find((node) => node.name === 'station-sun')
   const skyFill = lights.find((node) => node.name === 'station-sky')
@@ -687,13 +687,16 @@ export function createBoardingLevel({
   let isBoardingCinematic = false
   let cinematicTimer = 0
 
-  const unregisterBoarding = interaction.register(boardingControl, {
-    prompt: 'Board Chrono Express',
+  // The open carriage door is the boarding point; the old pedestal stays as
+  // a prop.
+  const unregisterBoarding = interaction.register(boardingDoor, {
+    prompt: 'Board the Chrono Express',
     onInteract: () => {
       if (isBoardingCinematic) return
       isBoardingCinematic = true
+      closeDoor()
       beginCinematic?.()
-      interaction.flashPrompt('Boarding Chrono Express…')
+      interaction.flashPrompt('Boarding the Chrono Express…')
       if (hud) hud.setObjective('Departing station… hold on!')
     }
   })
@@ -801,9 +804,8 @@ export function createBoardingLevel({
   zones.addRegion('landing', landing.group)
   zones.addRegion('outdoor', outdoorEnv.group)
 
-  // Sources stay hidden. These slots are the only point lights, guard
-  // torches and the locomotive headlamp the shader ever sees, and the count
-  // does not change at runtime.
+  // Sources stay hidden. These slots are the only point lights and guard
+  // torches the shader ever sees, and the count does not change at runtime.
   const lightPools = new THREE.Group()
   lightPools.name = 'boarding-light-pools'
   scene.add(lightPools)
@@ -816,7 +818,7 @@ export function createBoardingLevel({
     root: scene,
     host: lightPools,
     size: TORCH_SPOT_POOL_SIZE,
-    accept: (node) => node.name === 'torch-spot' || node.name === 'headlamp-spot',
+    accept: (node) => node.name === 'torch-spot',
     name: 'torch-pool',
     kind: 'spot'
   })
@@ -928,6 +930,7 @@ export function createBoardingLevel({
     updateAtmosphere(delta, viewer) {
       sky.update(delta, null)
       landing.update(delta)
+      updateTrain(delta)
       // The title camera is not the player, so the pool and the moon shadow
       // have to follow it or the facade stays unlit until the run starts.
       if (viewer) {
@@ -953,6 +956,7 @@ export function createBoardingLevel({
       guardPassage.update(delta)
       bridgePassage.update(delta)
       stationDistraction.update(delta)
+      updateTrain(delta)
 
       if (!passage1CheckpointActive && onboardingPassage.hasExited()) {
         passage1CheckpointActive = true

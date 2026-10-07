@@ -620,6 +620,154 @@ export function drawNightPlatform() {
   })
 }
 
+// A lit carriage window: lamplit saloon behind, seat backs and a table lamp,
+// red curtains tied back at the sides under a fringed pelmet.
+export function drawCarriageWindow() {
+  return cached('carriage-window', () => {
+    const w = 256
+    const h = 212
+    const canvas = makeCanvas(w, h)
+    const ctx = canvas.getContext('2d')
+    const room = ctx.createRadialGradient(w * 0.5, h * 0.3, 8, w * 0.5, h * 0.45, w * 0.62)
+    room.addColorStop(0, '#ffe6b0')
+    room.addColorStop(0.45, '#f0a85a')
+    room.addColorStop(1, '#6e3416')
+    ctx.fillStyle = room
+    ctx.fillRect(0, 0, w, h)
+    // Panelled far wall.
+    ctx.strokeStyle = 'rgba(90,40,14,0.35)'
+    ctx.lineWidth = 2
+    for (let x = 40; x < w; x += 58) ctx.strokeRect(x, h * 0.2, 44, h * 0.36)
+    // Ceiling lamp.
+    const lamp = ctx.createRadialGradient(w * 0.5, h * 0.17, 1, w * 0.5, h * 0.17, 36)
+    lamp.addColorStop(0, 'rgba(255,250,225,1)')
+    lamp.addColorStop(1, 'rgba(255,220,160,0)')
+    ctx.fillStyle = lamp
+    ctx.fillRect(w * 0.5 - 36, h * 0.17 - 36, 72, 72)
+    // Seat backs.
+    for (const x of [w * 0.12, w * 0.62]) {
+      ctx.fillStyle = '#4a1812'
+      ctx.beginPath()
+      ctx.roundRect(x, h * 0.6, w * 0.26, h * 0.4, 14)
+      ctx.fill()
+      ctx.fillStyle = 'rgba(255,190,120,0.18)'
+      ctx.fillRect(x + 6, h * 0.62, w * 0.26 - 12, 4)
+    }
+    // Table with a cloth and a shaded lamp.
+    ctx.fillStyle = '#efe4cc'
+    ctx.fillRect(w * 0.38, h * 0.74, w * 0.24, h * 0.26)
+    ctx.fillStyle = '#b08d3f'
+    ctx.fillRect(w * 0.495, h * 0.6, 3, h * 0.14)
+    ctx.fillStyle = '#ff9a6a'
+    ctx.beginPath()
+    ctx.moveTo(w * 0.46, h * 0.6)
+    ctx.lineTo(w * 0.54, h * 0.6)
+    ctx.lineTo(w * 0.525, h * 0.53)
+    ctx.lineTo(w * 0.475, h * 0.53)
+    ctx.fill()
+    // Curtains, gathered at a tie-back.
+    for (const side of [-1, 1]) {
+      const edge = side < 0 ? 0 : w
+      const drape = ctx.createLinearGradient(edge, 0, edge - side * w * 0.24, 0)
+      drape.addColorStop(0, '#5a0a10')
+      drape.addColorStop(0.5, '#a8182a')
+      drape.addColorStop(1, '#6e0c14')
+      ctx.fillStyle = drape
+      ctx.beginPath()
+      ctx.moveTo(edge, 0)
+      ctx.lineTo(edge - side * w * 0.26, 0)
+      ctx.quadraticCurveTo(edge - side * w * 0.1, h * 0.4, edge - side * w * 0.07, h * 0.58)
+      ctx.quadraticCurveTo(edge - side * w * 0.16, h * 0.8, edge - side * w * 0.2, h)
+      ctx.lineTo(edge, h)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(40,0,4,0.45)'
+      ctx.lineWidth = 2
+      for (let i = 1; i < 4; i += 1) {
+        ctx.beginPath()
+        ctx.moveTo(edge - side * w * 0.06 * i, 0)
+        ctx.quadraticCurveTo(edge - side * w * 0.025 * i, h * 0.45, edge - side * w * 0.02 * i, h * 0.58)
+        ctx.stroke()
+      }
+      ctx.fillStyle = '#c9a44a'
+      ctx.fillRect(edge - side * w * 0.11 - 6, h * 0.56, 12, 6)
+    }
+    // Pelmet with a gold fringe.
+    ctx.fillStyle = '#7e0e18'
+    ctx.fillRect(0, 0, w, h * 0.1)
+    ctx.fillStyle = '#d6b05a'
+    for (let x = 0; x < w; x += 6) ctx.fillRect(x, h * 0.1, 3, 6)
+    // Frame shadow.
+    const vignette = ctx.createRadialGradient(w / 2, h / 2, w * 0.3, w / 2, h / 2, w * 0.72)
+    vignette.addColorStop(0, 'rgba(0,0,0,0)')
+    vignette.addColorStop(1, 'rgba(20,6,0,0.55)')
+    ctx.fillStyle = vignette
+    ctx.fillRect(0, 0, w, h)
+    return canvas
+  })
+}
+
+// Canopy valance: two painted boards per repeat with pointed ends, on a
+// transparent ground so the points cut a saw-tooth edge.
+export function drawValance() {
+  return cached('valance', () => {
+    const w = 128
+    const h = 256
+    const canvas = makeCanvas(w, h)
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, w, h)
+    const rand = random(9)
+    for (let i = 0; i < 2; i += 1) {
+      const x0 = i * 64 + 2
+      const x1 = x0 + 60
+      const paint = ctx.createLinearGradient(x0, 0, x1, 0)
+      paint.addColorStop(0, '#b8ad8e')
+      paint.addColorStop(0.5, '#ddd2b4')
+      paint.addColorStop(1, '#a89e80')
+      ctx.fillStyle = paint
+      ctx.beginPath()
+      ctx.moveTo(x0, 0)
+      ctx.lineTo(x1, 0)
+      ctx.lineTo(x1, h * 0.8)
+      ctx.lineTo((x0 + x1) / 2, h)
+      ctx.lineTo(x0, h * 0.8)
+      ctx.fill()
+      // Weathering and grain.
+      for (let g = 0; g < 14; g += 1) {
+        ctx.fillStyle = `rgba(70,55,35,${0.05 + rand() * 0.08})`
+        ctx.fillRect(x0 + rand() * 60, 0, 1, h * (0.5 + rand() * 0.3))
+      }
+      ctx.fillStyle = 'rgba(40,30,18,0.35)'
+      ctx.fillRect(x0, h * 0.12, 60, 3)
+      ctx.beginPath()
+      ctx.arc((x0 + x1) / 2, h * 0.55, 7, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    return canvas
+  })
+}
+
+// Gold shaded serif lettering on a transparent ground, for the bodyside.
+export function drawLettering(text, { width = 1024, height = 96 } = {}) {
+  return cached(`lettering:${text}`, () => {
+    const canvas = makeCanvas(width, height)
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, width, height)
+    ctx.font = `bold ${Math.floor(height * 0.66)}px Georgia, "Times New Roman", serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const spaced = text.split('').join(String.fromCharCode(8202))
+    ctx.fillStyle = 'rgba(30,14,4,0.85)'
+    ctx.fillText(spaced, width / 2 + 3, height / 2 + 3, width - 24)
+    const gold = ctx.createLinearGradient(0, height * 0.2, 0, height * 0.8)
+    gold.addColorStop(0, '#fbe7a6')
+    gold.addColorStop(0.5, '#d4a443')
+    gold.addColorStop(1, '#8a6224')
+    ctx.fillStyle = gold
+    ctx.fillText(spaced, width / 2, height / 2, width - 24)
+    return canvas
+  })
+}
+
 // One palm frond on a transparent ground; leaflets fan off a curved rib.
 export function drawFrond() {
   return cached('frond', () => {

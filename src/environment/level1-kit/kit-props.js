@@ -478,6 +478,119 @@ export function pottedPalm(b, k, M, scale = 1) {
   }
 }
 
+// --- Platform ---------------------------------------------------------------
+
+// Cast-iron platform lamp post: plinth, fluted base, shaft, lamplighter's
+// ladder bar along X and a tapered glazed lantern. Stands on y = 0.
+export function lampPost(b, k, M) {
+  const v = (x, y, z) => new THREE.Vector3(x, y, z)
+  b.add(k.iron, cylinder(0.17, 0.2, 0.3, 8, 0, 0.15, 0), M, true)
+  b.add(k.iron, cylinder(0.08, 0.15, 0.45, 12, 0, 0.52, 0), M, true)
+  b.add(k.iron, cylinder(0.055, 0.07, 2.4, 10, 0, 1.94, 0), M, true)
+  for (const y of [0.76, 3.1]) b.add(k.brass, cylinder(0.085, 0.085, 0.05, 12, 0, y, 0), M)
+  b.add(k.iron, rod(v(-0.3, 2.95, 0), v(0.3, 2.95, 0), 0.02, 6), M)
+  for (const x of [-0.3, 0.3]) {
+    const knob = new THREE.SphereGeometry(0.035, 8, 6)
+    knob.translate(x, 2.95, 0)
+    b.add(k.iron, knob, M)
+  }
+  const base = cylinder(0.1, 0.06, 0.08, 4, 0, 3.17, 0)
+  base.rotateY(Math.PI / 4)
+  b.add(k.iron, base, M)
+  const glass = new THREE.CylinderGeometry(0.2, 0.13, 0.42, 4, 1, true)
+  glass.rotateY(Math.PI / 4)
+  glass.translate(0, 3.42, 0)
+  b.add(k.lantern, glass, M)
+  for (let i = 0; i < 4; i += 1) {
+    const a = Math.PI / 4 + (i * Math.PI) / 2
+    b.add(k.iron, rod(v(0.13 * Math.sin(a), 3.21, 0.13 * Math.cos(a)), v(0.2 * Math.sin(a), 3.63, 0.2 * Math.cos(a)), 0.012, 4), M)
+  }
+  const cap = new THREE.ConeGeometry(0.27, 0.22, 4)
+  cap.rotateY(Math.PI / 4)
+  cap.translate(0, 3.74, 0)
+  b.add(k.iron, cap, M)
+  b.add(k.iron, cylinder(0.04, 0.05, 0.08, 8, 0, 3.87, 0), M)
+  const finial = new THREE.SphereGeometry(0.045, 8, 6)
+  finial.translate(0, 3.94, 0)
+  b.add(k.brass, finial, M)
+}
+
+// Double-sided station clock in a brass drum, hung on two rods `drop`
+// metres long. Origin at the centre; the faces look along ±Z.
+export function hangingClock(b, k, M, radius = 0.45, drop = 1) {
+  const v = (x, y, z) => new THREE.Vector3(x, y, z)
+  wallClock(b, k, M, radius)
+  wallClock(b, k, local(M, 0, 0, 0, Math.PI), radius)
+  const drum = new THREE.CylinderGeometry(radius + 0.06, radius + 0.06, 0.2, 28, 1, true)
+  drum.rotateX(Math.PI / 2)
+  b.add(k.brass, drum, M)
+  const top = radius + 0.1
+  b.add(k.iron, kbox(0.5, 0.05, 0.08, 0, top, 0), M)
+  const finial = new THREE.SphereGeometry(0.06, 10, 8)
+  finial.translate(0, top + 0.08, 0)
+  b.add(k.brass, finial, M)
+  for (const x of [-0.2, 0.2]) {
+    b.add(k.iron, rod(v(x, top, 0), v(x, top + drop, 0), 0.015, 5), M)
+    const scroll = new THREE.TorusGeometry(0.08, 0.012, 4, 12)
+    scroll.translate(x * 0.6, top + 0.12, 0)
+    b.add(k.iron, scroll, M)
+  }
+}
+
+// Lattice-mast colour-light signal. Stands on y = 0; the head faces -Z.
+// Returns the red lens centre in local coordinates, for a glow.
+export function railwaySignal(b, k, M, height = 5.6) {
+  const v = (x, y, z) => new THREE.Vector3(x, y, z)
+  b.add(k.concrete, kbox(0.9, 1.35, 0.9, 0, -0.5, 0), M)
+  const foot = 0.26
+  const head = 0.14
+  const radius = (y) => foot + (head - foot) * (y - 0.18) / (height - 0.18)
+  const corners = [[1, 1], [1, -1], [-1, -1], [-1, 1]]
+  const corner = (i, y) => {
+    const [sx, sz] = corners[i % 4]
+    return v(sx * radius(y), y, sz * radius(y))
+  }
+  for (let i = 0; i < 4; i += 1) b.add(k.iron, rod(corner(i, 0.18), corner(i, height), 0.025, 4), M)
+  for (let y = 0.18, level = 0; y + 0.8 <= height; y += 0.8, level += 1) {
+    for (let i = 0; i < 4; i += 1) {
+      const flip = (level + i) % 2
+      b.add(k.iron, rod(corner(i + flip, y), corner(i + 1 - flip, y + 0.8), 0.012, 4), M)
+    }
+  }
+  b.add(k.iron, kbox(0.36, 0.06, 0.36, 0, height + 0.03, 0), M)
+  const spike = new THREE.ConeGeometry(0.06, 0.25, 6)
+  spike.translate(0, height + 0.18, 0)
+  b.add(k.iron, spike, M)
+
+  const hy = height - 0.7
+  const hz = -(head + 0.12)
+  const board = new THREE.CylinderGeometry(0.42, 0.42, 0.04, 24)
+  board.rotateX(Math.PI / 2)
+  board.translate(0, hy, hz)
+  b.add(k.iron, board, M)
+  b.add(k.iron, kbox(0.36, 0.8, 0.24, 0, hy, hz + 0.13), M)
+  const lenses = [[0.17, k.signalRed], [-0.17, k.signalGreen]]
+  for (const [dy, mat] of lenses) {
+    const lens = new THREE.CylinderGeometry(0.11, 0.11, 0.03, 16)
+    lens.rotateX(Math.PI / 2)
+    lens.translate(0, hy + dy, hz - 0.03)
+    b.add(mat, lens, M)
+    const hood = new THREE.CylinderGeometry(0.14, 0.14, 0.2, 14, 1, true, -Math.PI / 2, Math.PI)
+    hood.rotateX(-Math.PI / 2)
+    hood.translate(0, hy + dy, hz - 0.12)
+    b.add(k.iron, hood, M)
+  }
+
+  // Ladder and a small working platform under the head.
+  for (const z of [-0.18, 0.18]) b.add(k.iron, rod(v(0.38, 0.18, z), v(0.38, hy - 0.5, z), 0.015, 4), M)
+  for (let y = 0.45; y < hy - 0.5; y += 0.32) b.add(k.iron, rod(v(0.38, y, -0.18), v(0.38, y, 0.18), 0.012, 4), M)
+  b.add(k.iron, kbox(0.8, 0.04, 0.7, 0.12, hy - 0.5, -0.05), M)
+  for (const x of [-0.26, 0.5]) b.add(k.iron, rod(v(x, hy - 0.5, 0.28), v(x, hy + 0.3, 0.28), 0.012, 4), M)
+  b.add(k.iron, rod(v(-0.26, hy + 0.3, 0.28), v(0.5, hy + 0.3, 0.28), 0.012, 4), M)
+
+  return v(0, hy + 0.17, hz - 0.05)
+}
+
 // Laser emitter: a small steel box with a red lens and a mounting plate.
 export function laserEmitter(b, k, M) {
   b.add(k.steelFrame, kbox(0.16, 0.2, 0.14, 0, 0, 0), M)
