@@ -1,7 +1,95 @@
 import * as THREE from 'three'
 import { addLaserGlow, createSecurityLaserMaterial } from '../../shaders/security-laser.js'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
-import { at, createKitBuilder, laserEmitter } from '../level1-kit/kit-props.js'
+import { at, createKitBuilder, kbox, laserEmitter } from '../level1-kit/kit-props.js'
+import { playDoorOpen } from '../../systems/door-sfx.js'
+
+function scaleU(geometry, factor) {
+  const uv = geometry.attributes.uv
+  for (let i = 0; i < uv.count; i += 1) uv.setX(i, uv.getX(i) * factor)
+  return geometry
+}
+
+let dustTexture = null
+function softDot() {
+  if (dustTexture) return dustTexture
+  const size = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  gradient.addColorStop(0, 'rgba(255,255,255,0.9)')
+  gradient.addColorStop(0.5, 'rgba(255,255,255,0.35)')
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, size, size)
+  dustTexture = new THREE.CanvasTexture(canvas)
+  return dustTexture
+}
+
+// A puff of grit kicked out from the floor track when a door opens. Points
+// at the door base drift outward and up, then fade. Always drawn (at zero
+// opacity when idle) so the first puff does not compile a shader.
+function createDustPuff(parent, width, axis) {
+  const count = 48
+  const positions = new Float32Array(count * 3)
+  const velocity = new Float32Array(count * 3)
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.6, 0), width + 2)
+  const material = new THREE.PointsMaterial({
+    map: softDot(),
+    color: 0x8c8274,
+    size: 0.32,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false
+  })
+  const points = new THREE.Points(geometry, material)
+  points.name = 'door-dust'
+  points.userData.decor = true
+  points.userData.noInteractionBlocker = true
+  points.userData.noCameraCollision = true
+  parent.add(points)
+
+  const LIFE = 1.6
+  let age = LIFE
+
+  function start() {
+    for (let i = 0; i < count; i += 1) {
+      const along = (Math.random() - 0.5) * width
+      const out = (Math.random() < 0.5 ? -1 : 1) * (0.15 + Math.random() * 0.2)
+      const vAlong = (Math.random() - 0.5) * 0.4
+      const vOut = Math.sign(out) * (0.35 + Math.random() * 0.6)
+      const vUp = 0.15 + Math.random() * 0.45
+      const [x, z, vx, vz] = axis === 'x' ? [out, along, vOut, vAlong] : [along, out, vAlong, vOut]
+      positions.set([x, 0.05 + Math.random() * 0.15, z], i * 3)
+      velocity.set([vx, vUp, vz], i * 3)
+    }
+    geometry.attributes.position.needsUpdate = true
+    age = 0
+  }
+
+  function update(delta) {
+    if (age >= LIFE) return
+    age += delta
+    for (let i = 0; i < count; i += 1) {
+      positions[i * 3] += velocity[i * 3] * delta
+      positions[i * 3 + 1] += velocity[i * 3 + 1] * delta
+      positions[i * 3 + 2] += velocity[i * 3 + 2] * delta
+      velocity[i * 3] *= 1 - 1.6 * delta
+      velocity[i * 3 + 1] *= 1 - 1.2 * delta
+      velocity[i * 3 + 2] *= 1 - 1.6 * delta
+    }
+    geometry.attributes.position.needsUpdate = true
+    const u = age / LIFE
+    material.opacity = 0.55 * Math.min(1, u * 8) * (1 - u)
+    material.size = 0.32 + u * 0.5
+  }
+
+  return { start, update }
+}
 
 // Emitter boxes with a red lens, facing along `yaw`, plus the beam-end glow.
 function addEmitters(group, laserMat, ends) {
@@ -243,42 +331,91 @@ export function createPuzzleDoor({
   group.name = 'puzzle-door'
   group.position.copy(position)
 
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x8b6d35, roughness: 0.32, metalness: 0.86 })
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0x28303a, roughness: 0.42, metalness: 0.72 })
+  // 1930s blast door. Built facing +Z across local X, then turned for
+  // axis 'x' so the slab's footprint and the collider match the old box.
+  const k = getKitMaterials()
   const stripMat = new THREE.MeshStandardMaterial({
-    color: 0xb91c1c,
-    emissive: 0x7f1d1d,
-    emissiveIntensity: 1.8,
+    color: 0x2a0606,
+    emissive: 0xff2a1a,
+    emissiveIntensity: 2.6,
     roughness: 0.25
   })
+  const body = new THREE.Group()
+  if (axis === 'x') body.rotation.y = Math.PI / 2
+  group.add(body)
 
-  const doorGeometry = axis === 'x'
-    ? new THREE.BoxGeometry(thickness, height, width)
-    : new THREE.BoxGeometry(width, height, thickness)
-
-  const slab = new THREE.Mesh(doorGeometry, doorMat)
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(width, height, thickness), k.steel)
   slab.position.y = height / 2
   slab.castShadow = true
   slab.receiveShadow = true
-  group.add(slab)
+  body.add(slab)
 
-  const stripGeometry = axis === 'x'
-    ? new THREE.BoxGeometry(thickness + 0.03, 0.08, width * 0.82)
-    : new THREE.BoxGeometry(width * 0.82, 0.08, thickness + 0.03)
-  const statusStrip = new THREE.Mesh(stripGeometry, stripMat)
-  statusStrip.position.y = height - 0.24
-  group.add(statusStrip)
-
-  const postGeometry = axis === 'x'
-    ? new THREE.BoxGeometry(thickness + 0.14, height + 0.3, 0.16)
-    : new THREE.BoxGeometry(0.16, height + 0.3, thickness + 0.14)
-
-  for (const side of [-1, 1]) {
-    const post = new THREE.Mesh(postGeometry, frameMat)
-    if (axis === 'x') post.position.set(0, (height + 0.3) / 2, side * (width / 2 + 0.08))
-    else post.position.set(side * (width / 2 + 0.08), (height + 0.3) / 2, 0)
-    group.add(post)
+  // Slab dressing, children of the slab so it all rises together.
+  const onSlab = createKitBuilder()
+  const t2 = thickness / 2
+  for (const face of [-1, 1]) {
+    const z = face * (t2 + 0.012)
+    for (const y of [-height / 2 + 0.03, height / 2 - 0.03]) onSlab.add(k.steelFrame, kbox(width, 0.06, 0.03, 0, y, z))
+    for (const x of [-width / 2 + 0.03, width / 2 - 0.03]) onSlab.add(k.steelFrame, kbox(0.06, height, 0.03, x, 0, z))
+    onSlab.add(k.brass, kbox(width - 0.12, 0.03, 0.03, 0, -height / 2 + 0.3, z))
+    const hazard = kbox(width - 0.12, 0.22, 0.02, 0, -height / 2 + 0.17, face * (t2 + 0.006))
+    scaleU(hazard, (width - 0.12) / 1.76)
+    onSlab.add(k.hazard, hazard)
+    const stencil = new THREE.PlaneGeometry(Math.min(width * 0.7, 2.2), Math.min(width * 0.7, 2.2) / 8)
+    if (face < 0) stencil.rotateY(Math.PI)
+    stencil.translate(0, 0.05, face * (t2 + 0.004))
+    onSlab.add(k.stencil, stencil)
+    const tag = new THREE.PlaneGeometry(0.8, 0.2)
+    if (face < 0) tag.rotateY(Math.PI)
+    tag.translate(0, height / 2 - 0.42, face * (t2 + 0.004))
+    onSlab.add(k.security, tag)
+    // Rivet rows along the edging and across the middle rail.
+    const rivet = () => new THREE.SphereGeometry(0.018, 6, 2, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2)
+    const facing = face > 0 ? 0 : Math.PI
+    for (let x = -width / 2 + 0.12; x <= width / 2 - 0.1; x += 0.16) {
+      for (const y of [-height / 2 + 0.03, height / 2 - 0.03, -height / 2 + 0.3]) {
+        onSlab.instance('rivet', rivet, k.steelFrame, at(x, y, face * (t2 + 0.028), facing))
+      }
+    }
+    for (let y = -height / 2 + 0.2; y <= height / 2 - 0.15; y += 0.16) {
+      for (const x of [-width / 2 + 0.03, width / 2 - 0.03]) {
+        onSlab.instance('rivet', rivet, k.steelFrame, at(x, y, face * (t2 + 0.028), facing))
+      }
+    }
   }
+  onSlab.build(slab, 'door-slab', { decor: true })
+
+  const statusStrip = new THREE.Mesh(new THREE.BoxGeometry(width * 0.5, 0.04, thickness + 0.03), stripMat)
+  statusStrip.position.y = height - 0.12
+  body.add(statusStrip)
+
+  // Fixed housing: heavy side frames, a slot box over the opening that the
+  // slab lifts into, a floor track, corner bolts and the status lamps.
+  const housing = createKitBuilder()
+  const depth = thickness + 0.3
+  for (const side of [-1, 1]) {
+    housing.add(k.steelFrame, kbox(0.22, height + 0.5, depth, side * (width / 2 + 0.11), (height + 0.5) / 2, 0), null, true)
+  }
+  housing.add(k.steelFrame, kbox(width + 0.44, 0.42, depth, 0, height + 0.21, 0), null, true)
+  housing.add(k.iron, kbox(width, 0.025, thickness + 0.08, 0, 0.012, 0))
+  for (const face of [-1, 1]) {
+    for (const x of [-width / 2 - 0.11, width / 2 + 0.11]) {
+      for (const y of [0.22, height + 0.21]) {
+        const bolt = new THREE.CylinderGeometry(0.04, 0.04, 0.03, 6).rotateX(Math.PI / 2)
+        bolt.translate(x, y, face * (depth / 2 + 0.015))
+        housing.add(k.brass, bolt)
+      }
+    }
+    const lamp = new THREE.SphereGeometry(0.07, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(face * Math.PI / 2)
+    lamp.translate(width / 2 + 0.11, height + 0.21, face * (depth / 2))
+    housing.add(stripMat, lamp)
+    const guard = new THREE.TorusGeometry(0.075, 0.01, 4, 12)
+    guard.translate(width / 2 + 0.11, height + 0.21, face * (depth / 2 + 0.03))
+    housing.add(k.iron, guard)
+  }
+  housing.build(body, 'door-housing')
+
+  const dust = createDustPuff(group, width, axis)
 
   const collider = axis === 'x'
     ? {
@@ -303,16 +440,19 @@ export function createPuzzleDoor({
     if (unlocked) return
     unlocked = true
     collider.enabled = false
-    stripMat.color.setHex(0x10b981)
-    stripMat.emissive.setHex(0x047857)
+    stripMat.color.setHex(0x063a24)
+    stripMat.emissive.setHex(0x22e08a)
+    playDoorOpen()
+    dust.start()
   }
 
   function update(delta) {
+    dust.update(delta)
     if (!unlocked || openAmount >= 1) return
     openAmount = Math.min(1, openAmount + delta * 1.65)
     const eased = 1 - Math.pow(1 - openAmount, 3)
     slab.position.y = height / 2 + eased * (height + 0.35)
-    statusStrip.position.y = height - 0.24 + eased * (height + 0.35)
+    statusStrip.position.y = height - 0.12 + eased * (height + 0.35)
   }
 
   return {
