@@ -688,7 +688,6 @@ export function createBoardingLevel({
   })
 
   const stationObjective = 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express'
-  const gantrySpawn = onboardingPassage.spawn.clone()
   const veil = document.createElement('div')
   Object.assign(veil.style, {
     position: 'fixed',
@@ -710,13 +709,14 @@ export function createBoardingLevel({
   let enterFade = null
   const FADE_SECONDS = 0.6
 
-  function arriveAtGantry() {
+  function arriveInside() {
     enteredStation = true
-    player.setPose(gantrySpawn, Math.PI / 2)
+    passage1CheckpointActive = true
+    player.setPose(passage1CheckpointPos, Math.PI / 2)
     camera?.setYaw?.(Math.PI / 2)
-    camera?.setPitch?.(-0.08)
+    camera?.setPitch?.(0.25)
     camera?.snap?.()
-    respawn.setCheckpoint(gantrySpawn.clone(), Math.PI / 2, {
+    respawn.setCheckpoint(passage1CheckpointPos.clone(), Math.PI / 2, {
       restore: () => stealth.reset()
     })
     hud?.setObjective(stationObjective)
@@ -729,7 +729,7 @@ export function createBoardingLevel({
     if (enterFade.phase === 'out') {
       veil.style.opacity = String(u)
       if (u >= 1) {
-        arriveAtGantry()
+        arriveInside()
         enterFade = { t: 0, phase: 'in' }
       }
     } else {
