@@ -57,6 +57,10 @@ export function createBoardingLevel({
   // so it is not an interaction blocker and guards do not treat it as cover.
   const landing = createLandingScene()
   landing.town.visible = false
+  let plazaPointLights = 0
+  landing.group.traverse((node) => {
+    if (node.isPointLight) plazaPointLights += 1
+  })
 
   // Shared finite inventory for throwable guard distractions. Passageways 2
   // and 3 both read/write this same object, so pickups carry across the vent.
@@ -152,11 +156,26 @@ export function createBoardingLevel({
   const hiddenOutside = new Map()
   let outsideHidden = false
 
+  // Lights the forecourt never needs. Every visible light runs in every lit
+  // shader, even at intensity 0: the mountain floods, the empty torch slots,
+  // and the point slots past the forecourt's own lights. The sconces go too,
+  // so the forecourt lights always hold the first pool slots.
+  function plazaSpareLights() {
+    const spare = [stationSconces, ...lights.spotLights]
+    for (const node of lightPools.children) {
+      if (!node.isLight) continue
+      if (node.name.startsWith('torch-pool-')) spare.push(node)
+      const slot = node.name.match(/^light-pool-(\d+)$/)
+      if (slot && Number(slot[1]) >= plazaPointLights) spare.push(node)
+    }
+    return spare
+  }
+
   function setOutsideHidden(hide) {
     if (hide === outsideHidden) return
     outsideHidden = hide
     if (hide) {
-      const targets = [outdoorEnv.group, station, train]
+      const targets = [outdoorEnv.group, station, train, ...plazaSpareLights()]
       for (const child of scene.children) {
         if (OUTSIDE_NAMES.has(child.name)) targets.push(child)
       }
@@ -172,6 +191,10 @@ export function createBoardingLevel({
     // while they are hidden.
     landing.town.visible = hide
     sky.uniforms.uGroundBlack.value = hide ? 1 : 0
+    // On the square the buildings cover most of the screen, so the sky draws
+    // after them with a depth test and only shades the pixels left over.
+    sky.mesh.material.depthTest = hide
+    sky.mesh.renderOrder = hide ? 1000 : -1000
   }
 
   function applyForecourtFill(viewer) {
@@ -212,7 +235,13 @@ export function createBoardingLevel({
     nature: getBoardingAssets()
   })
 
-  scene.add(sky.mesh, outdoorEnv.group, station, train, landing.group, ...lights)
+  // The concourse sconces, grouped so the forecourt can switch them off together.
+  const stationSconces = new THREE.Group()
+  stationSconces.name = 'station-sconces'
+  scene.add(sky.mesh, outdoorEnv.group, station, train, landing.group, stationSconces, ...lights)
+  for (const node of lights) {
+    if (node.isPointLight) stationSconces.add(node)
+  }
 
   // One environment map from the sky dome. Dim, so a shadowed wall is a
   // dark blue-grey and rough metal does not pick up a bright reflection.
@@ -711,10 +740,7 @@ export function createBoardingLevel({
   const lightPools = new THREE.Group()
   lightPools.name = 'boarding-light-pools'
   scene.add(lightPools)
-  const pointRoots = [station, train, landing.group]
-  for (const node of lights) {
-    if (node.isPointLight) pointRoots.push(node)
-  }
+  const pointRoots = [station, train, landing.group, stationSconces]
   const pointPool = createLightPool({
     roots: pointRoots,
     host: lightPools,
@@ -973,7 +999,7 @@ export function createBoardingLevel({
         skyTarget.dispose()
         skyTarget = null
       }
-      scene.remove(sky.mesh, outdoorEnv.group, station, train, landing.group, ...lights, lightPools)
+      scene.remove(sky.mesh, outdoorEnv.group, station, train, landing.group, stationSconces, ...lights, lightPools)
       disposeObject([station, train, landing.group, ...lights, lightPools])
     }
   }

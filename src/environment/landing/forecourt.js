@@ -73,8 +73,11 @@ function addPlaza(parent, materials, stats) {
   // stone about 12.5 cm.
   const repeatX = width / 1
   const repeatY = length / 1
+  // 4× anisotropy is enough for stones this small at standing eye height,
+  // and it is three samplers on most of the screen.
   for (const map of [materials.cobble.map, materials.cobble.normalMap, materials.cobble.roughnessMap]) {
     map.repeat.set(repeatX, repeatY)
+    map.anisotropy = 4
   }
   const stone = new THREE.PlaneGeometry(width, length)
   stone.rotateX(-Math.PI / 2)
