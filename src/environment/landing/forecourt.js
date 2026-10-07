@@ -4,7 +4,7 @@ import { addBenches } from './bench.js'
 import { addCars } from './car.js'
 import { addMesh, box, mergeParts } from './geom.js'
 import { FACADE_X, PLAZA } from './layout.js'
-import { addLampPosts } from './lamp-post.js'
+import { addLampPosts, LAMP_INTENSITY } from './lamp-post.js'
 import { addPlanters } from './planter.js'
 
 // Cobbles in front of the west facade, plus the street furniture. The plaza
@@ -102,7 +102,7 @@ function addShelter(parent, materials, stats) {
 }
 
 const LAMPS = [
-  { x: 11.4, y: 0.05, z: 2.2 },
+  { x: 11.4, y: 0.05, z: 2.2, flicker: true },
   { x: 11.6, y: 0.05, z: 9.2 },
   { x: 11.2, y: 0.05, z: 16.4 },
   { x: 11.5, y: 0.05, z: 23.8 },
@@ -198,12 +198,23 @@ export function buildForecourt(parent, materials, stats) {
   parent.add(steam.points)
   stats.draws += 1
 
+  const flicker = parent.getObjectByName('landing-lamp-flicker')
   let time = 0
   function update(delta) {
     time += delta
     steam.update(delta)
     for (let i = 0; i < banners.length; i += 1) {
       banners[i].rotation.y = Math.sin(time * 0.65 + i * 1.7) * 0.12
+    }
+    if (flicker) {
+      const a = Math.sin(time * 2.3)
+      const b = Math.sin(time * 7.1 + 1.4)
+      const c = Math.sin(time * 14.2 + Math.sin(time * 0.6) * 3.0)
+      const mix = a * 0.45 + b * 0.35 + c * 0.3
+      let level = 0.72 + 0.28 * (0.5 + 0.5 * b)
+      if (mix > 0.62) level *= 0.08
+      else if (mix > 0.38) level *= 0.4
+      flicker.intensity = LAMP_INTENSITY * level
     }
   }
 

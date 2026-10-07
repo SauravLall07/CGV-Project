@@ -166,12 +166,12 @@ export function createLandingMaterials() {
       roughness: 0.6
     }),
     glass: [
-      glassMaterial(0xffc98a, 3.4),
-      glassMaterial(0xffb06a, 2.15),
-      glassMaterial(0xa86838, 0.85),
-      glassMaterial(0x1a120e, 0.02)
+      glassMaterial(0xffb070, 0.72),
+      glassMaterial(0xb47848, 0.32),
+      glassMaterial(0x5c321c, 0.08),
+      glassMaterial(0x100e0c, 0)
     ],
-    archGlass: glassMaterial(0xffc07a, 2.6),
+    archGlass: glassMaterial(0xc08048, 0.38),
     clock: new THREE.MeshStandardMaterial({
       map: clockMap,
       emissiveMap: clockMap,
@@ -267,8 +267,8 @@ function bannerCanvas() {
 export function shadeOf(index) {
   const n = Math.sin(index * 12.9898 + 4.2) * 43758.5453
   const h = n - Math.floor(n)
-  if (h < 0.08) return 3
-  if (h < 0.3) return 2
-  if (h < 0.62) return 1
+  if (h < 0.34) return 3
+  if (h < 0.58) return 2
+  if (h < 0.82) return 1
   return 0
 }

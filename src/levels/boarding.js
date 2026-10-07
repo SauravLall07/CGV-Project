@@ -127,6 +127,17 @@ export function createBoardingLevel({
   const { train } = createTrain()
   const lights = createStationLighting()
   const sunlight = lights.find((node) => node.name === 'station-sun')
+  const skyFill = lights.find((node) => node.name === 'station-sky')
+  const ambientFill = lights.find((node) => node.name === 'station-fill')
+  const FORECOURT_FILL = { sky: 0.48, ambient: 0.06, environment: 0.4 }
+
+  function applyForecourtFill(viewer) {
+    if (!viewer) return
+    const onPlaza = viewer.x > 6 && viewer.x < 36 && viewer.z > -10 && viewer.z < 48
+    if (skyFill) skyFill.intensity = onPlaza ? 0.1 : FORECOURT_FILL.sky
+    if (ambientFill) ambientFill.intensity = onPlaza ? 0.01 : FORECOURT_FILL.ambient
+    scene.environmentIntensity = onPlaza ? 0.06 : FORECOURT_FILL.environment
+  }
   const sky = createSkyDome('boarding')
   const outdoorEnv = createOutdoorEnvironment({
     mode: 'station',
@@ -779,6 +790,7 @@ export function createBoardingLevel({
       // The title camera is not the player, so the pool and the moon shadow
       // have to follow it or the facade stays unlit until the run starts.
       if (viewer) {
+        applyForecourtFill(viewer)
         updateStationSunShadow(sunlight, landing.shadowFocus)
         pointPool.update(viewer, delta)
       }
@@ -790,6 +802,7 @@ export function createBoardingLevel({
 
     update(delta) {
       updateDoorFade(delta)
+      applyForecourtFill(player.mesh.position)
       updateStationSunShadow(sunlight, player.mesh.position)
       sky.update(delta, timeSystem)
       outdoorEnv.update(delta)
