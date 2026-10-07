@@ -6,7 +6,7 @@ import {
   createPoliceGuardVisual
 } from '../entities/police-visual.js'
 import { disposeObject } from '../core/dispose.js'
-import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
+import { addLaserGlow, createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { resolveBoxCollision, resolveCircleCollision } from '../core/collision.js'
 import { createNearRaycastSet } from '../core/near-raycast.js'
 
@@ -487,10 +487,25 @@ export function createStealthSystem({
 
     const beams = []
     const spacing = height / (beamCount + 1)
+    const glowPoints = []
+    // Caps, foot plates and one lens per beam on each post. The lenses share
+    // a material that follows the grid's state.
+    const lensMat = new THREE.MeshStandardMaterial({ color: 0x1a0505, emissive: 0xff2a1a, emissiveIntensity: 3.5, roughness: 0.3 })
+    const capGeometry = new THREE.BoxGeometry(0.22, 0.08, 0.22)
+    const lensGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.03, 10)
+    lensGeometry.rotateZ(Math.PI / 2)
+
+    for (const side of [-1, 1]) {
+      for (const y of [0.04, height]) {
+        const cap = new THREE.Mesh(capGeometry, frameMat)
+        cap.position.set(side * width / 2, y, 0)
+        gridGroup.add(cap)
+      }
+    }
 
     for (let i = 1; i <= beamCount; i++) {
       const beam = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.018, 0.018, width, 16),
+        new THREE.CylinderGeometry(0.014, 0.014, width, 10),
         laserMat
       )
 
@@ -499,7 +514,15 @@ export function createStealthSystem({
 
       gridGroup.add(beam)
       beams.push(beam)
+
+      for (const side of [-1, 1]) {
+        const lens = new THREE.Mesh(lensGeometry, lensMat)
+        lens.position.set(side * (width / 2 - 0.08), i * spacing, 0)
+        gridGroup.add(lens)
+        glowPoints.push(new THREE.Vector3(side * (width / 2 - 0.1), i * spacing, 0))
+      }
     }
+    addLaserGlow(gridGroup, laserMat, glowPoints, 0.45)
 
     // If the laser has been rotated by 90 degrees, its width now runs
     // along Z instead of X, so its collision box must rotate as well.
@@ -536,6 +559,8 @@ export function createStealthSystem({
         if (laserMat.customUniforms) {
           laserMat.customUniforms.uState.value = isActive ? 0 : 1
         }
+        lensMat.emissive.setHex(isActive ? 0xff2a1a : 0x10b981)
+        lensMat.emissiveIntensity = isActive ? 3.5 : 0.8
       }
     }
 

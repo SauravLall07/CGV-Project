@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { getKitMaterials } from '../level1-kit/kit-materials.js'
+import { retile } from '../level1-kit/kit-props.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
@@ -460,6 +462,15 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     exitDoor.update(delta)
     hints.update()
   }
+
+  // Same ticket-hall surfaces as Passageway 4 (reference 02).
+  const kit = getKitMaterials()
+  retile(group, [
+    [floorMat, kit.checker, 2.4],
+    [wallMat, kit.plaster, 3],
+    [panelMat, kit.wainscot, 1.4],
+    [ceilingMat, kit.ceiling, 3]
+  ])
 
   function dispose() {
     unregisterPanel?.()

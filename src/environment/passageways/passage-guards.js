@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { getKitMaterials } from '../level1-kit/kit-materials.js'
+import { retile } from '../level1-kit/kit-props.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
@@ -728,6 +730,14 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     puzzleDoor.update(delta)
     hints.update()
   }
+
+  // Service level in the laser passage's kit (reference 03).
+  const kit = getKitMaterials()
+  retile(group, [
+    [floorMat, kit.concrete, 3],
+    [wallMat, kit.brick, 0.46],
+    [ceilingMat, kit.ceiling, 3]
+  ])
 
   function dispose() {
     signalPuzzle.dispose()

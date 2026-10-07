@@ -14,6 +14,22 @@ import {
   createTimedLaserController
 } from './passage-components.js'
 import { addPassageShell } from './passage-exterior.js'
+import { getKitMaterials } from '../level1-kit/kit-materials.js'
+import {
+  at,
+  bulkheadLamp,
+  createKitBuilder,
+  crateBattens,
+  greenDoor,
+  kbox,
+  luggageTrolley,
+  nightWindow,
+  pipeRun,
+  retile,
+  rod
+} from '../level1-kit/kit-props.js'
+import { addLanterns } from '../landing/lantern.js'
+import { addWallGlows } from '../landing/light-pools.js'
 
 const PASSAGE_X_SHIFT = -66
 const worldX = (x) => x + PASSAGE_X_SHIFT
@@ -325,19 +341,16 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     group.add(wainscot)
   }
 
-  const bulbMat = new THREE.MeshStandardMaterial({
-    color: 0xffe7bf,
-    emissive: 0xffbd70,
-    emissiveIntensity: 3.2,
-    roughness: 0.15
-  })
+  // Caged bulkheads on the ceiling, dome down.
+  const k = getKitMaterials()
+  const kit = createKitBuilder()
+  const decor = createKitBuilder()
+  const domeDown = new THREE.Matrix4().makeRotationX(Math.PI)
   for (const x of [-89, -84, -79, -74, -69].map(worldX)) {
-    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), bulbMat)
-    lamp.position.set(x, 4.55, CORRIDOR_Z)
-    group.add(lamp)
+    bulkheadLamp(decor, k, at(x, ROOM_HEIGHT - 0.1, CORRIDOR_Z).multiply(domeDown))
 
     const light = new THREE.PointLight(0xffc98a, 15, 9, 2)
-    light.position.copy(lamp.position)
+    light.position.set(x, 4.55, CORRIDOR_Z)
     group.add(light)
   }
 
@@ -359,20 +372,14 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
 
   // Waist-high maintenance cabinets create readable camera cover without
   // introducing guard stealth before Passageway 2.
-  addBox(group, colliders, {
-    size: new THREE.Vector3(1.25, 1.35, 0.85),
-    position: new THREE.Vector3(worldX(-81.3), 0.675, -26.25),
-    material: ironMat,
-    colliderInset: 0.06,
-    name: 'camera-cover-cabinet-a'
-  })
-  addBox(group, colliders, {
-    size: new THREE.Vector3(1.1, 1.2, 0.85),
-    position: new THREE.Vector3(worldX(-79.7), 0.6, -22.8),
-    material: ironMat,
-    colliderInset: 0.06,
-    name: 'camera-cover-cabinet-b'
-  })
+  // Dressed as stencilled freight crates; same boxes, same colliders.
+  for (const [size, position, name] of [
+    [new THREE.Vector3(1.25, 1.35, 0.85), new THREE.Vector3(worldX(-81.3), 0.675, -26.25), 'camera-cover-cabinet-a'],
+    [new THREE.Vector3(1.1, 1.2, 0.85), new THREE.Vector3(worldX(-79.7), 0.6, -22.8), 'camera-cover-cabinet-b']
+  ]) {
+    addBox(group, colliders, { size, position, material: k.crate, colliderInset: 0.06, name })
+    crateBattens(kit, k, at(position.x, 0, position.z), size.x, size.y, size.z)
+  }
 
   // Puzzle partition at the end of the long gallery. Solid side pieces leave a
   // single central door so the cipher is a real progression gate.
@@ -671,6 +678,75 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     })
     stageBulkhead.userData.stageBoundary = true
   }
+
+  // Reference 03: glazed cream brick over dark green tile, a damp concrete
+  // floor, pipes, caged lamps and lanterns, a green service door with a lit
+  // transom, and a window onto the moonlit platform.
+  retile(group, [
+    [floorMat, k.concrete, 3],
+    [wallMat, k.brick, 0.46],
+    [panelMat, k.tile, 0.6],
+    [ceilingMat, k.ceiling, 3]
+  ])
+  const galleryX = worldX(-79.5)
+  const northFace = CORRIDOR_Z - CORRIDOR_WIDTH / 2 + 0.12
+  const southFace = CORRIDOR_Z + CORRIDOR_WIDTH / 2 - 0.12
+  for (const z of [northFace + 0.08, southFace - 0.08]) {
+    kit.add(k.greenDark, kbox(26.4, 0.06, 0.1, galleryX, 1.37, z))
+    kit.add(k.greenDark, kbox(26.4, 0.14, 0.1, galleryX, 0.07, z))
+  }
+
+  const V = (x, y, z) => new THREE.Vector3(x, y, z)
+  const westX = PASSAGE_START_X + 0.4
+  const eastX = PUZZLE_DOOR_X - 0.15
+  pipeRun(decor, k, V(westX, 4.78, northFace + 0.16), V(eastX, 4.78, northFace + 0.16), 0.07, k.pipe, V(0, 0, -1))
+  pipeRun(decor, k, V(westX, 4.5, northFace + 0.13), V(eastX, 4.5, northFace + 0.13), 0.045, k.copper, V(0, 0, -1))
+  pipeRun(decor, k, V(westX, 4.9, southFace - 0.16), V(eastX, 4.9, southFace - 0.16), 0.055, k.pipe, V(0, 0, 1))
+  for (const [y, z, r, mat] of [[4.78, northFace + 0.16, 0.07, k.pipe], [4.5, northFace + 0.13, 0.045, k.copper], [4.9, southFace - 0.16, 0.055, k.pipe]]) {
+    decor.add(mat, rod(V(westX, y, z), V(westX, ROOM_HEIGHT - 0.05, z), r, 10))
+  }
+  // A drop pipe with a valve wheel on the north wall.
+  const valveX = worldX(-75)
+  const valveZ = northFace + 0.16
+  pipeRun(decor, k, V(valveX, 4.78, valveZ), V(valveX, 1.5, valveZ), 0.05, k.pipe, V(0, 0, -1))
+  decor.add(k.iron, rod(V(valveX, 1.95, valveZ), V(valveX, 1.95, valveZ + 0.16), 0.015, 6))
+  const wheel = new THREE.TorusGeometry(0.15, 0.018, 6, 20)
+  wheel.translate(valveX, 1.95, valveZ + 0.16)
+  decor.add(k.green, wheel)
+  decor.add(k.green, kbox(0.3, 0.025, 0.02, valveX, 1.95, valveZ + 0.16))
+  decor.add(k.green, kbox(0.025, 0.3, 0.02, valveX, 1.95, valveZ + 0.16))
+
+  // Lanterns between the bulkheads, each washing its patch of wall.
+  const lanterns = [
+    ...[-155, -146, -139.5, -133.5].map((x) => ({ x, y: 2.6, z: northFace + 0.3, yaw: -Math.PI / 2 })),
+    ...[-155, -149.5, -143.6, -137.6].map((x) => ({ x, y: 2.6, z: southFace - 0.3, yaw: Math.PI / 2 }))
+  ]
+  const lanternGroup = new THREE.Group()
+  lanternGroup.name = 'tutorial-lanterns'
+  addLanterns(lanternGroup, lanterns, { iron: k.iron, lantern: k.lantern })
+  addWallGlows(lanternGroup, lanterns.map(({ x, z, yaw }) => ({
+    x,
+    y: 2.75,
+    z: z < CORRIDOR_Z ? northFace + 0.02 : southFace - 0.02,
+    yaw,
+    width: 1.9,
+    height: 2.3,
+    strength: 0.26
+  })), null, 0xff9e52, 'tutorial-wall-glow')
+  lanternGroup.traverse((node) => {
+    node.userData.decor = true
+    node.userData.noInteractionBlocker = true
+    node.userData.noCameraCollision = true
+  })
+  group.add(lanternGroup)
+
+  greenDoor(decor, k, at(worldX(-83.5), 0, northFace + 0.08, 0), 1.2, 2.3)
+  nightWindow(decor, k, at(worldX(-73.6), 2.75, southFace, Math.PI), 2.4, 1.5)
+  // Porter's trolley parked in the turn room's far corner.
+  luggageTrolley(decor, k, at(TURN_ROOM_EAST_X - 1.1, 0, CORRIDOR_Z + CORRIDOR_WIDTH / 2 - 0.75, Math.PI / 2))
+
+  kit.build(group, 'tutorial-kit')
+  decor.build(group, 'tutorial-decor', { decor: true })
 
   // Contextual tutorial zones. Only genuinely new mechanics use the large
   // walkthrough overlay; reminders remain small HUD toasts.

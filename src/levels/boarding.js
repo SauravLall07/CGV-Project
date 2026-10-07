@@ -276,7 +276,7 @@ export function createBoardingLevel({
   // Collect solid obstacles for line-of-sight raycasts
   const collidables = []
   station.traverse((child) => {
-    if (child.isMesh && child.name !== 'vision-cone') {
+    if (child.isMesh && child.name !== 'vision-cone' && !child.userData.decor) {
       collidables.push(child)
     }
   })

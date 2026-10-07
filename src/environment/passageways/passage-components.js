@@ -1,5 +1,20 @@
 import * as THREE from 'three'
-import { createSecurityLaserMaterial } from '../../shaders/security-laser.js'
+import { addLaserGlow, createSecurityLaserMaterial } from '../../shaders/security-laser.js'
+import { getKitMaterials } from '../level1-kit/kit-materials.js'
+import { at, createKitBuilder, laserEmitter } from '../level1-kit/kit-props.js'
+
+// Emitter boxes with a red lens, facing along `yaw`, plus the beam-end glow.
+function addEmitters(group, laserMat, ends) {
+  const k = getKitMaterials()
+  const kit = createKitBuilder()
+  for (const { x, y, z, yaw } of ends) laserEmitter(kit, k, at(x, y, z, yaw))
+  kit.build(group, 'laser-emitters')
+  addLaserGlow(group, laserMat, ends.map(({ x, y, z, yaw }) => new THREE.Vector3(
+    x + Math.sin(yaw) * 0.1,
+    y + 0.02,
+    z + Math.cos(yaw) * 0.1
+  )))
+}
 
 export function createAxisAlignedCorridor({
   start,
@@ -323,22 +338,22 @@ export function createSweepingLaser({
   group.name = 'sweeping-laser'
   group.position.copy(position)
 
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x17202a, roughness: 0.32, metalness: 0.82 })
   const laserMat = createSecurityLaserMaterial({ beamCount: 1 })
 
   const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.025, 0.025, beamLength, 14),
+    new THREE.CylinderGeometry(0.018, 0.018, beamLength, 10),
     laserMat
   )
   beam.rotation.x = Math.PI / 2
   beam.position.y = beamHeight
   group.add(beam)
 
-  for (const side of [-1, 1]) {
-    const emitter = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.2), frameMat)
-    emitter.position.set(0, beamHeight, side * beamLength / 2)
-    group.add(emitter)
-  }
+  addEmitters(group, laserMat, [-1, 1].map((side) => ({
+    x: 0,
+    y: beamHeight,
+    z: side * beamLength / 2,
+    yaw: side > 0 ? Math.PI : 0
+  })))
 
   let elapsed = 0
   let hitCooldown = 0
@@ -424,8 +439,8 @@ export function createLaserFloor({
   const direction = alongX ? Math.sign(dx || 1) : Math.sign(dz || 1)
 
   const laserMat = createSecurityLaserMaterial({ beamCount: 1 })
-  const emitterMat = new THREE.MeshStandardMaterial({ color: 0x151e27, roughness: 0.3, metalness: 0.86 })
   const padMat = new THREE.MeshStandardMaterial({ color: 0x20262c, roughness: 0.72, metalness: 0.42 })
+  const emitterEnds = []
 
   const rows = []
   const margin = Math.min(1.05, length * 0.12)
@@ -455,14 +470,13 @@ export function createLaserFloor({
     }
 
     for (const side of [-1, 1]) {
-      const emitter = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), emitterMat)
-      if (alongX) emitter.position.set(x, y + 0.09, z + side * (width / 2 - 0.08))
-      else emitter.position.set(x + side * (width / 2 - 0.08), y + 0.09, z)
-      group.add(emitter)
+      if (alongX) emitterEnds.push({ x, y: y + 0.09, z: z + side * (width / 2 - 0.08), yaw: side > 0 ? Math.PI : 0 })
+      else emitterEnds.push({ x: x + side * (width / 2 - 0.08), y: y + 0.09, z, yaw: side > 0 ? -Math.PI / 2 : Math.PI / 2 })
     }
 
     rows.push({ x, z })
   }
+  addEmitters(group, laserMat, emitterEnds)
 
   // Slightly raised dark pads make the safe gaps legible without becoming
   // physical steps that would interfere with the player's ground sampler.
@@ -514,7 +528,6 @@ export function createLaserFloor({
 
   function dispose() {
     laserMat.dispose()
-    emitterMat.dispose()
     padMat.dispose()
   }
 

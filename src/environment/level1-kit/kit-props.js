@@ -59,6 +59,21 @@ export function metreUv(geometry, tile) {
   return geometry
 }
 
+// Swaps materials under `root` and retiles their boxes and planes once each.
+// swaps: [[oldMaterial, newMaterial, tile]]
+export function retile(root, swaps) {
+  const done = new Set()
+  root.traverse((node) => {
+    if (!node.isMesh) return
+    const swap = swaps.find(([from]) => from === node.material)
+    if (!swap) return
+    node.material = swap[1]
+    if (done.has(node.geometry)) return
+    done.add(node.geometry)
+    metreUv(node.geometry, swap[2])
+  })
+}
+
 function cylinder(rTop, rBottom, h, segments = 12, x = 0, y = 0, z = 0) {
   const geometry = new THREE.CylinderGeometry(rTop, rBottom, h, segments)
   geometry.translate(x, y, z)
@@ -116,7 +131,9 @@ export function createKitBuilder() {
     instances.get(key).matrices.push(matrix.clone())
   }
 
-  function build(parent, name = 'kit') {
+  // `decor`: wall dressing that should not block guard sight, interaction
+  // rays or the camera (see the collidables filter in boarding.js).
+  function build(parent, name = 'kit', { decor = false } = {}) {
     const meshes = []
     let n = 0
     for (const [material, [plain, shadowed]] of parts) {
@@ -140,6 +157,13 @@ export function createKitBuilder() {
       mesh.computeBoundingSphere()
       parent.add(mesh)
       meshes.push(mesh)
+    }
+    if (decor) {
+      for (const mesh of meshes) {
+        mesh.userData.decor = true
+        mesh.userData.noInteractionBlocker = true
+        mesh.userData.noCameraCollision = true
+      }
     }
     parts.clear()
     instances.clear()
@@ -255,6 +279,11 @@ export function cushionedBench(b, k, M) {
 // Crate: stencilled boards and corner battens.
 export function crate(b, k, M, w = 0.8, h = 0.7, d = 0.8) {
   b.add(k.crate, kbox(w, h, d, 0, h / 2, 0), M, true)
+  crateBattens(b, k, M, w, h, d)
+}
+
+// Corner and rim battens alone, for a box that already exists.
+export function crateBattens(b, k, M, w, h, d) {
   const t = 0.05
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
