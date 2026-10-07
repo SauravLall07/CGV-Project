@@ -51,7 +51,7 @@ export function addWindowBays(parent, openings, materials, stats) {
   const surrounds = []
   const frames = []
   openings.forEach((opening, index) => {
-    const matrix = place(opening.x, opening.y, opening.z, opening.yaw || 0)
+    const matrix = place(opening.x, opening.y, opening.z, opening.yaw || 0, opening.scale || 1)
     surrounds.push(matrix)
     frames.push(matrix)
     buckets[opening.shade ?? 0].push(matrix.clone())

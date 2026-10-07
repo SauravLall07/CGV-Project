@@ -38,9 +38,10 @@ export function box(w, h, d, x, y, z, tile = 0) {
   return geometry
 }
 
-export function place(x, y, z, yaw = 0) {
+export function place(x, y, z, yaw = 0, scale = 1) {
   _p.set(x, y, z)
   _q.setFromAxisAngle(_up, yaw)
+  _s.setScalar(scale)
   return new THREE.Matrix4().compose(_p, _q, _s)
 }
 

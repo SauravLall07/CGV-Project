@@ -179,8 +179,8 @@ export function createSkyDome(presetName) {
     uHorizonColor: { value: new THREE.Color(preset.horizon) },
     // Zenith tint for the night lift and the finale grade.
     uZenithColor: { value: new THREE.Color(preset.zenith) },
-    // 1 turns everything below the horizon black, for scenes that hide the
-    // terrain. The environment capture ignores it.
+    // 1 turns everything below the horizon black and darkens the low sky,
+    // for scenes that hide the terrain. The environment capture ignores it.
     uGroundBlack: { value: 0 }
   }
 
@@ -287,8 +287,13 @@ export function createSkyDome(presetName) {
       vec3 direction = normalize(vWorldPosition - cameraPosition);
       vec3 skyColor = evaluateSky(direction);
       float ground = 1.0 - smoothstep(-0.015, 0.05, direction.y);
+      // The low sky goes nearly black too, so gaps between rooftops read as
+      // night rather than glowing horizon. The moon (y ≈ 0.5) and the
+      // stars above it are untouched.
+      float lowSky = 1.0 - smoothstep(0.04, 0.4, direction.y);
+      float dark = max(ground, lowSky * 0.94);
 
-      gl_FragColor = vec4(skyColor * (1.0 - uGroundBlack * ground), 1.0);
+      gl_FragColor = vec4(skyColor * (1.0 - uGroundBlack * dark), 1.0);
 
       // Same ACES curve and output colour space as every other material.
       // Both chunks are what the three.js Sky example includes.

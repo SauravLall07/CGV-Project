@@ -8,6 +8,7 @@ import { addCentreLamp, CENTRE_LAMP_BASE } from './centre-lamp.js'
 import { addLampPosts, LAMP_GLOW } from './lamp-post.js'
 import { addLightPools } from './light-pools.js'
 import { addPlanters } from './planter.js'
+import { STREET } from './town.js'
 
 // Cobbles in front of the west facade, plus the street furniture. The plaza
 // stops at the rail side (x ≈ 9); the walkable platform never reaches it.
@@ -20,34 +21,40 @@ const PLAZA_Z1 = PLAZA.maxZ
 // Iron screen on the quay, with a hedge on the track side of it. Tall
 // enough that the locomotive, the platform and the guards sit behind it.
 // The plume is placed on the track so only the steam clears the top rail.
+// Two runs of fence and hedge, with the street opening between them.
 function addTrackScreen(parent, materials, stats) {
   const x = PLAZA.minX - 0.12
-  const z0 = PLAZA.minZ + 0.2
-  const z1 = PLAZA.maxZ - 0.2
-  const length = z1 - z0
-  const midZ = (z0 + z1) / 2
   const height = 4.55
-  const postCount = Math.round(length / 2.35) + 1
+  const runs = [
+    [PLAZA.minZ + 0.2, STREET.minZ - 0.2],
+    [STREET.maxZ + 0.2, PLAZA.maxZ - 0.2]
+  ]
   const posts = []
-  for (let i = 0; i < postCount; i += 1) {
-    posts.push(place(x, PLAZA.y, z0 + (i / (postCount - 1)) * length))
+  const rails = []
+  const pickets = []
+  const hedges = []
+  for (const [z0, z1] of runs) {
+    const length = z1 - z0
+    const midZ = (z0 + z1) / 2
+    const postCount = Math.round(length / 2.35) + 1
+    for (let i = 0; i < postCount; i += 1) {
+      posts.push(place(x, PLAZA.y, z0 + (i / (postCount - 1)) * length))
+    }
+    for (let i = 0; i < 6; i += 1) {
+      rails.push(box(0.028, 0.028, length, x, 0.5 + i * 0.68, midZ))
+    }
+    rails.push(box(0.05, 0.04, length, x, height - 0.02, midZ))
+    const picketCount = Math.floor(length / 0.15)
+    for (let i = 0; i < picketCount; i += 1) {
+      pickets.push(place(x, PLAZA.y, z0 + (i + 0.5) * (length / picketCount)))
+    }
+    hedges.push(box(0.55, 3.2, length, x - 0.42, 1.65, midZ))
   }
+
   addInstances(parent, box(0.1, height, 0.1, 0, height / 2, 0), materials.iron, posts, {
     name: 'landing-fence-posts'
   }, stats)
-
-  const rails = []
-  for (let i = 0; i < 6; i += 1) {
-    rails.push(box(0.028, 0.028, length, x, 0.5 + i * 0.68, midZ))
-  }
-  rails.push(box(0.05, 0.04, length, x, height - 0.02, midZ))
   addMesh(parent, mergeParts(rails), materials.iron, { name: 'landing-fence-rails' }, stats)
-
-  const picketCount = Math.floor(length / 0.15)
-  const pickets = []
-  for (let i = 0; i < picketCount; i += 1) {
-    pickets.push(place(x, PLAZA.y, z0 + (i + 0.5) * (length / picketCount)))
-  }
   addInstances(
     parent,
     box(0.016, height - 0.2, 0.016, 0, (height - 0.2) / 2 + 0.1, 0),
@@ -56,10 +63,7 @@ function addTrackScreen(parent, materials, stats) {
     { name: 'landing-fence-pickets' },
     stats
   )
-
-  addMesh(parent, box(0.55, 3.2, length, x - 0.42, 1.65, midZ), materials.shrub, {
-    name: 'landing-hedge'
-  }, stats)
+  addMesh(parent, mergeParts(hedges), materials.shrub, { name: 'landing-hedge' }, stats)
 }
 
 function addPlaza(parent, materials, stats) {

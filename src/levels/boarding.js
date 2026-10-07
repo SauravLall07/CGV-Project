@@ -56,6 +56,7 @@ export function createBoardingLevel({
   // East of the rails, outside the walkable bounds. Not a child of `station`,
   // so it is not an interaction blocker and guards do not treat it as cover.
   const landing = createLandingScene()
+  landing.town.visible = false
 
   // Shared finite inventory for throwable guard distractions. Passageways 2
   // and 3 both read/write this same object, so pickups carry across the vent.
@@ -167,6 +168,9 @@ export function createBoardingLevel({
       for (const [node, visible] of hiddenOutside) node.visible = visible
       hiddenOutside.clear()
     }
+    // The town stands over the platform and the track, so it is shown only
+    // while they are hidden.
+    landing.town.visible = hide
     sky.uniforms.uGroundBlack.value = hide ? 1 : 0
   }
 
