@@ -7,6 +7,7 @@ import {
 } from '../entities/police-visual.js'
 import { disposeObject } from '../core/dispose.js'
 import { addLaserGlow, createSecurityLaserMaterial } from '../shaders/security-laser.js'
+import { createLightShaftMaterial } from '../shaders/light-shaft.js'
 import { resolveBoxCollision, resolveCircleCollision } from '../core/collision.js'
 import { createNearRaycastSet } from '../core/near-raycast.js'
 
@@ -67,6 +68,12 @@ const DISTRACTION_STOP_DISTANCE = 1.5
 // player (the route is not progressing).
 const CHRONO_SCALE = { NORMAL: 1, SLOW: 0.2, FREEZE: 0, REWIND: 0 }
 
+// Beam colours. Torches are warm white on patrol; cameras are a dim red at
+// rest and a bright red while they can see the player.
+const GUARD_BEAM_COLOR = 0xffe2b0
+const CAMERA_IDLE_COLOR = 0xa82222
+const CAMERA_ALERT_COLOR = 0xff2a2a
+
 export function createStealthSystem({
   scene,
   player,
@@ -111,13 +118,7 @@ export function createStealthSystem({
     coneGeo.rotateX(-Math.PI / 2)
     coneGeo.translate(0, 0, distance / 2)
 
-    const coneMat = new THREE.MeshBasicMaterial({
-      color: 0xfacc15,
-      transparent: true,
-      opacity: 0.22,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    })
+    const coneMat = createLightShaftMaterial({ color: GUARD_BEAM_COLOR, length: distance, strength: 0.5 })
 
     const mesh = new THREE.Mesh(coneGeo, coneMat)
     mesh.name = 'vision-cone'
@@ -416,13 +417,7 @@ export function createStealthSystem({
     coneGeo.rotateX(-Math.PI / 2)
     coneGeo.translate(0, 0, range / 2)
 
-    const coneMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.2,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    })
+    const coneMat = createLightShaftMaterial({ color: CAMERA_IDLE_COLOR, length: range, strength: 0.9 })
 
     const coneMesh = new THREE.Mesh(coneGeo, coneMat)
     coneMesh.rotation.x = 0.55 // pitch down toward platform
@@ -952,7 +947,7 @@ export function createStealthSystem({
         guard.coneMat.color.setHex(0x22d3ee)
         guard.statusBeacon.material.color.setHex(0x22d3ee)
       } else {
-        guard.coneMat.color.setHex(0xfacc15)
+        guard.coneMat.color.setHex(GUARD_BEAM_COLOR)
         guard.statusBeacon.material.color.setHex(0xfacc15)
       }
 
@@ -1181,10 +1176,10 @@ export function createStealthSystem({
       if (isSeeing) {
         reportDetection('camera', cd)
         cam.ledMat.color.setHex(0xef4444)
-        cam.coneMat.color.setHex(0xef4444)
+        cam.coneMat.color.setHex(CAMERA_ALERT_COLOR)
       } else {
         cam.ledMat.color.setHex(0x38bdf8)
-        cam.coneMat.color.setHex(0x38bdf8)
+        cam.coneMat.color.setHex(CAMERA_IDLE_COLOR)
       }
     })
 

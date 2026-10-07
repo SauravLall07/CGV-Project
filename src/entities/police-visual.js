@@ -295,7 +295,7 @@ function createTorch(torchScene) {
   placeBeamAtLens(torch, beamOrigin)
 
   // Visual only — gameplay detection still uses getBeamWorldPosition + the
-  // yellow cone in stealth.js. Target is a child so the beam follows +Z.
+  // light-shaft cone in stealth.js. Target is a child so the beam follows +Z.
   const spot = new THREE.SpotLight(0xffc07a, 22, 9, Math.PI / 4.5, 0.55, 2)
   spot.name = 'torch-spot'
   spot.castShadow = false

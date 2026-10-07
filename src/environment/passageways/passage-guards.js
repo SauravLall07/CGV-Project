@@ -572,7 +572,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     modal: true,
     eyebrow: 'Passageway 2 · Stealth',
     title: 'Guards & Crouching',
-    text: 'Yellow vision cones show where guards can see. Watch their patrol before moving. Crouching is slower, but it makes you much harder to detect while crossing exposed ground.',
+    text: 'Torch beams show where guards can see. Watch their patrol before moving. Crouching is slower, but it makes you much harder to detect while crossing exposed ground.',
     controls: [
       { label: 'Crouch / Sneak', action: 'duck' }
     ]

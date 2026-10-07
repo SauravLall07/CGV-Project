@@ -770,7 +770,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     modal: true,
     eyebrow: 'Passageway 1 · Security Training',
     title: 'Security Cameras',
-    text: 'Blue vision cones show where a camera can see. Being watched raises suspicion, so wait for the sweep to move away or keep solid cover between you and the camera.'
+    text: 'Red vision cones show where a camera can see. Being watched raises suspicion, so wait for the sweep to move away or keep solid cover between you and the camera.'
   })
   hints.addZone({
     id: 'tutorial-timed-gate',
