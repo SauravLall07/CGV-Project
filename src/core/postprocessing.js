@@ -17,6 +17,10 @@ import { settings } from './settings.js'
 // three mips are blurred. There is no FXAA pass: another full-resolution
 // resolve would spend the fill-rate the MSAA target was using.
 
+// OutputPass is a RawShaderMaterial, so Three never injects
+// linearToOutputTexel. The stock output shader encodes with sRGBTransferOETF
+// under the SRGB_TRANSFER define OutputPass sets itself. Grade runs on the
+// linear colour, then tone mapping once, then that encode.
 const FINAL_FRAGMENT = /* glsl */ `
   precision highp float;
 
@@ -31,9 +35,8 @@ const FINAL_FRAGMENT = /* glsl */ `
   varying vec2 vUv;
 
   void main() {
-    gl_FragColor = texture2D(tDiffuse, vUv);
-
-    vec3 color = gl_FragColor.rgb;
+    vec4 sampleColor = texture2D(tDiffuse, vUv);
+    vec3 color = sampleColor.rgb;
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     color = mix(vec3(luma), color, uSaturation);
     float shadow = 1.0 - smoothstep(0.02, 0.55, luma);
@@ -41,7 +44,7 @@ const FINAL_FRAGMENT = /* glsl */ `
     vec2 p = vUv * 2.0 - 1.0;
     float vig = smoothstep(1.22, 0.28, length(p * vec2(0.82, 1.0)));
     color *= mix(1.0 - uVignette, 1.0, vig);
-    gl_FragColor.rgb = max(color, 0.0);
+    gl_FragColor = vec4(max(color, 0.0), 1.0);
 
     #ifdef LINEAR_TONE_MAPPING
       gl_FragColor.rgb = LinearToneMapping(gl_FragColor.rgb);
@@ -59,7 +62,9 @@ const FINAL_FRAGMENT = /* glsl */ `
       gl_FragColor.rgb = CustomToneMapping(gl_FragColor.rgb);
     #endif
 
-    gl_FragColor = linearToOutputTexel(gl_FragColor);
+    #ifdef SRGB_TRANSFER
+      gl_FragColor = sRGBTransferOETF(gl_FragColor);
+    #endif
   }
 `
 
@@ -71,7 +76,12 @@ export function createPostProcessing(renderer) {
   const target = new THREE.WebGLRenderTarget(
     Math.max(1, Math.floor(size.x * ratio)),
     Math.max(1, Math.floor(size.y * ratio)),
-    { type: THREE.HalfFloatType }
+    {
+      type: THREE.HalfFloatType,
+      depthBuffer: true,
+      stencilBuffer: false,
+      samples: 0
+    }
   )
   target.texture.name = 'chrono-post-target'
 
@@ -97,6 +107,8 @@ export function createPostProcessing(renderer) {
   outputPass.uniforms.uSaturation = { value: 1.06 }
   outputPass.uniforms.uWarmth = { value: 0.04 }
   outputPass.material.fragmentShader = FINAL_FRAGMENT
+  outputPass.material.depthTest = false
+  outputPass.material.depthWrite = false
   outputPass.material.needsUpdate = true
 
   composer.addPass(renderPass)
