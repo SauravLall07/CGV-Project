@@ -30,7 +30,12 @@ export function addLanterns(parent, placements, materials, stats) {
     cages.push(matrix)
     glows.push(matrix.clone())
     if (!placement.light) continue
-    const light = new THREE.PointLight(0xffb067, 12, 12, 2)
+    const light = new THREE.PointLight(
+      placement.color ?? 0xffb067,
+      placement.intensity ?? 12,
+      placement.distance ?? 12,
+      2
+    )
     light.name = 'landing-lantern'
     light.castShadow = false
     light.position.set(placement.x, placement.y + 0.08, placement.z)

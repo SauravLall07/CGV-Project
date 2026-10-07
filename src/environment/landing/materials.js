@@ -162,7 +162,7 @@ export function createLandingMaterials() {
     soffit: new THREE.MeshStandardMaterial({
       color: 0x3a2a18,
       emissive: 0xffb15a,
-      emissiveIntensity: 0.85,
+      emissiveIntensity: 1.55,
       roughness: 0.6
     }),
     glass: [
@@ -172,6 +172,7 @@ export function createLandingMaterials() {
       glassMaterial(0x100e0c, 0)
     ],
     archGlass: glassMaterial(0xc08048, 0.38),
+    entranceGlass: glassMaterial(0xffc090, 2.45),
     clock: new THREE.MeshStandardMaterial({
       map: clockMap,
       emissiveMap: clockMap,

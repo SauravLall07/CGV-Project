@@ -101,13 +101,16 @@ function addShelter(parent, materials, stats) {
   addMesh(parent, mergeParts(posts), materials.iron, { name: 'landing-shelter-posts' }, stats)
 }
 
+// A chain of pools from the spawn (13.55, 14.35) up to the steps, plus one
+// lamp on the west edge that is close enough to the opening view to stay
+// in the light pool. That edge lamp is the one that flickers.
 const LAMPS = [
-  { x: 11.4, y: 0.05, z: 2.2, flicker: true },
-  { x: 11.6, y: 0.05, z: 9.2 },
-  { x: 11.2, y: 0.05, z: 16.4 },
-  { x: 11.5, y: 0.05, z: 23.8 },
-  { x: 11.3, y: 0.05, z: 31.2 },
-  { x: 11.6, y: 0.05, z: 37.4 }
+  { x: 10.5, y: 0.05, z: 23.2, flicker: true },
+  { x: 12.2, y: 0.05, z: 13.0 },
+  { x: 15.2, y: 0.05, z: 15.15 },
+  { x: 17.15, y: 0.05, z: 15.55 },
+  { x: 16.5, y: 0.05, z: 20.4 },
+  { x: 18.5, y: 0.05, z: 17.15 }
 ]
 
 const BENCHES = [
