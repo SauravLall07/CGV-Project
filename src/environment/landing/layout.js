@@ -69,8 +69,8 @@ export const LANDING_CAMERA = {
   driftSpeed: 0.05
 }
 
-// Cobbles in front of the west face. The west edge is the quay above the
-// rails; the player is stopped there and cannot cross onto the track.
+// Cobbles in front of the west face. The west edge is the quay, lined with
+// shops; the player is stopped at their fronts and at the street bollards.
 export const PLAZA = {
   minX: 8.7,
   maxX: FACADE_X - 0.15,

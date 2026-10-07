@@ -1,70 +1,21 @@
 import * as THREE from 'three'
 import { addBenches } from './bench.js'
 import { addCars } from './car.js'
-import { addInstances, addMesh, box, mergeParts, place } from './geom.js'
+import { addMesh, box, mergeParts } from './geom.js'
 import { CENTER_Z, FACADE_X, PLAZA } from './layout.js'
 import { addCentreLamp, CENTRE_LAMP_BASE } from './centre-lamp.js'
 import { addLampPosts, LAMP_GLOW } from './lamp-post.js'
 import { addLightPools } from './light-pools.js'
 import { addPlanters } from './planter.js'
 import { createSteam } from './steam.js'
-import { STREET } from './town.js'
 
 // Cobbles in front of the west facade, plus the street furniture. The plaza
-// stops at the rail side (x ≈ 9); the walkable platform never reaches it.
+// stops at the quay shops (x ≈ 9); the walkable platform never reaches it.
 
 const PLAZA_X0 = PLAZA.minX
 const PLAZA_X1 = PLAZA.maxX
 const PLAZA_Z0 = PLAZA.minZ
 const PLAZA_Z1 = PLAZA.maxZ
-
-// Iron screen on the quay, with a hedge on the track side of it. Tall
-// enough that the locomotive, the platform and the guards sit behind it.
-// The plume is placed on the track so only the steam clears the top rail.
-// Two runs of fence and hedge, with the street opening between them.
-function addTrackScreen(parent, materials, stats) {
-  const x = PLAZA.minX - 0.12
-  const height = 4.55
-  const runs = [
-    [PLAZA.minZ + 0.2, STREET.minZ - 0.2],
-    [STREET.maxZ + 0.2, PLAZA.maxZ - 0.2]
-  ]
-  const posts = []
-  const rails = []
-  const pickets = []
-  const hedges = []
-  for (const [z0, z1] of runs) {
-    const length = z1 - z0
-    const midZ = (z0 + z1) / 2
-    const postCount = Math.round(length / 2.35) + 1
-    for (let i = 0; i < postCount; i += 1) {
-      posts.push(place(x, PLAZA.y, z0 + (i / (postCount - 1)) * length))
-    }
-    for (let i = 0; i < 6; i += 1) {
-      rails.push(box(0.028, 0.028, length, x, 0.5 + i * 0.68, midZ))
-    }
-    rails.push(box(0.05, 0.04, length, x, height - 0.02, midZ))
-    const picketCount = Math.floor(length / 0.15)
-    for (let i = 0; i < picketCount; i += 1) {
-      pickets.push(place(x, PLAZA.y, z0 + (i + 0.5) * (length / picketCount)))
-    }
-    hedges.push(box(0.55, 3.2, length, x - 0.42, 1.65, midZ))
-  }
-
-  addInstances(parent, box(0.1, height, 0.1, 0, height / 2, 0), materials.iron, posts, {
-    name: 'landing-fence-posts'
-  }, stats)
-  addMesh(parent, mergeParts(rails), materials.iron, { name: 'landing-fence-rails' }, stats)
-  addInstances(
-    parent,
-    box(0.016, height - 0.2, 0.016, 0, (height - 0.2) / 2 + 0.1, 0),
-    materials.iron,
-    pickets,
-    { name: 'landing-fence-pickets' },
-    stats
-  )
-  addMesh(parent, mergeParts(hedges), materials.shrub, { name: 'landing-hedge' }, stats)
-}
 
 function addPlaza(parent, materials, stats) {
   const width = PLAZA_X1 - PLAZA_X0
@@ -210,6 +161,7 @@ function forecourtColliders() {
   }
   boxes.push({ minX: 20.35, maxX: 21.3, minZ: 24.6, maxZ: 25.2 })
   for (const post of SHELTER_POSTS) boxes.push(yawBox(post.x, post.z, 0.16, 0.16, 0, 0.06))
+  // The quay shop fronts, the street opening and its bollards.
   boxes.push({
     minX: PLAZA.minX - 0.85,
     maxX: PLAZA.minX + 0.05,
@@ -221,7 +173,6 @@ function forecourtColliders() {
 
 export function buildForecourt(parent, materials, stats) {
   addPlaza(parent, materials, stats)
-  addTrackScreen(parent, materials, stats)
   addLuggage(parent, materials, stats)
   addShelter(parent, materials, stats)
 
@@ -232,8 +183,11 @@ export function buildForecourt(parent, materials, stats) {
   addPlanters(parent, PLANTERS, materials, stats)
   addCars(parent, CARS, materials, stats)
 
-  const steam = createSteam()
-  steam.points.position.set(6.5, 3.3, 27.2)
+  // The engines stand behind the quay shops. The plume starts inside the
+  // two-storey bakery block (roof at 7.7 m), so only what clears the roof
+  // shows from the square.
+  const steam = createSteam({ height: 12, size: 2.6 })
+  steam.points.position.set(4.2, 7.0, 26.4)
   parent.add(steam.points)
   stats.draws += 1
 

@@ -6,11 +6,11 @@ import { PLAZA } from './layout.js'
 import { addWallGlows } from './light-pools.js'
 import { addWindowBays } from './window-bay.js'
 
-// Dark two- and three-storey terraces closing the square, and a street
-// running west from the quay behind the spawn into black. Built from the
-// station's own pieces: the same brick and stone trim, the window bay at a
-// smaller scale, the sign material and the cars. Most windows are dark;
-// two are dimly lit.
+// Dark two- and three-storey terraces closing the square on three sides,
+// shops along the quay, and a street running west from the quay behind the
+// spawn into black. Built from the station's own pieces: the same brick and
+// stone trim, the window bay at a smaller scale, the sign material and the
+// cars. Most windows are dark; a few are dimly lit.
 //
 // Everything west of the quay sits over the platform and the track. Those
 // are hidden while the player is on the forecourt and this group is hidden
@@ -285,16 +285,26 @@ export function buildTown(parent, materials, stats) {
     { width: 6.5, storeys: 3 },
     { width: 7, storeys: 2 }
   ], 6.4, tiles)
-  // Ends that show above the hedge from the square.
-  addFrontage(sinks, face([1, 0], QUAY_X, STREET.minZ), [
-    { width: STREET.minZ - 1, storeys: 3, mass: false }
-  ], 0, tiles)
-  addFrontage(sinks, face([1, 0], QUAY_X, STREET.maxZ + 6.4), [
-    { width: 6.4, storeys: 3, mass: false }
-  ], 0, tiles)
   addFrontage(sinks, face([1, 0], streetX, 23.5), [
     { width: 22.5, storeys: 3 }
   ], 8, tiles)
+
+  // Shops along the quay, facing the square, either side of the street.
+  // The two corner units front the street buildings' own masses; the rest
+  // are new 6.4 m deep terraces. The two-storey roofs let the steam behind
+  // them show from the square. Shop windows are dark but for the café and
+  // a faint pharmacy.
+  addFrontage(sinks, face([1, 0], QUAY_X, STREET.minZ), [
+    { width: 4.6, storeys: 3, mass: false, shop: true, sign: 'PHARMACY', shopShade: 2 },
+    { width: STREET.minZ - 1 - 4.6, storeys: 3, mass: false, shop: true, awning: true, sign: 'BARBER' },
+    { width: 1 - south, storeys: 2, shop: true, sign: 'IRONMONGER' }
+  ], QUAY_X - 2, tiles)
+  addFrontage(sinks, face([1, 0], QUAY_X, north), [
+    { width: 5.6, storeys: 2, shop: true, awning: true, sign: 'CAFÉ', shopShade: 1 },
+    { width: 6.1, storeys: 3, shop: true, sign: 'POST OFFICE' },
+    { width: north - STREET.maxZ - 5.6 - 6.1 - 6.4, storeys: 2, shop: true, awning: true, sign: 'BAKERY' },
+    { width: 6.4, storeys: 3, mass: false, shop: true, sign: 'TAILOR' }
+  ], QUAY_X - 2, tiles)
 
   addStreet(group, sinks, materials, stats, tiles)
 
@@ -325,7 +335,7 @@ export function buildTown(parent, materials, stats) {
 
   addCars(group, [...SQUARE_CARS, ...STREET_CARS], materials, stats)
 
-  // The entrance lamps throw a faint wash on the brick above the hedge.
+  // The entrance lamps throw a faint wash on the shop fronts above them.
   addWallGlows(group, [
     { x: QUAY_X + 0.03, y: 4.7, z: 8.85, width: 2.3, height: 3.4, strength: 0.32 },
     { x: QUAY_X + 0.03, y: 4.7, z: 18.9, width: 2.7, height: 3.4, strength: 0.32 }

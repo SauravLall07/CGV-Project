@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-// Steam off the engines beyond the fence. Each puff is a point sprite whose
+// Steam off the engines beyond the quay shops. Each puff is a point sprite whose
 // whole life runs in the vertex shader from one seed: it rises fast and
 // slows, swells, drifts off the square with the wind and fades out, then
 // starts again at the stack. The fragment shader gives it a soft round
