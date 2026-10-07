@@ -1,11 +1,11 @@
 import * as THREE from 'three'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
+import { dressWalls } from '../level1-kit/wall-dressing.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
-  plasterMaterial,
-  woodMaterial
+  plasterMaterial
 } from '../textures.js'
 import { createTutorialHintSystem } from '../../systems/tutorial-hints.js'
 import { createAxisAlignedCorridor, createPuzzleDoor } from './passage-components.js'
@@ -117,7 +117,6 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     grout: 0x332f2d
   })
   const wallMat = plasterMaterial({ repeat: [9, 3], base: 0x655d56, roughness: 0.9 })
-  const panelMat = woodMaterial({ repeat: [7, 2], light: 0x66452e, dark: 0x321f17 })
   const ceilingMat = plasterMaterial({ repeat: [9, 2], base: 0x3d3a3c, roughness: 0.96 })
   const ironMat = metalMaterial({ repeat: [6, 1], base: 0x2c3640, roughness: 0.48, metalness: 0.72 })
 
@@ -322,18 +321,6 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     group.add(lamp)
   }
 
-  // Match the station's wood-and-brass language so the onboarding space feels
-  // like part of the level rather than a separate grey test room.
-  for (const side of [-1, 1]) {
-    const z = CORRIDOR_Z + side * (CORRIDOR_WIDTH / 2 - 0.16)
-    const wainscot = new THREE.Mesh(
-      new THREE.BoxGeometry(PASSAGE_END_X - PASSAGE_START_X - 0.5, 1.35, 0.07),
-      panelMat
-    )
-    wainscot.position.set((PASSAGE_START_X + PASSAGE_END_X) / 2, 0.68, z)
-    group.add(wainscot)
-  }
-
   const bulbMat = new THREE.MeshStandardMaterial({
     color: 0xffe7bf,
     emissive: 0xffbd70,
@@ -468,9 +455,9 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   retile(group, [
     [floorMat, kit.checker, 2.4],
     [wallMat, kit.plaster, 3],
-    [panelMat, kit.wainscot, 1.4],
     [ceilingMat, kit.ceiling, 3]
   ])
+  dressWalls(group, { walls: [kit.plaster], finish: 'wood', name: 'onboarding-wall-dressing' })
 
   function dispose() {
     unregisterPanel?.()

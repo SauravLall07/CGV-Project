@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
+import { dressWalls } from '../level1-kit/wall-dressing.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
@@ -1534,6 +1535,7 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     [wallMat, kit.brick, 0.46],
     [ceilingMat, kit.ceiling, 3]
   ])
+  dressWalls(group, { walls: [kit.brick], finish: 'tile', name: 'bridge-wall-dressing' })
 
   function dispose() {
     powerPuzzle.dispose()

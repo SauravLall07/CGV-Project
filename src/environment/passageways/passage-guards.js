@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
+import { dressWalls } from '../level1-kit/wall-dressing.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
@@ -572,7 +573,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     modal: true,
     eyebrow: 'Passageway 2 · Stealth',
     title: 'Guards & Crouching',
-    text: 'Torch beams show where guards can see. Watch their patrol before moving. Crouching is slower, but it makes you much harder to detect while crossing exposed ground.',
+    text: 'Yellow vision cones show where guards can see. Watch their patrol before moving. Crouching is slower, but it makes you much harder to detect while crossing exposed ground.',
     controls: [
       { label: 'Crouch / Sneak', action: 'duck' }
     ]
@@ -738,6 +739,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     [wallMat, kit.brick, 0.46],
     [ceilingMat, kit.ceiling, 3]
   ])
+  dressWalls(group, { walls: [kit.brick], finish: 'wood', name: 'guards-wall-dressing' })
 
   function dispose() {
     signalPuzzle.dispose()

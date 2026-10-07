@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import { getKitMaterials } from '../environment/level1-kit/kit-materials.js'
 import { createKitBuilder, kbox, rod } from '../environment/level1-kit/kit-props.js'
-import { addFloorGlows } from '../environment/landing/light-pools.js'
 import { createSteam } from '../environment/landing/steam.js'
 
 // Level 1's Chrono Express, built from the Level 1 kit: four deep green
@@ -444,17 +443,6 @@ export function createTrain() {
   const { door, hinge } = createBoardingDoor(k)
   door.position.z = doorZ
   train.add(door)
-
-  // Lamplight spilling onto the platform from the open door and the windows.
-  const glows = [{ x: -2.9, y: 1.0, z: doorZ, radius: 1.2, strength: 0.8 }]
-  for (let i = 0; i < CAR_COUNT; i += 1) {
-    for (const z of [...WINDOW_Z, -DOOR_Z, DOOR_Z]) {
-      const local = carZ(i) + z
-      if (Math.abs(TRAIN_Z + local) > PLATFORM_END_Z - 0.6 || local === doorZ) continue
-      glows.push({ x: -2.75, y: 1.0, z: local, radius: 0.8, strength: 0.22 })
-    }
-  }
-  addFloorGlows(train, glows, null, 0xffa860, 'train-window-glow')
 
   // Hidden boxes so interaction rays stop at the bodies. The door target
   // stands just outside its car's box.

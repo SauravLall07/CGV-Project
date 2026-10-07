@@ -2,8 +2,7 @@ import * as THREE from 'three'
 import {
   marbleFloorMaterial,
   metalMaterial,
-  plasterMaterial,
-  woodMaterial
+  plasterMaterial
 } from '../textures.js'
 import { createTutorialHintSystem } from '../../systems/tutorial-hints.js'
 import { createStaircase } from '../../core/stairs.js'
@@ -28,6 +27,7 @@ import {
   retile,
   rod
 } from '../level1-kit/kit-props.js'
+import { dressWalls } from '../level1-kit/wall-dressing.js'
 import { addLanterns } from '../landing/lantern.js'
 import { addWallGlows } from '../landing/light-pools.js'
 
@@ -293,9 +293,9 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     floorY: FLOOR_Y,
     wallHeight: ROOM_HEIGHT,
     skipWest: true,
-    skipEast: true
+    skipEast: true,
+    gaps: [{ side: 'minZ', from: STAIR_X - 1.6, to: STAIR_X + 1.6 }]
   })
-  const panelMat = woodMaterial({ repeat: [10, 2], light: 0x66452e, dark: 0x321f17 })
   const ceilingMat = plasterMaterial({ repeat: [12, 2], base: 0x3d3a3c, roughness: 0.96 })
   const ironMat = metalMaterial({ repeat: [8, 1], base: 0x2c3640, roughness: 0.48, metalness: 0.72 })
   const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.9 })
@@ -330,15 +330,6 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
       position: new THREE.Vector3(PASSAGE_START_X, ROOM_HEIGHT / 2, CORRIDOR_Z),
       material: wallMat
     })
-  }
-
-  // Wainscot and repeating warm lights keep the same station language as the
-  // existing passageways while making the new area feel deliberately authored.
-  for (const side of [-1, 1]) {
-    const z = CORRIDOR_Z + side * (CORRIDOR_WIDTH / 2 - 0.16)
-    const wainscot = new THREE.Mesh(new THREE.BoxGeometry(26.4, 1.35, 0.07), panelMat)
-    wainscot.position.set(worldX(-79.5), 0.68, z)
-    group.add(wainscot)
   }
 
   // Caged bulkheads on the ceiling, dome down.
@@ -685,16 +676,16 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   retile(group, [
     [floorMat, k.concrete, 3],
     [wallMat, k.brick, 0.46],
-    [panelMat, k.tile, 0.6],
     [ceilingMat, k.ceiling, 3]
   ])
-  const galleryX = worldX(-79.5)
+  dressWalls(group, {
+    walls: [k.brick],
+    finish: 'tile',
+    name: 'tutorial-wall-dressing',
+    clear: [{ minX: worldX(-83.5) - 0.7, maxX: worldX(-83.5) + 0.7, minZ: -28, maxZ: -27 }]
+  })
   const northFace = CORRIDOR_Z - CORRIDOR_WIDTH / 2 + 0.12
   const southFace = CORRIDOR_Z + CORRIDOR_WIDTH / 2 - 0.12
-  for (const z of [northFace + 0.08, southFace - 0.08]) {
-    kit.add(k.greenDark, kbox(26.4, 0.06, 0.1, galleryX, 1.37, z))
-    kit.add(k.greenDark, kbox(26.4, 0.14, 0.1, galleryX, 0.07, z))
-  }
 
   const V = (x, y, z) => new THREE.Vector3(x, y, z)
   const westX = PASSAGE_START_X + 0.4
@@ -770,7 +761,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     modal: true,
     eyebrow: 'Passageway 1 · Security Training',
     title: 'Security Cameras',
-    text: 'Red vision cones show where a camera can see. Being watched raises suspicion, so wait for the sweep to move away or keep solid cover between you and the camera.'
+    text: 'Blue vision cones show where a camera can see. Being watched raises suspicion, so wait for the sweep to move away or keep solid cover between you and the camera.'
   })
   hints.addZone({
     id: 'tutorial-timed-gate',

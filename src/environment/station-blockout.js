@@ -826,7 +826,7 @@ function createPlatformDressing() {
   b.build(group, 'platform-dressing', { decor: true })
 
   const glows = [
-    addFloorGlows(group, lampZ.map((z) => ({ x: 3.7, y: 0, z, radius: 1.8, strength: 0.55 })), null, 0xff9e52, 'platform-lamp-glow'),
+    addFloorGlows(group, lampZ.map((z) => ({ x: 4.72, y: 0, z, radius: 1.6, strength: 0.2 })), null, 0xff9e52, 'platform-lamp-glow'),
     addWallGlows(group, [{ x: lens.x, y: lens.y, z: lens.z, yaw: Math.PI / 2, width: 2.6, height: 2.6, strength: 1 }], null, 0xff2010, 'signal-glow')
   ]
   for (const glow of glows) {

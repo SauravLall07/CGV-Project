@@ -69,7 +69,7 @@ export function capRegionLights(regions, parent) {
           y: floor.y,
           z: floor.origin.z,
           radius: THREE.MathUtils.clamp(height * 0.9 + light.distance * 0.12, 1.4, 3.8),
-          strength: THREE.MathUtils.clamp(light.intensity / 40, 0.16, 0.42)
+          strength: THREE.MathUtils.clamp(light.intensity / 70, 0.08, 0.2)
         })
       }
       light.parent.remove(light)

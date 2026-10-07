@@ -113,21 +113,36 @@ export function addLightPools(parent, pools, cobbleMap, stats) {
   return { mesh, setStrength, setOpening }
 }
 
-function glowTexture() {
-  const size = 128
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-  gradient.addColorStop(0, 'rgba(255,255,255,1)')
-  gradient.addColorStop(0.35, 'rgba(255,255,255,0.45)')
-  gradient.addColorStop(0.7, 'rgba(255,255,255,0.12)')
-  gradient.addColorStop(1, 'rgba(255,255,255,0)')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, size, size)
-  return new THREE.CanvasTexture(canvas)
-}
+// Filled radial glow, brightest at the centre and reaching zero at the rim.
+// Computed per pixel rather than sampled, so there is no texture edge,
+// mip seam or quantised alpha band to read as a ring.
+const GLOW_VERTEX = /* glsl */ `
+  attribute float strength;
+  varying vec2 vDisc;
+  varying float vStrength;
+
+  void main() {
+    vDisc = uv * 2.0 - 1.0;
+    vStrength = strength;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const GLOW_FRAGMENT = /* glsl */ `
+  uniform vec3 uColor;
+  varying vec2 vDisc;
+  varying float vStrength;
+
+  void main() {
+    float r = length(vDisc);
+    if (r >= 1.0) discard;
+    float fall = 1.0 - smoothstep(0.0, 1.0, r);
+    fall *= fall;
+    gl_FragColor = vec4(uColor * vStrength * fall, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`
 
 // Faint warm wash on a wall beside a lamp. glows: { x, y, z, yaw, width, height, strength }
 // yaw 0 faces +X. One merged additive mesh.
@@ -138,8 +153,8 @@ export function addWallGlows(parent, glows, stats, color = 0xff9e52, name = 'lan
     const plane = new THREE.PlaneGeometry(glow.width, glow.height)
     plane.rotateY(Math.PI / 2 + (glow.yaw || 0))
     plane.translate(glow.x, glow.y, glow.z)
-    const shade = new Float32Array(plane.attributes.position.count * 3).fill(glow.strength)
-    plane.setAttribute('color', new THREE.BufferAttribute(shade, 3))
+    const shade = new Float32Array(plane.attributes.position.count).fill(glow.strength)
+    plane.setAttribute('strength', new THREE.BufferAttribute(shade, 1))
     parts.push(plane)
   }
   return glowMesh(parent, parts, color, name, stats, 2 * glows.length)
@@ -153,8 +168,8 @@ export function addFloorGlows(parent, glows, stats, color = 0xff9e52, name = 'fl
     const plane = new THREE.PlaneGeometry(glow.radius * 2, glow.radius * 2)
     plane.rotateX(-Math.PI / 2)
     plane.translate(glow.x, glow.y + 0.015, glow.z)
-    const shade = new Float32Array(plane.attributes.position.count * 3).fill(glow.strength)
-    plane.setAttribute('color', new THREE.BufferAttribute(shade, 3))
+    const shade = new Float32Array(plane.attributes.position.count).fill(glow.strength)
+    plane.setAttribute('strength', new THREE.BufferAttribute(shade, 1))
     parts.push(plane)
   }
   return glowMesh(parent, parts, color, name, stats, 2 * glows.length)
@@ -162,10 +177,10 @@ export function addFloorGlows(parent, glows, stats, color = 0xff9e52, name = 'fl
 
 function glowMesh(parent, parts, color, name, stats, triangles) {
   const geometry = mergeParts(parts)
-  const material = new THREE.MeshBasicMaterial({
-    map: glowTexture(),
-    color: new THREE.Color().setHex(color, THREE.LinearSRGBColorSpace),
-    vertexColors: true,
+  const material = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color().setHex(color, THREE.LinearSRGBColorSpace) } },
+    vertexShader: GLOW_VERTEX,
+    fragmentShader: GLOW_FRAGMENT,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,

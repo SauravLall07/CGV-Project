@@ -29,7 +29,6 @@ import { CENTER_Z, FACADE_X, LANDING_FIGURE, PLAZA } from '../environment/landin
 import { createZoneVisibility } from './boarding-zones.js'
 import { capRegionLights } from './boarding-lighting.js'
 import { resetKitMaterials } from '../environment/level1-kit/kit-materials.js'
-import { setLightShaftClock } from '../shaders/light-shaft.js'
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -285,8 +284,6 @@ export function createBoardingLevel({
   // -------------------------------------------------------------
   // Stealth & Infiltration System
   // -------------------------------------------------------------
-  // Beam dust drifts on the sky's chrono-scaled clock.
-  setLightShaftClock(sky.timeUniform)
   const stealth = createStealthSystem({
     scene,
     player,
@@ -1059,7 +1056,6 @@ export function createBoardingLevel({
       stationPickupUnregisters.forEach((unregister) => unregister())
       stationDistraction.dispose()
       stealth.dispose()
-      setLightShaftClock(null)
       outdoorEnv.dispose()
       sky.dispose()
       if (skyTarget) {

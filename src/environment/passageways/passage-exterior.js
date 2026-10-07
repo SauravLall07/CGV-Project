@@ -35,7 +35,7 @@ function addBox(parts, w, h, d, x, y, z) {
   parts.push(geo)
 }
 
-function merge(parts) {
+function merge(parts, uvScale = 0.42) {
   if (!parts.length) return null
   const flat = parts.map((geo) => (geo.index ? geo.toNonIndexed() : geo))
   for (const geo of parts) {
@@ -80,8 +80,8 @@ function merge(parts) {
       normals[o * 3] = norm.getX(i)
       normals[o * 3 + 1] = norm.getY(i)
       normals[o * 3 + 2] = norm.getZ(i)
-      uvs[o * 2] = u * 0.42
-      uvs[o * 2 + 1] = v * 0.42
+      uvs[o * 2] = u * uvScale
+      uvs[o * 2 + 1] = v * uvScale
     }
     offset += pos.count
     geo.dispose()
@@ -114,8 +114,8 @@ export function applyPassageSurfaceMaps({ brickMap, brickNormal, roofMap, roofNo
   }
 }
 
-function addMerged(group, parts, material, name) {
-  const geometry = merge(parts)
+function addMerged(group, parts, material, name, uvScale) {
+  const geometry = merge(parts, uvScale)
   if (!geometry) return
   const mesh = new THREE.Mesh(geometry, material)
   mesh.name = name
@@ -134,6 +134,7 @@ export function addPassageShell(parent, {
   wallHeight = 5.2,
   skipWest = false,
   skipEast = false,
+  gaps = [],
   signs = false
 } = {}) {
   const group = new THREE.Group()
@@ -149,10 +150,28 @@ export function addPassageShell(parent, {
   const walls = []
   const plinth = []
   const quoins = []
-  addBox(walls, length, wallHeight - 0.7, skin, cx, base + (wallHeight - 0.7) / 2 + 0.7, maxZ + skin * 0.5)
-  addBox(walls, length, wallHeight - 0.7, skin, cx, base + (wallHeight - 0.7) / 2 + 0.7, minZ - skin * 0.5)
-  addBox(plinth, length + 0.2, 0.7, skin + 0.06, cx, base + 0.35, maxZ + skin * 0.5)
-  addBox(plinth, length + 0.2, 0.7, skin + 0.06, cx, base + 0.35, minZ - skin * 0.5)
+  // Long-side runs split around any openings the interior cuts through them,
+  // so the skin never closes off a doorway that has no collider behind it.
+  for (const [side, z] of [['maxZ', maxZ + skin * 0.5], ['minZ', minZ - skin * 0.5]]) {
+    const cuts = gaps
+      .filter((gap) => gap.side === side)
+      .map((gap) => [Math.max(minX - 0.1, gap.from), Math.min(maxX + 0.1, gap.to)])
+      .sort((a, b) => a[0] - b[0])
+    let from = minX - 0.1
+    for (const [a, b] of [...cuts, [maxX + 0.1, maxX + 0.1]]) {
+      const runLength = a - from
+      if (runLength > 0.02) {
+        const mid = (from + a) / 2
+        const wallFrom = Math.max(from, minX)
+        const wallTo = Math.min(a, maxX)
+        if (wallTo - wallFrom > 0.02) {
+          addBox(walls, wallTo - wallFrom, wallHeight - 0.7, skin, (wallFrom + wallTo) / 2, base + (wallHeight - 0.7) / 2 + 0.7, z)
+        }
+        addBox(plinth, runLength, 0.7, skin + 0.06, mid, base + 0.35, z)
+      }
+      from = Math.max(from, b)
+    }
+  }
   if (!skipWest) {
     const doorW = 3.0
     const doorH = 2.85
@@ -200,7 +219,9 @@ export function addPassageShell(parent, {
     addBox(frames, 1.08, 1.32, 0.05, x, base + 2.5, maxZ + skin)
   }
 
-  addMerged(group, walls, brick, `${name}-brick`)
+  // The photo brick holds about 22 courses per tile: 1.7 m tiles give
+  // real 23 x 7.5 cm bricks.
+  addMerged(group, walls, brick, `${name}-brick`, 1 / 1.7)
   addMerged(group, plinth, stone, `${name}-plinth`)
   addMerged(group, quoins, pillar, `${name}-quoins`)
   addMerged(group, roofParts, roofMat, `${name}-roof`)
