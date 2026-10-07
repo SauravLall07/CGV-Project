@@ -26,6 +26,7 @@ import { disposeObject } from '../core/dispose.js'
 import { createLightPool, POINT_LIGHT_POOL_SIZE, TORCH_SPOT_POOL_SIZE } from '../core/light-pool.js'
 import { createLandingScene } from '../environment/landing/index.js'
 import { CENTER_Z, FACADE_X, LANDING_FIGURE, PLAZA } from '../environment/landing/layout.js'
+import { createZoneVisibility } from './boarding-zones.js'
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -142,26 +143,25 @@ export function createBoardingLevel({
   const PLAZA_SHADER_FOG = { color: 0x05060c, near: 20, far: 62, max: 0.98 }
 
   // Guards, cameras and lasers are added to the scene later, not under the
-  // station group. Named so the forecourt can drop them without a second list.
-  const OUTSIDE_NAMES = new Set([
+  // station group. The zones place them by where they stand.
+  const STEALTH_NAMES = new Set([
     'guard',
     'guard-shielded',
     'security-camera',
-    'laser-grid',
-    'thrown-distraction',
-    'distraction-noise-pulse'
+    'laser-grid'
   ])
-  // Visibility each object had when the plaza hid it, so leaving restores
+  // Visibility each light had when the plaza hid it, so leaving restores
   // whatever other systems had set rather than forcing everything on.
   const hiddenOutside = new Map()
   let outsideHidden = false
 
   // Lights the forecourt never needs. Every visible light runs in every lit
   // shader, even at intensity 0: the mountain floods, the empty torch slots,
-  // and the point slots past the forecourt's own lights. The sconces go too,
-  // so the forecourt lights always hold the first pool slots.
+  // and the point slots past the forecourt's own lights. The sconces are in
+  // the platform region, which the forecourt does not draw, so the forecourt
+  // lights always hold the first pool slots.
   function plazaSpareLights() {
-    const spare = [stationSconces, ...lights.spotLights]
+    const spare = [...lights.spotLights]
     for (const node of lightPools.children) {
       if (!node.isLight) continue
       if (node.name.startsWith('torch-pool-')) spare.push(node)
@@ -175,11 +175,7 @@ export function createBoardingLevel({
     if (hide === outsideHidden) return
     outsideHidden = hide
     if (hide) {
-      const targets = [outdoorEnv.group, station, train, ...plazaSpareLights()]
-      for (const child of scene.children) {
-        if (OUTSIDE_NAMES.has(child.name)) targets.push(child)
-      }
-      for (const node of targets) {
+      for (const node of plazaSpareLights()) {
         hiddenOutside.set(node, node.visible)
         node.visible = false
       }
@@ -191,11 +187,25 @@ export function createBoardingLevel({
     // while they are hidden.
     landing.town.visible = hide
     sky.uniforms.uGroundBlack.value = hide ? 1 : 0
-    // On the square the buildings cover most of the screen, so the sky draws
-    // after them with a depth test and only shades the pixels left over.
-    sky.mesh.material.depthTest = hide
-    sky.mesh.renderOrder = hide ? 1000 : -1000
   }
+
+  // Runs whenever the visible set changes; see boarding-zones.js.
+  const floodIntensity = lights.spotLights.map((spot) => spot.intensity)
+  function onZoneChange(zone) {
+    // The mountain floods cast no shadows, so indoors they would light the
+    // passages straight through the roof.
+    lights.spotLights.forEach((spot, i) => {
+      spot.intensity = zone.outdoor ? floodIntensity[i] : 0
+    })
+    // Wherever walls or buildings cover most of the screen, the sky draws
+    // after them with a depth test and only shades the pixels left over.
+    sky.mesh.material.depthTest = !zone.outdoor
+    sky.mesh.renderOrder = zone.outdoor ? -1000 : 1000
+  }
+  const zones = createZoneVisibility({
+    dynamic: () => scene.children.filter((child) => STEALTH_NAMES.has(child.name)),
+    onChange: onZoneChange
+  })
 
   function applyForecourtFill(viewer) {
     if (!viewer) return
@@ -207,8 +217,9 @@ export function createBoardingLevel({
     outdoorEnv.setFog(onPlaza ? PLAZA_SHADER_FOG : NIGHT_SHADER_FOG)
     // Not drawn at all past the cobbles: terrain, ranges, the platform and
     // the train. The sky and the landing stay. The door teleport leaves this
-    // box on the same frame, which puts the station back before the fade-in.
+    // box on the same frame, which switches the zone before the fade-in.
     setOutsideHidden(onPlaza)
+    zones.update(viewer)
   }
   const sky = createSkyDome('boarding')
   const outdoorEnv = createOutdoorEnvironment({
@@ -754,6 +765,40 @@ export function createBoardingLevel({
     name: 'torch-pool',
     kind: 'spot'
   })
+
+  // Zone regions. The passages are already one group each. The rest of the
+  // station is split into the hall (Passageway 4, west of the rear wall) and
+  // the platform, by where each piece sits. Region groups, rather than the
+  // pieces themselves, are toggled, so a collected pickup stays hidden.
+  const passageGroups = new Set([
+    onboardingPassage.group,
+    tutorialPassage.group,
+    guardPassage.group,
+    bridgePassage.group
+  ])
+  const hallRegion = new THREE.Group()
+  hallRegion.name = 'station-hall-region'
+  const platformRegion = new THREE.Group()
+  platformRegion.name = 'station-platform-region'
+  const regionBox = new THREE.Box3()
+  const regionCentre = new THREE.Vector3()
+  station.updateMatrixWorld(true)
+  for (const child of [...station.children]) {
+    if (passageGroups.has(child)) continue
+    regionBox.setFromObject(child)
+    const x = regionBox.isEmpty() ? child.position.x : regionBox.getCenter(regionCentre).x
+    ;(x < -5 ? hallRegion : platformRegion).add(child)
+  }
+  station.add(hallRegion, platformRegion)
+  zones.addRegion('p0', onboardingPassage.group)
+  zones.addRegion('p1', tutorialPassage.group)
+  zones.addRegion('p2', guardPassage.group)
+  zones.addRegion('p3', bridgePassage.group)
+  zones.addRegion('p4', hallRegion)
+  zones.addRegion('platform', platformRegion, stationSconces)
+  zones.addRegion('train', train)
+  zones.addRegion('landing', landing.group)
+  zones.addRegion('outdoor', outdoorEnv.group)
 
   const stationObjective = 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express'
   const veil = document.createElement('div')
