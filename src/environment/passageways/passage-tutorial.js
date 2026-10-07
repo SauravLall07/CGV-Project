@@ -14,6 +14,7 @@ import {
 } from './passage-components.js'
 import { addPassageShell } from './passage-exterior.js'
 import { dressArrivalHall } from './arrival-hall.js'
+import { dressTutorialPassage } from './level1-dressing.js'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import {
   at,
@@ -687,6 +688,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     clear: [{ minX: worldX(-83.5) - 0.7, maxX: worldX(-83.5) + 0.7, minZ: -28, maxZ: -27 }]
   })
   dressArrivalHall(group, colliders)
+  dressTutorialPassage(group, colliders)
   const northFace = CORRIDOR_Z - CORRIDOR_WIDTH / 2 + 0.12
   const southFace = CORRIDOR_Z + CORRIDOR_WIDTH / 2 - 0.12
 

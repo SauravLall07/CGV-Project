@@ -31,6 +31,7 @@ import {
   wallClock
 } from './level1-kit/kit-props.js'
 import { addFloorGlows, addWallGlows } from './landing/light-pools.js'
+import { dressApproachHall } from './passageways/level1-dressing.js'
 
 // Level 1's station: a covered platform with a marble concourse, cast-iron
 // columns under a glazed train shed, a panelled rear wall with lit arched
@@ -563,6 +564,7 @@ function createApproachCorridor() {
   )
   exitHeader.position.set(JUNCTION_CHECKPOINT.x, DOOR_HEIGHT, APPROACH_CENTER_Z)
   group.add(exitHeader)
+  dressApproachHall(group, colliders)
 
   return { group, colliders, dressing }
 }

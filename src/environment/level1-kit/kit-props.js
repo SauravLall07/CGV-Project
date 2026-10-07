@@ -570,6 +570,130 @@ export function hangingSign(b, k, M, material, w = 2, h = 0.4, hang = 1) {
   for (const x of [-w * 0.4, w * 0.4]) b.add(k.brass, cylinder(0.012, 0.012, hang, 6, x, h / 2 + 0.05 + hang / 2, 0), M)
 }
 
+// --- Security rooms ---------------------------------------------------------
+
+// Guard's desk against a wall: oak top, drawer pedestals, a blotter and
+// papers, a candlestick telephone and a banker's lamp. Back at z = 0,
+// facing +Z. Footprint x ±0.62, z 0..0.64.
+export function guardDesk(b, k, M) {
+  b.add(k.wood, kbox(1.24, 0.045, 0.64, 0, 0.76, 0.32), M, true)
+  for (const x of [-0.42, 0.42]) {
+    b.add(k.wood, kbox(0.38, 0.72, 0.58, x, 0.37, 0.31), M, true)
+    for (const y of [0.18, 0.42, 0.64]) {
+      b.add(k.wainscot, kbox(0.32, 0.18, 0.02, x, y, 0.61), M)
+      b.add(k.brass, kbox(0.08, 0.02, 0.025, x, y + 0.02, 0.625), M)
+    }
+  }
+  b.add(k.wainscot, kbox(0.46, 0.5, 0.02, 0, 0.47, 0.05), M)
+  b.add(k.greenDark, kbox(0.56, 0.006, 0.38, -0.05, 0.786, 0.36), M)
+  b.add(k.paper, kbox(0.21, 0.004, 0.29, 0, 0, 0), local(M, -0.08, 0.792, 0.38, 0.18))
+  b.add(k.paper, kbox(0.21, 0.004, 0.29, 0, 0, 0), local(M, 0.06, 0.79, 0.34, -0.1))
+  b.add(k.leather, kbox(0.26, 0.04, 0.2, 0, 0, 0), local(M, -0.42, 0.803, 0.42, 0.1))
+  // Candlestick telephone and its bell box.
+  const tx = 0.38
+  b.add(k.bakelite, cylinder(0.06, 0.07, 0.025, 14, tx, 0.795, 0.34), M)
+  b.add(k.bakelite, cylinder(0.016, 0.02, 0.26, 8, tx, 0.94, 0.34), M)
+  b.add(k.bakelite, cylinder(0.035, 0.022, 0.06, 10, tx, 1.09, 0.36), M)
+  b.add(k.brass, cylinder(0.04, 0.04, 0.008, 14, tx, 0.81, 0.34), M)
+  b.add(k.bakelite, rod(new THREE.Vector3(tx + 0.03, 1.02, 0.32), new THREE.Vector3(tx + 0.03, 0.9, 0.32), 0.016, 6), M)
+  b.add(k.bakelite, kbox(0.16, 0.1, 0.05, 0.3, 1.25, 0.03), M)
+  for (const x of [0.26, 0.34]) {
+    const gong = new THREE.SphereGeometry(0.028, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2)
+    gong.translate(x, 1.3, 0.06)
+    b.add(k.brass, gong, M)
+  }
+  bankersLamp(b, k, local(M, -0.32, 0.785, 0.22))
+}
+
+// Wooden office chair with a slatted back. Origin under the seat centre;
+// the back is at -Z.
+export function deskChair(b, k, M) {
+  b.add(k.wood, kbox(0.44, 0.04, 0.42, 0, 0.46, 0), M, true)
+  for (const x of [-0.19, 0.19]) {
+    for (const z of [-0.18, 0.18]) b.add(k.wood, kbox(0.035, 0.46, 0.035, x, 0.23, z), M)
+    b.add(k.wood, kbox(0.035, 0.5, 0.035, x, 0.72, -0.19), M)
+  }
+  b.add(k.wood, kbox(0.42, 0.1, 0.03, 0, 0.92, -0.19), M)
+  for (const x of [-0.1, 0, 0.1]) b.add(k.wood, kbox(0.035, 0.34, 0.02, x, 0.68, -0.19), M)
+  b.add(k.cushion, kbox(0.38, 0.03, 0.36, 0, 0.495, 0.01), M)
+}
+
+// A bank of steel lockers, `count` wide. Back at z = 0, facing +Z.
+// Footprint x ±count * 0.21, z 0..0.46.
+export function lockers(b, k, M, count = 3) {
+  const w = 0.42
+  const h = 1.85
+  b.add(k.locker, kbox(w * count, h, 0.44, 0, h / 2, 0.22), M, true)
+  b.add(k.greenDark, kbox(w * count + 0.02, 0.08, 0.46, 0, 0.04, 0.23), M)
+  for (let i = 0; i < count; i += 1) {
+    const x = -((count - 1) * w) / 2 + i * w
+    b.add(k.locker, kbox(w - 0.03, h - 0.14, 0.02, x, h / 2 + 0.03, 0.45), M)
+    for (const y of [h - 0.22, h - 0.3, h - 0.38, 0.32, 0.24]) b.add(k.iron, kbox(w - 0.16, 0.025, 0.004, x, y, 0.462), M)
+    b.add(k.brass, kbox(0.025, 0.12, 0.03, x + w * 0.32, h * 0.52, 0.47), M)
+    b.add(k.brass, kbox(0.1, 0.05, 0.006, x, h - 0.5, 0.462), M)
+  }
+}
+
+// Wall rail of brass hooks with coats and a hat. Origin at the rail centre
+// on the wall, facing +Z. Coats hang to about y -0.9 below the rail.
+export function coatHooks(b, k, M, length = 0.9) {
+  b.add(k.wood, kbox(length, 0.09, 0.03, 0, 0, 0.015), M)
+  const hooks = Math.max(2, Math.round(length / 0.22))
+  for (let i = 0; i < hooks; i += 1) {
+    const x = -length / 2 + 0.1 + (i * (length - 0.2)) / (hooks - 1)
+    b.add(k.brass, rod(new THREE.Vector3(x, 0, 0.03), new THREE.Vector3(x, 0.05, 0.1), 0.008, 5), M)
+  }
+  // Coats: tapered bodies with shoulders and a collar.
+  const coats = [[-length / 2 + 0.12, k.coat, 0.92], [0.04, k.coatTan, 0.84]]
+  for (const [x, mat, len] of coats) {
+    const body = new THREE.CylinderGeometry(0.17, 0.24, len, 4, 1)
+    body.rotateY(Math.PI / 4)
+    body.scale(1, 1, 0.42)
+    body.translate(x, -len / 2 - 0.02, 0.12)
+    b.add(mat, body, M)
+    const shoulders = new THREE.SphereGeometry(0.14, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2)
+    shoulders.scale(1.3, 0.45, 0.6)
+    shoulders.translate(x, -0.04, 0.12)
+    b.add(mat, shoulders, M)
+  }
+  const hx = length / 2 - 0.12
+  b.add(k.coat, cylinder(0.09, 0.1, 0.11, 14, hx, 0.02, 0.12), M)
+  b.add(k.coat, cylinder(0.15, 0.15, 0.012, 16, hx, -0.035, 0.12), M)
+  b.add(k.cushion, cylinder(0.102, 0.102, 0.025, 14, hx, -0.015, 0.12), M)
+}
+
+// Four-drawer steel filing cabinet. Back at z = 0, facing +Z.
+// Footprint x ±0.24, z 0..0.62.
+export function filingCabinet(b, k, M) {
+  b.add(k.locker, kbox(0.47, 1.32, 0.6, 0, 0.66, 0.3), M, true)
+  for (let i = 0; i < 4; i += 1) {
+    const y = 0.18 + i * 0.31
+    b.add(k.locker, kbox(0.43, 0.28, 0.02, 0, y, 0.605), M)
+    b.add(k.brass, kbox(0.14, 0.025, 0.03, 0, y - 0.03, 0.62), M)
+    b.add(k.paper, kbox(0.08, 0.035, 0.004, 0, y + 0.06, 0.616), M)
+  }
+}
+
+// Cork noticeboard in an oak frame with pinned notices. Origin at the wall,
+// centred, facing +Z.
+export function noticeBoard(b, k, M, w = 1.1, h = 0.8) {
+  b.add(k.wood, kbox(w + 0.1, h + 0.1, 0.035, 0, 0, 0.018), M)
+  const cork = new THREE.PlaneGeometry(w, h)
+  cork.translate(0, 0, 0.037)
+  b.add(k.cork, cork, M)
+  const notes = [[-0.32, 0.14, 0.24, 0.32, 0.06], [-0.02, 0.18, 0.2, 0.26, -0.08], [0.3, 0.1, 0.26, 0.34, 0.04], [-0.24, -0.2, 0.3, 0.2, -0.05], [0.12, -0.18, 0.22, 0.28, 0.1]]
+  for (const [x, y, nw, nh, tilt] of notes) {
+    if (Math.abs(x) + nw / 2 > w / 2 - 0.02 || Math.abs(y) + nh / 2 > h / 2 - 0.02) continue
+    const note = new THREE.PlaneGeometry(nw, nh)
+    note.rotateZ(tilt)
+    note.translate(x, y, 0.039)
+    b.add(k.paper, note, M)
+    const pin = new THREE.SphereGeometry(0.012, 6, 4)
+    pin.translate(x, y + nh / 2 - 0.03, 0.045)
+    b.add(k.redLens, pin, M)
+  }
+}
+
 // Departure board on two hanging rods. Origin at the board centre, facing +Z.
 export function departureBoard(b, k, M, w = 2.4, h = 1.2, hang = 1.4) {
   b.add(k.iron, kbox(w + 0.16, h + 0.16, 0.12, 0, 0, -0.02), M)

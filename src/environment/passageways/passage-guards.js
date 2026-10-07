@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
 import { dressWalls } from '../level1-kit/wall-dressing.js'
+import { dressGuardPassage } from './level1-dressing.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
@@ -740,6 +741,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     [ceilingMat, kit.ceiling, 3]
   ])
   dressWalls(group, { walls: [kit.brick], finish: 'wood', name: 'guards-wall-dressing' })
+  dressGuardPassage(group, colliders)
 
   function dispose() {
     signalPuzzle.dispose()

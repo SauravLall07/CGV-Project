@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
 import { dressWalls } from '../level1-kit/wall-dressing.js'
+import { dressOnboardingGallery } from './level1-dressing.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
@@ -458,6 +459,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     [ceilingMat, kit.ceiling, 3]
   ])
   dressWalls(group, { walls: [kit.plaster], finish: 'wood', name: 'onboarding-wall-dressing' })
+  dressOnboardingGallery(group, colliders)
 
   function dispose() {
     unregisterPanel?.()
