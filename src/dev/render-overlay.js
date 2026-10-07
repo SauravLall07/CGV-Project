@@ -1,17 +1,32 @@
 // Temporary DEV-only readout, measurement toggles and teleports. Not shipped.
-// Digit1–7 are taken in the capture phase so they do not also fire the
+// Digit1–8 are taken in the capture phase so they do not also fire the
 // number-row time abilities. Letter bindings (Q/F/C/G) are unchanged.
 
 import * as THREE from 'three'
 import { bounds as stationBounds } from '../environment/station-blockout.js'
 import { ONBOARDING_PASSAGE_SPAWN } from '../environment/passageways/passage-onboarding.js'
+import { createGpuTimer } from './gpu-timer.js'
 
 const TIMING_WINDOW = 60
 const TRAIN_YAW = Math.PI / 2
 const SPAWN_YAW = Math.PI / 2
 const SPAWN_PITCH = -0.08
 
-export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } = {}) {
+export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, post } = {}) {
+  const gpu = createGpuTimer(renderer.getContext())
+  post?.setGpuTimer(gpu)
+
+  // Shadow drawing happens inside renderer.render, before the colour pass.
+  // The scene query stays open until that render() returns. Post passes use
+  // an orthographic camera, so they are not counted as the main view.
+  const shadowRender = renderer.shadowMap.render.bind(renderer.shadowMap)
+  renderer.shadowMap.render = function timedShadow(shadows, scene, camera) {
+    const started = Boolean(camera?.isPerspectiveCamera) && gpu.begin('shadow')
+    shadowRender(shadows, scene, camera)
+    if (!started) return
+    gpu.end()
+    gpu.begin('scene')
+  }
   // The minimap renders its own icon scene with an orthographic camera after
   // the main view. That pass replaces renderer.info, and it used to replace
   // the scene the light and scenery toggles walk — the icon scene has neither
@@ -90,6 +105,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
 
     const started = performance.now()
     render(scene, camera)
+    if (perspective) gpu.endIf('scene')
     const elapsed = performance.now() - started
 
     if (perspective) {
@@ -280,6 +296,12 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
     return `${average(samples).toFixed(1)} ms`
   }
 
+  function gpuMs(label) {
+    if (!gpu.supported) return 'n/a'
+    const value = gpu.average(label)
+    return value == null ? '…' : `${value.toFixed(1)} ms`
+  }
+
   function paint() {
     const pass = mainPass ?? {
       calls: renderer.info.render.calls,
@@ -294,19 +316,24 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
     if (lightsLimited) active.push(`3  point/spot lights ${limitedLightCount}/${totalLocalLights} nearest`)
     if (sceneryHidden) active.push(`4  outdoor scenery hidden (${hiddenSceneryCount})`)
     if (minimapOff) active.push('5  minimap off')
+    if (post && !post.isEnabled()) active.push('8  post off')
     panel.textContent = [
       `${fps} FPS`,
       `frame    ${ms(frameTimes)}`,
       `update   ${ms(logicTimes)}`,
       `render   ${ms(mainTimes)}`,
       `minimap  ${ms(minimapTimes)}`,
+      `gpu shadow  ${gpuMs('shadow')}`,
+      `gpu scene   ${gpuMs('scene')}`,
+      `gpu bloom   ${gpuMs('bloom')}`,
+      `gpu final   ${gpuMs('final')}`,
       `draw calls  ${pass.calls}`,
       `triangles   ${pass.triangles}`,
       `geometries  ${pass.geometries}`,
       `textures    ${pass.textures}`,
       `minimap draws  ${minimapPass.calls}`,
       `minimap tris   ${minimapPass.triangles}`,
-      active.length ? active.join('\n') : 'toggles off  (1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 spawn)'
+      active.length ? active.join('\n') : 'toggles off  (1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 spawn · 8 post)'
     ].join('\n')
   }
 
@@ -340,6 +367,9 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
       case 'Digit7':
       case 'Numpad7':
         return 7
+      case 'Digit8':
+      case 'Numpad8':
+        return 8
       default:
         break
     }
@@ -351,6 +381,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
       case '5': return 5
       case '6': return 6
       case '7': return 7
+      case '8': return 8
       default:
         break
     }
@@ -363,6 +394,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
     if (which === 53 || which === 101) return 5
     if (which === 54 || which === 102) return 6
     if (which === 55 || which === 103) return 7
+    if (which === 56 || which === 104) return 8
     return 0
   }
 
@@ -419,6 +451,11 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
       devTeleport('train')
     } else if (index === 7) {
       devTeleport('spawn')
+    } else if (index === 8) {
+      if (post) {
+        post.setEnabled(!post.isEnabled())
+        console.log(`[dev overlay] toggle 8 (post off): ${post.isEnabled() ? 'OFF' : 'ON'}`)
+      }
     }
 
     event.preventDefault()
@@ -483,6 +520,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView } 
     if (lightsLimited) syncLights()
     if (sceneryHidden) syncScenery()
 
+    gpu.poll()
     accum += delta
     frames += 1
     if (accum < 0.5) return

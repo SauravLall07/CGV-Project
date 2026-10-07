@@ -1,14 +1,17 @@
 import * as THREE from 'three'
 import { settings, shadowMapSize } from '../core/settings.js'
 
-// Creates and owns the WebGLRenderer. Pixel ratio is capped to protect
-// performance on lab hardware; resize() keeps the renderer in sync with the
+// Creates and owns the WebGLRenderer. Pixel ratio is capped at 1.25 so a
+// 2x display does not draw four times the pixels. The render-scale setting
+// still multiplies that cap. resize() keeps the renderer in sync with the
 // window and should be called from a `window.resize` listener.
 //
 // Tone mapping matters here: three's lighting is physically based, so raw
 // linear output clips highlights (lamp bulbs, emissive window panes) into flat
 // white. ACES filmic rolls those off instead, which is most of the difference
 // between "programmer lighting" and something that reads as lit.
+const MAX_PIXEL_RATIO = 1.25
+
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
   renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -21,7 +24,7 @@ export function createRenderer(canvas) {
     // Render resolution is the device pixel ratio scaled by the player's
     // setting, so dropping it to 50% is a real fill-rate saving rather than
     // just a canvas-size change.
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * settings.get('renderScale'))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO) * settings.get('renderScale'))
     renderer.setSize(window.innerWidth, window.innerHeight)
   }
 
@@ -70,7 +73,7 @@ export function createRenderer(canvas) {
       invalidateMaterials()
     }
 
-    const scale = Math.min(window.devicePixelRatio, 2) * settings.get('renderScale')
+    const scale = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO) * settings.get('renderScale')
     if (Math.abs(renderer.getPixelRatio() - scale) > 1e-4) resize()
   }
 

@@ -272,7 +272,7 @@ if (import.meta.env.DEV) {
   window.musicSystem = musicSystem
   window.renderer = renderer
   window.scene = scene
-  renderOverlay = mountRenderOverlay(renderer, { player, playerView })
+  renderOverlay = mountRenderOverlay(renderer, { player, playerView, post })
 }
 
 // Disabled: running out of lives on Level 2 must not send the player back to
