@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { createParticleField } from '../particles.js'
 import { addBenches } from './bench.js'
 import { addCars } from './car.js'
 import { addInstances, addMesh, box, mergeParts, place } from './geom.js'
@@ -8,6 +7,7 @@ import { addCentreLamp, CENTRE_LAMP_BASE } from './centre-lamp.js'
 import { addLampPosts, LAMP_GLOW } from './lamp-post.js'
 import { addLightPools } from './light-pools.js'
 import { addPlanters } from './planter.js'
+import { createSteam } from './steam.js'
 import { STREET } from './town.js'
 
 // Cobbles in front of the west facade, plus the street furniture. The plaza
@@ -257,18 +257,8 @@ export function buildForecourt(parent, materials, stats) {
 
   const banners = addFlags(parent, materials, stats)
 
-  const steam = createParticleField({
-    count: 64,
-    area: { halfX: 1.7, minY: 0, maxY: 10.5, minZ: -1.3, maxZ: 1.3 },
-    color: 0xd2d6db,
-    size: 0.85,
-    opacity: 0.26,
-    gravity: 1.25,
-    drift: 0.38,
-    seed: 23
-  })
+  const steam = createSteam()
   steam.points.position.set(6.5, 3.3, 27.2)
-  steam.points.name = 'landing-steam'
   parent.add(steam.points)
   stats.draws += 1
 
