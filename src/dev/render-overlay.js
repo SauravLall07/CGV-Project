@@ -1,5 +1,5 @@
 // Temporary DEV-only readout, measurement toggles and teleports. Not shipped.
-// Digit1–8 are taken in the capture phase so they do not also fire the
+// Digit0–9 are taken in the capture phase so they do not also fire the
 // number-row time abilities. Letter bindings (Q/F/C/G) are unchanged.
 
 import * as THREE from 'three'
@@ -11,6 +11,7 @@ const TIMING_WINDOW = 60
 const TRAIN_YAW = Math.PI / 2
 const SPAWN_YAW = Math.PI / 2
 const SPAWN_PITCH = -0.08
+const UNLIT_FALLBACK = new THREE.Color(0x6a6f78)
 
 export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, post } = {}) {
   const gpu = createGpuTimer(renderer.getContext())
@@ -179,6 +180,20 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   let sceneryHidden = false
   let hiddenSceneryCount = 0
 
+  // Key 9. Every additive mesh: the painted light pools, wall and floor
+  // glows, laser glows. Original `visible` is restored on the way out.
+  const glowOriginal = new Map()
+  let glowsHidden = false
+  let hiddenGlowCount = 0
+
+  // Key 0. Every mesh material swapped for a flat MeshBasicMaterial of the
+  // same colour, so the difference in gpu scene time is the lighting cost
+  // (lights, shadows, environment map, normal maps, custom shaders).
+  const unlitOriginal = new Map()
+  const unlitCache = new Map()
+  const unlitMaterials = new Set()
+  let unlit = false
+
   function resizeToPixelRatio(ratio) {
     if (Math.abs(renderer.getPixelRatio() - ratio) < 1e-4) return
     renderer.setPixelRatio(ratio)
@@ -292,6 +307,89 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     hiddenSceneryCount = meshes.length
   }
 
+  function materialList(material) {
+    return Array.isArray(material) ? material : [material]
+  }
+
+  function isAdditive(material) {
+    return materialList(material).some((entry) => entry?.blending === THREE.AdditiveBlending)
+  }
+
+  function syncGlows() {
+    if (!glowsHidden) {
+      for (const [node, visible] of glowOriginal) node.visible = visible
+      glowOriginal.clear()
+      hiddenGlowCount = 0
+      return
+    }
+    if (!worldScene) return
+    const live = new Set()
+    worldScene.traverse((node) => {
+      if (!node.material || !isAdditive(node.material)) return
+      live.add(node)
+      if (!glowOriginal.has(node)) glowOriginal.set(node, node.visible)
+      node.visible = false
+    })
+    for (const node of glowOriginal.keys()) {
+      if (!live.has(node)) glowOriginal.delete(node)
+    }
+    hiddenGlowCount = live.size
+  }
+
+  // Shader materials have no `color`; their first colour uniform stands in.
+  function materialColour(material) {
+    if (material.color?.isColor) return material.color
+    for (const uniform of Object.values(material.uniforms ?? {})) {
+      if (uniform?.value?.isColor) return uniform.value
+    }
+    return UNLIT_FALLBACK
+  }
+
+  function unlitFor(material) {
+    let basic = unlitCache.get(material)
+    if (basic) return basic
+    basic = new THREE.MeshBasicMaterial({
+      name: `${material.name || material.type}:unlit`,
+      color: materialColour(material),
+      side: material.side,
+      transparent: material.transparent,
+      opacity: material.opacity,
+      blending: material.blending,
+      depthTest: material.depthTest,
+      depthWrite: material.depthWrite,
+      vertexColors: material.vertexColors,
+      polygonOffset: material.polygonOffset,
+      polygonOffsetFactor: material.polygonOffsetFactor,
+      polygonOffsetUnits: material.polygonOffsetUnits,
+      fog: material.fog !== false
+    })
+    unlitCache.set(material, basic)
+    unlitMaterials.add(basic)
+    return basic
+  }
+
+  function syncUnlit() {
+    if (!unlit) {
+      for (const [node, { original, swapped }] of unlitOriginal) {
+        if (node.material === swapped) node.material = original
+      }
+      unlitOriginal.clear()
+      for (const basic of unlitMaterials) basic.dispose()
+      unlitMaterials.clear()
+      unlitCache.clear()
+      return
+    }
+    if (!worldScene) return
+    worldScene.traverse((node) => {
+      if (!node.isMesh || !node.material) return
+      if (unlitOriginal.get(node)?.swapped === node.material) return
+      const original = node.material
+      const swapped = Array.isArray(original) ? original.map(unlitFor) : unlitFor(original)
+      unlitOriginal.set(node, { original, swapped })
+      node.material = swapped
+    })
+  }
+
   function ms(samples) {
     return `${average(samples).toFixed(1)} ms`
   }
@@ -317,6 +415,8 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     if (sceneryHidden) active.push(`4  outdoor scenery hidden (${hiddenSceneryCount})`)
     if (minimapOff) active.push('5  minimap off')
     if (post && !post.isEnabled()) active.push('8  post off')
+    if (glowsHidden) active.push(`9  additive glows hidden (${hiddenGlowCount})`)
+    if (unlit) active.push(`0  unlit MeshBasicMaterial (${unlitOriginal.size} meshes)`)
     panel.textContent = [
       `${fps} FPS`,
       `frame    ${ms(frameTimes)}`,
@@ -333,7 +433,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       `textures    ${pass.textures}`,
       `minimap draws  ${minimapPass.calls}`,
       `minimap tris   ${minimapPass.triangles}`,
-      active.length ? active.join('\n') : 'toggles off  (1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 spawn · 8 post)'
+      active.length ? active.join('\n') : 'toggles off  (1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 spawn · 8 post · 9 glows · 0 unlit)'
     ].join('\n')
   }
 
@@ -370,6 +470,12 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       case 'Digit8':
       case 'Numpad8':
         return 8
+      case 'Digit9':
+      case 'Numpad9':
+        return 9
+      case 'Digit0':
+      case 'Numpad0':
+        return 10
       default:
         break
     }
@@ -382,6 +488,8 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       case '6': return 6
       case '7': return 7
       case '8': return 8
+      case '9': return 9
+      case '0': return 10
       default:
         break
     }
@@ -395,6 +503,8 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     if (which === 54 || which === 102) return 6
     if (which === 55 || which === 103) return 7
     if (which === 56 || which === 104) return 8
+    if (which === 57 || which === 105) return 9
+    if (which === 48 || which === 96) return 10
     return 0
   }
 
@@ -456,6 +566,14 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
         post.setEnabled(!post.isEnabled())
         console.log(`[dev overlay] toggle 8 (post off): ${post.isEnabled() ? 'OFF' : 'ON'}`)
       }
+    } else if (index === 9) {
+      glowsHidden = !glowsHidden
+      syncGlows()
+      console.log(`[dev overlay] toggle 9 (hide additive glows): ${glowsHidden ? 'ON' : 'OFF'}`)
+    } else if (index === 10) {
+      unlit = !unlit
+      syncUnlit()
+      console.log(`[dev overlay] toggle 0 (unlit materials): ${unlit ? 'ON' : 'OFF'}`)
     }
 
     event.preventDefault()
@@ -519,6 +637,8 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     if (shadowsOff) applyShadows()
     if (lightsLimited) syncLights()
     if (sceneryHidden) syncScenery()
+    if (glowsHidden) syncGlows()
+    if (unlit) syncUnlit()
 
     gpu.poll()
     accum += delta
@@ -543,10 +663,14 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       lightsLimited = false
       sceneryHidden = false
       minimapOff = false
+      glowsHidden = false
+      unlit = false
       if (restoreRatio) applyPixelRatio()
       if (restoreShadows) applyShadows()
       syncLights()
       syncScenery()
+      syncGlows()
+      syncUnlit()
       renderer.render = render
       panel.remove()
     }

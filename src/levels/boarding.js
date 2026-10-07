@@ -190,6 +190,10 @@ export function createBoardingLevel({
     // while they are hidden.
     landing.town.visible = hide
     sky.uniforms.uGroundBlack.value = hide ? 1 : 0
+    // At the plaza's 0.06 the environment map is invisible but still costs
+    // two cube-map lookups per lit pixel. The light count and fog type change
+    // on this same frame, so dropping it adds no extra shader recompile.
+    scene.environment = hide ? null : skyTarget?.texture ?? null
   }
 
   // Runs whenever the visible set changes; see boarding-zones.js.
@@ -1060,7 +1064,7 @@ export function createBoardingLevel({
       outdoorEnv.dispose()
       sky.dispose()
       if (skyTarget) {
-        if (scene.environment === skyTarget.texture) {
+        if (scene.environment === skyTarget.texture || outsideHidden) {
           scene.environment = null
           scene.environmentIntensity = 1
         }

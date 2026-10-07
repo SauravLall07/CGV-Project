@@ -10,10 +10,14 @@ import { settings, shadowMapSize } from '../core/settings.js'
 // linear output clips highlights (lamp bulbs, emissive window panes) into flat
 // white. ACES filmic rolls those off instead, which is most of the difference
 // between "programmer lighting" and something that reads as lit.
+//
+// No MSAA on the canvas: the scene is drawn into the single-sample post
+// target, and only the final full-screen pass reaches the canvas, so a
+// multisampled backbuffer would just add a resolve every frame.
 const MAX_PIXEL_RATIO = 1.25
 
 export function createRenderer(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false })
   renderer.toneMapping = THREE.ACESFilmicToneMapping
 
   // Scene reference for the shadow-toggle recompile below; supplied by the
