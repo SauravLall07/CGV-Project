@@ -32,7 +32,7 @@ function glowGeometry() {
   return box(0.14, 0.2, 0.14, 0, 4.12, 0)
 }
 
-export const LAMP_INTENSITY = 48
+export const LAMP_INTENSITY = 11
 
 export function addLampPosts(parent, posts, materials, stats) {
   const poles = []
@@ -43,7 +43,7 @@ export function addLampPosts(parent, posts, materials, stats) {
     poles.push(matrix)
     cages.push(matrix.clone())
     glows.push(matrix.clone())
-    const light = new THREE.PointLight(0xffb060, LAMP_INTENSITY, 6.2, 2)
+    const light = new THREE.PointLight(0xffb060, LAMP_INTENSITY, 3.6, 2)
     light.name = post.flicker ? 'landing-lamp-flicker' : 'landing-lamp'
     light.castShadow = false
     light.position.set(post.x, post.y + 4.12, post.z)

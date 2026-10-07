@@ -77,7 +77,9 @@ export function createPostProcessing(renderer) {
 
   const composer = new EffectComposer(renderer, target)
   const renderPass = new RenderPass(new THREE.Scene(), new THREE.Camera())
-  const bloomPass = new UnrealBloomPass(size.clone(), 0.38, 0.62, 1.05)
+  // Tight and high. Bulbs clear the threshold; windows, the door glass and
+  // the clock face stay under it so they cannot fog the frame.
+  const bloomPass = new UnrealBloomPass(size.clone(), 0.14, 0.18, 1.35)
   const outputPass = new OutputPass()
 
   // The pass halves its input. Handing it half the buffer makes the blur

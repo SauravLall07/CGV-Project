@@ -18,8 +18,10 @@ const PLAZA_Z1 = PLAZA.maxZ
 function addPlaza(parent, materials, stats) {
   const width = PLAZA_X1 - PLAZA_X0
   const length = PLAZA_Z1 - PLAZA_Z0
-  const repeatX = width / 2.05
-  const repeatY = length / 2.05
+  // The map is an 8 by 8 block of stones. One metre per repeat makes each
+  // stone about 12.5 cm.
+  const repeatX = width / 1
+  const repeatY = length / 1
   for (const map of [materials.cobble.map, materials.cobble.normalMap, materials.cobble.roughnessMap]) {
     map.repeat.set(repeatX, repeatY)
   }
@@ -101,16 +103,15 @@ function addShelter(parent, materials, stats) {
   addMesh(parent, mergeParts(posts), materials.iron, { name: 'landing-shelter-posts' }, stats)
 }
 
-// A chain of pools from the spawn (13.55, 14.35) up to the steps, plus one
-// lamp on the west edge that is close enough to the opening view to stay
-// in the light pool. That edge lamp is the one that flickers.
+// Five posts, none of them on the walk from the spawn to the doors.
+// Two mark the west edge of the plaza, two sit beside the steps, and the
+// south-west one flickers. The sight line stays dark between the pools.
 const LAMPS = [
-  { x: 10.5, y: 0.05, z: 23.2, flicker: true },
-  { x: 12.2, y: 0.05, z: 13.0 },
-  { x: 15.2, y: 0.05, z: 15.15 },
-  { x: 17.15, y: 0.05, z: 15.55 },
-  { x: 16.5, y: 0.05, z: 20.4 },
-  { x: 18.5, y: 0.05, z: 17.15 }
+  { x: 10.55, y: 0.05, z: 7.2 },
+  { x: 10.55, y: 0.05, z: 31.6 },
+  { x: 10.35, y: 0.05, z: 12.4, flicker: true },
+  { x: 19.5, y: 0.05, z: 12.6 },
+  { x: 19.5, y: 0.05, z: 24.8 }
 ]
 
 const BENCHES = [

@@ -352,8 +352,8 @@ export function buildFacade(parent, materials, stats) {
       z: canopyZ + side * (canopyW / 2 + 0.15),
       light: true,
       color: 0xffc48a,
-      intensity: 30,
-      distance: 8
+      intensity: 12,
+      distance: 4.5
     })
   }
   for (const z of [leftZs[0], leftZs[leftZs.length - 1], rightZs[0], rightZs[rightZs.length - 1]]) {
@@ -362,13 +362,13 @@ export function buildFacade(parent, materials, stats) {
   }
   // Two lamps tucked under the canopy, plus one low spill across the treads.
   for (const side of [-1, 1]) {
-    const light = new THREE.PointLight(0xffb56a, 16, 8, 2)
+    const light = new THREE.PointLight(0xffb56a, 5, 3.4, 2)
     light.name = 'landing-canopy-light'
     light.castShadow = false
     light.position.set(FACADE_X - 1.8, 3.6, canopyZ + side * 1.6)
     parent.add(light)
   }
-  const spill = new THREE.PointLight(0xffb060, 24, 7.2, 2)
+  const spill = new THREE.PointLight(0xffb060, 6, 3.2, 2)
   spill.name = 'landing-door-spill'
   spill.castShadow = false
   spill.position.set(FACADE_X - 2.35, 1.2, canopyZ)

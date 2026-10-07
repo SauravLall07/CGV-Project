@@ -162,7 +162,7 @@ export function createLandingMaterials() {
     soffit: new THREE.MeshStandardMaterial({
       color: 0x3a2a18,
       emissive: 0xffb15a,
-      emissiveIntensity: 1.55,
+      emissiveIntensity: 0.22,
       roughness: 0.6
     }),
     glass: [
@@ -172,12 +172,12 @@ export function createLandingMaterials() {
       glassMaterial(0x100e0c, 0)
     ],
     archGlass: glassMaterial(0xc08048, 0.38),
-    entranceGlass: glassMaterial(0xffc090, 2.45),
+    entranceGlass: glassMaterial(0xffb070, 0.42),
     clock: new THREE.MeshStandardMaterial({
       map: clockMap,
       emissiveMap: clockMap,
       emissive: 0xfff2d4,
-      emissiveIntensity: 1.65,
+      emissiveIntensity: 1.7,
       roughness: 0.4,
       metalness: 0.05,
       side: THREE.DoubleSide
@@ -205,9 +205,9 @@ export function createLandingMaterials() {
       foreground: 0xe6c56a,
       width: 1024,
       height: 160,
-      emissiveIntensity: 1.35
+      emissiveIntensity: 0.55
     }),
-    lantern: glassMaterial(0xffd7a2, 4.2)
+    lantern: glassMaterial(0xffd7a2, 2.6)
   }
 }
 
