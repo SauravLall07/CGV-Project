@@ -131,12 +131,19 @@ export function createBoardingLevel({
   const ambientFill = lights.find((node) => node.name === 'station-fill')
   const FORECOURT_FILL = { sky: 0.48, ambient: 0.06, environment: 0.4 }
 
+  const nightFog = new THREE.Fog(0x121022, 40, 240)
+  const plazaFog = new THREE.FogExp2(0x05060c, 0.023)
+  const NIGHT_SHADER_FOG = { color: 0x121022, near: 50, far: 260, max: 0.88 }
+  const PLAZA_SHADER_FOG = { color: 0x05060c, near: 20, far: 62, max: 0.98 }
+
   function applyForecourtFill(viewer) {
     if (!viewer) return
     const onPlaza = viewer.x > 6 && viewer.x < 36 && viewer.z > -10 && viewer.z < 48
     if (skyFill) skyFill.intensity = onPlaza ? 0.1 : FORECOURT_FILL.sky
     if (ambientFill) ambientFill.intensity = onPlaza ? 0.01 : FORECOURT_FILL.ambient
     scene.environmentIntensity = onPlaza ? 0.06 : FORECOURT_FILL.environment
+    scene.fog = onPlaza ? plazaFog : nightFog
+    outdoorEnv.setFog(onPlaza ? PLAZA_SHADER_FOG : NIGHT_SHADER_FOG)
   }
   const sky = createSkyDome('boarding')
   const outdoorEnv = createOutdoorEnvironment({
@@ -182,7 +189,7 @@ export function createBoardingLevel({
   // the sky's afterglow, so the far mountain reads as a silhouette. The
   // clear stays dark: the minimap copies scene.background.
   scene.background = new THREE.Color(0x1a1a2e)
-  scene.fog = new THREE.Fog(0x121022, 40, 240)
+  scene.fog = nightFog
 
   // Collect solid obstacles for line-of-sight raycasts
   const collidables = []

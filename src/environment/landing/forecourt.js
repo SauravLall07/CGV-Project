@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { createParticleField } from '../particles.js'
 import { addBenches } from './bench.js'
 import { addCars } from './car.js'
-import { addMesh, box, mergeParts } from './geom.js'
+import { addInstances, addMesh, box, mergeParts, place } from './geom.js'
 import { FACADE_X, PLAZA } from './layout.js'
 import { addLampPosts, LAMP_INTENSITY } from './lamp-post.js'
 import { addPlanters } from './planter.js'
@@ -14,6 +14,51 @@ const PLAZA_X0 = PLAZA.minX
 const PLAZA_X1 = PLAZA.maxX
 const PLAZA_Z0 = PLAZA.minZ
 const PLAZA_Z1 = PLAZA.maxZ
+
+// Iron screen on the quay, with a hedge on the track side of it. Tall
+// enough that the locomotive, the platform and the guards sit behind it.
+// The plume is placed on the track so only the steam clears the top rail.
+function addTrackScreen(parent, materials, stats) {
+  const x = PLAZA.minX - 0.12
+  const z0 = PLAZA.minZ + 0.2
+  const z1 = PLAZA.maxZ - 0.2
+  const length = z1 - z0
+  const midZ = (z0 + z1) / 2
+  const height = 4.55
+  const postCount = Math.round(length / 2.35) + 1
+  const posts = []
+  for (let i = 0; i < postCount; i += 1) {
+    posts.push(place(x, PLAZA.y, z0 + (i / (postCount - 1)) * length))
+  }
+  addInstances(parent, box(0.1, height, 0.1, 0, height / 2, 0), materials.iron, posts, {
+    name: 'landing-fence-posts'
+  }, stats)
+
+  const rails = []
+  for (let i = 0; i < 6; i += 1) {
+    rails.push(box(0.028, 0.028, length, x, 0.5 + i * 0.68, midZ))
+  }
+  rails.push(box(0.05, 0.04, length, x, height - 0.02, midZ))
+  addMesh(parent, mergeParts(rails), materials.iron, { name: 'landing-fence-rails' }, stats)
+
+  const picketCount = Math.floor(length / 0.15)
+  const pickets = []
+  for (let i = 0; i < picketCount; i += 1) {
+    pickets.push(place(x, PLAZA.y, z0 + (i + 0.5) * (length / picketCount)))
+  }
+  addInstances(
+    parent,
+    box(0.016, height - 0.2, 0.016, 0, (height - 0.2) / 2 + 0.1, 0),
+    materials.iron,
+    pickets,
+    { name: 'landing-fence-pickets' },
+    stats
+  )
+
+  addMesh(parent, box(0.55, 3.2, length, x - 0.42, 1.65, midZ), materials.shrub, {
+    name: 'landing-hedge'
+  }, stats)
+}
 
 function addPlaza(parent, materials, stats) {
   const width = PLAZA_X1 - PLAZA_X0
@@ -172,11 +217,18 @@ function forecourtColliders() {
   }
   boxes.push({ minX: 20.35, maxX: 21.3, minZ: 24.6, maxZ: 25.2 })
   for (const post of SHELTER_POSTS) boxes.push(yawBox(post.x, post.z, 0.16, 0.16, 0, 0.06))
+  boxes.push({
+    minX: PLAZA.minX - 0.85,
+    maxX: PLAZA.minX + 0.05,
+    minZ: PLAZA.minZ + 0.2,
+    maxZ: PLAZA.maxZ - 0.2
+  })
   return boxes
 }
 
 export function buildForecourt(parent, materials, stats) {
   addPlaza(parent, materials, stats)
+  addTrackScreen(parent, materials, stats)
   addLuggage(parent, materials, stats)
   addShelter(parent, materials, stats)
 
@@ -197,7 +249,7 @@ export function buildForecourt(parent, materials, stats) {
     drift: 0.38,
     seed: 23
   })
-  steam.points.position.set(12.4, 2.4, 32.6)
+  steam.points.position.set(6.5, 3.3, 27.2)
   steam.points.name = 'landing-steam'
   parent.add(steam.points)
   stats.draws += 1

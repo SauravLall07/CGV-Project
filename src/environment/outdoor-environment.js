@@ -1213,10 +1213,28 @@ export function createOutdoorEnvironment(options = {}) {
     applySpotLights(options.stationSpotLights)
   }
 
+  function writeFog(material, { color, near, far, max }) {
+    const uniforms = material?.customUniforms
+    if (!uniforms) return
+    if (color !== undefined) {
+      if (color.isColor) uniforms.uFogColor.value.copy(color)
+      else uniforms.uFogColor.value.set(color)
+    }
+    if (near !== undefined) uniforms.uFogNear.value = near
+    if (far !== undefined) uniforms.uFogFar.value = far
+    if (max !== undefined) uniforms.uFogMax.value = max
+  }
+
+  function setFog(options) {
+    writeFog(terrainMaterial, options)
+    writeFog(vegMaterial, options)
+    writeFog(deadMaterial, options)
+    writeFog(grassMaterial, options)
+    if (grassField) writeFog(grassField.material, options)
+  }
+
   function setFogColor(color) {
-    terrainMaterial.customUniforms.uFogColor.value.copy(color)
-    vegMaterial.customUniforms.uFogColor.value.copy(color)
-    if (grassField) grassField.material.customUniforms.uFogColor.value.copy(color)
+    setFog({ color })
   }
 
   return {
@@ -1224,6 +1242,7 @@ export function createOutdoorEnvironment(options = {}) {
     terrainMesh,
     setStationSpotLights: applySpotLights,
     setFogColor,
+    setFog,
 
     update(delta) {
       elapsed += delta
