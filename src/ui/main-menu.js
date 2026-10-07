@@ -3,7 +3,7 @@
 // Displays a cinematic title overlay on top of the existing Three.js station
 // scene. The head house on the east side of the rails renders live behind the
 // menu from a slow-drifting camera, with the detective idle in the left
-// foreground. The run itself still starts at the west-wing checkpoint.
+// foreground. New Game starts him there and glides the camera in behind him.
 //
 // Flow: loading screen → main menu → NEW GAME → menu fades → third-person
 // camera lerps to the player → gameplay begins.

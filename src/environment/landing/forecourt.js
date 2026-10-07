@@ -3,17 +3,17 @@ import { createParticleField } from '../particles.js'
 import { addBenches } from './bench.js'
 import { addCars } from './car.js'
 import { addMesh, box, mergeParts } from './geom.js'
-import { FACADE_X, Z_MAX, Z_MIN } from './layout.js'
+import { FACADE_X, PLAZA } from './layout.js'
 import { addLampPosts } from './lamp-post.js'
 import { addPlanters } from './planter.js'
 
 // Cobbles in front of the west facade, plus the street furniture. The plaza
 // stops at the rail side (x ≈ 9); the walkable platform never reaches it.
 
-const PLAZA_X0 = 8.7
-const PLAZA_X1 = FACADE_X - 0.15
-const PLAZA_Z0 = Z_MIN - 2.2
-const PLAZA_Z1 = Z_MAX + 2.2
+const PLAZA_X0 = PLAZA.minX
+const PLAZA_X1 = PLAZA.maxX
+const PLAZA_Z0 = PLAZA.minZ
+const PLAZA_Z1 = PLAZA.maxZ
 
 function addPlaza(parent, materials, stats) {
   const width = PLAZA_X1 - PLAZA_X0
@@ -46,13 +46,7 @@ function addPlaza(parent, materials, stats) {
 function addLuggage(parent, materials, stats) {
   const wood = []
   const iron = []
-  const crates = [
-    { w: 0.7, h: 0.55, d: 0.55, x: 21.6, y: 0.28, z: 13.4 },
-    { w: 0.5, h: 0.4, d: 0.48, x: 21.9, y: 0.75, z: 13.15 },
-    { w: 0.62, h: 0.48, d: 0.5, x: 21.5, y: 0.25, z: 24.2 },
-    { w: 0.4, h: 0.32, d: 0.4, x: 21.2, y: 0.64, z: 24.45 }
-  ]
-  for (const crate of crates) {
+  for (const crate of CRATES) {
     wood.push(box(crate.w, crate.h, crate.d, crate.x, crate.y, crate.z))
     iron.push(box(crate.w + 0.02, 0.04, 0.04, crate.x, crate.y, crate.z + crate.d / 2))
     iron.push(box(crate.w + 0.02, 0.04, 0.04, crate.x, crate.y, crate.z - crate.d / 2))
@@ -102,14 +96,79 @@ function addShelter(parent, materials, stats) {
   // Open roof beside the right wing, over the rails' north end, so the
   // steam reads as coming from the trains rather than from a chimney.
   const roof = box(6.2, 0.14, 12.5, 13.4, 5.15, 33.2)
-  const posts = []
-  for (const x of [10.6, 16.1]) {
-    for (const z of [27.4, 38.6]) {
-      posts.push(box(0.16, 5.1, 0.16, x, 2.55, z))
-    }
-  }
+  const posts = SHELTER_POSTS.map((post) => box(0.16, 5.1, 0.16, post.x, 2.55, post.z))
   addMesh(parent, roof, materials.roof, { castShadow: true, name: 'landing-shelter' }, stats)
   addMesh(parent, mergeParts(posts), materials.iron, { name: 'landing-shelter-posts' }, stats)
+}
+
+const LAMPS = [
+  { x: 11.4, y: 0.05, z: 2.2 },
+  { x: 11.6, y: 0.05, z: 9.2 },
+  { x: 11.2, y: 0.05, z: 16.4 },
+  { x: 11.5, y: 0.05, z: 23.8 },
+  { x: 11.3, y: 0.05, z: 31.2 },
+  { x: 11.6, y: 0.05, z: 37.4 }
+]
+
+const BENCHES = [
+  { x: 18.4, y: 0.05, z: 8.6 },
+  { x: 18.4, y: 0.05, z: 28.8 },
+  { x: 16.2, y: 0.05, z: 4.6, yaw: 0.4 }
+]
+
+const PLANTERS = [
+  { x: 20.2, y: 0.05, z: 14.6 },
+  { x: 20.2, y: 0.05, z: 22.6 },
+  { x: 19.4, y: 0.05, z: 6.2 },
+  { x: 19.4, y: 0.05, z: 31.2 },
+  { x: 17.2, y: 0.05, z: 2.4 }
+]
+
+const CARS = [
+  { x: 15.6, y: 0.05, z: 1.85, yaw: 0.08 },
+  { x: 14.2, y: 0.05, z: 36.4, yaw: -0.18 },
+  { x: 16.8, y: 0.05, z: 33.1, yaw: 0.35 }
+]
+
+const CRATES = [
+  { w: 0.7, h: 0.55, d: 0.55, x: 21.6, y: 0.28, z: 13.4 },
+  { w: 0.5, h: 0.4, d: 0.48, x: 21.9, y: 0.75, z: 13.15 },
+  { w: 0.62, h: 0.48, d: 0.5, x: 21.5, y: 0.25, z: 24.2 },
+  { w: 0.4, h: 0.32, d: 0.4, x: 21.2, y: 0.64, z: 24.45 }
+]
+
+const SHELTER_POSTS = [
+  { x: 10.6, z: 27.4 },
+  { x: 16.1, z: 27.4 },
+  { x: 10.6, z: 38.6 },
+  { x: 16.1, z: 38.6 }
+]
+
+function yawBox(x, z, halfX, halfZ, yaw = 0, pad = 0.12) {
+  const c = Math.abs(Math.cos(yaw))
+  const s = Math.abs(Math.sin(yaw))
+  const hx = halfX * c + halfZ * s + pad
+  const hz = halfX * s + halfZ * c + pad
+  return { minX: x - hx, maxX: x + hx, minZ: z - hz, maxZ: z + hz }
+}
+
+function forecourtColliders() {
+  const boxes = []
+  for (const lamp of LAMPS) boxes.push(yawBox(lamp.x, lamp.z, 0.24, 0.24))
+  for (const bench of BENCHES) boxes.push(yawBox(bench.x, bench.z, 0.28, 0.78, bench.yaw || 0))
+  for (const planter of PLANTERS) boxes.push(yawBox(planter.x, planter.z, 0.52, 0.52))
+  for (const car of CARS) boxes.push(yawBox(car.x, car.z, 0.85, 2.2, car.yaw || 0, 0.2))
+  for (const crate of CRATES) {
+    boxes.push({
+      minX: crate.x - crate.w / 2,
+      maxX: crate.x + crate.w / 2,
+      minZ: crate.z - crate.d / 2,
+      maxZ: crate.z + crate.d / 2
+    })
+  }
+  boxes.push({ minX: 20.35, maxX: 21.3, minZ: 24.6, maxZ: 25.2 })
+  for (const post of SHELTER_POSTS) boxes.push(yawBox(post.x, post.z, 0.16, 0.16, 0, 0.06))
+  return boxes
 }
 
 export function buildForecourt(parent, materials, stats) {
@@ -117,34 +176,10 @@ export function buildForecourt(parent, materials, stats) {
   addLuggage(parent, materials, stats)
   addShelter(parent, materials, stats)
 
-  addLampPosts(parent, [
-    { x: 11.4, y: 0.05, z: 2.2 },
-    { x: 11.6, y: 0.05, z: 9.2 },
-    { x: 11.2, y: 0.05, z: 16.4 },
-    { x: 11.5, y: 0.05, z: 23.8 },
-    { x: 11.3, y: 0.05, z: 31.2 },
-    { x: 11.6, y: 0.05, z: 37.4 }
-  ], materials, stats)
-
-  addBenches(parent, [
-    { x: 18.4, y: 0.05, z: 8.6 },
-    { x: 18.4, y: 0.05, z: 28.8 },
-    { x: 16.2, y: 0.05, z: 4.6, yaw: 0.4 }
-  ], materials, stats)
-
-  addPlanters(parent, [
-    { x: 20.2, y: 0.05, z: 14.6 },
-    { x: 20.2, y: 0.05, z: 22.6 },
-    { x: 19.4, y: 0.05, z: 6.2 },
-    { x: 19.4, y: 0.05, z: 31.2 },
-    { x: 17.2, y: 0.05, z: 2.4 }
-  ], materials, stats)
-
-  addCars(parent, [
-    { x: 15.6, y: 0.05, z: 1.85, yaw: 0.08 },
-    { x: 14.2, y: 0.05, z: 36.4, yaw: -0.18 },
-    { x: 16.8, y: 0.05, z: 33.1, yaw: 0.35 }
-  ], materials, stats)
+  addLampPosts(parent, LAMPS, materials, stats)
+  addBenches(parent, BENCHES, materials, stats)
+  addPlanters(parent, PLANTERS, materials, stats)
+  addCars(parent, CARS, materials, stats)
 
   const banners = addFlags(parent, materials, stats)
 
@@ -172,5 +207,5 @@ export function buildForecourt(parent, materials, stats) {
     }
   }
 
-  return { update }
+  return { update, colliders: forecourtColliders() }
 }

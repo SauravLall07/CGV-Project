@@ -98,6 +98,24 @@ export function createLevelManager({
     onInputStateChange?.()
   }
 
+  // The title screen already built Boarding. Adopting it keeps that scene in
+  // place so New Game can glide the camera instead of flashing a reload.
+  // The checkpoint and objective are applied; the camera is left where it is.
+  function adopt(state, level) {
+    if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
+    pendingToken += 1
+    if (current) teardown()
+    currentState = state
+    currentOptions = null
+    current = level
+    transitioning = false
+    const checkpoint = level.checkpoint ?? DEFAULT_CHECKPOINT
+    respawn.setCheckpoint(checkpoint.position, checkpoint.yaw, checkpoint)
+    hud.setObjective(level.objective ?? '')
+    timeSystem?.resetForLevel({ preserveEnergy: false })
+    if (onEnter) onEnter(state)
+  }
+
   function enter(state, { preserveEnergy = false, levelOptions = null } = {}) {
     if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
     console.log(
@@ -192,6 +210,7 @@ export function createLevelManager({
 
   return {
     enter,
+    adopt,
     restart,
     unload,
     advance,

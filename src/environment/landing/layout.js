@@ -2,9 +2,9 @@ import * as THREE from 'three'
 
 // The head house stands east of the rails (track centre x = 7). Its public
 // face looks west, back across the tracks toward the platform, which is the
-// station's front. The whole footprint is outside the walkable concourse:
-// the player is clamped at x = 4.3 and the west-wing passages stay at z < -14.
-// Nothing here adds a collider.
+// station's front. The plaza is the opening of Boarding: the detective spawns
+// here, and the doors are the way into the west-wing gantry. Colliders live
+// with the props; the level widens its walk clamp to cover this pad.
 //
 // Screen-right while looking east (+X) is world +Z, so the locomotive nose
 // (z = 26) and the steam sit on the right of the title shot. The moon is
@@ -45,9 +45,19 @@ export const LANDING_CAMERA = {
 // so the shot sees his back.
 export const LANDING_FIGURE = {
   x: 13.55,
-  y: 0.06,
+  y: 0.05,
   z: 14.35,
   yaw: Math.PI / 2
+}
+
+// Cobbles in front of the west face. The west edge is the quay above the
+// rails; the player is stopped there and cannot cross onto the track.
+export const PLAZA = {
+  minX: 8.7,
+  maxX: FACADE_X - 0.15,
+  minZ: Z_MIN - 2.2,
+  maxZ: Z_MAX + 2.2,
+  y: 0.05
 }
 
 export function insideLanding(x, z, margin = 0) {

@@ -366,4 +366,38 @@ export function buildFacade(parent, materials, stats) {
     parent.add(light)
   }
   addLanterns(parent, lanterns, materials, stats)
+  return facadeColliders(canopyW)
+}
+
+function facadeColliders(canopyW) {
+  const boxes = [{
+    minX: FACADE_X - 0.25,
+    maxX: FACADE_X + DEPTH,
+    minZ: Z_MIN - 0.3,
+    maxZ: Z_MAX + 0.3
+  }]
+  const depth = 0.72
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (let i = 0; i < 4; i += 1) {
+    const x = FACADE_X - 0.35 - i * depth - depth / 2
+    const width = canopyW - 0.4 + i * 0.35
+    minX = Math.min(minX, x - depth / 2)
+    maxX = Math.max(maxX, x + depth / 2)
+    minZ = Math.min(minZ, CENTER_Z - width / 2)
+    maxZ = Math.max(maxZ, CENTER_Z + width / 2)
+  }
+  boxes.push({ minX, maxX, minZ, maxZ })
+  for (const side of [-1, 1]) {
+    const z = CENTER_Z + side * (canopyW / 2 - 0.2)
+    boxes.push({
+      minX: FACADE_X - 3.35,
+      maxX: FACADE_X - 2.95,
+      minZ: z - 0.2,
+      maxZ: z + 0.2
+    })
+  }
+  return boxes
 }

@@ -1,3 +1,5 @@
+import * as THREE from 'three'
+import { settings } from './core/settings.js'
 import { createRenderer } from './core/renderer.js'
 import { createPostProcessing } from './core/postprocessing.js'
 import { createScene } from './core/scene.js'
@@ -27,6 +29,7 @@ import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
 import { createCredits } from './ui/credits.js'
 import { createBoardingLevel } from './levels/boarding.js'
+import { LANDING_FIGURE } from './environment/landing/layout.js'
 import { loadTrainModel } from './entities/train.js'
 import { loadBoardingAssets } from './environment/nature-props.js'
 import { createMovingHeistLevel } from './levels/moving-heist.js'
@@ -294,6 +297,7 @@ if (import.meta.env.DEV) {
 // takes over and gameplay begins.
 
 let gameStarted = false
+let arrival = null
 let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
 let titleBackdrop = null // the silently-built station behind the title screen
@@ -325,7 +329,11 @@ async function buildTitleBackdrop() {
   const ctx = {
     scene, interaction, assets, hud, timeSystem, renderer,
     player, camera: playerView, respawn,
-    advance: () => levelManager.advance()
+    advance: () => levelManager.advance(),
+    beginCinematic() {
+      respawn.cancel()
+      syncInputState()
+    }
   }
   // Nothing is interactable behind the title screen, and the player is parked
   // back on the level's spawn — otherwise quitting mid-run would leave the
@@ -436,7 +444,7 @@ function getInputState() {
     paused,
     transitioning: levelManager.isTransitioning(),
     caught: respawn.isFailing(),
-    cinematic: levelManager.isCinematic(),
+    cinematic: levelManager.isCinematic() || Boolean(arrival),
     editor: Boolean(modelEditor?.isOpen())
   })
 }
@@ -488,15 +496,55 @@ function showCompleteCredits() {
   keyboardLock.release({ exitFullscreen: false })
 }
 
-function startGame() {
-  // Clean up the silently-built backdrop level; the level manager will
-  // rebuild Boarding through its normal enter() pipeline, which sets up
-  // interaction, checkpoints, HUD objective, etc.
-  if (titleBackdrop) {
-    titleBackdrop.dispose()
-    titleBackdrop = null
-  }
+// Third-person offset, matching cameras/third-person-camera.js (pivot 1.5 m,
+// default pitch 0.25). The glide ends on that pose so control starts with no pop.
+const ARRIVAL_PIVOT_Y = 1.5
+const ARRIVAL_PITCH = 0.25
+const ARRIVAL_UP = new THREE.Vector3(0, 1, 0)
+const arrivalEndMatrix = new THREE.Matrix4()
 
+function beginForecourtArrival() {
+  const yaw = LANDING_FIGURE.yaw
+  const distance = settings.get('cameraDistance')
+  const pivot = new THREE.Vector3(
+    LANDING_FIGURE.x,
+    LANDING_FIGURE.y + ARRIVAL_PIVOT_Y,
+    LANDING_FIGURE.z
+  )
+  const horizontal = Math.cos(ARRIVAL_PITCH)
+  const endPos = new THREE.Vector3(
+    pivot.x - Math.sin(yaw) * horizontal * distance,
+    pivot.y + Math.sin(ARRIVAL_PITCH) * distance,
+    pivot.z - Math.cos(yaw) * horizontal * distance
+  )
+  arrivalEndMatrix.lookAt(endPos, pivot, ARRIVAL_UP)
+  arrival = {
+    t: 0,
+    duration: 2,
+    yaw,
+    pitch: ARRIVAL_PITCH,
+    startPos: camera.position.clone(),
+    endPos,
+    startQuat: camera.quaternion.clone(),
+    endQuat: new THREE.Quaternion().setFromRotationMatrix(arrivalEndMatrix)
+  }
+}
+
+function updateForecourtArrival(delta) {
+  arrival.t += delta
+  const u = Math.min(1, arrival.t / arrival.duration)
+  const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2
+  camera.position.lerpVectors(arrival.startPos, arrival.endPos, e)
+  camera.quaternion.copy(arrival.startQuat).slerp(arrival.endQuat, e)
+  if (u < 1) return false
+  playerView.setYaw(arrival.yaw)
+  playerView.setPitch(arrival.pitch)
+  playerView.snap()
+  arrival = null
+  return true
+}
+
+function startGame() {
   respawn.reset()
   timeSystem.resetForRun()
   gameStarted = true
@@ -510,8 +558,23 @@ function startGame() {
   hud.setVisible(true)
   keyboardLock.engage()
   const devStart = devStartOptions()
-  if (devStart) levelManager.enter(devStart.state, { levelOptions: devStart.levelOptions })
-  else levelManager.enter('Boarding')
+  if (devStart) {
+    // A skipped start still rebuilds through the level manager.
+    if (titleBackdrop) {
+      titleBackdrop.dispose()
+      titleBackdrop = null
+    }
+    levelManager.enter(devStart.state, { levelOptions: devStart.levelOptions })
+    return
+  }
+  if (titleBackdrop) {
+    const level = titleBackdrop
+    titleBackdrop = null
+    levelManager.adopt('Boarding', level)
+    beginForecourtArrival()
+    return
+  }
+  levelManager.enter('Boarding')
 }
 
 // Dev builds only: ?start=<target> makes NEW GAME skip ahead for playtesting.
@@ -658,6 +721,13 @@ loop.add((delta) => {
   // A level update may have opened a tutorial this frame. Stop immediately
   // so the player cannot move one extra frame into a hazard under the popup.
   if (hud.isTutorialOpen()) return
+
+  // New Game keeps the title framing and eases down behind the detective
+  // before the third-person camera takes over.
+  if (arrival && !updateForecourtArrival(delta)) {
+    syncInputState()
+    return
+  }
 
   // Cinematics and other non-playing states may still need level animation,
   // but movement and interaction must not resume during the same frame.

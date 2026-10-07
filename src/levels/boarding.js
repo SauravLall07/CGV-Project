@@ -25,6 +25,7 @@ import { createDistractionSystem } from '../systems/distraction.js'
 import { disposeObject } from '../core/dispose.js'
 import { createLightPool, POINT_LIGHT_POOL_SIZE, TORCH_SPOT_POOL_SIZE } from '../core/light-pool.js'
 import { createLandingScene } from '../environment/landing/index.js'
+import { CENTER_Z, FACADE_X, LANDING_FIGURE, PLAZA } from '../environment/landing/layout.js'
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -109,6 +110,19 @@ export function createBoardingLevel({
     minZ: Math.min(bounds.minZ, onboardingPassage.bounds.minZ, tutorialPassage.bounds.minZ, guardPassage.bounds.minZ, bridgePassage.bounds.minZ),
     maxZ: Math.max(bounds.maxZ, onboardingPassage.bounds.maxZ, tutorialPassage.bounds.maxZ, guardPassage.bounds.maxZ, bridgePassage.bounds.maxZ)
   }
+  // The concourse clamp (x = 4.3) stops short of the plaza. Widen the
+  // rectangle, then wall off the tracks and the ground north of the platform
+  // so the extra space is only the cobbles.
+  const concourseMaxZ = levelBounds.maxZ
+  levelBounds.maxX = Math.max(levelBounds.maxX, FACADE_X - 0.2)
+  levelBounds.maxZ = Math.max(levelBounds.maxZ, PLAZA.maxZ - 0.1)
+  wallColliders.push(
+    ...landing.colliders,
+    { minX: 4.5, maxX: PLAZA.minX + 0.2, minZ: -80, maxZ: 80 },
+    { minX: -400, maxX: PLAZA.minX + 0.05, minZ: concourseMaxZ - 0.05, maxZ: 90 },
+    { minX: PLAZA.minX - 0.3, maxX: FACADE_X + 0.4, minZ: -80, maxZ: PLAZA.minZ + 0.05 },
+    { minX: PLAZA.minX - 0.3, maxX: FACADE_X + 0.4, minZ: PLAZA.maxZ - 0.05, maxZ: 90 }
+  )
 
   const { train } = createTrain()
   const lights = createStationLighting()
@@ -655,19 +669,87 @@ export function createBoardingLevel({
     kind: 'spot'
   })
 
+  const stationObjective = 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express'
+  const gantrySpawn = onboardingPassage.spawn.clone()
+  const veil = document.createElement('div')
+  Object.assign(veil.style, {
+    position: 'fixed',
+    inset: '0',
+    background: '#000',
+    opacity: '0',
+    pointerEvents: 'none',
+    zIndex: '40'
+  })
+  document.body.appendChild(veil)
+
+  const door = new THREE.Object3D()
+  door.name = 'landing-door'
+  door.position.set(FACADE_X - 3.05, 1.15, CENTER_Z)
+  landing.group.add(door)
+
+  let enteredStation = false
+  let enteringStation = false
+  let enterFade = null
+  const FADE_SECONDS = 0.6
+
+  function arriveAtGantry() {
+    enteredStation = true
+    player.setPose(gantrySpawn, Math.PI / 2)
+    camera?.setYaw?.(Math.PI / 2)
+    camera?.setPitch?.(-0.08)
+    camera?.snap?.()
+    respawn.setCheckpoint(gantrySpawn.clone(), Math.PI / 2, {
+      restore: () => stealth.reset()
+    })
+    hud?.setObjective(stationObjective)
+  }
+
+  function updateDoorFade(delta) {
+    if (!enterFade) return
+    enterFade.t += delta
+    const u = Math.min(1, enterFade.t / FADE_SECONDS)
+    if (enterFade.phase === 'out') {
+      veil.style.opacity = String(u)
+      if (u >= 1) {
+        arriveAtGantry()
+        enterFade = { t: 0, phase: 'in' }
+      }
+    } else {
+      veil.style.opacity = String(1 - u)
+      if (u >= 1) {
+        veil.style.opacity = '0'
+        enterFade = null
+        enteringStation = false
+      }
+    }
+  }
+
+  const unregisterDoor = interaction.register(door, {
+    prompt: 'Enter the station',
+    range: 2.7,
+    onInteract() {
+      if (enteredStation || enterFade) return
+      enteringStation = true
+      enterFade = { t: 0, phase: 'out' }
+      beginCinematic?.()
+    }
+  })
+
   return {
-    objective: 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express',
+    objective: 'Enter the station',
     checkpoint: {
-      position: onboardingPassage.spawn.clone(),
-      yaw: Math.PI / 2, // face east through the onboarding approach
-      // Default look is 14° down, which puts a 30° moon above the frame.
-      // This starts a few degrees above the horizon so that moon is in view.
-      pitch: -0.08,
+      position: new THREE.Vector3(LANDING_FIGURE.x, LANDING_FIGURE.y, LANDING_FIGURE.z),
+      yaw: LANDING_FIGURE.yaw,
       restore: () => stealth.reset()
     },
     bounds: levelBounds,
     obstacles: wallColliders,
     groundHeightAt(x, z, fallback = 0) {
+      if (
+        x >= PLAZA.minX - 0.4 && x <= FACADE_X + 0.4 &&
+        z >= PLAZA.minZ - 0.4 && z <= PLAZA.maxZ + 0.4
+      ) return PLAZA.y
+
       const bridgeHeight = bridgePassage.getGroundHeight(x, z, Number.NaN)
       if (Number.isFinite(bridgeHeight)) return bridgeHeight
 
@@ -703,10 +785,11 @@ export function createBoardingLevel({
     },
 
     get isCinematic() {
-      return isBoardingCinematic
+      return isBoardingCinematic || enteringStation
     },
 
     update(delta) {
+      updateDoorFade(delta)
       updateStationSunShadow(sunlight, player.mesh.position)
       sky.update(delta, timeSystem)
       outdoorEnv.update(delta)
@@ -809,6 +892,8 @@ export function createBoardingLevel({
       unregisterApproachTerminal()
       unregisterTerminal()
       unregisterBoarding()
+      unregisterDoor()
+      veil.remove()
       onboardingPassage.dispose()
       tutorialPassage.dispose()
       guardPassage.dispose()

@@ -13,7 +13,7 @@ export function createLandingScene() {
   const materials = createLandingMaterials()
   const stats = emptyStats()
 
-  buildFacade(group, materials, stats)
+  const facadeColliders = buildFacade(group, materials, stats)
   const forecourt = buildForecourt(group, materials, stats)
 
   group.traverse((node) => {
@@ -27,6 +27,7 @@ export function createLandingScene() {
     group,
     stats,
     shadowFocus: focus,
+    colliders: [...facadeColliders, ...forecourt.colliders],
     update(delta) { forecourt.update(delta) }
   }
 }
