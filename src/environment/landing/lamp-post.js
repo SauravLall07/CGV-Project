@@ -32,10 +32,11 @@ function glowGeometry() {
   return box(0.14, 0.2, 0.14, 0, 4.12, 0)
 }
 
-// The head sits about 4 m up. A range of 9 m lays a pool roughly 9 m
-// across on the cobbles, and 140 candela keeps the middle of that pool
-// bright with a dark gap before the next post.
-export const LAMP_INTENSITY = 140
+// The head sits about 4 m up. A cutoff of 6.5 m reaches about 5 m out
+// across the cobbles, so the pool is roughly 10 m across. 220 candela
+// keeps that disc strong, and posts farther apart than that still have
+// a dark gap between them.
+export const LAMP_INTENSITY = 220
 
 export function addLampPosts(parent, posts, materials, stats) {
   const poles = []
@@ -46,7 +47,7 @@ export function addLampPosts(parent, posts, materials, stats) {
     poles.push(matrix)
     cages.push(matrix.clone())
     glows.push(matrix.clone())
-    const light = new THREE.PointLight(0xffb060, LAMP_INTENSITY, 9, 2)
+    const light = new THREE.PointLight(0xffb060, LAMP_INTENSITY, 6.5, 2)
     light.name = post.flicker ? 'landing-lamp-flicker' : 'landing-lamp'
     light.castShadow = false
     light.position.set(post.x, post.y + 4.12, post.z)
