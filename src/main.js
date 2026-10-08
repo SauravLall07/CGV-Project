@@ -739,6 +739,8 @@ loop.add((delta) => {
 
   player.update(delta, {
     keyboard: keyboard.state,
+    crouchPressed: keyboard.consumePress('duck'),
+    runPressed: keyboard.consumePress('run'),
     cameraYaw: playerView.getYaw(),
     bounds: levelManager.bounds,
     obstacles: levelManager.obstacles,
@@ -748,7 +750,7 @@ loop.add((delta) => {
   })
 
   playerView.update(delta, player.mesh, scene, {
-    crouching: Boolean(keyboard.state.duck)
+    crouching: player.isCrouching()
   })
 
   interaction.update(player.mesh, playerView.getYaw())

@@ -5,6 +5,9 @@ import * as THREE from 'three'
 
 const MIXAMO_CM_SCALE = 0.01
 const CROSSFADE = 0.3
+// The crouch transitions last ~0.3s once sped up, so a full CROSSFADE would
+// hide them; they fade in and out faster.
+const CROUCH_FADE = 0.12
 // player.js jump: v0=6.4, g=18 → hang time 2*v0/g. Speed the Mixamo clip
 // (typically ~1.9s) so takeoff-to-land lines up with that airtime.
 const JUMP_AIR_TIME = (2 * 6.4) / 18
@@ -14,8 +17,16 @@ const FILES = {
   run: new URL('../assets/models/detective/Running.fbx', import.meta.url),
   jumpIdle: new URL('../assets/models/detective/Jump.fbx', import.meta.url),
   jumpRun: new URL('../assets/models/detective/Standing Jump Running.fbx', import.meta.url),
-  cast: new URL('../assets/models/detective/Standing 1H Cast Spell 01.fbx', import.meta.url)
+  cast: new URL('../assets/models/detective/Standing 1H Cast Spell 01.fbx', import.meta.url),
+  standToCrouch: new URL('../assets/models/detective/Standing To Crouch.fbx', import.meta.url),
+  crouchIdle: new URL('../assets/models/detective/Crouch Idle 02 Looking Around.fbx', import.meta.url),
+  crouchWalk: new URL('../assets/models/detective/Crouch Walk Forward.fbx', import.meta.url),
+  crouchToStand: new URL('../assets/models/detective/Crouch To Standing.fbx', import.meta.url),
+  throw: new URL('../assets/models/detective/Throw.fbx', import.meta.url)
 }
+
+const CROUCH_TRANSITIONS = new Set(['standToCrouch', 'crouchToStand'])
+const ONE_SHOTS = new Set(['cast', 'throw'])
 
 function firstClip(fbx, name) {
   const clip = fbx?.animations?.[0]
@@ -64,6 +75,21 @@ function stripRootMotion(clip) {
   })
 
   return notes
+}
+
+// Horizontal Hips travel from the first key to the last, in metres. Read
+// before stripRootMotion zeroes it; `scale` turns Mixamo cm into metres.
+function rootTravel(clip, scale) {
+  const track = clip?.tracks.find((t) => HIPS_POSITION.test(t.name))
+  if (!track || track.getValueSize() !== 3 || track.times.length < 2) return null
+  const last = track.values.length - 3
+  const span = track.times[track.times.length - 1] - track.times[0]
+  if (!(span > 0)) return null
+  const distance = Math.hypot(
+    track.values[last] - track.values[0],
+    track.values[last + 2] - track.values[2]
+  ) * scale
+  return { distance, span, speed: distance / span }
 }
 
 function jumpTakeoffTime(clip) {
@@ -265,13 +291,24 @@ function prepareModel(model) {
   }
 }
 
-export async function loadDetectiveVisual(assets) {
-  const [idleFbx, runFbx, jumpIdleFbx, jumpRunFbx, castFbx] = await Promise.all([
+// `crouchSpeed` is the player's crouched ground speed (m/s) and
+// `crouchSettleTime` how long player.js takes to settle into or out of the
+// crouch (s). Both come from player.js so the clips follow its tuning.
+export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettleTime = 0 } = {}) {
+  const [
+    idleFbx, runFbx, jumpIdleFbx, jumpRunFbx, castFbx,
+    standToCrouchFbx, crouchIdleFbx, crouchWalkFbx, crouchToStandFbx, throwFbx
+  ] = await Promise.all([
     assets.loadFbx(FILES.idle.href),
     loadOptionalFbx(assets, FILES.run.href),
     loadOptionalFbx(assets, FILES.jumpIdle.href),
     loadOptionalFbx(assets, FILES.jumpRun.href),
-    loadOptionalFbx(assets, FILES.cast.href)
+    loadOptionalFbx(assets, FILES.cast.href),
+    loadOptionalFbx(assets, FILES.standToCrouch.href),
+    loadOptionalFbx(assets, FILES.crouchIdle.href),
+    loadOptionalFbx(assets, FILES.crouchWalk.href),
+    loadOptionalFbx(assets, FILES.crouchToStand.href),
+    loadOptionalFbx(assets, FILES.throw.href)
   ])
 
   const info = prepareModel(idleFbx)
@@ -288,10 +325,20 @@ export async function loadDetectiveVisual(assets) {
     run: firstClip(runFbx, 'run'),
     jumpIdle: firstClip(jumpIdleFbx, 'jumpIdle'),
     jumpRun: firstClip(jumpRunFbx, 'jumpRun'),
-    cast: firstClip(castFbx, 'cast')
+    cast: firstClip(castFbx, 'cast'),
+    standToCrouch: firstClip(standToCrouchFbx, 'standToCrouch'),
+    crouchIdle: firstClip(crouchIdleFbx, 'crouchIdle'),
+    crouchWalk: firstClip(crouchWalkFbx, 'crouchWalk'),
+    crouchToStand: firstClip(crouchToStandFbx, 'crouchToStand'),
+    throw: firstClip(throwFbx, 'throw')
   }
 
-  const rootMotionClips = ['run', 'jumpIdle', 'jumpRun']
+  const crouchWalkTravel = rootTravel(clips.crouchWalk, info.scale)
+
+  const rootMotionClips = [
+    'run', 'jumpIdle', 'jumpRun',
+    'standToCrouch', 'crouchIdle', 'crouchWalk', 'crouchToStand', 'throw'
+  ]
   for (const name of rootMotionClips) {
     const clip = clips[name]
     if (!clip) continue
@@ -321,7 +368,7 @@ export async function loadDetectiveVisual(assets) {
   }
   if (clips.jumpRun) clips.jumpRun = trimJumpAnticipation(clips.jumpRun)
 
-  const looping = new Set(['idle', 'run'])
+  const looping = new Set(['idle', 'run', 'crouchIdle', 'crouchWalk'])
   const actions = {}
   for (const [name, clip] of Object.entries(clips)) {
     if (!clip) {
@@ -375,11 +422,56 @@ export async function loadDetectiveVisual(assets) {
     )
   }
 
+  // Crouch walk: play the stride at the speed the player actually covers
+  // ground, so the feet do not slide.
+  if (actions.crouchWalk) {
+    if (crouchWalkTravel && crouchWalkTravel.speed > 0 && crouchSpeed > 0) {
+      actions.crouchWalk.timeScale = crouchSpeed / crouchWalkTravel.speed
+      console.log(
+        `[detective] crouchWalk timeScale=${actions.crouchWalk.timeScale.toFixed(3)} ` +
+        `(player ${crouchSpeed.toFixed(3)} m/s ÷ clip ${crouchWalkTravel.speed.toFixed(3)} m/s = ` +
+        `${crouchWalkTravel.distance.toFixed(3)}m over ${crouchWalkTravel.span.toFixed(3)}s)`
+      )
+    } else {
+      console.warn(
+        `[detective] crouchWalk timeScale left at 1: ` +
+        (crouchWalkTravel ? `crouchSpeed=${crouchSpeed}` : 'no Hips travel found in the clip')
+      )
+    }
+  }
+
+  // Stand ↔ crouch: finish the clip in the time player.js takes to settle.
+  for (const name of CROUCH_TRANSITIONS) {
+    const action = actions[name]
+    const clip = clips[name]
+    if (!action || !clip?.duration) continue
+    if (crouchSettleTime > 0) {
+      action.timeScale = clip.duration / crouchSettleTime
+      console.log(
+        `[detective] ${name} timeScale=${action.timeScale.toFixed(2)} ` +
+        `(clip ${clip.duration.toFixed(3)}s → crouch settle ${crouchSettleTime.toFixed(3)}s)`
+      )
+    } else {
+      console.warn(`[detective] ${name} timeScale left at 1: crouchSettleTime=${crouchSettleTime}`)
+    }
+  }
+
   let current = null
   let currentName = null
   let casting = false
   let wanted = 'idle'
   let airborneJump = null
+  let wasCrouching = false
+  // 'standToCrouch' or 'crouchToStand' while one is playing.
+  let crouchTransition = null
+  // Whether the player was moving when that transition started.
+  let transitionMoving = false
+  // Latest input from setLocomotion. The loop after a transition is picked
+  // from these when it ends, not from the input when it began.
+  let lastMoving = false
+  let lastCrouching = false
+  // Last logged sub-state: 'standing', a transition, 'crouchIdle' or 'crouchWalk'.
+  let crouchState = 'standing'
 
   function pickJumpClip(moving) {
     const fromRun = moving || currentName === 'run' || (actions.run?.getEffectiveWeight() ?? 0) > 0.45
@@ -393,9 +485,9 @@ export async function loadDetectiveVisual(assets) {
     const action = actions[name] ?? actions.idle
     if (!action) return
     const resolved = action === actions[name] ? name : 'idle'
-    // Restart only on a real change, plus recasts of the ability clip
+    // Restart only on a real change, plus recasts of the ability clips
     // and a fresh jump takeoff (LoopOnce would otherwise keep the old time).
-    if (resolved === currentName && name !== 'cast' && !restart) return
+    if (resolved === currentName && !ONE_SHOTS.has(name) && !restart) return
 
     action.enabled = true
     action.reset()
@@ -417,7 +509,14 @@ export async function loadDetectiveVisual(assets) {
   }
 
   mixer.addEventListener('finished', (event) => {
-    if (event.action !== actions.cast) return
+    if (crouchTransition && event.action === actions[crouchTransition]) {
+      crouchTransition = null
+      wanted = lastCrouching ? crouchLoop(lastMoving) : standLoop(lastMoving)
+      noteCrouchState('transition finished')
+      fadeTo(wanted, CROUCH_FADE)
+      return
+    }
+    if (event.action !== actions.cast && event.action !== actions.throw) return
     casting = false
     fadeTo(wanted, CROSSFADE)
   })
@@ -432,26 +531,59 @@ export async function loadDetectiveVisual(assets) {
     console.warn('[detective] no idle clip — mesh will stay in bind pose (T-pose)')
   }
 
-  function setLocomotion({ moving, airborne, crouching, jumpStarted }) {
+  function crouchLoop(moving) {
+    if (moving) return actions.crouchWalk ? 'crouchWalk' : (actions.run ? 'run' : 'idle')
+    return actions.crouchIdle ? 'crouchIdle' : 'idle'
+  }
+
+  function standLoop(moving) {
+    return moving && actions.run ? 'run' : 'idle'
+  }
+
+  function noteCrouchState(why) {
+    const next = crouchTransition ?? (lastCrouching ? crouchLoop(lastMoving) : 'standing')
+    if (next === crouchState) return
+    console.log(`[detective] crouch ${crouchState} → ${next} (${why}, moving=${lastMoving})`)
+    crouchState = next
+  }
+
+  function setLocomotion(input) {
+    const why = updateLocomotion(input)
+    noteCrouchState(why)
+  }
+
+  // Returns why the crouch sub-state may have changed, for the log.
+  function updateLocomotion({ moving, airborne, crouching, jumpStarted }) {
+    const crouchStarted = crouching && !wasCrouching
+    const crouchEnded = !crouching && wasCrouching
+    wasCrouching = crouching
+    lastMoving = moving
+    lastCrouching = crouching
+    let why = crouchStarted ? 'crouch pressed' : crouchEnded ? 'stand' : 'input'
+
     if (jumpStarted) {
       const clipName = pickJumpClip(moving)
       if (clipName) {
         airborneJump = clipName
         wanted = clipName
         casting = false
+        crouchTransition = null
         fadeTo(clipName, 0, { restart: true })
         if (clipName === 'jumpIdle' && actions.jumpIdle) {
           actions.jumpIdle.timeScale = jumpIdleAirborneScale
         }
-        return
+        return 'jump'
       }
     }
 
     if (airborne) {
+      crouchTransition = null
+      why = 'airborne'
       wanted = airborneJump && actions[airborneJump]
         ? airborneJump
         : moving ? 'run' : 'idle'
     } else if (
+      !crouching &&
       airborneJump === 'jumpIdle' &&
       actions.jumpIdle &&
       !actions.jumpIdle.paused
@@ -462,23 +594,42 @@ export async function loadDetectiveVisual(assets) {
       }
       actions.jumpIdle.timeScale = 1
       wanted = 'jumpIdle'
-      return
+      return 'landing'
     } else {
       airborneJump = null
-      wanted = moving ? (actions.run ? 'run' : 'idle') : 'idle'
+      if (crouchStarted || crouchEnded) {
+        // Toggled again mid-transition: drop it and fade straight to the
+        // loop that matches the new state.
+        if (crouchTransition) {
+          crouchTransition = null
+          why = 'toggled mid-transition'
+        } else if (crouchStarted && actions.standToCrouch) {
+          crouchTransition = 'standToCrouch'
+          transitionMoving = moving
+        } else if (crouchEnded && actions.crouchToStand) {
+          crouchTransition = 'crouchToStand'
+          transitionMoving = moving
+        }
+      } else if (crouchTransition && moving !== transitionMoving) {
+        // Movement pressed or released mid-transition: blend straight into
+        // the loop for the current input instead of waiting for the clip.
+        crouchTransition = null
+        why = 'moving changed mid-transition'
+      }
+      wanted = crouchTransition ?? (crouching ? crouchLoop(moving) : standLoop(moving))
     }
-
-    if (actions.run) actions.run.timeScale = crouching ? 0.65 : 1
 
     if (casting) {
       if (wanted !== 'idle') {
         casting = false
         fadeTo(wanted, CROSSFADE)
       }
-      return
+      return why
     }
 
-    fadeTo(wanted, CROSSFADE)
+    const quick = CROUCH_TRANSITIONS.has(wanted) || CROUCH_TRANSITIONS.has(currentName)
+    fadeTo(wanted, quick ? CROUCH_FADE : CROSSFADE)
+    return why
   }
 
   function noteJumpAirtime(seconds) {
@@ -510,6 +661,14 @@ export async function loadDetectiveVisual(assets) {
     fadeTo('cast', CROSSFADE)
   }
 
+  // Same rules as playCast. Nothing calls it yet.
+  function playThrow() {
+    if (!actions.throw) return
+    if (wanted !== 'idle') return
+    casting = true
+    fadeTo('throw', CROSSFADE)
+  }
+
   let mixerFrames = 0
   function update(delta) {
     mixer.update(delta)
@@ -520,7 +679,9 @@ export async function loadDetectiveVisual(assets) {
       console.log(
         `[detective] mixer.update #${mixerFrames} delta=${delta.toFixed(4)} ` +
         `idle=${w('idle')} run=${w('run')} jumpIdle=${w('jumpIdle')} jumpRun=${w('jumpRun')} cast=${w('cast')} ` +
-        `airborneJump=${airborneJump ?? 'none'} ` +
+        `throw=${w('throw')} standToCrouch=${w('standToCrouch')} crouchIdle=${w('crouchIdle')} ` +
+        `crouchWalk=${w('crouchWalk')} crouchToStand=${w('crouchToStand')} ` +
+        `airborneJump=${airborneJump ?? 'none'} crouchTransition=${crouchTransition ?? 'none'} ` +
         `lastAirtime=${lastMeasuredAirtime.toFixed(2)}s ` +
         `idleTime=${(actions.idle?.time ?? 0).toFixed(2)} ` +
         `runTime=${(actions.run?.time ?? 0).toFixed(2)}`
@@ -533,5 +694,5 @@ export async function loadDetectiveVisual(assets) {
     mixer.uncacheRoot(idleFbx)
   }
 
-  return { root: info.wrapper, mixer, actions, setLocomotion, playCast, noteJumpAirtime, update, dispose }
+  return { root: info.wrapper, mixer, actions, setLocomotion, playCast, playThrow, noteJumpAirtime, update, dispose }
 }

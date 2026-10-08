@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { createHumanoid, PLAYER_PALETTE } from './humanoid.js'
 import { loadDetectiveVisual } from './detective-visual.js'
 import { resolveBoxCollision } from '../core/collision.js'
+import { settings } from '../core/settings.js'
 
 // -----------------------------------------------------------------------------
 // MOVEMENT
@@ -246,6 +247,8 @@ export function createPlayer() {
   let crouching = false
   let running = false
   let moving = false
+  // Toggle-mode crouch: survives key release, cleared by setPose().
+  let crouchToggled = false
 
   let visual = null
 
@@ -260,7 +263,12 @@ export function createPlayer() {
   async function loadVisual(assets) {
     if (visual) return visual
     try {
-      visual = await loadDetectiveVisual(assets)
+      visual = await loadDetectiveVisual(assets, {
+        crouchSpeed: MOVE_SPEED * CROUCH_SPEED_MULTIPLIER,
+        // crouchAmount closes on its target at CROUCH_BLEND_SPEED per second,
+        // so it is 95% of the way there after ln(20) / CROUCH_BLEND_SPEED.
+        crouchSettleTime: Math.log(20) / CROUCH_BLEND_SPEED
+      })
       group.add(visual.root)
       setPrimitiveVisible(false)
     } catch (error) {
@@ -276,6 +284,10 @@ export function createPlayer() {
 
   function playCast() {
     visual?.playCast()
+  }
+
+  function playThrow() {
+    visual?.playThrow()
   }
 
   function turnToward(dx, dz, delta) {
@@ -347,6 +359,7 @@ export function createPlayer() {
     wasJumpHeld = false
 
     crouchAmount = 0
+    crouchToggled = false
     stridePhase = 0
     resetPose()
   }
@@ -399,6 +412,9 @@ export function createPlayer() {
     delta,
     {
       keyboard,
+      // Key-down edges since the last update (keyboard-state consumePress).
+      crouchPressed = false,
+      runPressed = false,
       cameraYaw,
       bounds,
       obstacles,
@@ -430,11 +446,24 @@ export function createPlayer() {
     }
 
     const jumpHeld = Boolean(keyboard.jump)
-    const jumpPressed = jumpHeld && !wasJumpHeld
+    let jumpPressed = jumpHeld && !wasJumpHeld
     wasJumpHeld = jumpHeld
     jumpStarted = false
 
-    crouching = Boolean(keyboard.duck) && !airborne
+    // Toggle mode: one press crouches, the next stands. Jump or a run press
+    // while crouched stands the player up; that jump press does not also jump.
+    const holdToCrouch = settings.get('crouchMode') === 'hold'
+    if (holdToCrouch) {
+      crouchToggled = false
+    } else {
+      if (crouchPressed) crouchToggled = !crouchToggled
+      if (crouchToggled && (jumpPressed || runPressed)) {
+        crouchToggled = false
+        jumpPressed = false
+      }
+    }
+
+    crouching = (holdToCrouch ? Boolean(keyboard.duck) : crouchToggled) && !airborne
     const deepVentCrouch = crouching && Boolean(group.userData.tightCrouchCamera)
     running = Boolean(keyboard.run) && moving && !crouching
 
@@ -677,6 +706,7 @@ export function createPlayer() {
     loadVisual,
     updateVisual,
     playCast,
+    playThrow,
     isCrouching: () => crouching,
     isRunning: () => running,
     isAirborne: () => airborne,

@@ -28,7 +28,9 @@ or the pause menu); these are the defaults.
   from the camera)
 - **Shift** — run
 - **Space** — jump
-- **X** / **Ctrl** — crouch (hold)
+- **X** / **Z** — crouch toggle: press once to crouch, again to
+  stand (jumping or pressing Shift also stands you up). **Settings → Gameplay
+  → Crouch** switches back to hold-to-crouch
 - **Click the canvas, then move the mouse** — orbit the third-person camera
   around the player (uses the Pointer Lock API)
 - **E** — interact with whatever you're facing (a prompt appears when in range)

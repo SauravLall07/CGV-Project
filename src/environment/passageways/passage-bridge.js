@@ -9,7 +9,7 @@ import {
   plasterMaterial,
   woodMaterial
 } from '../textures.js'
-import { bindingLabel, settings } from '../../core/settings.js'
+import { bindingLabel, crouchKeyHint, settings } from '../../core/settings.js'
 import { GUARD_PASSAGE_EXIT } from './passage-guards.js'
 import { createTutorialHintSystem } from '../../systems/tutorial-hints.js'
 import { createDistractionSystem } from '../../systems/distraction.js'
@@ -273,7 +273,7 @@ function createCrouchVent({ group, colliders, floorMat, wallMat, ironMat, player
     if (crouched || warnedStanding) return
     if (insideMouth) {
       warnedStanding = true
-      hud?.showToast?.(`Too low to stand — hold ${bindingLabel(settings.getBinding('duck'))} and crouch through the vent.`, 2500)
+      hud?.showToast?.(`Too low to stand — ${crouchKeyHint()} to crouch through the vent.`, 2500)
     }
   }
 
@@ -1348,7 +1348,7 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     id: 'bridge-vent',
     center: { x: BRIDGE_PASSAGE_VENT_ENTRY.x + 0.7, y: BRIDGE_PASSAGE_FLOOR_Y, z: BRIDGE_PASSAGE_VENT_ENTRY.z },
     size: { x: 2.2, y: 2.3, z: 2.5 },
-    text: () => `MAINTENANCE VENT — hold ${bindingLabel(settings.getBinding('duck'))} and stay crouched until you clear all three low ribs.`,
+    text: () => `MAINTENANCE VENT — ${crouchKeyHint()} to crouch and stay crouched until you clear all three low ribs.`,
     duration: 4200
   })
   hints.addZone({

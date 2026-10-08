@@ -10,6 +10,8 @@
 // preferences between sessions.
 
 const STORAGE_KEY = 'chrono-express:settings:v1'
+// 2: crouch defaults to X/Z again (1 had moved it to Ctrl).
+const BINDINGS_VERSION = 2
 
 // ---------------------------------------------------------------
 // Option definitions
@@ -117,6 +119,17 @@ export const OPTION_DEFS = [
     type: 'toggle'
   },
   {
+    id: 'crouchMode',
+    label: 'Crouch',
+    hint: 'Toggle: press once to crouch, again to stand. Hold: crouch only while the key is down.',
+    group: 'Gameplay',
+    type: 'choice',
+    choices: [
+      { value: 'toggle', label: 'Toggle' },
+      { value: 'hold', label: 'Hold' }
+    ]
+  },
+  {
     id: 'cameraDistance',
     label: 'Camera Distance',
     hint: 'How far the camera sits behind the player in open space.',
@@ -164,6 +177,7 @@ export const DEFAULT_OPTIONS = {
   captureShortcuts: true,
   mouseSensitivity: 1,
   invertY: false,
+  crouchMode: 'toggle',
   cameraDistance: 4.8,
   masterVolume: 0.5,
   mute: false
@@ -184,8 +198,8 @@ export const ACTIONS = [
   { id: 'right', label: 'Move Right', group: 'Movement', held: true },
   { id: 'run', label: 'Run', group: 'Movement', held: true },
   // Jump and crouch are held rather than press actions: the player reads
-  // `jump` as a held flag and edge-detects the press itself, and `duck` is a
-  // hold-to-crouch.
+  // `jump` as a held flag and edge-detects the press itself. `duck` is read
+  // as held in Hold mode and as a key-down edge (consumePress) in Toggle mode.
   { id: 'jump', label: 'Jump', group: 'Movement', held: true },
   { id: 'duck', label: 'Crouch', group: 'Movement', held: true },
   { id: 'interact', label: 'Interact', group: 'Actions' },
@@ -205,8 +219,9 @@ export const DEFAULT_BINDINGS = {
   right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'],
   jump: ['Space', null],
-  // Ctrl is captured with the browser shortcut keys while the game is active.
-  duck: ['ControlLeft', 'ControlRight'],
+  // Not Ctrl: outside fullscreen the browser takes Ctrl+W (close tab) before
+  // the page sees it, so crouch + forward would close the game.
+  duck: ['KeyX', 'KeyZ'],
   interact: ['KeyE', null],
   distract: ['KeyT', null],
   toggleView: ['KeyV', null],
@@ -279,6 +294,13 @@ export function bindingLabel(codes) {
   return parts.length ? parts.join('/') : 'Unbound'
 }
 
+// "press X/Z" or "hold X/Z", for hint text that tells the
+// player how to crouch in the current crouch mode.
+export function crouchKeyHint() {
+  const keys = bindingLabel(settings.getBinding('duck'))
+  return settings.get('crouchMode') === 'hold' ? `hold ${keys}` : `press ${keys}`
+}
+
 // ---------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------
@@ -327,20 +349,32 @@ function createSettingsStore() {
   }
 
   const storedBindings = { ...(stored.bindings ?? {}) }
-  // Move existing installs off the previous X/Z crouch defaults while
-  // preserving any custom crouch binding the player chose themselves.
+  // Saves from when crouch defaulted to Ctrl go back to X/Z, once. Any other
+  // crouch binding was the player's own choice and is kept, as are saves where
+  // X or Z has since been given to another action. The version stops a later,
+  // deliberate Ctrl binding from being reverted on every load.
+  const migrateCrouch = (stored.bindingsVersion ?? 1) < BINDINGS_VERSION
+  const xzTaken = Object.entries(storedBindings).some(
+    ([id, pair]) => id !== 'duck' && pair?.some((code) => code === 'KeyX' || code === 'KeyZ')
+  )
   if (
-    storedBindings.duck?.[0] === 'KeyX' &&
-    storedBindings.duck?.[1] === 'KeyZ'
+    migrateCrouch &&
+    storedBindings.duck?.[0] === 'ControlLeft' &&
+    storedBindings.duck?.[1] === 'ControlRight' &&
+    !xzTaken
   ) {
-    storedBindings.duck = DEFAULT_BINDINGS.duck
+    storedBindings.duck = [...DEFAULT_BINDINGS.duck]
   }
   const bindings = cloneBindings(storedBindings)
   const listeners = new Set()
+  if (migrateCrouch && stored.bindings) persist()
 
   function persist() {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ options: values, bindings }))
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ options: values, bindings, bindingsVersion: BINDINGS_VERSION })
+      )
     } catch {
       // Storage unavailable (private mode, blocked site data) — settings still
       // apply for this session, they just are not remembered.
