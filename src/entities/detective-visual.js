@@ -27,6 +27,8 @@ const FILES = {
 
 const CROUCH_TRANSITIONS = new Set(['standToCrouch', 'crouchToStand'])
 const ONE_SHOTS = new Set(['cast', 'throw'])
+// Throw.fbx's forward hand swing, sampled at 30 fps (frame 24).
+const THROW_RELEASE_TIME = 24 / 30
 
 function firstClip(fbx, name) {
   const clip = fbx?.animations?.[0]
@@ -459,6 +461,8 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   let current = null
   let currentName = null
   let casting = false
+  let throwing = null
+  const throwHand = idleFbx.getObjectByName('mixamorigRightHand')
   let wanted = 'idle'
   let airborneJump = null
   let wasCrouching = false
@@ -517,6 +521,12 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
       return
     }
     if (event.action !== actions.cast && event.action !== actions.throw) return
+    // A faded-out cast can finish while the newer throw is still playing.
+    if (event.action !== current) return
+    if (event.action === actions.throw && throwing) {
+      throwing.finished = true
+      throwing = null
+    }
     casting = false
     fadeTo(wanted, CROSSFADE)
   })
@@ -560,6 +570,12 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     lastMoving = moving
     lastCrouching = crouching
     let why = crouchStarted ? 'crouch pressed' : crouchEnded ? 'stand' : 'input'
+
+    // Keep physical movement running, but let the full-body throw finish.
+    if (throwing) {
+      wanted = crouching ? crouchLoop(moving) : standLoop(moving)
+      return 'throwing'
+    }
 
     if (jumpStarted) {
       const clipName = pickJumpClip(moving)
@@ -655,23 +671,51 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   // One-shot ability pose. Standing: play the clip. Moving/airborne: skip so
   // run/jump are not held for the cast duration.
   function playCast() {
+    if (throwing) return
     if (!actions.cast) return
     if (wanted !== 'idle') return
     casting = true
     fadeTo('cast', CROSSFADE)
   }
 
-  // Same rules as playCast. Nothing calls it yet.
   function playThrow() {
-    if (!actions.throw) return
-    if (wanted !== 'idle') return
-    casting = true
-    fadeTo('throw', CROSSFADE)
+    if (throwing) return null
+    // Preserve the existing mechanic if this optional clip failed to load.
+    if (!actions.throw) return { released: true, finished: true, cancelled: false }
+    casting = false
+    crouchTransition = null
+    airborneJump = null
+    throwing = {
+      released: false,
+      finished: false,
+      cancelled: false,
+      releasePosition: null
+    }
+    fadeTo('throw', 0.12)
+    return throwing
+  }
+
+  function cancelThrow() {
+    if (!throwing) return
+    throwing.cancelled = true
+    throwing = null
+    fadeTo(wanted, CROSSFADE)
   }
 
   let mixerFrames = 0
   function update(delta) {
+    if (throwing?.cancelled) cancelThrow()
+    const activeThrow = throwing
     mixer.update(delta)
+    // Keep the handle even if this tick also fires the finished event.
+    if (activeThrow && !activeThrow.cancelled && !activeThrow.released &&
+        actions.throw.time >= Math.min(THROW_RELEASE_TIME, clips.throw.duration)) {
+      if (throwHand) {
+        info.wrapper.updateWorldMatrix(true, true)
+        activeThrow.releasePosition = throwHand.getWorldPosition(new THREE.Vector3())
+      }
+      activeThrow.released = true
+    }
     syncJumpIdleTimeScale()
     mixerFrames += 1
     if (mixerFrames === 1 || mixerFrames % 60 === 0) {
@@ -690,9 +734,10 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   function dispose() {
+    cancelThrow()
     mixer.stopAllAction()
     mixer.uncacheRoot(idleFbx)
   }
 
-  return { root: info.wrapper, mixer, actions, setLocomotion, playCast, playThrow, noteJumpAirtime, update, dispose }
+  return { root: info.wrapper, mixer, actions, setLocomotion, playCast, playThrow, cancelThrow, noteJumpAirtime, update, dispose }
 }

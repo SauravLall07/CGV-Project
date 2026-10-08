@@ -287,7 +287,7 @@ export function createPlayer() {
   }
 
   function playThrow() {
-    visual?.playThrow()
+    return visual ? visual.playThrow() : { released: true, finished: true, cancelled: false }
   }
 
   function turnToward(dx, dz, delta) {
@@ -347,6 +347,7 @@ export function createPlayer() {
 
   // Used by respawn and level transitions.
   function setPose(position, yaw = 0) {
+    visual?.cancelThrow()
     group.position.copy(position)
     group.rotation.y = yaw
     facing = yaw

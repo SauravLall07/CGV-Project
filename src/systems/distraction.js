@@ -43,6 +43,7 @@ export function createDistractionSystem({
   let noisePulse = null
   let pulseAge = 0
   let firstThrow = true
+  let pendingThrow = null
 
   function removeProjectile() {
     if (!projectile) return
@@ -60,13 +61,19 @@ export function createDistractionSystem({
 
   function throwDistraction() {
     if (!isEnabled()) return false
-    if (!player?.mesh || cooldown > 0 || projectile) return false
     if (inventory.count <= 0) {
-      hud?.showToast?.('No distractors left — search the passage for loose metal objects.', 1700)
+      hud?.showToast?.('You have nothing to throw', 1700)
       return false
     }
+    if (!player?.mesh || cooldown > 0 || projectile || pendingThrow) return false
 
-    const yaw = camera?.getYaw?.() ?? player.mesh.rotation.y ?? 0
+    const animation = player.playThrow?.()
+    if (!animation) return false
+    pendingThrow = { animation, yaw: camera?.getYaw?.() ?? player.mesh.rotation.y ?? 0 }
+    return true
+  }
+
+  function releaseDistraction({ animation, yaw }) {
     const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw))
 
     projectile = new THREE.Mesh(projectileGeometry, projectileMaterial)
@@ -76,6 +83,7 @@ export function createDistractionSystem({
     projectile.position.copy(player.mesh.position)
     projectile.position.y += crouched ? 0.78 : 1.12
     projectile.position.addScaledVector(forward, 0.55)
+    if (animation.releasePosition) projectile.position.copy(animation.releasePosition)
     projectile.rotation.y = yaw
 
     velocity = forward.multiplyScalar(8.8)
@@ -91,8 +99,6 @@ export function createDistractionSystem({
     } else {
       hud?.showToast?.(`Distractors: ${inventory.count}/${inventory.max}`, 1100)
     }
-
-    return true
   }
 
   function land(position) {
@@ -126,6 +132,14 @@ export function createDistractionSystem({
   function update(delta) {
     cooldown = Math.max(0, cooldown - delta)
 
+    if (pendingThrow) {
+      if (pendingThrow.animation.cancelled) pendingThrow = null
+      else if (pendingThrow.animation.released) {
+        releaseDistraction(pendingThrow)
+        pendingThrow = null
+      }
+    }
+
     if (projectile && velocity) {
       velocity.y -= 12.5 * delta
       projectile.position.addScaledVector(velocity, delta)
@@ -153,6 +167,8 @@ export function createDistractionSystem({
   }
 
   function dispose() {
+    if (pendingThrow) pendingThrow.animation.cancelled = true
+    pendingThrow = null
     removeProjectile()
     removePulse()
     projectileGeometry.dispose()
@@ -165,7 +181,7 @@ export function createDistractionSystem({
     throw: throwDistraction,
     update,
     dispose,
-    isReady: () => cooldown <= 0 && !projectile && inventory.count > 0,
+    isReady: () => cooldown <= 0 && !projectile && !pendingThrow && inventory.count > 0,
     getCount: () => inventory.count
   }
 }
