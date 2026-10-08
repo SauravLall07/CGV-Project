@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
+    "test": "node --import ./scripts/register-test-assets.mjs --test",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

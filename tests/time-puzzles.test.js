@@ -107,6 +107,7 @@ function installCanvasStub() {
   const context = new Proxy({
     createImageData: pixels,
     getImageData: (_x, _y, width, height) => pixels(width, height),
+    measureText: (text) => ({ width: String(text).length * 8 }),
     createLinearGradient: () => ({ addColorStop() {} }),
     createRadialGradient: () => ({ addColorStop() {} })
   }, { get: (target, key) => target[key] ?? (() => {}) })
