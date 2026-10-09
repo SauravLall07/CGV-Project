@@ -9,6 +9,8 @@ import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
+import crackedStoneUrl from '../assets/textures/cracked-stone.png'
+import trainTracksUrl from '../assets/textures/train-tracks.jpg'
 
 // Level 3 — "The Timewreck". The escape run: the player now sprints BACK down
 // the train they just robbed, from the vault to the locomotive, as the Chrono
@@ -191,28 +193,49 @@ export function createTimewreckLevel({
 
   // Vault security checkpoint: two wall-mounted racks spanning the aisle.
   // Each rack's three beams rise and fall together. The open window is when
-  // the lowest beam is above head height.
+  // the lowest beam is above head height. Gates use different speeds so the
+  // clear windows rarely line up.
   const VAULT_BEAM_BASES = [0.5, 1.1, 1.7]
-  const VAULT_BEAM_LIFT = 1.55
+  // Lift high enough that a standing player (1.85 m) has a clear window when
+  // the lowest beam is near its peak — not only a single-frame graze.
+  const VAULT_BEAM_LIFT = 1.85
   const VAULT_BEAM_LENGTH = 4.8
-  const VAULT_BEAM_RADIUS = 0.045
-  const VAULT_GATE_SPEED = 0.9
-  const VAULT_HIT_HALF_Y = 0.08
-  const VAULT_HIT_HALF_Z = 0.16
+  const VAULT_BEAM_RADIUS = 0.04
+  const VAULT_HIT_HALF_Y = 0.055
+  const VAULT_HIT_HALF_Z = 0.11
   const VAULT_BODY_HEIGHT = 1.85
-  const vaultPostMat = new THREE.MeshStandardMaterial({ color: 0x1a222c, metalness: 0.82, roughness: 0.38 })
+  const vaultPostMat = new THREE.MeshStandardMaterial({
+    color: 0x1c2430, metalness: 0.92, roughness: 0.28, emissive: 0x3a1010, emissiveIntensity: 0.22
+  })
+  const vaultPlateMat = new THREE.MeshStandardMaterial({
+    color: 0x2a323c, metalness: 0.88, roughness: 0.32, emissive: 0x2a0808, emissiveIntensity: 0.15
+  })
+  const vaultGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xff2a2a,
+    transparent: true,
+    opacity: 0.35,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  })
   let vaultGateT = 0
 
-  function createVaultGate(z, phase) {
+  function createVaultGate(z, phase, speed) {
     const group = new THREE.Group()
     group.name = 'vault-security-gate'
     group.position.set(0, 0, z)
     const laserMat = createSecurityLaserMaterial({ beamCount: 1 })
+    if (laserMat.customUniforms) laserMat.customUniforms.uScanSpeed.value = 5.2
     for (const side of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.35, 0.16), vaultPostMat)
-      post.position.set(side * 2.4, 1.175, 0)
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.4, 0.2), vaultPostMat)
+      post.position.set(side * 2.4, 1.2, 0)
       group.add(post)
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.1, 0.55), vaultPlateMat)
+      plate.position.set(side * 2.48, 1.15, 0)
+      group.add(plate)
     }
+    const floorStrip = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.03, 0.42), vaultPlateMat)
+    floorStrip.position.set(0, 0.02, 0)
+    group.add(floorStrip)
     const beams = VAULT_BEAM_BASES.map((baseY) => {
       const mesh = new THREE.Mesh(
         new THREE.CylinderGeometry(VAULT_BEAM_RADIUS, VAULT_BEAM_RADIUS, VAULT_BEAM_LENGTH, 12),
@@ -221,32 +244,48 @@ export function createTimewreckLevel({
       mesh.rotation.z = Math.PI / 2
       mesh.position.y = baseY
       group.add(mesh)
+      const glow = new THREE.Mesh(
+        new THREE.CylinderGeometry(VAULT_BEAM_RADIUS * 1.55, VAULT_BEAM_RADIUS * 1.55, VAULT_BEAM_LENGTH * 0.98, 10),
+        vaultGlowMat
+      )
+      glow.rotation.z = Math.PI / 2
+      glow.position.y = baseY
+      group.add(glow)
       const emitters = [-1, 1].map((side) => {
-        const emitter = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.18), vaultPostMat)
+        const emitter = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.2), vaultPostMat)
         emitter.position.set(side * 2.4, baseY, 0)
         group.add(emitter)
         return emitter
       })
-      return { mesh, baseY, emitters }
+      return { mesh, glow, baseY, emitters }
     })
+    const wash = new THREE.PointLight(0xff3344, 1.2, 5.5, 2)
+    wash.position.set(0, 1.3, 0)
+    group.add(wash)
     group.traverse((node) => { node.userData.noCameraCollision = true })
     root.add(group)
-    return { z, phase, laserMat, beams }
+    return { z, phase, speed, laserMat, beams, wash, plateMat: vaultPlateMat }
   }
 
   const vaultGates = [
-    createVaultGate(spans.vault.center - 1.2, 0),
-    createVaultGate(spans.vault.center - 4.6, Math.PI)
+    createVaultGate(spans.vault.center - 1.2, 0, 2.5),
+    createVaultGate(spans.vault.center - 4.6, Math.PI, 2.95)
   ]
 
   function updateVaultGates(dt, playerPos) {
     vaultGateT += dt
     for (const gate of vaultGates) {
-      const lift = (0.5 + 0.5 * Math.sin(vaultGateT * VAULT_GATE_SPEED + gate.phase)) * VAULT_BEAM_LIFT
+      const lift = (0.5 + 0.5 * Math.sin(vaultGateT * gate.speed + gate.phase)) * VAULT_BEAM_LIFT
       if (gate.laserMat.customUniforms) gate.laserMat.customUniforms.uTime.value += dt
+      const openAmt = lift / VAULT_BEAM_LIFT
+      gate.wash.intensity = 0.7 + (1 - openAmt) * 2.4
+      vaultPostMat.emissiveIntensity = 0.18 + (1 - openAmt) * 0.35
+      vaultPlateMat.emissiveIntensity = 0.12 + (1 - openAmt) * 0.4
+      vaultGlowMat.opacity = 0.22 + (1 - openAmt) * 0.28
       for (const beam of gate.beams) {
         const y = beam.baseY + lift
         beam.mesh.position.y = y
+        beam.glow.position.y = y
         for (const emitter of beam.emitters) emitter.position.y = y
         if (!playerPos) continue
         const overlapsBody = (y + VAULT_HIT_HALF_Y) > playerPos.y
@@ -264,9 +303,10 @@ export function createTimewreckLevel({
   // car's Vault end; the arcs sit further along the walk toward Mechanical.
   // Bolts are short additive mesh segments (WebGL lines stay 1px thick).
   // Collision/timing stay as tuned.
-  const SURGE_WARN = 0.75
+  const SURGE_WARN = 0.65
   const SURGE_HIT_HALF_Z = 1.15
   const SURGE_MAX_SEGS = 110
+  const SURGE_SPARK_COUNT = 28
   const _surgeA = new THREE.Vector3()
   const _surgeB = new THREE.Vector3()
   const _surgeMid = new THREE.Vector3()
@@ -466,12 +506,32 @@ export function createTimewreckLevel({
     const light = new THREE.PointLight(0x66c8ff, 0.3, 6.5, 2)
     light.position.set(0, 1.15, 0)
     group.add(light)
+    const panelLight = new THREE.PointLight(0x7ecfff, 0.2, 3.8, 2)
+    panelLight.position.set(side * 2.1, 1.25, 0)
+    group.add(panelLight)
+
+    const sparkPos = new Float32Array(SURGE_SPARK_COUNT * 3)
+    const sparkGeo = new THREE.BufferGeometry()
+    sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3))
+    const sparkMat = new THREE.PointsMaterial({
+      color: 0xb8ecff,
+      size: 0.045,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true
+    })
+    const sparks = new THREE.Points(sparkGeo, sparkMat)
+    sparks.frustumCulled = false
+    group.add(sparks)
+
     group.traverse((node) => { node.userData.noCameraCollision = true })
     root.add(group)
 
     const surge = {
       z, side, offset, period, danger,
-      panelMat, light, glowMat, coreMat, hazeMat,
+      panelMat, light, panelLight, glowMat, coreMat, hazeMat, sparkMat, sparkPos, sparks,
       coreSegs, glowSegs,
       boltSeed: -1, boltMode: ''
     }
@@ -479,11 +539,32 @@ export function createTimewreckLevel({
     return surge
   }
 
+  // ~30% faster cycles; offsets keep the three arcs out of phase so a single
+  // Slow burst rarely clears the whole car.
   const electricalSurges = [
-    createElectricalSurge(spans.convergence.center + 8, 1, 0, 4.6, 2.1),
-    createElectricalSurge(spans.convergence.center - 4, -1, 1.8, 4.5, 2.4),
-    createElectricalSurge(spans.convergence.center - 14, 1, 3.2, 4.4, 2.6)
+    createElectricalSurge(spans.convergence.center + 8, 1, 0, 3.2, 1.85),
+    createElectricalSurge(spans.convergence.center - 4, -1, 1.05, 3.15, 2.05),
+    createElectricalSurge(spans.convergence.center - 14, 1, 2.0, 3.05, 2.2)
   ]
+
+  function updateSurgeSparks(surge, seed, active, strong) {
+    const arr = surge.sparkPos
+    const n = strong ? SURGE_SPARK_COUNT : Math.floor(SURGE_SPARK_COUNT * 0.45)
+    for (let i = 0; i < SURGE_SPARK_COUNT; i++) {
+      const o = i * 3
+      if (!active || i >= n) {
+        arr[o + 1] = -10
+        continue
+      }
+      const u = surgeUnit(seed + i * 3.7)
+      const v = surgeUnit(seed + i * 5.1)
+      const w = surgeUnit(seed + i * 7.3)
+      arr[o] = (u * 2 - 1) * (strong ? 2.0 : 0.55) + (strong ? 0 : surge.side * 1.7)
+      arr[o + 1] = 0.35 + v * 1.5
+      arr[o + 2] = (w * 2 - 1) * (strong ? 1.0 : 0.55)
+    }
+    surge.sparks.geometry.attributes.position.needsUpdate = true
+  }
 
   function updateElectricalSurges(dt, playerPos) {
     surgeT += dt
@@ -492,30 +573,41 @@ export function createTimewreckLevel({
       const dangerous = phase < surge.danger
       const warning = !dangerous && phase > surge.period - SURGE_WARN
       const mode = dangerous ? 'danger' : warning ? 'warn' : 'safe'
-      const flickerHz = dangerous ? 11 : warning ? 18 : 5
+      const flickerHz = dangerous ? 16 : warning ? 24 : 6
       const seed = Math.floor(Math.abs(surgeT) * flickerHz + surge.offset * 10)
       if (seed !== surge.boltSeed || mode !== surge.boltMode) {
         rebuildSurgeLightning(surge, seed, mode)
+        updateSurgeSparks(surge, seed, dangerous || warning, dangerous)
       }
-      const pulse = Math.abs(Math.sin(surgeT * (dangerous ? 16 : warning ? 26 : 7) + surge.offset))
+      const pulse = Math.abs(Math.sin(surgeT * (dangerous ? 22 : warning ? 34 : 8) + surge.offset))
+      const crackle = Math.abs(Math.sin(surgeT * 47 + surge.offset * 3))
       if (dangerous) {
         surge.coreMat.opacity = 0.95
-        surge.glowMat.opacity = 0.55 + pulse * 0.2
-        surge.hazeMat.opacity = 0.18 + pulse * 0.08
-        surge.panelMat.emissiveIntensity = 2.4
-        surge.light.intensity = 6.2 + pulse * 1.6
+        surge.glowMat.opacity = 0.55 + pulse * 0.25
+        surge.hazeMat.opacity = 0.16 + pulse * 0.1
+        surge.panelMat.emissiveIntensity = 2.6 + crackle * 0.8
+        surge.light.intensity = 6.5 + pulse * 2.2 + crackle * 1.5
+        surge.panelLight.intensity = 3.5 + crackle * 2.5
+        surge.sparkMat.opacity = 0.55 + pulse * 0.35
+        surge.sparkMat.size = 0.04 + crackle * 0.03
       } else if (warning) {
-        surge.coreMat.opacity = 0.45 + pulse * 0.4
-        surge.glowMat.opacity = 0.22 + pulse * 0.3
-        surge.hazeMat.opacity = 0.04 + pulse * 0.05
-        surge.panelMat.emissiveIntensity = 0.8 + pulse * 1.2
-        surge.light.intensity = 1.4 + pulse * 2.2
+        surge.coreMat.opacity = 0.4 + pulse * 0.45
+        surge.glowMat.opacity = 0.2 + pulse * 0.32
+        surge.hazeMat.opacity = 0.03 + pulse * 0.05
+        surge.panelMat.emissiveIntensity = 0.9 + pulse * 1.4
+        surge.light.intensity = 1.5 + pulse * 2.6
+        surge.panelLight.intensity = 1.2 + pulse * 2.0
+        surge.sparkMat.opacity = 0.25 + pulse * 0.45
+        surge.sparkMat.size = 0.035
       } else {
-        surge.coreMat.opacity = 0.08 + pulse * 0.06
-        surge.glowMat.opacity = 0.04 + pulse * 0.04
+        surge.coreMat.opacity = 0.06 + pulse * 0.05
+        surge.glowMat.opacity = 0.03 + pulse * 0.03
         surge.hazeMat.opacity = 0
         surge.panelMat.emissiveIntensity = 0.22
         surge.light.intensity = 0.25
+        surge.panelLight.intensity = 0.15
+        surge.sparkMat.opacity = 0.04 + pulse * 0.04
+        surge.sparkMat.size = 0.03
       }
       if (!dangerous || !playerPos) continue
       const overlapsBody = playerPos.y < 1.67 && playerPos.y + 1.85 > 0.43
@@ -528,24 +620,29 @@ export function createTimewreckLevel({
   }
 
   // Relay blast doors. The clock uses envDt, so Slow, Freeze and Rewind
-  // move the whole cycle — leaves and warning light — together.
-  const BLAST_OPEN_S = 2.4
-  const BLAST_WARN_S = 1.5
-  const BLAST_CLOSE_S = 2.6
-  const BLAST_SHUT_S = 1.2
-  const BLAST_REOPEN_S = 2.8
+  // move the whole cycle — leaves and warning light — together. Close is a
+  // fast slam after a long readable warning so Freeze is the reliable cross.
+  // Short open + clear warning, then a hard slam. Freeze during the open/warn
+  // window is the reliable cross; waiting it out is tight.
+  const BLAST_OPEN_S = 0.28
+  const BLAST_WARN_S = 0.4
+  const BLAST_CLOSE_S = 0.18
+  const BLAST_SHUT_S = 0.3
+  const BLAST_REOPEN_S = 0.55
   const BLAST_CYCLE_S = BLAST_OPEN_S + BLAST_WARN_S + BLAST_CLOSE_S + BLAST_SHUT_S + BLAST_REOPEN_S
   const BLAST_LEAF_HALF_X = 0.75
   const BLAST_LEAF_HALF_Z = 0.18
   const BLAST_LEAF_TOP = 2.8
   const doorZ = spans.relay.center - 2.6
   let blastT = 0
+  let blastSlam = 0
+  let blastWasClosing = false
 
   const blastSteel = new THREE.MeshStandardMaterial({
-    color: 0x3a424c, metalness: 0.74, roughness: 0.42, emissive: 0x14181c, emissiveIntensity: 0.12
+    color: 0x3a424c, metalness: 0.86, roughness: 0.34, emissive: 0x1a120e, emissiveIntensity: 0.16
   })
   const blastPlate = new THREE.MeshStandardMaterial({
-    color: 0x232a31, metalness: 0.62, roughness: 0.58
+    color: 0x232a31, metalness: 0.78, roughness: 0.45, emissive: 0x120808, emissiveIntensity: 0.1
   })
   const blastScar = new THREE.MeshStandardMaterial({
     color: 0x4a3028, emissive: 0x7c2d12, emissiveIntensity: 0.55, roughness: 0.62
@@ -588,6 +685,7 @@ export function createTimewreckLevel({
   const blastRight = createBlastLeaf(1)
   blastDoors.add(blastLeft, blastRight)
 
+  const blastRams = []
   for (const side of [-1, 1]) {
     const housing = new THREE.Group()
     housing.name = side < 0 ? 'relay-blast-housing-left' : 'relay-blast-housing-right'
@@ -596,6 +694,8 @@ export function createTimewreckLevel({
     blastBox(housing, 0.9, 0.7, 0.62, blastPlate, side * 1.95, 2.35, 0)
     blastBox(housing, 0.08, 0.16, 0.08, blastSparkMat, side * 1.55, 2.15, 0.32)
     blastBox(housing, 0.08, 0.16, 0.08, blastSparkMat, side * 2.2, 1.7, 0.32)
+    const ram = blastBox(housing, 0.12, 0.12, 0.55, blastSteel, side * 1.55, 1.55, 0)
+    blastRams.push({ mesh: ram, side })
     housing.position.z = doorZ
     blastDoors.add(housing)
   }
@@ -608,6 +708,17 @@ export function createTimewreckLevel({
   const blastLight = new THREE.PointLight(0xff2a1a, 0.45, 6.5, 2)
   blastLight.position.set(0, 3.16, doorZ + 0.2)
   blastDoors.add(blastLight)
+  const blastFillL = new THREE.PointLight(0xff2a1a, 0.2, 4.5, 2)
+  blastFillL.position.set(-1.8, 2.2, doorZ + 0.3)
+  const blastFillR = new THREE.PointLight(0xff2a1a, 0.2, 4.5, 2)
+  blastFillR.position.set(1.8, 2.2, doorZ + 0.3)
+  blastDoors.add(blastFillL, blastFillR)
+  const slamSparks = createParticleField({
+    count: 18,
+    area: { halfX: 0.9, minY: 0.2, maxY: 2.2, minZ: doorZ - 0.4, maxZ: doorZ + 0.4 },
+    color: 0xffb060, size: 0.035, opacity: 0, gravity: -1.2, drift: 0.55, seed: 91
+  })
+  root.add(slamSparks.points)
   blastDoors.traverse((node) => { node.userData.noCameraCollision = true })
   root.add(blastDoors)
 
@@ -621,28 +732,34 @@ export function createTimewreckLevel({
     let closeAmount = 0
     let lampEi = 0.12
     let lightI = 0.45
+    let fillI = 0.15
     const warnStart = BLAST_OPEN_S
     const closeStart = warnStart + BLAST_WARN_S
     const shutStart = closeStart + BLAST_CLOSE_S
     const reopenStart = shutStart + BLAST_SHUT_S
+    const closing = blastT >= closeStart && blastT < shutStart
     if (blastT < warnStart) {
       closeAmount = 0
     } else if (blastT < closeStart) {
       closeAmount = 0
-      const flick = 0.5 + 0.5 * Math.sin(blastT * 16 * Math.PI)
-      lampEi = 0.35 + flick * 2.4
-      lightI = 0.6 + flick * 13.4
+      const flick = 0.5 + 0.5 * Math.sin(blastT * 18 * Math.PI)
+      lampEi = 0.45 + flick * 2.6
+      lightI = 1.2 + flick * 14
+      fillI = 0.8 + flick * 4
     } else if (blastT < shutStart) {
+      // Ease-in slam: slow start, then hard close into the centre.
       const u = (blastT - closeStart) / BLAST_CLOSE_S
-      closeAmount = u * u * (3 - 2 * u)
-      const pulse = 0.5 + 0.5 * Math.sin(blastT * 10 * Math.PI)
-      lampEi = 1.6 + pulse * 0.9
-      lightI = 5 + pulse * 6
+      closeAmount = u * u * u
+      const pulse = 0.5 + 0.5 * Math.sin(blastT * 14 * Math.PI)
+      lampEi = 2.0 + pulse * 0.8
+      lightI = 8 + pulse * 6
+      fillI = 4 + pulse * 3
     } else if (blastT < reopenStart) {
       closeAmount = 1
       const pulse = 0.5 + 0.5 * Math.sin(blastT * 4 * Math.PI)
       lampEi = 1.7 + pulse * 0.35
       lightI = 8 + pulse * 2
+      fillI = 2.5
     } else {
       const u = (blastT - reopenStart) / BLAST_REOPEN_S
       const eased = u * u * (3 - 2 * u)
@@ -651,15 +768,33 @@ export function createTimewreckLevel({
       const urgency = 1 - eased
       lampEi = 0.12 + urgency * (1.4 + pulse * 0.6)
       lightI = 0.45 + urgency * (6 + pulse * 3)
+      fillI = 0.15 + urgency * 2
     }
+    if (blastWasClosing && !closing && closeAmount >= 0.99) {
+      blastSlam = 1
+      slamSparks.material.opacity = 0.85
+    }
+    blastWasClosing = closing
+
     blastSparkMat.emissiveIntensity = lampEi > 0.4 ? lampEi * 0.85 : 0.15
     blastLampMat.emissiveIntensity = lampEi
+    blastSteel.emissiveIntensity = 0.12 + Math.min(0.45, lightI * 0.04)
     blastLight.intensity = lightI
+    blastFillL.intensity = fillI
+    blastFillR.intensity = fillI
+    blastLamp.scale.setScalar(1 + Math.min(0.35, lampEi * 0.08))
 
     const leftX = -1.85 + 1.1 * closeAmount
     const rightX = 1.85 - 1.1 * closeAmount
     blastLeft.position.x = leftX
     blastRight.position.x = rightX
+    // Slight Z shudder during the slam window.
+    const shudder = closing ? Math.sin(blastT * 80) * 0.012 * closeAmount : 0
+    blastLeft.position.z = doorZ + shudder
+    blastRight.position.z = doorZ - shudder
+    for (const ram of blastRams) {
+      ram.mesh.position.x = ram.side * (1.55 - closeAmount * 0.35)
+    }
 
     if (!playerPos) return
     const bodyTop = playerPos.y + 1.85
@@ -684,19 +819,39 @@ export function createTimewreckLevel({
   // ============================================================
   const ramBank = new THREE.Group()
   ramBank.name = 'runaway-pistons'
+  const crackedMap = new THREE.TextureLoader().load(crackedStoneUrl)
+  crackedMap.colorSpace = THREE.SRGBColorSpace
+  crackedMap.wrapS = THREE.RepeatWrapping
+  crackedMap.wrapT = THREE.RepeatWrapping
+  crackedMap.repeat.set(1.4, 1.8)
+  crackedMap.anisotropy = 8
+  // Moving piston faces use the cracked-stone look (not the floor).
   const ramHeadMat = new THREE.MeshStandardMaterial({
-    color: 0x6b7078, metalness: 0.9, roughness: 0.35, emissive: 0x2a1810, emissiveIntensity: 0.45
+    map: crackedMap,
+    bumpMap: crackedMap,
+    bumpScale: 0.14,
+    color: 0xd8d8d8,
+    roughness: 0.94,
+    metalness: 0.06,
+    emissive: 0x1a1830,
+    emissiveIntensity: 0.18
   })
-  const ramRailMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, metalness: 0.8, roughness: 0.5 })
+  const ramRailMat = new THREE.MeshStandardMaterial({
+    color: 0x3a3f4a, metalness: 0.75, roughness: 0.45, emissive: 0x141028, emissiveIntensity: 0.12
+  })
   const rams = []
   const RAM_HEAD_WIDTH = 0.85
   // Sweep wall to wall. The head has to clear the full interior or the player
   // can walk around the piston bank instead of timing it with Slow.
   const RAM_SWEEP = INTERIOR_HALF_WIDTH - RAM_HEAD_WIDTH / 2
+
   // Offsets from the Mechanical car's centre, keeping the original spacing.
   for (const [dz, phase] of [[3, 0], [-1, 2.1], [-5, 4.2]]) {
     const z = spans.mechanical.center + dz
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2, 0.1, 0.16), ramRailMat)
+    const rail = new THREE.Mesh(
+      new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2, 0.1, 0.16),
+      ramRailMat
+    )
     rail.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     ramBank.add(rail)
 
@@ -704,9 +859,20 @@ export function createTimewreckLevel({
     head.position.set(0, 0.9, z)
     head.castShadow = true
     ramBank.add(head)
-
     rams.push({ head, phase, z })
   }
+
+  // Cool blue-violet fill for the Mechanical car only (warm boiler light stays).
+  for (const [dz, intensity] of [[6, 5.5], [0, 7.2], [-6, 5.5]]) {
+    const mechFill = new THREE.PointLight(0x7b6cff, intensity, 11, 2)
+    mechFill.position.set(0, 2.6, spans.mechanical.center + dz)
+    mechFill.userData.noCameraCollision = true
+    root.add(mechFill)
+  }
+  const mechAccent = new THREE.PointLight(0xa78bfa, 4.5, 9, 2)
+  mechAccent.position.set(1.2, 1.8, spans.mechanical.center - 2)
+  mechAccent.userData.noCameraCollision = true
+  root.add(mechAccent)
   root.add(ramBank)
 
   let ramT = 0
@@ -726,6 +892,77 @@ export function createTimewreckLevel({
   const LOOP_PERIOD = 9
   const loopDoorZ = spans.cargo.center + 2
   const loopBeamZ = spans.cargo.center - 2
+
+  // Cargo floor: continuous rail bed (photo alone cannot tile a long aisle
+  // without seams, so the image tints the ballast and real rails/sleepers
+  // run unbroken along the car).
+  const cargoTrackLen = spans.cargo.maxZ - spans.cargo.minZ - 0.8
+  const cargoTrackZ0 = spans.cargo.center
+  const trackMap = new THREE.TextureLoader().load(trainTracksUrl)
+  trackMap.colorSpace = THREE.SRGBColorSpace
+  trackMap.wrapS = THREE.ClampToEdgeWrapping
+  trackMap.wrapT = THREE.ClampToEdgeWrapping
+  trackMap.anisotropy = 8
+  const cargoTracks = new THREE.Group()
+  cargoTracks.name = 'cargo-train-tracks'
+  cargoTracks.position.set(0, 0, cargoTrackZ0)
+
+  const ballast = new THREE.Mesh(
+    new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2 - 0.2, cargoTrackLen),
+    new THREE.MeshStandardMaterial({
+      map: trackMap,
+      bumpMap: trackMap,
+      bumpScale: 0.035,
+      color: 0xb0b4b8,
+      roughness: 0.95,
+      metalness: 0.08
+    })
+  )
+  ballast.rotation.x = -Math.PI / 2
+  ballast.position.y = 0.02
+  ballast.receiveShadow = true
+  cargoTracks.add(ballast)
+
+  const sleeperMat = new THREE.MeshStandardMaterial({
+    color: 0x9a9488, roughness: 0.92, metalness: 0.08
+  })
+  const railRustMat = new THREE.MeshStandardMaterial({
+    color: 0x8a4a28, roughness: 0.72, metalness: 0.55
+  })
+  const railTopMat = new THREE.MeshStandardMaterial({
+    color: 0xc8d0d8, roughness: 0.28, metalness: 0.92
+  })
+  const gauge = 0.72
+  const sleeperStep = 0.62
+  const halfLen = cargoTrackLen * 0.5
+  for (let z = -halfLen + 0.35; z <= halfLen - 0.35; z += sleeperStep) {
+    const sleeper = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.1, 0.22), sleeperMat)
+    sleeper.position.set(0, 0.07, z)
+    sleeper.receiveShadow = true
+    cargoTracks.add(sleeper)
+    for (const side of [-1, 1]) {
+      const clip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.12), railRustMat)
+      clip.position.set(side * (gauge / 2), 0.13, z)
+      cargoTracks.add(clip)
+    }
+  }
+  for (const side of [-1, 1]) {
+    const x = side * (gauge / 2)
+    const web = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.1, cargoTrackLen - 0.2),
+      railRustMat
+    )
+    web.position.set(x, 0.14, 0)
+    cargoTracks.add(web)
+    const top = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.035, cargoTrackLen - 0.2),
+      railTopMat
+    )
+    top.position.set(x, 0.2, 0)
+    cargoTracks.add(top)
+  }
+  cargoTracks.traverse((node) => { node.userData.noCameraCollision = true })
+  root.add(cargoTracks)
 
   const loopDoor = new THREE.Mesh(
     new THREE.BoxGeometry(1.15, 2.3, 0.18),
@@ -759,8 +996,8 @@ export function createTimewreckLevel({
   function applyLoop() {
     const phase = ((loopT % LOOP_PERIOD) + LOOP_PERIOD) % LOOP_PERIOD
     let colour = 0x10b981 // open — go
-    if (phase < 3.0) { loopDoorOpen = 1; loopBeamDown = 0 }
-    else if (phase < 4.2) { loopDoorOpen = 1 - (phase - 3.0) / 1.2; loopBeamDown = 0; colour = 0xf59e0b }
+    if (phase < 2.5) { loopDoorOpen = 1; loopBeamDown = 0 }
+    else if (phase < 3.7) { loopDoorOpen = 1 - (phase - 2.5) / 1.2; loopBeamDown = 0; colour = 0xf59e0b }
     else if (phase < 5.0) { loopDoorOpen = 0; loopBeamDown = 0; colour = 0xef4444 }
     else if (phase < 6.0) { loopDoorOpen = 0; loopBeamDown = phase - 5.0; colour = 0xef4444 }
     else if (phase < 7.5) { loopDoorOpen = 0; loopBeamDown = 1; colour = 0xef4444 }
@@ -1757,6 +1994,13 @@ export function createTimewreckLevel({
       sparks.update(envDt)
       openingWind.update(envDt)
       openingSparks.update(envDt)
+      slamSparks.update(envDt)
+      if (blastSlam > 0) {
+        blastSlam = Math.max(0, blastSlam - delta * 3.2)
+        slamSparks.material.opacity = 0.85 * blastSlam
+      } else if (slamSparks.material.opacity > 0) {
+        slamSparks.material.opacity = Math.max(0, slamSparks.material.opacity - delta * 1.5)
+      }
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
       if (collapseHintHoldUntil > 0 && elapsed >= collapseHintHoldUntil) {
@@ -1932,6 +2176,7 @@ export function createTimewreckLevel({
           braking = false
           root.rotation.z = 0
           root.position.y = 0
+          root.position.x = 0
           advance()
         }
         return
@@ -1940,8 +2185,14 @@ export function createTimewreckLevel({
       // --- Ambient instability: the whole train lurches, worse over time ---
       if (!finaleFreeze) {
         const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
+        const slamKick = blastSlam * blastSlam
         root.rotation.z = (Math.sin(elapsed * 1.7) * 0.012 + Math.sin(elapsed * 4.3) * 0.004) * unrest
+          + Math.sin(elapsed * 52) * 0.022 * slamKick
         root.position.y = Math.sin(elapsed * 6.1) * 0.012 * unrest
+          + Math.sin(elapsed * 68) * 0.018 * slamKick
+        root.position.x = Math.sin(elapsed * 41) * 0.01 * slamKick
+      } else {
+        root.position.x = 0
       }
 
       // --- Rolling checkpoints (descending z) -----------------------------
