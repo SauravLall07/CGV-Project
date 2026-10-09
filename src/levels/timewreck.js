@@ -109,6 +109,8 @@ export function createTimewreckLevel({
 }) {
   // Level 3 is the "unstable" end of the scale — the shaders read this.
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.8)
+  // Boarding / Level 2 hide the Chrono deck until powers unlock; L3 starts with them.
+  hud?.setChronoVisible?.(true)
 
   const env = createCarriageEnvironment({ damaged: true })
   const { root, spans, carriages } = env
@@ -179,10 +181,10 @@ export function createTimewreckLevel({
   }
   // Hints fire on a DESCENDING z, since the escape runs the other way.
   const hintsShown = new Set()
-  function hint(key, playerZ, enterZ, message) {
+  function hint(key, playerZ, enterZ, message, duration = 3400) {
     if (hintsShown.has(key) || playerZ > enterZ) return
     hintsShown.add(key)
-    showLevelToast(message, 3400)
+    showLevelToast(message, duration)
   }
 
   let lastCheckpointZ = Infinity
@@ -260,10 +262,143 @@ export function createTimewreckLevel({
 
   // Convergence — electrical surges across the aisle. The ladder is at this
   // car's Vault end; the arcs sit further along the walk toward Mechanical.
+  // Bolts are short additive mesh segments (WebGL lines stay 1px thick).
+  // Collision/timing stay as tuned.
   const SURGE_WARN = 0.75
-  const SURGE_DEPTH = 2.6
   const SURGE_HIT_HALF_Z = 1.15
+  const SURGE_MAX_SEGS = 110
+  const _surgeA = new THREE.Vector3()
+  const _surgeB = new THREE.Vector3()
+  const _surgeMid = new THREE.Vector3()
+  const _surgeDir = new THREE.Vector3()
+  const _surgeQuat = new THREE.Quaternion()
+  const _surgeZ = new THREE.Vector3(0, 0, 1)
   let surgeT = 0
+
+  function surgeUnit(n) {
+    const v = skew(n)
+    return v - Math.floor(v)
+  }
+
+  function pushSurgeSeg(arr, ax, ay, az, bx, by, bz, thick = 1) {
+    arr.push(ax, ay, az, bx, by, bz, thick)
+  }
+
+  function jaggedSurgePath(arr, x0, y0, z0, x1, y1, z1, steps, seed, amp, thick = 1) {
+    let px = x0
+    let py = y0
+    let pz = z0
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      let x = x0 + (x1 - x0) * t
+      let y = y0 + (y1 - y0) * t
+      let z = z0 + (z1 - z0) * t
+      if (i < steps) {
+        y += (surgeUnit(seed + i * 1.7) * 2 - 1) * amp
+        z += (surgeUnit(seed + i * 3.1) * 2 - 1) * amp * 0.6
+      }
+      pushSurgeSeg(arr, px, py, pz, x, y, z, thick)
+      if (i > 1 && i < steps && i % 2 === 0) {
+        const fork = 0.35 + surgeUnit(seed + i * 4.4) * 0.45
+        const bx = x + (surgeUnit(seed + i * 5) * 2 - 1) * fork
+        const by = y + (surgeUnit(seed + i * 7) * 2 - 1) * fork * 0.85
+        const bz = z + (surgeUnit(seed + i * 9) * 2 - 1) * fork * 0.7
+        pushSurgeSeg(arr, x, y, z, bx, by, bz, thick * 0.55)
+        const cx = bx + (surgeUnit(seed + i * 11) * 2 - 1) * fork * 0.55
+        const cy = by + (surgeUnit(seed + i * 13) * 2 - 1) * fork * 0.7
+        const cz = bz + (surgeUnit(seed + i * 15) * 2 - 1) * fork * 0.45
+        pushSurgeSeg(arr, bx, by, bz, cx, cy, cz, thick * 0.35)
+      }
+      px = x
+      py = y
+      pz = z
+    }
+  }
+
+  function placeSurgeSeg(mesh, ax, ay, az, bx, by, bz, radius) {
+    _surgeA.set(ax, ay, az)
+    _surgeB.set(bx, by, bz)
+    _surgeDir.subVectors(_surgeB, _surgeA)
+    const len = _surgeDir.length()
+    if (len < 0.02) {
+      mesh.visible = false
+      return
+    }
+    _surgeMid.addVectors(_surgeA, _surgeB).multiplyScalar(0.5)
+    _surgeDir.multiplyScalar(1 / len)
+    _surgeQuat.setFromUnitVectors(_surgeZ, _surgeDir)
+    mesh.position.copy(_surgeMid)
+    mesh.quaternion.copy(_surgeQuat)
+    mesh.scale.set(radius, radius, len)
+    mesh.visible = true
+  }
+
+  function rebuildSurgeLightning(surge, seed, mode) {
+    const segs = []
+    const fromX = surge.side * 2.15
+    const toX = -surge.side * 2.05
+    if (mode === 'danger') {
+      for (let b = 0; b < 4; b++) {
+        jaggedSurgePath(
+          segs,
+          fromX, 0.55 + b * 0.32, (b - 1.5) * 0.38,
+          toX, 0.7 + b * 0.3, (1.5 - b) * 0.32,
+          12, seed + b * 23 + surge.side * 5, 0.28, b === 1 || b === 2 ? 1.15 : 0.85
+        )
+      }
+      jaggedSurgePath(segs, fromX * 0.5, 1.35, 0.7, toX * 0.55, 0.45, -0.75, 10, seed + 101, 0.34, 0.7)
+      jaggedSurgePath(segs, fromX * 0.65, 0.45, -0.65, toX * 0.45, 1.5, 0.55, 9, seed + 211, 0.3, 0.65)
+    } else if (mode === 'warn') {
+      for (let i = 0; i < 10; i++) {
+        const sx = surge.side * (1.8 + surgeUnit(seed + i) * 0.45)
+        const sy = 0.5 + surgeUnit(seed + i * 2.1) * 1.4
+        const sz = (surgeUnit(seed + i * 3.3) * 2 - 1) * 0.95
+        const ex = sx - surge.side * (0.2 + surgeUnit(seed + i * 4.2) * 0.55)
+        const ey = sy + (surgeUnit(seed + i * 5.1) * 2 - 1) * 0.4
+        const ez = sz + (surgeUnit(seed + i * 6.2) * 2 - 1) * 0.35
+        pushSurgeSeg(segs, sx, sy, sz, ex, ey, ez, 0.7)
+        if (i % 2 === 0) {
+          pushSurgeSeg(
+            segs, ex, ey, ez,
+            ex - surge.side * 0.18,
+            ey + (surgeUnit(seed + i * 7.3) * 2 - 1) * 0.3,
+            ez + (surgeUnit(seed + i * 8.4) * 2 - 1) * 0.22,
+            0.4
+          )
+        }
+      }
+    } else {
+      for (let i = 0; i < 3; i++) {
+        const sx = surge.side * (1.95 + surgeUnit(seed + i * 1.4) * 0.2)
+        const sy = 0.85 + surgeUnit(seed + i * 2.2) * 0.75
+        const sz = (surgeUnit(seed + i * 3.5) * 2 - 1) * 0.45
+        pushSurgeSeg(
+          segs, sx, sy, sz,
+          sx - surge.side * 0.16,
+          sy + (surgeUnit(seed + i * 4.6) * 2 - 1) * 0.18,
+          sz + (surgeUnit(seed + i * 5.7) * 2 - 1) * 0.12,
+          0.35
+        )
+      }
+    }
+
+    const count = Math.min(SURGE_MAX_SEGS, Math.floor(segs.length / 7))
+    for (let i = 0; i < SURGE_MAX_SEGS; i++) {
+      const core = surge.coreSegs[i]
+      const glow = surge.glowSegs[i]
+      if (i >= count) {
+        core.visible = false
+        glow.visible = false
+        continue
+      }
+      const o = i * 7
+      const thick = segs[o + 6]
+      placeSurgeSeg(core, segs[o], segs[o + 1], segs[o + 2], segs[o + 3], segs[o + 4], segs[o + 5], 0.028 * thick)
+      placeSurgeSeg(glow, segs[o], segs[o + 1], segs[o + 2], segs[o + 3], segs[o + 4], segs[o + 5], 0.09 * thick)
+    }
+    surge.boltSeed = seed
+    surge.boltMode = mode
+  }
 
   function createElectricalSurge(z, side, offset, period, danger) {
     const group = new THREE.Group()
@@ -277,6 +412,9 @@ export function createTimewreckLevel({
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.55, 1.05), panelMat)
     panel.position.set(side * 2.28, 1.2, 0)
     group.add(panel)
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.2, 0.7), panelMat)
+    receiver.position.set(-side * 2.3, 1.15, 0)
+    group.add(receiver)
 
     const cable = new THREE.Mesh(
       new THREE.CylinderGeometry(0.04, 0.04, 2.4, 6),
@@ -286,26 +424,59 @@ export function createTimewreckLevel({
     cable.rotation.z = side * 1.05
     group.add(cable)
 
-    const arcMat = new THREE.MeshStandardMaterial({
-      color: 0xe7fbff, emissive: 0xb6f3ff, emissiveIntensity: 0.25,
-      transparent: true, opacity: 0.18, roughness: 0.15, metalness: 0.05
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x3db4ff,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
     })
-    const arc = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.25, SURGE_DEPTH), arcMat)
-    arc.position.y = 1.05
-    group.add(arc)
-    for (let i = 0; i < 4; i++) {
-      const bolt = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.08, SURGE_DEPTH - 0.35), arcMat)
-      bolt.position.set(-1.55 + i * 1.05, 0.62 + (i % 2) * 0.7, 0)
-      bolt.rotation.z = (i - 1.5) * 0.42
-      group.add(bolt)
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0xf7fcff,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+    const segGeo = new THREE.BoxGeometry(1, 1, 1)
+    const coreSegs = []
+    const glowSegs = []
+    for (let i = 0; i < SURGE_MAX_SEGS; i++) {
+      const glow = new THREE.Mesh(segGeo, glowMat)
+      const core = new THREE.Mesh(segGeo, coreMat)
+      glow.visible = false
+      core.visible = false
+      group.add(glow, core)
+      glowSegs.push(glow)
+      coreSegs.push(core)
     }
 
-    const light = new THREE.PointLight(0x9be7ff, 0.35, 7, 2)
+    const hazeMat = new THREE.MeshBasicMaterial({
+      color: 0x2488ff,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+    const haze = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 1.55), hazeMat)
+    haze.position.y = 1.05
+    group.add(haze)
+
+    const light = new THREE.PointLight(0x66c8ff, 0.3, 6.5, 2)
     light.position.set(0, 1.15, 0)
     group.add(light)
     group.traverse((node) => { node.userData.noCameraCollision = true })
     root.add(group)
-    return { z, offset, period, danger, arcMat, panelMat, light }
+
+    const surge = {
+      z, side, offset, period, danger,
+      panelMat, light, glowMat, coreMat, hazeMat,
+      coreSegs, glowSegs,
+      boltSeed: -1, boltMode: ''
+    }
+    rebuildSurgeLightning(surge, 0, 'safe')
+    return surge
   }
 
   const electricalSurges = [
@@ -320,15 +491,32 @@ export function createTimewreckLevel({
       const phase = ((surgeT + surge.offset) % surge.period + surge.period) % surge.period
       const dangerous = phase < surge.danger
       const warning = !dangerous && phase > surge.period - SURGE_WARN
-      const glow = dangerous
-        ? 6
-        : warning
-          ? 0.7 + 3.4 * Math.abs(Math.sin(surgeT * 30))
-          : 0.22
-      surge.arcMat.emissiveIntensity = glow
-      surge.arcMat.opacity = dangerous ? 0.94 : warning ? 0.5 : 0.16
-      surge.panelMat.emissiveIntensity = dangerous ? 2.4 : warning ? 1.1 : 0.25
-      surge.light.intensity = dangerous ? 12 : warning ? 3 : 0.35
+      const mode = dangerous ? 'danger' : warning ? 'warn' : 'safe'
+      const flickerHz = dangerous ? 11 : warning ? 18 : 5
+      const seed = Math.floor(Math.abs(surgeT) * flickerHz + surge.offset * 10)
+      if (seed !== surge.boltSeed || mode !== surge.boltMode) {
+        rebuildSurgeLightning(surge, seed, mode)
+      }
+      const pulse = Math.abs(Math.sin(surgeT * (dangerous ? 16 : warning ? 26 : 7) + surge.offset))
+      if (dangerous) {
+        surge.coreMat.opacity = 0.95
+        surge.glowMat.opacity = 0.55 + pulse * 0.2
+        surge.hazeMat.opacity = 0.18 + pulse * 0.08
+        surge.panelMat.emissiveIntensity = 2.4
+        surge.light.intensity = 6.2 + pulse * 1.6
+      } else if (warning) {
+        surge.coreMat.opacity = 0.45 + pulse * 0.4
+        surge.glowMat.opacity = 0.22 + pulse * 0.3
+        surge.hazeMat.opacity = 0.04 + pulse * 0.05
+        surge.panelMat.emissiveIntensity = 0.8 + pulse * 1.2
+        surge.light.intensity = 1.4 + pulse * 2.2
+      } else {
+        surge.coreMat.opacity = 0.08 + pulse * 0.06
+        surge.glowMat.opacity = 0.04 + pulse * 0.04
+        surge.hazeMat.opacity = 0
+        surge.panelMat.emissiveIntensity = 0.22
+        surge.light.intensity = 0.25
+      }
       if (!dangerous || !playerPos) continue
       const overlapsBody = playerPos.y < 1.67 && playerPos.y + 1.85 > 0.43
       const inSlice = Math.abs(playerPos.z - surge.z) <= SURGE_HIT_HALF_Z
@@ -1768,8 +1956,9 @@ export function createTimewreckLevel({
 
       hint('vault-lasers', pp.z, spans.vault.center + 0.6,
         `Use ${bindingLabel(settings.getBinding('slow'))} to Slow the security lasers`)
-      hint('convergence-surges', pp.z, spans.convergence.maxZ - 3,
-        `Use ${bindingLabel(settings.getBinding('slow'))} to slow the electrical surges`)
+      hint('convergence-surges', pp.z, electricalSurges[0].z + 4.5,
+        `Use ${bindingLabel(settings.getBinding('slow'))} to slow the electrical surges`,
+        4800)
       hint('mechanical', pp.z, spans.mechanical.maxZ,
         'Mechanical car — the pistons are running at wrecked speed. [1]/Q SLOW is the only way through.')
       hint('cargo', pp.z, spans.cargo.maxZ,
