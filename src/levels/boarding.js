@@ -18,6 +18,8 @@ import { createBridgePassage } from '../environment/passageways/passage-bridge.j
 import { createStealthSystem } from '../systems/stealth.js'
 import { createDistractionSystem } from '../systems/distraction.js'
 import { disposeObject } from '../core/dispose.js'
+import { createLightPool } from '../core/light-pool.js'
+import { applyWorldUvsToTree } from '../core/world-uvs.js'
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -84,6 +86,12 @@ export function createBoardingLevel({
     distractionInventory
   })
 
+  // The passages reuse one material per surface across rooms of every size,
+  // with texture repeats tuned for each passage's main corridor; this gives
+  // every wall, floor and ceiling the same real-world texel density instead.
+  for (const passage of [onboardingPassage, tutorialPassage, guardPassage, bridgePassage]) {
+    applyWorldUvsToTree(passage.group)
+  }
   station.add(onboardingPassage.group, tutorialPassage.group, guardPassage.group, bridgePassage.group)
   wallColliders.push(
     ...onboardingPassage.colliders,
@@ -583,6 +591,13 @@ export function createBoardingLevel({
   const passage4CheckpointPos = bridgePassage.exitCheckpoint.clone()
   let passage4CheckpointActive = false
 
+  // The station and its five passageways place around sixty lamps, and
+  // forward rendering evaluates every one of them for every lit pixel. Only
+  // the ones nearest the camera become real lights; see core/light-pool.js.
+  // Built last, so every terminal and passage lamp above is already parented.
+  // Sixteen covers the whole platform from the title screen's camera.
+  const lightPool = createLightPool({ root: station, size: 16 })
+
   return {
     objective: 'Infiltrate all three security passageways, then rejoin the station route to the Chrono Express',
     checkpoint: {
@@ -616,6 +631,12 @@ export function createBoardingLevel({
 
     get isCinematic() {
       return isBoardingCinematic
+    },
+
+    // Driven by the render camera, not update(): this level is also the title
+    // screen's backdrop, where no gameplay update runs.
+    updateView(viewer) {
+      lightPool.update(viewer)
     },
 
     update(delta) {

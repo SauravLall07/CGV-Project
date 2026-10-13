@@ -8,8 +8,12 @@ import * as THREE from 'three'
 // the next state in sequence, and is what level completion triggers call.
 //
 // A level factory receives ctx and returns:
-//   { objective, checkpoint: { position, yaw }, bounds?, update?(delta), dispose() }
+//   { objective, checkpoint: { position, yaw }, bounds?, update?(delta),
+//     updateView?(viewer), dispose() }
 // dispose() is mandatory and must undo everything the factory added.
+// updateView() runs every rendered frame with the camera's world position —
+// including pauses, popups and cinematics, when update() does not — for work
+// that follows what is on screen rather than gameplay (see core/light-pool.js).
 //
 // enter() defers the actual build by two animation frames so the loading
 // screen is on screen before the (synchronous) build blocks — see the comment
@@ -176,6 +180,10 @@ export function createLevelManager({
     if (!transitioning && current?.update) current.update(delta)
   }
 
+  function updateView(viewer) {
+    current?.updateView?.(viewer)
+  }
+
   // One-shot gameplay actions that belong to the active level (for example the
   // Passageway 2 distraction throw) are forwarded here instead of making main.js
   // know which level currently owns them.
@@ -194,6 +202,7 @@ export function createLevelManager({
     unload,
     advance,
     update,
+    updateView,
     handleAction,
     dispose,
     getState: () => currentState,

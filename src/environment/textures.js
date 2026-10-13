@@ -383,8 +383,13 @@ function signCanvas(text, background, foreground, width, height) {
 }
 
 // --- Material factories ----------------------------------------------------
+//
+// Each tiling factory records `userData.metresPerRepeat`: how many metres one
+// repeat of its texture should span in the world. core/world-uvs.js reads it
+// to give any mesh the same texel density whatever its size; the `repeat`
+// argument still drives meshes that keep their original UVs.
 
-export function woodMaterial({ repeat = [1, 1], seed = 11, light = 0x8a5a33, dark = 0x4a2c17, roughness = 0.62 } = {}) {
+export function woodMaterial({ repeat = [1, 1], seed = 11, light = 0x8a5a33, dark = 0x4a2c17, roughness = 0.62, metresPerRepeat = [2.6, 0.7] } = {}) {
   const key = `wood:${seed}:${light}:${dark}`
   const colour = cachedCanvas(key, () => woodCanvas(256, seed, light, dark))
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.4))
@@ -393,11 +398,12 @@ export function woodMaterial({ repeat = [1, 1], seed = 11, light = 0x8a5a33, dar
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
     roughness,
-    metalness: 0.04
+    metalness: 0.04,
+    userData: { metresPerRepeat }
   })
 }
 
-export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab97, vein = 0x6d6255, grout = 0x4a4238, tiles = 4 } = {}) {
+export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab97, vein = 0x6d6255, grout = 0x4a4238, tiles = 4, tileMetres = 0.5 } = {}) {
   const key = `marble:${seed}:${base}:${vein}:${tiles}`
   const colour = cachedCanvas(key, () => marbleTileCanvas(512, seed, base, vein, grout, tiles))
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 2.2))
@@ -406,11 +412,12 @@ export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab9
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
     roughness: 0.34,
-    metalness: 0.02
+    metalness: 0.02,
+    userData: { metresPerRepeat: tiles * tileMetres }
   })
 }
 
-export function carpetMaterial({ repeat = [1, 1], seed = 37, base = 0x5c2230, accent = 0x8d5a34 } = {}) {
+export function carpetMaterial({ repeat = [1, 1], seed = 37, base = 0x5c2230, accent = 0x8d5a34, metresPerRepeat = 1.2 } = {}) {
   const key = `carpet:${seed}:${base}:${accent}`
   const colour = cachedCanvas(key, () => carpetCanvas(256, seed, base, accent))
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 2.6))
@@ -419,11 +426,12 @@ export function carpetMaterial({ repeat = [1, 1], seed = 37, base = 0x5c2230, ac
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
     roughness: 0.94,
-    metalness: 0
+    metalness: 0,
+    userData: { metresPerRepeat }
   })
 }
 
-export function metalMaterial({ repeat = [1, 1], seed = 53, base = 0x8c8f96, roughness = 0.42, metalness = 0.85 } = {}) {
+export function metalMaterial({ repeat = [1, 1], seed = 53, base = 0x8c8f96, roughness = 0.42, metalness = 0.85, metresPerRepeat = 1.6 } = {}) {
   const key = `metal:${seed}:${base}`
   const colour = cachedCanvas(key, () => brushedMetalCanvas(256, seed, base))
   const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.1))
@@ -432,11 +440,12 @@ export function metalMaterial({ repeat = [1, 1], seed = 53, base = 0x8c8f96, rou
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
     roughness,
-    metalness
+    metalness,
+    userData: { metresPerRepeat }
   })
 }
 
-export function plasterMaterial({ repeat = [1, 1], seed = 71, base = 0xa79c8a, roughness = 0.82 } = {}) {
+export function plasterMaterial({ repeat = [1, 1], seed = 71, base = 0xa79c8a, roughness = 0.82, metresPerRepeat = 2.2 } = {}) {
   const colour = cachedCanvas(`plaster:${seed}:${base}`, () => plasterCanvas(256, seed, base))
   const normal = cachedCanvas(`plaster:${seed}:${base}:n`, () => normalFromCanvas(colour, 1.6))
 
@@ -444,7 +453,8 @@ export function plasterMaterial({ repeat = [1, 1], seed = 71, base = 0xa79c8a, r
     map: toTexture(colour, repeat),
     normalMap: toTexture(normal, repeat, { srgb: false }),
     roughness,
-    metalness: 0.02
+    metalness: 0.02,
+    userData: { metresPerRepeat }
   })
 }
 

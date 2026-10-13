@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import {
+  carpetMaterial,
   marbleFloorMaterial,
   metalMaterial,
   plasterMaterial,
@@ -432,11 +433,10 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     })
   }
 
-  const stairStepMat = new THREE.MeshStandardMaterial({
-    color: 0x53505a,
-    roughness: 0.82,
-    metalness: 0.05
-  })
+  // Worn stone treads under a burgundy runner held by brass stair rods —
+  // the same palette as the wainscot and fittings in the gallery above.
+  const stairStepMat = plasterMaterial({ base: 0x5d5650, roughness: 0.76, metresPerRepeat: 1.4 })
+  const stairRunnerMat = carpetMaterial({ base: 0x5c2230, accent: 0x8d5a34 })
 
   const staircase = createStaircase({
     start: new THREE.Vector3(STAIR_X, FLOOR_Y, STAIR_START_Z),
@@ -447,9 +447,11 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     stepMaterial: stairStepMat,
     wallMaterial: wallMat,
     ceilingMaterial: ceilingMat,
-    // The shared staircase helper makes one roof slab per step. On a steep
-    // descent that exposes thin exterior seams between the slabs, so this
-    // passage uses one continuous sloped ceiling instead.
+    nosingMaterial: brassMat,
+    runnerMaterial: stairRunnerMat,
+    runnerWidth: 1.9,
+    // This passage builds its own continuous sloped roof below, so the
+    // helper's would only duplicate it.
     addCeiling: false
   })
   group.add(staircase.group)

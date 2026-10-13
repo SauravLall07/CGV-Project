@@ -3,6 +3,7 @@ import { createScene } from './core/scene.js'
 import { createCamera } from './core/camera.js'
 import { createClock } from './core/clock.js'
 import { createLoop } from './core/loop.js'
+import { createEnvironmentMap, ENVIRONMENT_INTENSITY } from './core/environment-map.js'
 import { createAssetLoader } from './core/assets.js'
 import { createLevelManager } from './core/level-manager.js'
 import { resolveInputState } from './core/input-state.js'
@@ -41,6 +42,9 @@ const canvas = document.querySelector('#app')
 const { renderer, setScene } = createRenderer(canvas)
 const scene = createScene()
 setScene(scene) // lets display settings recompile materials on a shadow toggle
+// Reflections for every standard material in every level; see the module.
+scene.environment = createEnvironmentMap(renderer)
+scene.environmentIntensity = ENVIRONMENT_INTENSITY
 const { camera } = createCamera()
 const clock = createClock()
 
@@ -680,6 +684,15 @@ loop.add((delta) => {
     strainEnabled: timeSystem.isStrainEnabled(),
     freezeLockout: timeSystem.getFreezeLockout()
   })
+})
+
+// Registered after the gameplay callback, so it sees this frame's camera.
+// Runs whatever state the game is in — the title backdrop is a level built
+// outside the level manager, and pauses, popups and cinematics all skip the
+// gameplay update above while still rendering.
+loop.add(() => {
+  const view = titleBackdrop ?? levelManager
+  view.updateView?.(camera.position)
 })
 
 loop.start()

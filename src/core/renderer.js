@@ -7,11 +7,16 @@ import { settings } from '../core/settings.js'
 //
 // Tone mapping matters here: three's lighting is physically based, so raw
 // linear output clips highlights (lamp bulbs, emissive window panes) into flat
-// white. ACES filmic rolls those off instead, which is most of the difference
-// between "programmer lighting" and something that reads as lit.
+// white, and the curve decides how much of the dark range survives. This is a
+// night game lit mostly by lamps, so most of every frame sits in that dark
+// range. ACES filmic crushed it — an unlit plaster wall came out at 2.5% grey,
+// with its texture invisible. AgX rolls highlights off just as gently but
+// keeps about three times as much shadow detail, with mid-greys unchanged.
+// Custom ShaderMaterials (sky, terrain, lasers) do not include the tone
+// mapping chunk, so this curve does not touch them.
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMapping = THREE.AgXToneMapping
 
   // Scene reference for the shadow-toggle recompile below; supplied by the
   // composition root once the scene exists.

@@ -1151,7 +1151,8 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     wallHeight: 4.35,
     stepMaterial: ironMat,
     wallMaterial: wallMat,
-    ceilingMaterial: ceilingMat
+    ceilingMaterial: ceilingMat,
+    nosingMaterial: stairRailMat
   })
   group.add(stair1.group)
   addStairSideColliders(colliders, stair1)
@@ -1179,7 +1180,8 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     wallHeight: 4.35,
     stepMaterial: ironMat,
     wallMaterial: wallMat,
-    ceilingMaterial: ceilingMat
+    ceilingMaterial: ceilingMat,
+    nosingMaterial: stairRailMat
   })
   group.add(stair2.group)
   addStairSideColliders(colliders, stair2)
