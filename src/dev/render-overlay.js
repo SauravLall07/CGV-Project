@@ -162,8 +162,8 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   let shadowsOff = false
   let savedShadowEnabled = renderer.shadowMap.enabled
 
-  // Key 3. Original `visible` for every point/spot light we have touched,
-  // so turning the limit off puts the light pool's hidden sources back.
+  // Key 3. Save originally visible point/spot lights; hidden pool sources
+  // never enter the limit. Saved visibility survives this toggle's hiding.
   const lightOriginal = new Map()
   let lightsLimited = false
   let limitedLightCount = 0
@@ -171,9 +171,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   const playerPos = new THREE.Vector3()
   const lightPos = new THREE.Vector3()
 
-  // Key 4. Trees, bushes, and rocks are the instanced meshes parented
-  // directly under `outdoor-environment`. Poles are the cylinder instances
-  // under `trackside-infrastructure` (crossarms and fences are boxes).
+  // Key 4. Hide the whole outdoor group, including nested terrain and trees.
   const sceneryOriginal = new Map()
   let sceneryHidden = false
   let hiddenSceneryCount = 0
@@ -238,6 +236,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     const found = []
     worldScene.traverse((obj) => {
       if (!obj.isPointLight && !obj.isSpotLight) return
+      if (!(lightOriginal.has(obj) ? lightOriginal.get(obj) : obj.visible)) return
       if (!lightOriginal.has(obj)) lightOriginal.set(obj, obj.visible)
       obj.getWorldPosition(lightPos)
       const dx = lightPos.x - playerPos.x
@@ -245,11 +244,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       const dz = lightPos.z - playerPos.z
       found.push({
         obj,
-        distance: dx * dx + dy * dy + dz * dz,
-        // Level 2 parks a hidden source on top of each pooled light. Prefer
-        // the originally visible one so a tie does not spend a slot on a
-        // light the pool has already switched off.
-        hidden: lightOriginal.get(obj) ? 0 : 1
+        distance: dx * dx + dy * dy + dz * dz
       })
     })
 
@@ -258,7 +253,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       if (!live.has(light)) lightOriginal.delete(light)
     }
 
-    found.sort((a, b) => a.distance - b.distance || a.hidden - b.hidden)
+    found.sort((a, b) => a.distance - b.distance)
     totalLocalLights = found.length
     limitedLightCount = Math.min(8, found.length)
     for (let i = 0; i < found.length; i++) {
@@ -267,42 +262,34 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     }
   }
 
-  function sceneryMeshes(scene) {
-    const meshes = []
-    if (!scene) return meshes
+  function sceneryGroups(scene) {
+    const groups = []
+    if (!scene) return groups
     scene.traverse((obj) => {
-      if (obj.name !== 'outdoor-environment') return
-      for (const child of obj.children) {
-        if (child.isInstancedMesh) meshes.push(child)
-      }
-      const trackside = obj.getObjectByName('trackside-infrastructure')
-      if (!trackside) return
-      trackside.traverse((node) => {
-        if (node.isInstancedMesh && node.geometry?.type === 'CylinderGeometry') meshes.push(node)
-      })
+      if (obj.name === 'outdoor-environment') groups.push(obj)
     })
-    return meshes
+    return groups
   }
 
   function syncScenery() {
     if (!sceneryHidden) {
       if (sceneryOriginal.size > 0) {
-        for (const [mesh, visible] of sceneryOriginal) mesh.visible = visible
+        for (const [group, visible] of sceneryOriginal) group.visible = visible
         sceneryOriginal.clear()
       }
       hiddenSceneryCount = 0
       return
     }
-    const meshes = sceneryMeshes(worldScene)
-    const live = new Set(meshes)
-    for (const mesh of sceneryOriginal.keys()) {
-      if (!live.has(mesh)) sceneryOriginal.delete(mesh)
+    const groups = sceneryGroups(worldScene)
+    const live = new Set(groups)
+    for (const group of sceneryOriginal.keys()) {
+      if (!live.has(group)) sceneryOriginal.delete(group)
     }
-    for (const mesh of meshes) {
-      if (!sceneryOriginal.has(mesh)) sceneryOriginal.set(mesh, mesh.visible)
-      mesh.visible = false
+    for (const group of groups) {
+      if (!sceneryOriginal.has(group)) sceneryOriginal.set(group, group.visible)
+      group.visible = false
     }
-    hiddenSceneryCount = meshes.length
+    hiddenSceneryCount = groups.length
   }
 
   function materialList(material) {
@@ -409,8 +396,8 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     const active = []
     if (pixelRatioForced) active.push(`1  pixel ratio ${ratio.toFixed(2)} (saved ${savedPixelRatio.toFixed(2)})`)
     if (shadowsOff) active.push('2  shadows off')
-    if (lightsLimited) active.push(`3  point/spot lights ${limitedLightCount}/${totalLocalLights} nearest`)
-    if (sceneryHidden) active.push(`4  outdoor scenery hidden (${hiddenSceneryCount})`)
+    if (lightsLimited) active.push(`3  point/spot lights ${limitedLightCount}/${totalLocalLights} visible nearest`)
+    if (sceneryHidden) active.push(`4  outdoor scenery hidden (whole group; ${hiddenSceneryCount} found)`)
     if (minimapOff) active.push('5  minimap off')
     if (post && !post.isEnabled()) active.push('8  post off')
     if (glowsHidden) active.push(`9  additive glows hidden (${hiddenGlowCount})`)

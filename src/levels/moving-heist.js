@@ -57,6 +57,8 @@ import { signMaterial } from '../environment/textures.js'
 // target. Removing it destabilises the train and hands the game to Level 3.
 
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
+// Fewer real point lights make per-pixel lighting cheaper; the pool follows the nearest lamps.
+const LEVEL2_LIGHT_POOL_SIZE = 8
 const ROOF_MOON_COLOR = 0x9fb4d8
 const ROOF_MOON_INTENSITY = 1.3
 const ROOF_SKY_COLOR = 0x2a3c60
@@ -2520,7 +2522,7 @@ export function createMovingHeistLevel({
   }
 
   // Only the lights nearest the player are real; see core/light-pool.js.
-  const lightPool = createLightPool({ root, size: 12 })
+  const lightPool = createLightPool({ root, size: LEVEL2_LIGHT_POOL_SIZE })
 
   // Only the parts of the train the camera could see are drawn; see
   // environment/carriage-culling.js. Built here, once every prop is placed.
