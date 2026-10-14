@@ -49,14 +49,14 @@ const ZONES = [
     name: 'p4-west',
     region: 'p4',
     box: { minX: APPROACH_START_X, maxX: HALL_EAST_X, minZ: HALL_MIN_Z, maxZ: HALL_MAX_Z, minY: -1 },
-    show: ['p3', 'p4', 'platform', 'train', 'landing']
+    show: ['p3', 'p4', 'platform', 'train', 'treeline']
   },
   {
     name: 'p4-east',
     region: 'p4',
     outdoor: true,
     box: { minX: HALL_EAST_X, maxX: -4.6, minZ: HALL_MIN_Z, maxZ: HALL_MAX_Z, minY: -1 },
-    show: ['p4', 'platform', 'train', 'landing', 'outdoor']
+    show: ['p4', 'platform', 'train', 'treeline']
   }
 ]
 
@@ -65,7 +65,7 @@ const PLATFORM = {
   region: 'platform',
   outdoor: true,
   box: null,
-  show: ['p4', 'platform', 'train', 'landing', 'outdoor']
+  show: ['p4', 'platform', 'train', 'treeline']
 }
 
 // Leaving a zone needs this much overshoot, so standing on a threshold
