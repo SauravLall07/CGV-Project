@@ -1,0 +1,5 @@
+Night mountain backdrop and pine/broadleaf tree textures
+Based on "landscape forest & mountains" by dasy444
+https://sketchfab.com/3d-models/landscape-forest-mountains-94809d21d7aa4cfe9b658a111b35a42c
+Licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+Changes: sky removed, recoloured for night, tree textures extracted and resized.
