@@ -96,6 +96,12 @@ export function createParticleField({
   const attribute = geometry.attributes.position
 
   function update(delta) {
+    // FREEZE (and any other held-time caller) passes 0: positions are already
+    // correct, so skip the CPU loop and the GPU buffer upload. Slow/Rewind
+    // use non-zero scaled deltas and still animate; negative Rewind deltas
+    // do not hit this path.
+    if (delta === 0) return
+
     elapsed += delta
     for (let i = 0; i < count; i++) {
       const p = i * 3
