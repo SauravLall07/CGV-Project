@@ -79,12 +79,12 @@ const PRESETS = {
     moonStrength: 1,
     nightLift: 0.95,
     starDensity: 0.022,
-    starBrightness: 2.4,
-    cloudAmount: 0.18,
-    cloudSpeed: 0.004,
+    starBrightness: 1.8,
+    cloudAmount: 0.24,
+    cloudSpeed: 0.003,
     glitch: 0,
-    horizon: 0x1a3058,
-    zenith: 0x0c1428
+    horizon: 0x142943,
+    zenith: 0x060f22
   },
   // Unstable sky. A low hazy sun, then the tear bands on top. The finale
   // raises uGrade to paint over this with its icy / dawn colours.

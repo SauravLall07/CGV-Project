@@ -57,6 +57,11 @@ import { signMaterial } from '../environment/textures.js'
 // target. Removing it destabilises the train and hands the game to Level 3.
 
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
+const ROOF_MOON_COLOR = 0x9fb4d8
+const ROOF_MOON_INTENSITY = 1.3
+const ROOF_SKY_COLOR = 0x2a3c60
+const ROOF_GROUND_COLOR = 0x0b0d14
+const ROOF_SKY_INTENSITY = 0.6
 
 function createChronoCore() {
   const core = new THREE.Group()
@@ -322,7 +327,7 @@ export function createMovingHeistLevel({
   // under the moon. The dome itself is unfogged, so the stars stay visible.
   // The clear stays dark so the minimap inset does not fill with the sky.
   scene.background = new THREE.Color(0x1a1a2e)
-  scene.fog = new THREE.Fog(sky.horizonColor, 30, 250)
+  scene.fog = new THREE.Fog(sky.horizonColor, 60, 320)
   scene.fog.color = sky.horizonColor
 
   // Geometry that can block the Passenger guard's vision.
@@ -2042,13 +2047,13 @@ export function createMovingHeistLevel({
   const roofSupports = []
   const roofObstacles = []
 
-  // Roof lighting: a low warm sun ahead of the train and a sky fill. They
+  // Roof lighting: cool light from the sky's moon direction and a sky fill. They
   // stay in the scene at zero intensity indoors — changing the light count
   // would recompile every material on the climb out.
-  const roofSun = new THREE.DirectionalLight(0xffb27a, 0)
-  roofSun.position.set(-8, ROOF_Y + 12, V0 + 30)
+  const roofSun = new THREE.DirectionalLight(ROOF_MOON_COLOR, 0)
   roofSun.target.position.set(0, ROOF_Y, F0 + 10)
-  const roofSky = new THREE.HemisphereLight(0xffc49a, 0x3a2a2a, 0)
+  roofSun.position.copy(sky.uniforms.uMoonDirection.value).multiplyScalar(50).add(roofSun.target.position)
+  const roofSky = new THREE.HemisphereLight(ROOF_SKY_COLOR, ROOF_GROUND_COLOR, 0)
   root.add(roofSun, roofSun.target, roofSky)
   const roofVoids = [
     { minX: -9, maxX: 9, minZ: spans.convergence.maxZ, maxZ: roofZ(ROOF_RUN.shell[0]) },
@@ -2965,8 +2970,8 @@ export function createMovingHeistLevel({
         }
       }
 
-      roofSun.intensity = section === 'roof' ? 2.2 : 0
-      roofSky.intensity = section === 'roof' ? 1.3 : 0
+      roofSun.intensity = section === 'roof' ? ROOF_MOON_INTENSITY : 0
+      roofSky.intensity = section === 'roof' ? ROOF_SKY_INTENSITY : 0
 
       if (section === 'roof') {
         // Slipstream streaks pulse with the gusts; SLOW calms them.

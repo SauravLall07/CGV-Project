@@ -1,4 +1,92 @@
 import * as THREE from 'three'
+import pineCardAUrl from '../assets/textures/backdrop/pine-card-a.png'
+import pineCardBUrl from '../assets/textures/backdrop/pine-card-b.png'
+
+const TREE_TINT = 0x6d8a86
+const FOREST_ROWS = [[16, 24, 8], [28, 36, 11], [42, 50, 14], [58, 70, 17]]
+
+function createForest(chunks, onChunkRecycle) {
+  const loader = new THREE.TextureLoader()
+  const textures = [loader.load(pineCardAUrl), loader.load(pineCardBUrl)]
+  const materials = textures.map((map) => {
+    map.colorSpace = THREE.SRGBColorSpace
+    return new THREE.MeshLambertMaterial({
+      map, color: TREE_TINT, alphaTest: 0.5, side: THREE.DoubleSide, fog: true
+    })
+  })
+  // Two crossed, bottom-anchored cards. Scaling preserves the source's 1:2 ratio.
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    -0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0,
+    0, 0, -0.5, 0, 0, 0.5, 0, 1, 0.5, 0, 1, -0.5
+  ], 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute([
+    0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1
+  ], 2))
+  geometry.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7])
+  geometry.computeVertexNormals()
+  const transform = new THREE.Object3D()
+  const tint = new THREE.Color()
+  let seed = 0
+  const random = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    return seed / 4294967296
+  }
+  for (const chunk of chunks) {
+    const meshes = materials.map((material, i) => {
+      const mesh = new THREE.InstancedMesh(geometry, material, 50)
+      mesh.name = `pine-forest-${i}`
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      // Allocate instance colours and bounds once, before any recycling.
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(150), 3)
+      mesh.instanceColor.setUsage(THREE.DynamicDrawUsage)
+      mesh.boundingBox = new THREE.Box3()
+      mesh.boundingSphere = new THREE.Sphere()
+      mesh.castShadow = false
+      mesh.receiveShadow = false
+      mesh.raycast = () => {}
+      mesh.userData.noCameraCollision = true
+      chunk.group.add(mesh)
+      return mesh
+    })
+    const rebuildForest = () => {
+      seed = (Math.imul(chunk.index, 374761393) ^ 0x4d6f6f) >>> 0
+      let ordinal = 0
+      for (let side = -1; side <= 1; side += 2) {
+        for (const row of FOREST_ROWS) {
+          for (let i = 0; i < row[2]; i += 1) {
+            const height = 20 + random() * 12
+            const width = height * 0.5
+            // Rotation cannot bring either card closer than this radius bound.
+            const x = side * Math.max(row[0] + random() * (row[1] - row[0]), 8 + width * 0.5)
+            const localZ = ((i + 0.1 + random() * 0.8) / row[2]) * CHUNK_LENGTH
+            const worldZ = chunk.index * CHUNK_LENGTH + localZ
+            transform.position.set(x, surfaceHeightAt(chunk, x, worldZ) - 0.3, localZ)
+            transform.rotation.set(0, random() * Math.PI * 2, 0)
+            transform.scale.set(width, height, width)
+            transform.updateMatrix()
+            const mesh = meshes[ordinal % 2]
+            const instance = Math.floor(ordinal / 2)
+            mesh.setMatrixAt(instance, transform.matrix)
+            const shade = 0.88 + random() * 0.12
+            tint.setRGB(shade, shade, shade)
+            mesh.setColorAt(instance, tint)
+            ordinal += 1
+          }
+        }
+      }
+      for (const mesh of meshes) {
+        mesh.instanceMatrix.needsUpdate = true
+        mesh.instanceColor.needsUpdate = true
+        mesh.computeBoundingBox()
+        mesh.computeBoundingSphere()
+      }
+    }
+    onChunkRecycle(chunk, rebuildForest)
+    rebuildForest()
+  }
+  return textures
+}
 
 const CHUNK_LENGTH = 160
 const CHUNK_COUNT = 6
@@ -168,6 +256,11 @@ export function createMoonlitValley(options = {}) {
     chunk.group.position.z = chunk.index * CHUNK_LENGTH
     group.add(chunk.group)
   })
+  function onChunkRecycle(chunk, callback) {
+    chunk.onRecycle.add(callback)
+    return () => chunk.onRecycle.delete(callback)
+  }
+  const forestTextures = createForest(chunks, onChunkRecycle)
   const trackside = legacyPolesAndWires()
   group.add(trackside)
   const speed = options.speed || 35
@@ -185,10 +278,7 @@ export function createMoonlitValley(options = {}) {
       chunk.group.add(object)
       return object
     },
-    onChunkRecycle(chunk, callback) {
-      chunk.onRecycle.add(callback)
-      return () => chunk.onRecycle.delete(callback)
-    },
+    onChunkRecycle,
     update(delta) {
       if (disposed) return
       travel += delta * speed // Same positive-Z direction and unscaled delta as before.
@@ -205,7 +295,7 @@ export function createMoonlitValley(options = {}) {
       }
       for (const chunk of chunks) chunk.group.position.z = chunk.index * CHUNK_LENGTH + travel
       // Poles intentionally retain their old wrap for now, driven by the SAME
-      // accumulated travel. No new forest, rocks or fences are built here.
+      // accumulated travel. Forests move with their owning terrain chunks.
       trackside.position.z = (travel % 28) - 14
     },
     dispose() {
@@ -220,6 +310,7 @@ export function createMoonlitValley(options = {}) {
       })
       geometries.forEach((geometry) => geometry.dispose())
       materials.forEach((material) => material.dispose())
+      forestTextures.forEach((texture) => texture.dispose())
       chunks.forEach((chunk) => chunk.onRecycle.clear())
     }
   }
