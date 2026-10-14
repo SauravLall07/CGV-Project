@@ -10,9 +10,13 @@ import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
-import crackedStoneUrl from '../assets/textures/cracked-stone.png'
-import trainTracksUrl from '../assets/textures/train-tracks.jpg'
-
+import {
+  DASH_DOOR_TIMING,
+  createCarriageShake,
+  createStormDebris,
+  createLampMotion,
+  createGrabHandles
+} from './timewreck-atmosphere.js'
 // Level 3 — "The Timewreck". The escape run: the player now sprints BACK down
 // the train they just robbed, from the vault to the locomotive, as the Chrono
 // Core tears the train apart around them.
@@ -52,56 +56,94 @@ const INTERIOR_HALF_WIDTH = WRECK_WALL_X - WALL_INSET
 const skew = (n) => (Math.sin(n * 12.9898) * 43758.5453) % 1
 
 function createEmergencyBrake() {
+  // Visual-only restyle of the final objective pedestal. Interaction is still
+  // registered on this group; lever name/pose must stay stable for update().
   const brake = new THREE.Group()
   brake.name = 'emergency-brake'
 
-  const housing = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.85, 0.36),
-    new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.6, metalness: 0.55 })
-  )
-  housing.position.y = 0.62
+  const pedestalMat = new THREE.MeshStandardMaterial({
+    color: 0x2a241c, roughness: 0.55, metalness: 0.62, emissive: 0x1a1008, emissiveIntensity: 0.12
+  })
+  const brassMat = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.18
+  })
+  const steelMat = new THREE.MeshStandardMaterial({
+    color: 0x3a4048, roughness: 0.4, metalness: 0.85
+  })
+
+  // Stepped pedestal — same approximate height as the old housing.
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.14, 0.58), pedestalMat)
+  base.position.y = 0.07
+  base.castShadow = true
+  brake.add(base)
+  const baseTrim = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.03, 0.62), brassMat)
+  baseTrim.position.y = 0.15
+  brake.add(baseTrim)
+
+  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.78, 0.38), pedestalMat)
+  housing.position.y = 0.58
   housing.castShadow = true
   brake.add(housing)
+  const housingFrame = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.82, 0.04), brassMat)
+  housingFrame.position.set(0, 0.58, 0.2)
+  brake.add(housingFrame)
+
+  // Side brass columns for a mechanical “station” read.
+  for (const x of [-0.28, 0.28]) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.045, 0.9, 8), brassMat)
+    col.position.set(x, 0.55, -0.05)
+    brake.add(col)
+  }
 
   const plate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.42, 0.2, 0.03),
-    new THREE.MeshStandardMaterial({ color: 0xd8c47a, emissive: 0x54430f, emissiveIntensity: 1.4, roughness: 0.5 })
+    new THREE.BoxGeometry(0.44, 0.2, 0.03),
+    new THREE.MeshStandardMaterial({
+      color: 0xe8d090, emissive: 0x6a4a12, emissiveIntensity: 1.55, roughness: 0.45, metalness: 0.55
+    })
   )
-  plate.position.set(0, 0.86, 0.19)
+  plate.position.set(0, 0.86, 0.22)
   brake.add(plate)
 
-  const pivot = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.07, 0.07, 0.2, 12),
-    new THREE.MeshStandardMaterial({ color: 0x8d939c, roughness: 0.35, metalness: 0.9 })
-  )
+  const pivot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.22, 12), steelMat)
   pivot.rotation.z = Math.PI / 2
   pivot.position.set(0, 1.02, 0.1)
   brake.add(pivot)
+  const pivotCap = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.018, 6, 14), brassMat)
+  pivotCap.rotation.y = Math.PI / 2
+  pivotCap.position.set(0, 1.02, 0.1)
+  brake.add(pivotCap)
 
   const lever = new THREE.Group()
   lever.name = 'brake-lever'
   const shaft = new THREE.Mesh(
     new THREE.CylinderGeometry(0.035, 0.045, 0.62, 10),
-    new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.32, metalness: 0.92 })
+    steelMat
   )
   shaft.position.y = 0.31
   shaft.castShadow = true
   lever.add(shaft)
+  const shaftSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 8), brassMat)
+  shaftSleeve.position.y = 0.08
+  lever.add(shaftSleeve)
 
   const grip = new THREE.Mesh(
     new THREE.SphereGeometry(0.09, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0xd0342a, emissive: 0x6a120c, emissiveIntensity: 1.8, roughness: 0.45 })
+    new THREE.MeshStandardMaterial({
+      color: 0xd0342a, emissive: 0x6a120c, emissiveIntensity: 1.9, roughness: 0.45
+    })
   )
   grip.position.y = 0.64
   grip.castShadow = true
   lever.add(grip)
 
+  // Keep lever local pose identical — update() animates lever.rotation.x.
   lever.position.set(0, 1.02, 0.1)
   lever.rotation.x = -0.4
   brake.add(lever)
 
-  const warning = new THREE.PointLight(0xff4a2a, 8, 4.5, 2)
-  warning.position.set(0, 1.1, 0.4)
+  // Warm amber spotlight on the brake (cool storm contrast comes from the cab).
+  const warning = new THREE.PointLight(0xffb060, 9, 5.2, 2)
+  warning.position.set(0, 1.35, 0.55)
   brake.add(warning)
 
   return brake
@@ -134,13 +176,13 @@ export function createTimewreckLevel({
   })
   scene.add(outdoorEnv.group, wreckExterior.group, root)
   scene.background = new THREE.Color().copy(NIGHT_COLOR)
-  // Wide enough to keep the storm-lit scenery outside readable.
-  scene.fog = new THREE.Fog(0x161c28, 38, 185)
+  // Cool storm fog — contrasts warm amber carriage fill; range kept for readability.
+  scene.fog = new THREE.Fog(0x121a28, 38, 185)
 
   // Damaged PBR surfaces are very dark; short-range emergency points leave most
   // of each car on ambient alone, which ACES tone mapping crushes to near-black.
   // One soft directional key (no shadows) lights the aisle and player.
-  const aisleKey = new THREE.DirectionalLight(0xc8d6e8, 1.75)
+  const aisleKey = new THREE.DirectionalLight(0xb8c8e0, 1.75)
   aisleKey.position.set(1.6, 13, spans.vault.maxZ + 8)
   scene.add(aisleKey)
   const aisleKeyTarget = new THREE.Object3D()
@@ -171,7 +213,7 @@ export function createTimewreckLevel({
 
   let failCooldown = 0
   const LEVEL_OBJECTIVE = 'The Chrono Core is tearing the train apart — escape to the locomotive'
-  const COLLAPSE_HINT = 'Freeze the collapse — Hold W + SPACE to jump forward'
+  const COLLAPSE_HINT = 'Freeze the tile — then hold W + Shift'
   const COLLAPSE_HINT_S = 4.6
   let collapseHintHoldUntil = -1
   let pendingToast = null
@@ -634,9 +676,13 @@ export function createTimewreckLevel({
   // fast slam after a long readable warning so Freeze is the reliable cross.
   // Short open + clear warning, then a hard slam. Freeze during the open/warn
   // window is the reliable cross; waiting it out is tight.
-  const BLAST_OPEN_S = 0.28
+  //
+  // Open-hold only — independent of atmosphere shake/debris/lights/handles.
+  // Disable via DASH_DOOR_TIMING.enabled in timewreck-atmosphere.js (reverts to 0.28).
+  const BLAST_OPEN_S = DASH_DOOR_TIMING.enabled ? DASH_DOOR_TIMING.openHoldSeconds : 0.28
   const BLAST_WARN_S = 0.4
-  const BLAST_CLOSE_S = 0.18
+  // Slam duration — shorter = door closes faster (challenge bump).
+  const BLAST_CLOSE_S = 0.11
   const BLAST_SHUT_S = 0.3
   const BLAST_REOPEN_S = 0.55
   const BLAST_CYCLE_S = BLAST_OPEN_S + BLAST_WARN_S + BLAST_CLOSE_S + BLAST_SHUT_S + BLAST_REOPEN_S
@@ -648,20 +694,26 @@ export function createTimewreckLevel({
   let blastSlam = 0
   let blastWasClosing = false
 
+  // Vintage teal/brass door leaves — same leaf dims / motion / hits as before.
+  // Warm amber warning accents (readable) replace flat industrial red.
   const blastSteel = new THREE.MeshStandardMaterial({
-    color: 0x3a424c, metalness: 0.86, roughness: 0.34, emissive: 0x1a120e, emissiveIntensity: 0.16
+    color: 0xc4a052, metalness: 0.88, roughness: 0.4, emissive: 0x3a2810, emissiveIntensity: 0.14
   })
   const blastPlate = new THREE.MeshStandardMaterial({
-    color: 0x232a31, metalness: 0.78, roughness: 0.45, emissive: 0x120808, emissiveIntensity: 0.1
+    color: 0x3a5c56, metalness: 0.18, roughness: 0.55, emissive: 0x152420, emissiveIntensity: 0.14
   })
   const blastScar = new THREE.MeshStandardMaterial({
-    color: 0x4a3028, emissive: 0x7c2d12, emissiveIntensity: 0.55, roughness: 0.62
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4
   })
   const blastLampMat = new THREE.MeshStandardMaterial({
-    color: 0x3a1210, emissive: 0xff2a1a, emissiveIntensity: 0.12, roughness: 0.28
+    color: 0x3a2410, emissive: 0xffb060, emissiveIntensity: 0.12, roughness: 0.28
   })
   const blastSparkMat = new THREE.MeshStandardMaterial({
-    color: 0x3a1210, emissive: 0xff2a1a, emissiveIntensity: 0.2, roughness: 0.35
+    color: 0x3a2410, emissive: 0xffb060, emissiveIntensity: 0.2, roughness: 0.35
+  })
+  const blastGlass = new THREE.MeshStandardMaterial({
+    color: 0xa8c8d8, emissive: 0xffc090, emissiveIntensity: 0.22,
+    roughness: 0.2, metalness: 0.05, transparent: true, opacity: 0.55
   })
 
   function blastBox(parent, w, h, d, mat, x, y, z) {
@@ -674,16 +726,16 @@ export function createTimewreckLevel({
   function createBlastLeaf(side) {
     const leaf = new THREE.Group()
     leaf.name = side < 0 ? 'relay-blast-leaf-left' : 'relay-blast-leaf-right'
+    // Teal wood panel + brass border (same overall leaf footprint).
     blastBox(leaf, 1.34, 2.48, 0.22, blastPlate, 0, 0, 0)
-    for (const x of [-0.66, 0.66]) blastBox(leaf, 0.16, 2.8, 0.36, blastSteel, x, 0, 0)
-    for (const y of [-1.32, 1.32]) blastBox(leaf, 1.36, 0.16, 0.36, blastSteel, 0, y, 0)
-    for (const y of [-0.42, 0.42]) blastBox(leaf, 1.28, 0.08, 0.32, blastSteel, 0, y, 0.02)
-    for (let i = 0; i < 5; i++) {
-      const y = -1.0 + i * 0.5
-      blastBox(leaf, 0.05, 0.05, 0.04, blastSteel, -0.66, y, 0.18)
-      blastBox(leaf, 0.05, 0.05, 0.04, blastSteel, 0.66, y, 0.18)
-    }
-    // Leading edge faces the centre. side < 0 is the left leaf.
+    for (const x of [-0.66, 0.66]) blastBox(leaf, 0.12, 2.56, 0.3, blastSteel, x, 0, 0.02)
+    for (const y of [-1.22, 1.22]) blastBox(leaf, 1.36, 0.12, 0.3, blastSteel, 0, y, 0.02)
+    blastBox(leaf, 1.2, 0.06, 0.26, blastSteel, 0, 0.15, 0.04)
+    // Upper lite window + brass handle toward the centre seam.
+    blastBox(leaf, 0.55, 0.42, 0.04, blastGlass, side * 0.12, 0.55, 0.12)
+    blastBox(leaf, 0.62, 0.48, 0.03, blastSteel, side * 0.12, 0.55, 0.1)
+    blastBox(leaf, 0.05, 0.28, 0.05, blastSteel, -side * 0.48, 0.05, 0.14)
+    // Leading edge faces the centre — cyan temporal accent (was red scar).
     blastBox(leaf, 0.08, 2.62, 0.34, blastScar, -side * 0.71, 0, side * 0.01)
     leaf.position.set(side * 1.85, 1.4, doorZ)
     return leaf
@@ -699,28 +751,29 @@ export function createTimewreckLevel({
   for (const side of [-1, 1]) {
     const housing = new THREE.Group()
     housing.name = side < 0 ? 'relay-blast-housing-left' : 'relay-blast-housing-right'
-    blastBox(housing, 0.22, 2.8, 0.7, blastSteel, side * 2.42, 1.4, 0)
-    blastBox(housing, 0.14, 2.8, 0.58, blastSteel, side * 1.2, 1.4, 0)
-    blastBox(housing, 0.9, 0.7, 0.62, blastPlate, side * 1.95, 2.35, 0)
-    blastBox(housing, 0.08, 0.16, 0.08, blastSparkMat, side * 1.55, 2.15, 0.32)
-    blastBox(housing, 0.08, 0.16, 0.08, blastSparkMat, side * 2.2, 1.7, 0.32)
-    const ram = blastBox(housing, 0.12, 0.12, 0.55, blastSteel, side * 1.55, 1.55, 0)
+    // Vertical warm light bars flanking the doorway (reference orange strips).
+    blastBox(housing, 0.14, 2.7, 0.12, blastLampMat, side * 1.55, 1.4, 0.28)
+    blastBox(housing, 0.2, 2.85, 0.55, blastSteel, side * 2.35, 1.4, 0)
+    blastBox(housing, 0.7, 0.55, 0.5, blastPlate, side * 1.95, 2.45, 0)
+    blastBox(housing, 0.08, 0.14, 0.08, blastSparkMat, side * 1.55, 2.55, 0.32)
+    const ram = blastBox(housing, 0.1, 0.1, 0.45, blastSteel, side * 1.55, 1.55, 0)
     blastRams.push({ mesh: ram, side })
     housing.position.z = doorZ
     blastDoors.add(housing)
   }
 
-  blastBox(blastDoors, 5.2, 0.5, 0.34, blastSteel, 0, 3.05, doorZ)
+  blastBox(blastDoors, 5.0, 0.42, 0.3, blastSteel, 0, 3.05, doorZ)
+  // Warm dome cue above the seam (reference overhead lamp).
+  blastBox(blastDoors, 0.55, 0.12, 0.55, blastSteel, 0, 3.22, doorZ)
+  const blastLamp = blastBox(blastDoors, 0.4, 0.14, 0.4, blastLampMat, 0, 3.1, doorZ + 0.18)
   blastBox(blastDoors, 4.7, 0.05, 0.08, blastPlate, 0, 0.04, doorZ - 0.22)
   blastBox(blastDoors, 4.7, 0.05, 0.08, blastPlate, 0, 0.04, doorZ + 0.22)
-  const blastLamp = blastBox(blastDoors, 0.34, 0.16, 0.12, blastLampMat, 0, 3.16, doorZ + 0.24)
-  blastBox(blastDoors, 0.5, 0.08, 0.16, blastSteel, 0, 3.28, doorZ + 0.2)
-  const blastLight = new THREE.PointLight(0xff2a1a, 0.45, 6.5, 2)
+  const blastLight = new THREE.PointLight(0xffb060, 0.45, 6.5, 2)
   blastLight.position.set(0, 3.16, doorZ + 0.2)
   blastDoors.add(blastLight)
-  const blastFillL = new THREE.PointLight(0xff2a1a, 0.2, 4.5, 2)
+  const blastFillL = new THREE.PointLight(0xffb060, 0.2, 4.5, 2)
   blastFillL.position.set(-1.8, 2.2, doorZ + 0.3)
-  const blastFillR = new THREE.PointLight(0xff2a1a, 0.2, 4.5, 2)
+  const blastFillR = new THREE.PointLight(0xffb060, 0.2, 4.5, 2)
   blastFillR.position.set(1.8, 2.2, doorZ + 0.3)
   blastDoors.add(blastFillL, blastFillR)
   const slamSparks = createParticleField({
@@ -825,35 +878,101 @@ export function createTimewreckLevel({
   ]
 
   // ============================================================
-  // MECHANICAL — FAST-TIME CAR: runaway pistons, Slow is mandatory
+  // MECHANICAL — FAST-TIME CAR: runaway luggage trunks (same motion as pistons)
   // ============================================================
   const ramBank = new THREE.Group()
   ramBank.name = 'runaway-pistons'
-  const crackedMap = new THREE.TextureLoader().load(crackedStoneUrl)
-  crackedMap.colorSpace = THREE.SRGBColorSpace
-  crackedMap.wrapS = THREE.RepeatWrapping
-  crackedMap.wrapT = THREE.RepeatWrapping
-  crackedMap.repeat.set(1.4, 1.8)
-  crackedMap.anisotropy = 8
-  // Moving piston faces use the cracked-stone look (not the floor).
-  const ramHeadMat = new THREE.MeshStandardMaterial({
-    map: crackedMap,
-    bumpMap: crackedMap,
-    bumpScale: 0.14,
-    color: 0xd8d8d8,
-    roughness: 0.94,
-    metalness: 0.06,
-    emissive: 0x1a1830,
-    emissiveIntensity: 0.18
+  // Shared trunk materials — 3 moving heads reuse these (no per-frame cost).
+  const trunkWoodMat = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, roughness: 0.72, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.08
+  })
+  const trunkLeatherMat = new THREE.MeshStandardMaterial({
+    color: 0x3a2818, roughness: 0.88, metalness: 0.04, emissive: 0x120c08, emissiveIntensity: 0.06
+  })
+  const trunkBrassMat = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.14
+  })
+  const trunkCyanMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.7, roughness: 0.35
   })
   const ramRailMat = new THREE.MeshStandardMaterial({
-    color: 0x3a3f4a, metalness: 0.75, roughness: 0.45, emissive: 0x141028, emissiveIntensity: 0.12
+    color: 0xc4a052, metalness: 0.85, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.1
   })
   const rams = []
   const RAM_HEAD_WIDTH = 0.85
+  const RAM_HEAD_HEIGHT = 1.75
+  const RAM_HEAD_DEPTH = 0.5
   // Sweep wall to wall. The head has to clear the full interior or the player
   // can walk around the piston bank instead of timing it with Slow.
   const RAM_SWEEP = INTERIOR_HALF_WIDTH - RAM_HEAD_WIDTH / 2
+
+  // Decorative trunk built on the exact former piston AABB so hitboxes stay true.
+  // Motion still writes only head.position.x — children ride along automatically.
+  function createLuggageTrunkHead() {
+    const head = new THREE.Group()
+    head.name = 'mech-luggage-trunk'
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(RAM_HEAD_WIDTH, RAM_HEAD_HEIGHT, RAM_HEAD_DEPTH),
+      trunkWoodMat
+    )
+    body.castShadow = true
+    head.add(body)
+    // Worn leather lid band across the top third.
+    const lid = new THREE.Mesh(
+      new THREE.BoxGeometry(RAM_HEAD_WIDTH + 0.02, RAM_HEAD_HEIGHT * 0.28, RAM_HEAD_DEPTH + 0.02),
+      trunkLeatherMat
+    )
+    lid.position.y = RAM_HEAD_HEIGHT * 0.28
+    head.add(lid)
+    // Brass corner protectors.
+    const c = 0.09
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const corner = new THREE.Mesh(new THREE.BoxGeometry(c, c, c), trunkBrassMat)
+          corner.position.set(
+            sx * (RAM_HEAD_WIDTH / 2 - c * 0.45),
+            sy * (RAM_HEAD_HEIGHT / 2 - c * 0.45),
+            sz * (RAM_HEAD_DEPTH / 2 - c * 0.45)
+          )
+          head.add(corner)
+        }
+      }
+    }
+    // Reinforcement bands.
+    for (const y of [-0.35, 0.1, 0.55]) {
+      const band = new THREE.Mesh(
+        new THREE.BoxGeometry(RAM_HEAD_WIDTH + 0.04, 0.045, RAM_HEAD_DEPTH + 0.04),
+        trunkBrassMat
+      )
+      band.position.y = y
+      head.add(band)
+    }
+    // Latches / handle.
+    for (const sz of [-1, 1]) {
+      const latch = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.05), trunkBrassMat)
+      latch.position.set(0, 0.2, sz * (RAM_HEAD_DEPTH / 2 + 0.02))
+      head.add(latch)
+    }
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.06, 0.1), trunkBrassMat)
+    handle.position.set(0, RAM_HEAD_HEIGHT / 2 + 0.04, 0)
+    head.add(handle)
+    // Restrained cyan chrono edges (selected corners only — not neon cubes).
+    for (const [sx, sz] of [[1, 1], [-1, -1]]) {
+      const edge = new THREE.Mesh(
+        new THREE.BoxGeometry(0.035, RAM_HEAD_HEIGHT * 0.92, 0.035),
+        trunkCyanMat
+      )
+      edge.position.set(
+        sx * (RAM_HEAD_WIDTH / 2 - 0.02),
+        0,
+        sz * (RAM_HEAD_DEPTH / 2 - 0.02)
+      )
+      head.add(edge)
+    }
+    head.traverse((node) => { node.userData.noCameraCollision = true })
+    return head
+  }
 
   // Offsets from the Mechanical car's centre, keeping the original spacing.
   for (const [dz, phase] of [[3, 0], [-1, 2.1], [-5, 4.2]]) {
@@ -865,21 +984,21 @@ export function createTimewreckLevel({
     rail.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     ramBank.add(rail)
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(RAM_HEAD_WIDTH, 1.75, 0.5), ramHeadMat)
+    const head = createLuggageTrunkHead()
     head.position.set(0, 0.9, z)
-    head.castShadow = true
     ramBank.add(head)
     rams.push({ head, phase, z })
   }
 
-  // Cool blue-violet fill for the Mechanical car only (warm boiler light stays).
+  // Retune existing Mechanical fills: warm amber aisle + one violet storm accent.
+  // Same light count — no new PointLights.
   for (const [dz, intensity] of [[6, 5.5], [0, 7.2], [-6, 5.5]]) {
-    const mechFill = new THREE.PointLight(0x7b6cff, intensity, 11, 2)
+    const mechFill = new THREE.PointLight(0xffc090, intensity, 11, 2)
     mechFill.position.set(0, 2.6, spans.mechanical.center + dz)
     mechFill.userData.noCameraCollision = true
     root.add(mechFill)
   }
-  const mechAccent = new THREE.PointLight(0xa78bfa, 4.5, 9, 2)
+  const mechAccent = new THREE.PointLight(0xa78bfa, 3.8, 9, 2)
   mechAccent.position.set(1.2, 1.8, spans.mechanical.center - 2)
   mechAccent.userData.noCameraCollision = true
   root.add(mechAccent)
@@ -908,91 +1027,142 @@ export function createTimewreckLevel({
   const loopDoorZ = spans.cargo.center + 2
   const loopBeamZ = spans.cargo.center - 2
 
-  // Cargo floor: continuous rail bed (photo alone cannot tile a long aisle
-  // without seams, so the image tints the ballast and real rails/sleepers
-  // run unbroken along the car).
+  // Cargo walkway: same footprint as the old rail bed — restyled as broken wood
+  // planks with brass trim and cyan fracture edges (collision/layout unchanged).
   const cargoTrackLen = spans.cargo.maxZ - spans.cargo.minZ - 0.8
   const cargoTrackZ0 = spans.cargo.center
-  const trackMap = new THREE.TextureLoader().load(trainTracksUrl)
-  trackMap.colorSpace = THREE.SRGBColorSpace
-  trackMap.wrapS = THREE.ClampToEdgeWrapping
-  trackMap.wrapT = THREE.ClampToEdgeWrapping
-  trackMap.anisotropy = 8
   const cargoTracks = new THREE.Group()
   cargoTracks.name = 'cargo-train-tracks'
   cargoTracks.position.set(0, 0, cargoTrackZ0)
 
-  const ballast = new THREE.Mesh(
-    new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2 - 0.2, cargoTrackLen),
-    new THREE.MeshStandardMaterial({
-      map: trackMap,
-      bumpMap: trackMap,
-      bumpScale: 0.035,
-      color: 0xb0b4b8,
-      roughness: 0.95,
-      metalness: 0.08
-    })
-  )
-  ballast.rotation.x = -Math.PI / 2
-  ballast.position.y = 0.02
-  ballast.receiveShadow = true
-  cargoTracks.add(ballast)
+  const plankMat = new THREE.MeshStandardMaterial({
+    color: 0x6a4528, roughness: 0.62, metalness: 0.06, emissive: 0x1a1008, emissiveIntensity: 0.06
+  })
+  const plankDarkMat = new THREE.MeshStandardMaterial({
+    color: 0x3a2414, roughness: 0.72, metalness: 0.05, emissive: 0x120c08, emissiveIntensity: 0.05
+  })
+  const plankBrassMat = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.12
+  })
+  const plankCyanMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
+  })
 
-  const sleeperMat = new THREE.MeshStandardMaterial({
-    color: 0x9a9488, roughness: 0.92, metalness: 0.08
-  })
-  const railRustMat = new THREE.MeshStandardMaterial({
-    color: 0x8a4a28, roughness: 0.72, metalness: 0.55
-  })
-  const railTopMat = new THREE.MeshStandardMaterial({
-    color: 0xc8d0d8, roughness: 0.28, metalness: 0.92
-  })
-  const gauge = 0.72
-  const sleeperStep = 0.62
+  const deck = new THREE.Mesh(
+    new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2 - 0.35, cargoTrackLen),
+    plankMat
+  )
+  deck.name = 'cargo-wood-deck'
+  deck.rotation.x = -Math.PI / 2
+  deck.position.y = 0.02
+  deck.receiveShadow = true
+  cargoTracks.add(deck)
+
+  const sleeperStep = 0.72
   const halfLen = cargoTrackLen * 0.5
-  for (let z = -halfLen + 0.35; z <= halfLen - 0.35; z += sleeperStep) {
-    const sleeper = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.1, 0.22), sleeperMat)
-    sleeper.position.set(0, 0.07, z)
-    sleeper.receiveShadow = true
-    cargoTracks.add(sleeper)
-    for (const side of [-1, 1]) {
-      const clip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.12), railRustMat)
-      clip.position.set(side * (gauge / 2), 0.13, z)
-      cargoTracks.add(clip)
-    }
+  for (let z = -halfLen + 0.4; z <= halfLen - 0.4; z += sleeperStep) {
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.5, 0.06, 0.55), plankDarkMat)
+    plank.position.set(0, 0.05, z)
+    plank.receiveShadow = true
+    cargoTracks.add(plank)
   }
+  // Brass side rails + cyan broken-edge cues (2 long strips — cheap).
   for (const side of [-1, 1]) {
-    const x = side * (gauge / 2)
-    const web = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.1, cargoTrackLen - 0.2),
-      railRustMat
+    const brass = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.05, cargoTrackLen - 0.3),
+      plankBrassMat
     )
-    web.position.set(x, 0.14, 0)
-    cargoTracks.add(web)
-    const top = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.035, cargoTrackLen - 0.2),
-      railTopMat
+    brass.position.set(side * (INTERIOR_HALF_WIDTH - 0.35), 0.07, 0)
+    cargoTracks.add(brass)
+    const cyan = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.03, cargoTrackLen - 0.5),
+      plankCyanMat
     )
-    top.position.set(x, 0.2, 0)
-    cargoTracks.add(top)
+    cyan.position.set(side * (INTERIOR_HALF_WIDTH - 0.42), 0.09, 0)
+    cargoTracks.add(cyan)
   }
   cargoTracks.traverse((node) => { node.userData.noCameraCollision = true })
   root.add(cargoTracks)
 
+  // Cargo loop door — aisle-wide so it fully blocks when closed (motion/hits unchanged).
+  const LOOP_DOOR_W = INTERIOR_HALF_WIDTH * 2 - 0.15
+  const LOOP_DOOR_H = 2.3
   const loopDoor = new THREE.Mesh(
-    new THREE.BoxGeometry(1.15, 2.3, 0.18),
+    new THREE.BoxGeometry(LOOP_DOOR_W, LOOP_DOOR_H, 0.18),
     new THREE.MeshStandardMaterial({
-      color: 0x33383f, metalness: 0.85, roughness: 0.35, emissive: 0x141618, emissiveIntensity: 0.25
+      color: 0x3a5c56, metalness: 0.18, roughness: 0.55, emissive: 0x152420, emissiveIntensity: 0.14
     })
   )
+  loopDoor.name = 'cargo-loop-door'
   loopDoor.castShadow = true
+  const loopBrass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, metalness: 0.88, roughness: 0.4, emissive: 0x3a2810, emissiveIntensity: 0.12
+  })
+  for (const [w, h, x, y, z] of [
+    [LOOP_DOOR_W + 0.03, 0.06, 0, LOOP_DOOR_H / 2 - 0.03, 0.1],
+    [LOOP_DOOR_W + 0.03, 0.06, 0, -(LOOP_DOOR_H / 2 - 0.03), 0.1],
+    [0.06, LOOP_DOOR_H - 0.02, -(LOOP_DOOR_W / 2 - 0.03), 0, 0.1],
+    [0.06, LOOP_DOOR_H - 0.02, LOOP_DOOR_W / 2 - 0.03, 0, 0.1]
+  ]) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.04), loopBrass)
+    bar.position.set(x, y, z)
+    loopDoor.add(bar)
+  }
+  const loopLite = new THREE.Mesh(
+    new THREE.BoxGeometry(0.42, 0.32, 0.03),
+    new THREE.MeshStandardMaterial({
+      color: 0xa8c8d8, emissive: 0xffc090, emissiveIntensity: 0.25,
+      roughness: 0.2, transparent: true, opacity: 0.55
+    })
+  )
+  loopLite.position.set(0, 0.55, 0.11)
+  loopDoor.add(loopLite)
   addProp(loopDoor, loopDoorZ, 0, 3.5)
 
-  const loopBeam = new THREE.Mesh(
-    new THREE.BoxGeometry(2.6, 0.32, 0.32),
-    new THREE.MeshStandardMaterial({ color: 0x4a4f57, metalness: 0.8, roughness: 0.55 })
-  )
-  loopBeam.castShadow = true
+  // Falling girder restyled as a suspended luggage trunk — original compact size.
+  const loopBeam = new THREE.Group()
+  loopBeam.name = 'cargo-loop-trunk'
+  const loopTrunkWood = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, roughness: 0.7, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.08
+  })
+  const loopTrunkLeather = new THREE.MeshStandardMaterial({
+    color: 0x3a2818, roughness: 0.88, metalness: 0.04, emissive: 0x120c08, emissiveIntensity: 0.06
+  })
+  const loopTrunkBrass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.12
+  })
+  const loopTrunkCyan = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.65, roughness: 0.35
+  })
+  const loopBody = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.32, 0.32), loopTrunkWood)
+  loopBody.castShadow = true
+  loopBeam.add(loopBody)
+  const loopLid = new THREE.Mesh(new THREE.BoxGeometry(2.62, 0.1, 0.34), loopTrunkLeather)
+  loopLid.position.y = 0.16
+  loopBeam.add(loopLid)
+  for (const x of [-1.15, -0.4, 0.4, 1.15]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.36, 0.36), loopTrunkBrass)
+    band.position.x = x
+    loopBeam.add(band)
+  }
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const corner = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.1), loopTrunkBrass)
+      corner.position.set(sx * 1.25, 0, sz * 0.12)
+      loopBeam.add(corner)
+    }
+  }
+  for (const sx of [-1, 1]) {
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.28, 0.04), loopTrunkCyan)
+    edge.position.set(sx * 1.28, 0, 0.14)
+    loopBeam.add(edge)
+  }
+  for (const x of [-0.9, 0.9]) {
+    const link = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.35, 6), loopTrunkBrass)
+    link.position.set(x, 0.35, 0)
+    loopBeam.add(link)
+  }
+  loopBeam.traverse((node) => { node.userData.noCameraCollision = true })
   addProp(loopBeam, loopBeamZ, 0, 2.25)
 
   // Wall-mounted phase indicator so the cycle is learnable rather than guessed.
@@ -1047,46 +1217,100 @@ export function createTimewreckLevel({
   const gapMinZ = spans.security.center - 3
   const gapMaxZ = spans.security.center + 3
 
+  // Deep purple well suggests the temporal void under the gap (visual only).
   const voidBox = new THREE.Mesh(
     new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.3, 3.4, gapMaxZ - gapMinZ),
-    new THREE.MeshStandardMaterial({ color: 0x0c1018, roughness: 1 })
+    new THREE.MeshStandardMaterial({
+      color: 0x1a0a28, roughness: 1, metalness: 0,
+      emissive: 0x4c1d95, emissiveIntensity: 0.35
+    })
   )
   voidBox.position.set(0, -1.68, (gapMinZ + gapMaxZ) / 2)
   voidBox.userData.noCameraCollision = true
   root.add(voidBox)
 
-  // Torn floor lips at either edge of the hole.
-  const lipMat = new THREE.MeshStandardMaterial({ color: 0x3a3e45, metalness: 0.7, roughness: 0.7 })
+  // Torn floor lips — wood + cyan fracture (same footprint / placement).
+  const lipWood = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, roughness: 0.62, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.08
+  })
+  const lipCyan = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
+  })
+  const lipBrass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, metalness: 0.88, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.12
+  })
   for (const z of [gapMinZ, gapMaxZ]) {
-    const lip = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.2, 0.12, 0.35), lipMat)
+    const lip = new THREE.Group()
+    const board = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.2, 0.12, 0.35), lipWood)
+    lip.add(board)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.15, 0.03, 0.05), lipCyan)
+    edge.position.set(0, 0.06, (z === gapMinZ ? 1 : -1) * 0.14)
+    lip.add(edge)
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.18, 0.02, 0.06), lipBrass)
+    trim.position.set(0, 0.04, 0)
+    lip.add(trim)
     lip.position.set(0, 0.02, z)
     lip.rotation.x = (z === gapMinZ ? 1 : -1) * 0.18
+    lip.traverse((o) => { o.userData.noCameraCollision = true })
     root.add(lip)
   }
 
+  // Chrono field kept under wood dress so FREEZE intensity feedback stays wired.
   const slabMat = createChronoFieldMaterial({
-    baseColor: 0x3b4048, glowColor: 0x60a5fa, opacity: 0.95, doubleSided: true
+    baseColor: 0x4a3424, glowColor: 0x38bdf8, opacity: 0.92, doubleSided: true
   })
   const SLAB_HALF_X = 1.15 / 2
   const SLAB_HALF_Y = 0.16 / 2
   const SLAB_HALF_Z = 1.05 / 2
-  const slabSteel = new THREE.MeshStandardMaterial({
-    color: 0x4a515a, metalness: 0.78, roughness: 0.42
+  const slabWood = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, roughness: 0.58, metalness: 0.06, emissive: 0x1a1008, emissiveIntensity: 0.1
+  })
+  const slabBrass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, metalness: 0.88, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.12
+  })
+  const slabCyan = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.7, roughness: 0.35
+  })
+  const slabRug = new THREE.MeshStandardMaterial({
+    color: 0x6a1824, roughness: 0.92, metalness: 0, emissive: 0x1a0608, emissiveIntensity: 0.08
   })
   const slabs = []
   const slabSupports = []
   const gapVoids = [{ minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: gapMinZ, maxZ: gapMaxZ }]
   for (let i = 0; i < 5; i++) {
     const slab = new THREE.Group()
+    slab.name = `security-freeze-tile-${i}`
+    // Core deck — exact 1.15 × 0.16 × 1.05 collision footprint (chrono feedback).
     const deck = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
     deck.castShadow = true
     slab.add(deck)
-    const joist = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 1.0), slabSteel)
+    // Wood plank strips on top (decorative — follow the tile).
+    for (const x of [-0.42, -0.14, 0.14, 0.42]) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.03, 0.98), slabWood)
+      plank.position.set(x, 0.09, 0)
+      slab.add(plank)
+    }
+    // Brass edging + cyan fracture rim.
+    const brassFrame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.04, 1.1), slabBrass)
+    brassFrame.position.set(0, -0.08, 0)
+    slab.add(brassFrame)
+    for (const [w, d, x, z] of [
+      [1.18, 0.04, 0, -0.52], [1.18, 0.04, 0, 0.52],
+      [0.04, 1.02, -0.58, 0], [0.04, 1.02, 0.58, 0]
+    ]) {
+      const rim = new THREE.Mesh(new THREE.BoxGeometry(w, 0.025, d), slabCyan)
+      rim.position.set(x, 0.1, z)
+      slab.add(rim)
+    }
+    const joist = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 1.0), slabBrass)
     joist.position.set(i % 2 ? -0.38 : 0.38, -0.12, 0)
     slab.add(joist)
-    const flange = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.03, 1.1), slabSteel)
-    flange.position.set(0, -0.1, 0)
-    slab.add(flange)
+    // Occasional small rug accent (reference detail — every other tile).
+    if (i % 2 === 0) {
+      const rug = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.02, 0.45), slabRug)
+      rug.position.set(0, 0.11, 0)
+      slab.add(rug)
+    }
     slab.userData.seed = i * 1.7
     slab.traverse((o) => { o.userData.noCameraCollision = true })
     slab.position.set(0, 0.06, gapMinZ + 0.6 + i * 1.2)
@@ -1118,36 +1342,53 @@ export function createTimewreckLevel({
   const collapseTriggerZ = collapseMaxZ + 1.15
   const collapseVoid = { minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: collapseMinZ, maxZ: collapseMaxZ }
 
+  // Purple temporal well under the collapse gap (visual only — void logic unchanged).
   const collapsePit = new THREE.Mesh(
     new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.28, 3.5, collapseMaxZ - collapseMinZ),
-    new THREE.MeshStandardMaterial({ color: 0x12141a, roughness: 1 })
+    new THREE.MeshStandardMaterial({
+      color: 0x1a0a28, roughness: 1, metalness: 0,
+      emissive: 0x5b21b6, emissiveIntensity: 0.4
+    })
   )
   collapsePit.position.set(0, -1.72, (collapseMinZ + collapseMaxZ) / 2)
   collapsePit.visible = false
   collapsePit.userData.noCameraCollision = true
   root.add(collapsePit)
 
-  const collapseLipMat = new THREE.MeshStandardMaterial({
-    color: 0x3a4048, metalness: 0.72, roughness: 0.58
+  const collapseLipWood = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, roughness: 0.62, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.08
+  })
+  const collapseLipCyan = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
   })
   const collapseLips = []
   for (const z of [collapseMinZ, collapseMaxZ]) {
-    const lip = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.18, 0.13, 0.42), collapseLipMat)
+    const lip = new THREE.Group()
+    const board = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.18, 0.13, 0.42), collapseLipWood)
+    lip.add(board)
+    const rim = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.14, 0.03, 0.05), collapseLipCyan)
+    rim.position.set(0, 0.07, (z === collapseMinZ ? 1 : -1) * 0.16)
+    lip.add(rim)
     lip.position.set(0, 0.03, z)
     lip.rotation.x = (z === collapseMinZ ? 1 : -1) * 0.2
     lip.visible = false
+    lip.traverse((o) => { o.userData.noCameraCollision = true })
     collapseLips.push(lip)
     root.add(lip)
   }
 
+  // Chrono field kept for FREEZE feedback; wood/brass dress matches Room 6 tiles.
   const collapseChronoMat = createChronoFieldMaterial({
-    baseColor: 0x3a424c, glowColor: 0x7dd3fc, opacity: 0.9, doubleSided: true
+    baseColor: 0x4a3424, glowColor: 0x38bdf8, opacity: 0.9, doubleSided: true
   })
-  const collapseSteel = new THREE.MeshStandardMaterial({
-    color: 0x4a515a, metalness: 0.82, roughness: 0.38, emissive: 0x1e3a4a, emissiveIntensity: 0.22
+  const collapseBrass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, metalness: 0.88, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.12
   })
-  const collapsePaint = new THREE.MeshStandardMaterial({
-    color: 0x3d4450, metalness: 0.45, roughness: 0.62, emissive: 0x163044, emissiveIntensity: 0.18
+  const collapseWood = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, metalness: 0.06, roughness: 0.58, emissive: 0x1a1008, emissiveIntensity: 0.1
+  })
+  const collapseCyan = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.65, roughness: 0.35
   })
 
   function markNoCam(rootObj) {
@@ -1162,16 +1403,19 @@ export function createTimewreckLevel({
     deck.castShadow = true
     g.add(deck)
     for (const x of [-0.51, -0.17, 0.17, 0.51]) {
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 1.46), collapsePaint)
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 1.46), collapseWood)
       plank.position.set(x, 0.065, 0)
       g.add(plank)
     }
     for (const s of [-1, 1]) {
-      const channel = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 1.54), collapseSteel)
+      const channel = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 1.54), collapseBrass)
       channel.position.set(s * 0.64, -0.07, 0)
       g.add(channel)
+      const rim = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.025, 1.48), collapseCyan)
+      rim.position.set(s * 0.68, 0.06, 0)
+      g.add(rim)
     }
-    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.05, 0.22), collapseSteel)
+    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.05, 0.22), collapseCyan)
     tear.position.set(-0.28, -0.02, 0.68)
     tear.rotation.set(0.15, 0.2, 0.08)
     g.add(tear)
@@ -1185,14 +1429,17 @@ export function createTimewreckLevel({
     top.position.y = 0.1
     top.castShadow = true
     g.add(top)
-    const web = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 1.42), collapseSteel)
+    const woodTop = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.03, 1.42), collapseWood)
+    woodTop.position.y = 0.155
+    g.add(woodTop)
+    const web = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 1.42), collapseBrass)
     web.position.y = -0.04
     g.add(web)
-    const bot = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.07, 1.48), collapseSteel)
+    const bot = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.07, 1.48), collapseBrass)
     bot.position.y = -0.18
     g.add(bot)
     for (const z of [-0.5, 0, 0.5]) {
-      const stiff = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.04, 0.07), collapseSteel)
+      const stiff = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.04, 0.07), collapseBrass)
       stiff.position.set(0, -0.04, z)
       g.add(stiff)
     }
@@ -1205,23 +1452,30 @@ export function createTimewreckLevel({
     const plate = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.09, 1.5), collapseChronoMat)
     plate.castShadow = true
     g.add(plate)
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.5), collapseSteel)
-    frame.position.set(0.12, 0.06, 0)
+    const woodPlate = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.03, 1.42), collapseWood)
+    woodPlate.position.y = 0.06
+    g.add(woodPlate)
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.5), collapseBrass)
+    frame.position.set(0.12, 0.08, 0)
     g.add(frame)
     const pane = new THREE.Mesh(
       new THREE.BoxGeometry(0.58, 0.02, 0.38),
       new THREE.MeshStandardMaterial({
-        color: 0x1a2430, metalness: 0.2, roughness: 0.2, emissive: 0x3b82f6, emissiveIntensity: 0.35
+        color: 0xa8c8d8, metalness: 0.05, roughness: 0.2,
+        emissive: 0xffc090, emissiveIntensity: 0.22, transparent: true, opacity: 0.5
       })
     )
-    pane.position.set(0.12, 0.08, 0)
+    pane.position.set(0.12, 0.1, 0)
     g.add(pane)
     for (const x of [-0.56, 0.56]) {
-      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 1.46), collapseSteel)
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 1.46), collapseBrass)
       rib.position.set(x, -0.07, 0)
       g.add(rib)
+      const cyan = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 1.4), collapseCyan)
+      cyan.position.set(x, 0.06, 0)
+      g.add(cyan)
     }
-    const header = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.12), collapsePaint)
+    const header = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.12), collapseWood)
     header.position.set(0, 0.03, -0.68)
     g.add(header)
     return markNoCam(g)
@@ -1259,12 +1513,16 @@ export function createTimewreckLevel({
   collapseFloor.name = 'collapse-floor-slab'
   const floorSlab = new THREE.Mesh(
     new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.35, 0.08, collapseMaxZ - collapseMinZ - 0.15),
-    new THREE.MeshStandardMaterial({ color: 0x2c3036, metalness: 0.55, roughness: 0.7 })
+    new THREE.MeshStandardMaterial({
+      color: 0x5a3a22, metalness: 0.08, roughness: 0.6, emissive: 0x1a1008, emissiveIntensity: 0.08
+    })
   )
   collapseFloor.add(floorSlab)
   const floorCrack = new THREE.Mesh(
     new THREE.BoxGeometry(0.08, 0.04, collapseMaxZ - collapseMinZ - 0.4),
-    new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.9 })
+    new THREE.MeshStandardMaterial({
+      color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4
+    })
   )
   floorCrack.position.y = 0.05
   collapseFloor.add(floorCrack)
@@ -1395,9 +1653,43 @@ export function createTimewreckLevel({
   chunkGroup.userData.noCameraCollision = true
   root.add(chunkGroup)
 
-  const chunkMat = new THREE.MeshStandardMaterial({
-    color: 0x3d4248, roughness: 0.55, metalness: 0.62, emissive: 0x141618, emissiveIntensity: 0.22
-  })
+  // Luxury debris fragments (wood / teal / brass) — same count & Cannon shapes.
+  const chunkMats = [
+    new THREE.MeshStandardMaterial({
+      color: 0x5a3a22, roughness: 0.6, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.1
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.14
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0x3a5c56, roughness: 0.55, metalness: 0.18, emissive: 0x152420, emissiveIntensity: 0.16
+    })
+  ]
+  const chunkMatBases = chunkMats.map((m) => ({
+    color: m.color.getHex(),
+    emissive: m.emissive.getHex(),
+    emissiveIntensity: m.emissiveIntensity
+  }))
+  function paintChunkMats(color, emissive, emissiveIntensity) {
+    for (const m of chunkMats) {
+      m.color.setHex(color)
+      m.emissive.setHex(emissive)
+      m.emissiveIntensity = emissiveIntensity
+    }
+  }
+  function restoreChunkMats(resumeWarm = 0) {
+    chunkMats.forEach((m, i) => {
+      const base = chunkMatBases[i]
+      m.color.setHex(base.color)
+      if (resumeWarm > 0.08) {
+        m.emissive.setHex(0xff6a40)
+        m.emissiveIntensity = base.emissiveIntensity + resumeWarm * 1.6
+      } else {
+        m.emissive.setHex(base.emissive)
+        m.emissiveIntensity = base.emissiveIntensity
+      }
+    })
+  }
   const chunkGeos = [
     new THREE.BoxGeometry(0.42, 0.06, 0.55),
     new THREE.BoxGeometry(0.08, 0.08, 0.48),
@@ -1445,7 +1737,7 @@ export function createTimewreckLevel({
     c.body.wakeUp()
   }
   for (let i = 0; i < 8; i++) {
-    const mesh = new THREE.Mesh(chunkGeos[i % 3], chunkMat)
+    const mesh = new THREE.Mesh(chunkGeos[i % 3], chunkMats[i % 3])
     mesh.castShadow = true
     chunkGroup.add(mesh)
     const body = new CANNON.Body({
@@ -1483,11 +1775,14 @@ export function createTimewreckLevel({
   root.add(burstGroup)
 
   const burstPanelMat = new THREE.MeshStandardMaterial({
-    color: 0x4a5058, roughness: 0.62, metalness: 0.7,
-    emissive: 0x121416, emissiveIntensity: 0.12
+    color: 0x5a3a22, roughness: 0.58, metalness: 0.08,
+    emissive: 0x1a1008, emissiveIntensity: 0.1
   })
-  const burstSteel = new THREE.MeshStandardMaterial({
-    color: 0x6b727c, roughness: 0.4, metalness: 0.85
+  const burstBrass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.14
+  })
+  const burstCyan = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.35
   })
   // Pivot on the aisle-side of the overhead slab so it trapdoors DOWN
   // along the seats, not across the path.
@@ -1498,15 +1793,19 @@ export function createTimewreckLevel({
   burstPanel.castShadow = true
   burstPanel.userData.noCameraCollision = true
   panelPivot.add(burstPanel)
-  const panelRib = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.7), burstSteel)
+  const panelRib = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.7), burstBrass)
   panelRib.position.set(0.08, -0.06, 0)
   panelRib.userData.noCameraCollision = true
   panelPivot.add(panelRib)
+  const panelCyan = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.02, 0.04), burstCyan)
+  panelCyan.position.set(0.39, 0.05, 0.85)
+  panelCyan.userData.noCameraCollision = true
+  panelPivot.add(panelCyan)
   burstGroup.add(panelPivot)
 
   const beamPivot = new THREE.Group()
   beamPivot.position.set(1.22, CARRIAGE_CEILING_Y - 0.14, FAIL_BURST_Z + 0.55)
-  const burstBeam = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 1.35), burstSteel)
+  const burstBeam = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 1.35), burstBrass)
   burstBeam.castShadow = true
   burstBeam.userData.noCameraCollision = true
   beamPivot.add(burstBeam)
@@ -1544,7 +1843,9 @@ export function createTimewreckLevel({
   }
 
   const burstDebris = []
-  const luggageMat = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.82, metalness: 0.05 })
+  const luggageMat = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, roughness: 0.7, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.08
+  })
   const luggageGeo = new THREE.BoxGeometry(0.52, 0.3, 0.68)
   const luggageShape = new CANNON.Box(new CANNON.Vec3(0.26, 0.15, 0.34))
   for (let i = 0; i < 2; i++) {
@@ -1889,6 +2190,46 @@ export function createTimewreckLevel({
   const brake = createEmergencyBrake()
   addProp(brake, spans.cab.center - 1.5)
 
+  // Celebratory exit aperture — decorative only; opens during the brake cinematic.
+  const exitPath = new THREE.Group()
+  exitPath.name = 'cab-exit-path'
+  exitPath.visible = false
+  exitPath.position.set(0, 0, spans.cab.minZ + 0.35)
+  const exitDoorMat = new THREE.MeshStandardMaterial({
+    color: 0x3a5c56, roughness: 0.5, metalness: 0.35, emissive: 0x1a2e2a, emissiveIntensity: 0.2
+  })
+  const exitBrassMat = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.4, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.2
+  })
+  const exitLeft = new THREE.Group()
+  const exitRight = new THREE.Group()
+  for (const [side, leaf] of [[-1, exitLeft], [1, exitRight]]) {
+    leaf.position.set(side * 0.55, 1.4, 0)
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.6, 0.12), exitDoorMat)
+    panel.position.x = side * 0.52
+    panel.userData.noCameraCollision = true
+    leaf.add(panel)
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.65, 0.14), exitBrassMat)
+    trim.position.x = side * 0.05
+    trim.userData.noCameraCollision = true
+    leaf.add(trim)
+    exitPath.add(leaf)
+  }
+  const exitGlow = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, 2.8),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 0,
+      transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide
+    })
+  )
+  exitGlow.position.set(0, 1.4, -0.2)
+  exitGlow.userData.noCameraCollision = true
+  exitPath.add(exitGlow)
+  const exitLight = new THREE.PointLight(0xffd9a0, 0, 8, 2)
+  exitLight.position.set(0, 1.6, -0.8)
+  exitPath.add(exitLight)
+  root.add(exitPath)
+
   unregisters.push(interaction.register(brake, {
     prompt: 'Pull the emergency brake',
     onInteract: () => {
@@ -1899,6 +2240,7 @@ export function createTimewreckLevel({
       timeSystem.setAbilityAvailability({})
       interaction.flashPrompt('The Chrono Express grinds to a halt…', 3000)
       hud.setObjective('The train stops on the bridge. You made it.')
+      exitPath.visible = true
     }
   }))
 
@@ -1954,6 +2296,14 @@ export function createTimewreckLevel({
   // `root`. Sources stay in the graph for flicker/intensity animation; a fixed
   // set of 12 real lights is what the renderer sees.
   const lightPool = createLightPool({ root, size: 12 })
+
+  // Independent atmosphere systems — each has its own `enabled` flag in
+  // timewreck-atmosphere.js. Instantiated after lights so lamp motion can
+  // find existing fixtures without adding pool lights.
+  const carriageShake = createCarriageShake(root)
+  const stormDebris = createStormDebris(root, spans)
+  const lampMotion = createLampMotion(root)
+  const grabHandles = createGrabHandles(root, spans)
 
   // ============================================================
   const lever = brake.getObjectByName('brake-lever')
@@ -2015,8 +2365,16 @@ export function createTimewreckLevel({
       failCooldown = 0
       braking = false
       brakeT = 0
-      root.rotation.z = 0
-      root.position.y = 0
+      exitPath.visible = false
+      exitLeft.rotation.y = 0
+      exitRight.rotation.y = 0
+      exitGlow.material.opacity = 0
+      exitGlow.material.emissiveIntensity = 0
+      exitLight.intensity = 0
+      carriageShake.reset()
+      stormDebris.reset()
+      lampMotion.reset()
+      grabHandles.reset()
       chunkGroup.visible = breakupT >= 0
       chunks.forEach((chunk) => {
         respawnChunk(chunk)
@@ -2036,18 +2394,18 @@ export function createTimewreckLevel({
       sparks.material.color.setHex(0xffd9a0)
       sparks.material.size = 0.028
       sparks.material.opacity = 0.4
-      chunkMat.color.setHex(0x3d4248)
-      chunkMat.emissive.setHex(0x141618)
-      chunkMat.emissiveIntensity = 0.22
+      restoreChunkMats(0)
       burstPanelMat.emissive.setHex(0x121416)
       burstPanelMat.emissiveIntensity = 0.12
       waveLight.color.setHex(0xa855f7)
       waveLight.distance = 8
       waveMat.customUniforms.uOpacity.value = 0.6
-      burstSteel.emissive.setHex(0x000000)
-      burstSteel.emissiveIntensity = 0
-      luggageMat.emissive.setHex(0x000000)
-      luggageMat.emissiveIntensity = 0
+      burstBrass.emissive.setHex(0x3a2810)
+      burstBrass.emissiveIntensity = 0.14
+      burstCyan.emissive.setHex(0x38bdf8)
+      burstCyan.emissiveIntensity = 0.55
+      luggageMat.emissive.setHex(0x1a1008)
+      luggageMat.emissiveIntensity = 0.08
 
       waveZ = depleted ? DEPLETE_Z + WAVE_LEAD : 0
       wave.position.z = waveZ
@@ -2240,13 +2598,13 @@ export function createTimewreckLevel({
         scene.fog.color.copy(FINALE_FREEZE_COLOR)
         scene.fog.near = 6
         scene.fog.far = 88
-        chunkMat.color.setHex(0x64748b)
-        chunkMat.emissive.setHex(0xbfdbfe)
-        chunkMat.emissiveIntensity = 1.85
+        paintChunkMats(0x64748b, 0xbfdbfe, 1.85)
         burstPanelMat.emissive.setHex(0x93c5fd)
         burstPanelMat.emissiveIntensity = 1.35
-        burstSteel.emissive.setHex(0xdbeafe)
-        burstSteel.emissiveIntensity = 1.1
+        burstBrass.emissive.setHex(0xdbeafe)
+        burstBrass.emissiveIntensity = 1.1
+        burstCyan.emissive.setHex(0xe0f2fe)
+        burstCyan.emissiveIntensity = 1.35
         luggageMat.emissive.setHex(0x7dd3fc)
         luggageMat.emissiveIntensity = 0.95
         burstSparkMat.color.setHex(0xf0f9ff)
@@ -2260,18 +2618,18 @@ export function createTimewreckLevel({
         sparks.material.opacity = 1
       } else if (!braking) {
         scene.background.setHex(resumeWarm > 0.08 ? 0x1a1412 : NIGHT_COLOR.getHex())
-        scene.fog.color.set(resumeWarm > 0.08 ? 0x241814 : 0x161c28)
+        scene.fog.color.set(resumeWarm > 0.08 ? 0x241814 : 0x121a28)
         scene.fog.near = 38
         scene.fog.far = resumeWarm > 0 ? 55 + (1 - resumeWarm) * 65 : 185
-        chunkMat.color.setHex(0x3d4248)
-        chunkMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a40 : 0x141618)
-        chunkMat.emissiveIntensity = 0.22 + resumeWarm * 1.6
+        restoreChunkMats(resumeWarm)
         burstPanelMat.emissive.setHex(resumeWarm > 0.08 ? 0xff7048 : 0x121416)
         burstPanelMat.emissiveIntensity = 0.12 + resumeWarm * 1.1
-        burstSteel.emissive.setHex(0x000000)
-        burstSteel.emissiveIntensity = 0
-        luggageMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a28 : 0x000000)
-        luggageMat.emissiveIntensity = resumeWarm * 1.2
+        burstBrass.emissive.setHex(resumeWarm > 0.08 ? 0xff6a40 : 0x3a2810)
+        burstBrass.emissiveIntensity = 0.14 + resumeWarm * 1.1
+        burstCyan.emissive.setHex(resumeWarm > 0.08 ? 0xffb060 : 0x38bdf8)
+        burstCyan.emissiveIntensity = 0.55 + resumeWarm * 0.9
+        luggageMat.emissive.setHex(resumeWarm > 0.08 ? 0xff6a28 : 0x1a1008)
+        luggageMat.emissiveIntensity = resumeWarm > 0.08 ? resumeWarm * 1.2 : 0.08
         burstSparkMat.color.setHex(0xffe8c0)
         burstSparkMat.emissive.setHex(0xffc078)
         embers.material.color.setHex(resumeWarm > 0.08 ? 0xff5a20 : 0xff8a3c)
@@ -2282,12 +2640,31 @@ export function createTimewreckLevel({
         sparks.material.opacity = 0.4 + resumeWarm * 0.45
       }
 
-      // --- Brake pulled: the stop-on-the-bridge cinematic -----------------
+      // --- Brake pulled: celebratory stop — heavy shake, exit path opens ---
       if (braking) {
         brakeT += delta
-        const shake = Math.max(0, 1 - brakeT / 2.6)
-        root.rotation.z = Math.sin(brakeT * 26) * 0.02 * shake
-        root.position.y = Math.sin(brakeT * 33) * 0.02 * shake
+        // Early punch that settles into a fading rumble (celebratory, not subtle).
+        const punch = Math.exp(-brakeT * 1.55)
+        const rumble = Math.max(0, 1 - brakeT / 2.8)
+        const shakeAmp = punch * 0.055 + rumble * 0.022
+        root.rotation.z =
+          Math.sin(brakeT * 34) * shakeAmp +
+          Math.sin(brakeT * 51) * shakeAmp * 0.45
+        root.position.y =
+          Math.abs(Math.sin(brakeT * 28)) * shakeAmp * 0.85 +
+          Math.sin(brakeT * 47) * shakeAmp * 0.35
+        root.position.x = Math.sin(brakeT * 39) * shakeAmp * 0.4
+
+        // Doors swing open and warm light floods the escape path.
+        const open = Math.min(1, brakeT / 1.15)
+        const eased = open * open * (3 - 2 * open)
+        exitLeft.rotation.y = -eased * 1.35
+        exitRight.rotation.y = eased * 1.35
+        exitGlow.material.opacity = 0.15 + eased * 0.55
+        exitGlow.material.emissiveIntensity = eased * 2.4
+        exitLight.intensity = eased * 22
+        exitDoorMat.emissiveIntensity = 0.2 + eased * 0.55
+        exitBrassMat.emissiveIntensity = 0.2 + eased * 0.9
 
         if (wave.visible) {
           const s = Math.max(0, 1 - brakeT * 0.9)
@@ -2298,7 +2675,7 @@ export function createTimewreckLevel({
         }
 
         // Night gives way to first light as the train settles on the bridge.
-        const dawn = Math.min(1, Math.max(0, (brakeT - 2.2) / 2.0))
+        const dawn = Math.min(1, Math.max(0, (brakeT - 1.6) / 2.2))
         scene.background.lerpColors(NIGHT_COLOR, DAWN_COLOR, dawn)
         scene.fog.color.copy(scene.background)
         scene.fog.far = 40 + dawn * 70
@@ -2313,18 +2690,33 @@ export function createTimewreckLevel({
         return
       }
 
-      // --- Ambient instability: the whole train lurches, worse over time ---
-      if (!finaleFreeze) {
-        const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
-        const slamKick = blastSlam * blastSlam
-        root.rotation.z = (Math.sin(elapsed * 1.7) * 0.012 + Math.sin(elapsed * 4.3) * 0.004) * unrest
-          + Math.sin(elapsed * 52) * 0.022 * slamKick
-        root.position.y = Math.sin(elapsed * 6.1) * 0.012 * unrest
-          + Math.sin(elapsed * 68) * 0.018 * slamKick
-        root.position.x = Math.sin(elapsed * 41) * 0.01 * slamKick
-      } else {
+      // --- Atmosphere: shake / debris / handles (each independently toggled) ---
+      const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
+      const slamKick = blastSlam
+      const shook = carriageShake.update(delta, {
+        elapsed,
+        unrest,
+        slamKick,
+        frozen: finaleFreeze
+      })
+      if (!shook && !finaleFreeze) {
+        // Shake disabled: keep the train visually still (door slam feedback only).
+        root.rotation.z = Math.sin(elapsed * 52) * 0.018 * slamKick * slamKick
+        root.position.y = Math.sin(elapsed * 68) * 0.014 * slamKick * slamKick
+        root.position.x = Math.sin(elapsed * 41) * 0.008 * slamKick * slamKick
+      } else if (finaleFreeze) {
         root.position.x = 0
       }
+      stormDebris.update(envDt, { elapsed, frozen: finaleFreeze, unrest })
+      grabHandles.update(envDt, { elapsed, frozen: finaleFreeze, unrest, slamKick })
+      // After shake + env flicker: swing fixtures and gently modulate lamp intensity.
+      lampMotion.update(envDt, {
+        elapsed,
+        frozen: finaleFreeze,
+        unrest,
+        shakeX: root.position.x,
+        shakeY: root.position.y
+      })
 
       // --- Rolling checkpoints (descending z) -----------------------------
       for (const z of checkpointZs) {
@@ -2416,8 +2808,9 @@ export function createTimewreckLevel({
         ? (frozen ? 8 : 2.4 + Math.sin(elapsed * 3.2) * 0.4)
         : 0
       if (collapseFxLive) {
-        collapseSteel.emissiveIntensity = frozen ? 1.1 : 0.22
-        collapsePaint.emissiveIntensity = frozen ? 0.85 : 0.18
+        collapseBrass.emissiveIntensity = frozen ? 1.1 : 0.12
+        collapseWood.emissiveIntensity = frozen ? 0.85 : 0.1
+        collapseCyan.emissiveIntensity = frozen ? 1.25 : 0.65
       }
       if (frozen && collapseLive) {
         for (const p of collapsePieces) {
@@ -2520,6 +2913,8 @@ export function createTimewreckLevel({
 
     dispose() {
       unregisters.forEach((fn) => fn())
+      stormDebris.dispose()
+      grabHandles.dispose()
       scene.remove(aisleKey, aisleKeyTarget)
       for (const snap of playerMatRestore) {
         snap.m.emissive.setHex(snap.emissive)

@@ -263,11 +263,7 @@ export function localInteriorBoxes(key, half, wallX = WALL_X, damaged = false) {
       for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
     }
   } else if (key === 'security') {
-    const cols = Math.max(2, Math.floor((half * 2 - 5) / 0.62))
-    for (let c = 0; c < cols; c++) {
-      const z = -half + 2.5 + c * 0.62
-      for (const s of [-1, 1]) boxes.push(box('locker', s * (wallX - 0.32), z, 0.28, 0.25))
-    }
+    // L3 Room 6: aisle kept clear for freeze-tile crossing (benches are noCam).
   } else if (key === 'cargo') {
     for (let z = -half + 2; z <= half - 2; z += 2.2) {
       boxes.push(box('crate', -(wallX - 0.45), z, 0.4, 0.4))
@@ -301,12 +297,7 @@ export function localInteriorBoxes(key, half, wallX = WALL_X, damaged = false) {
       boxes.push(box('relaybox', r.s * (wallX - RELAY_BOX_DEPTH / 2), r.z, RELAY_BOX_DEPTH / 2, RELAY_BOX_WIDTH / 2))
     }
   } else if (key === 'relay') {
-    for (let z = -half + 2.2; z <= half - 2.2; z += 2.8) {
-      for (const s of [-1, 1]) boxes.push(box('rack', s * (wallX - 0.3), z, 0.24, 0.675))
-    }
-    const zs = [-half + 3.5, 0, half - 4.0]
-    const xs = [-0.52, 0.52, -0.52]
-    zs.forEach((z, i) => boxes.push(box('terminal', xs[i], z, 0.3, 0.3)))
+    // L3 Room 5: aisle kept clear for the dash-door run (benches are noCam).
   } else if (key === 'cab') {
     boxes.push(box('backhead', 0, -half + 0.5, 1.1, 0.18))
     boxes.push(box('firebox', 0, -half + 0.72, 0.45, 0.1))
