@@ -28,6 +28,10 @@ import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
 
+// Negative yaw moves the east-facing backdrop toward +Z, matching the scrolling
+// scenery. Degrees of apparent rotation per sky second (Slow/Freeze/Rewind).
+const MOUNTAIN_DRIFT_DEGREES_PER_SECOND = -0.3
+
 // Level 2 — "The Moving Heist".
 //
 // Physical progression is deliberately one-way: REAR -> FRONT.
@@ -307,7 +311,7 @@ export function createMovingHeistLevel({
   hud?.setChronoVisible?.(false)
 
   const env = createCarriageEnvironment()
-  const sky = createSkyDome('moving-heist')
+  const sky = createSkyDome('moving-heist', { mountainStrength: 1, mountainScale: 0.5 })
   const outdoorEnv = createOutdoorEnvironment({
     mode: 'moving',
     speed: 38.0,
@@ -2610,7 +2614,8 @@ export function createMovingHeistLevel({
     get isCinematic() { return taken },
 
     update(delta) {
-      sky.update(delta, timeSystem)
+      const skyDelta = sky.update(delta, timeSystem)
+      sky.uniforms.uMountainYaw.value += MOUNTAIN_DRIFT_DEGREES_PER_SECOND / 360 * skyDelta
       outdoorEnv.update(delta)
       env.update(delta)
       corridorStealth.update(delta)

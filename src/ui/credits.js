@@ -154,6 +154,8 @@ function buildRollContent() {
     line('Preetham daylight model (Rayleigh + Mie), MIT License', { dim: true }),
     line('github.com/mrdoob/three.js — examples/jsm/objects/Sky.js', { dim: true, size: '13px' }),
     spacer(8),
+    line("Night mountain backdrop and tree textures based on 'landscape forest & mountains' by dasy444 (Sketchfab), CC BY 4.0. Recoloured for night; sky removed."),
+    spacer(8),
     line('Nature models and surface textures from Poly Haven'),
     line('polyhaven.com — CC0', { dim: true }),
     line('Pine Sapling Small', { size: '13px' }),
