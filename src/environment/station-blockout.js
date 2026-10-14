@@ -1196,6 +1196,8 @@ export const SUN_DIRECTION = new THREE.Vector3(
   Math.sin(SUN_ELEVATION),
   SUN_AZIMUTH.z * Math.cos(SUN_ELEVATION)
 )
+// Opt-in platform moon. The original bearing remains the default everywhere else.
+export const PLATFORM_MOON_DIRECTION = new THREE.Vector3(0.45, 0.30, 0.84).normalize()
 const SUN_CAMERA_UP = new THREE.Vector3(0, 1, 0)
 const _camRight = new THREE.Vector3()
 const _camUp = new THREE.Vector3()
@@ -1203,11 +1205,11 @@ const _camForward = new THREE.Vector3()
 const _snapped = new THREE.Vector3()
 const _delta = new THREE.Vector3()
 
-export function updateStationSunShadow(sunlight, focus) {
+export function updateStationSunShadow(sunlight, focus, direction = SUN_DIRECTION) {
   if (!sunlight || !focus) return
   const target = sunlight.target
   target.position.copy(focus)
-  sunlight.position.copy(focus).addScaledVector(SUN_DIRECTION, SUN_SHADOW_DISTANCE)
+  sunlight.position.copy(focus).addScaledVector(direction, SUN_SHADOW_DISTANCE)
 
   // Match the basis Three uses when it points the shadow camera at the target,
   // then snap both the light and the target onto that camera's texel grid.

@@ -65,7 +65,7 @@ const PLATFORM = {
   region: 'platform',
   outdoor: true,
   box: null,
-  show: ['p4', 'platform', 'train', 'landing', 'outdoor']
+  show: ['p4', 'platform', 'train', 'platform-backdrop']
 }
 
 // Leaving a zone needs this much overshoot, so standing on a threshold

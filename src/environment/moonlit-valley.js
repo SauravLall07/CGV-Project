@@ -47,7 +47,8 @@ function addSceneryFade(material, viewerZ, materialKey) {
   material.customProgramCacheKey = () => `moonlit-valley-${materialKey}-no-local-lights-fade-v3`
 }
 
-function createForest(chunks, onChunkRecycle, viewerZ) {
+function createForest(chunks, onChunkRecycle, viewerZ, options) {
+  const valleySide = options.valleySide
   const loader = new THREE.TextureLoader()
   const textures = [loader.load(pineCardAUrl), loader.load(pineCardBUrl)]
   const materials = textures.map((map, i) => {
@@ -97,7 +98,8 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
     let distantOrdinal = 0
     const counts = [0, 0]
     function placeTree(x, localZ, height, belowRoof = false, shoulder = false) {
-      x *= VALLEY_SIDE
+      if (options.omitHillSide && x < 0) return
+      x *= valleySide
       const worldZ = chunk.index * CHUNK_LENGTH + localZ
       const base = surfaceHeightAt(chunk, x, worldZ) - 0.3
       if (belowRoof) height = Math.min(height, 3.8 - base)
@@ -115,7 +117,7 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
       const width = height * 0.5
       x = Math.sign(x) * Math.max(Math.abs(x), 8 + width * 0.5)
       transform.position.set(x, surfaceHeightAt(chunk, x, worldZ) - 0.3, localZ)
-      transform.rotation.set(0, random() * Math.PI * 2 * VALLEY_SIDE, 0)
+      transform.rotation.set(0, random() * Math.PI * 2 * valleySide, 0)
       transform.scale.set(width, height, width)
       const shade = 0.88 + random() * 0.12
       const variant = ordinal++ % 2
@@ -147,7 +149,7 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
           const candidateX = minX + random() * (maxX - minX)
           const candidateZ = 12 + random() * (CHUNK_LENGTH - 24)
           const worldZ = chunk.index * CHUNK_LENGTH
-          const slopeAt = (x, z) => Math.abs(valleyHeightAt((side * x + 1) * VALLEY_SIDE, worldZ + z) - valleyHeightAt((side * x - 1) * VALLEY_SIDE, worldZ + z))
+          const slopeAt = (x, z) => Math.abs(valleyHeightAt((side * x + 1) * valleySide, worldZ + z, valleySide) - valleyHeightAt((side * x - 1) * valleySide, worldZ + z, valleySide))
           if (slopeAt(candidateX, candidateZ) > slopeAt(centreX, centreZ)) { centreX = candidateX; centreZ = candidateZ }
         }
         const radius = 6 + random() * 6
@@ -212,8 +214,8 @@ function smooth(a, b, x) {
 
 // One continuous world-space surface for ALL chunks and future attached props.
 // No Boarding footprint/depression is included. The moving train is at x=0.
-export function valleyHeightAt(x, worldZ) {
-  x *= VALLEY_SIDE
+export function valleyHeightAt(x, worldZ, valleySide = VALLEY_SIDE) {
+  x *= valleySide
   if (x > 0) {
     const shoulder = -2.5 - 3.5 * smooth(10, 40, x)
     const floor = shoulder - 39 * smooth(40, 120, x)
@@ -232,9 +234,12 @@ export function valleyHeightAt(x, worldZ) {
   return -2.5 + bank * (4 + wave * 1.5) + hills * (26 + wave * 8) + outer * (22 + wave * 6)
 }
 
-function createChunk(material) {
+function createChunk(material, options) {
   const group = new THREE.Group()
-  const geometry = new THREE.PlaneGeometry(HALF_WIDTH * 2, CHUNK_LENGTH, X_SEGMENTS, Z_SEGMENTS)
+  // A one-sided station surface starts 6 m beyond the track centre. No
+  // triangles are allocated on the omitted hill/station side.
+  const xSegments = options.omitHillSide ? X_SEGMENTS / 2 : X_SEGMENTS
+  const geometry = new THREE.PlaneGeometry(HALF_WIDTH * 2, CHUNK_LENGTH, xSegments, Z_SEGMENTS)
   geometry.rotateX(-Math.PI / 2)
   geometry.translate(0, 0, CHUNK_LENGTH / 2)
   // Concentrate the same vertex budget near the track; every chunk has the
@@ -242,7 +247,12 @@ function createChunk(material) {
   const position = geometry.attributes.position
   for (let i = 0; i < position.count; i += 1) {
     const u = position.getX(i) / HALF_WIDTH
-    position.setX(i, Math.sign(u) * Math.pow(Math.abs(u), 1.6) * (u * VALLEY_SIDE > 0 ? RIGHT_WIDTH : HALF_WIDTH))
+    if (options.omitHillSide) {
+      const t = options.valleySide > 0 ? (u + 1) / 2 : (1 - u) / 2
+      position.setX(i, options.valleySide * (6 + Math.pow(t, 1.6) * (RIGHT_WIDTH - 6)))
+    } else {
+      position.setX(i, Math.sign(u) * Math.pow(Math.abs(u), 1.6) * (u * options.valleySide > 0 ? RIGHT_WIDTH : HALF_WIDTH))
+    }
   }
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(position.count * 3), 3))
   geometry.computeBoundingBox()
@@ -254,7 +264,7 @@ function createChunk(material) {
   ground.raycast = () => {}
   ground.userData.noCameraCollision = true
   group.add(ground)
-  return { group, ground, geometry, index: 0, onRecycle: new Set() }
+  return { group, ground, geometry, options, xSegments, index: 0, onRecycle: new Set() }
 }
 
 function rebuildChunk(chunk, index) {
@@ -265,22 +275,23 @@ function rebuildChunk(chunk, index) {
   const normal = chunk.geometry.attributes.normal
   const color = chunk.geometry.attributes.color
   const uv = chunk.geometry.attributes.uv
+  const { valleySide, moonDirection } = chunk.options
   for (let i = 0; i < position.count; i += 1) {
     const x = position.getX(i)
     const worldZ = index * CHUNK_LENGTH + position.getZ(i)
-    position.setY(i, valleyHeightAt(x, worldZ))
+    position.setY(i, valleyHeightAt(x, worldZ, valleySide))
     // Unscrolled coordinates keep the repeating texture attached to the ground.
     uv.setXY(i, x / 14, worldZ / 14)
     // Evaluate the SAME height gradient on both sides of each edge. Per-mesh
     // computeVertexNormals() would give the two edge rows different normals.
-    const dx = (valleyHeightAt(x + NORMAL_STEP, worldZ) - valleyHeightAt(x - NORMAL_STEP, worldZ)) / (2 * NORMAL_STEP)
-    const dz = (valleyHeightAt(x, worldZ + NORMAL_STEP) - valleyHeightAt(x, worldZ - NORMAL_STEP)) / (2 * NORMAL_STEP)
+    const dx = (valleyHeightAt(x + NORMAL_STEP, worldZ, valleySide) - valleyHeightAt(x - NORMAL_STEP, worldZ, valleySide)) / (2 * NORMAL_STEP)
+    const dz = (valleyHeightAt(x, worldZ + NORMAL_STEP, valleySide) - valleyHeightAt(x, worldZ - NORMAL_STEP, valleySide)) / (2 * NORMAL_STEP)
     const length = Math.hypot(dx, 1, dz)
     normal.setXYZ(i, -dx / length, 1 / length, -dz / length)
-    const sideX = x * VALLEY_SIDE
+    const sideX = x * valleySide
     const variation = Math.sin(sideX * 0.013 + worldZ * 0.008 + PHASE_B) * 0.08 +
       Math.cos(sideX * 0.005 - worldZ * 0.014 + PHASE_C) * 0.04
-    const facingMoon = Math.max(0, (-dx * MOON_DIRECTION.x + MOON_DIRECTION.y - dz * MOON_DIRECTION.z) / length)
+    const facingMoon = Math.max(0, (-dx * moonDirection.x + moonDirection.y - dz * moonDirection.z) / length)
     const forestShade = sideX < -10 || sideX > 210 ? 0.85 : 1
     const tint = (THREE.MathUtils.clamp(0.30 + variation * 0.4, 0.22, 0.38) + facingMoon * 0.06) * forestShade
     const wet = sideX > 0 ? smooth(100, 120, sideX) * (1 - smooth(210, 240, sideX)) : 0
@@ -308,11 +319,12 @@ function surfaceHeightAt(chunk, x, worldZ) {
   const positions = chunk.geometry.attributes.position
   const localZ = THREE.MathUtils.clamp(worldZ - chunk.index * CHUNK_LENGTH, 0, CHUNK_LENGTH)
   const row = Math.min(Z_SEGMENTS - 1, Math.floor(localZ / (CHUNK_LENGTH / Z_SEGMENTS)))
-  const clampedX = THREE.MathUtils.clamp(x, VALLEY_SIDE === 1 ? -HALF_WIDTH : -RIGHT_WIDTH, VALLEY_SIDE === 1 ? RIGHT_WIDTH : HALF_WIDTH)
+  const { xSegments } = chunk
+  const clampedX = THREE.MathUtils.clamp(x, positions.getX(0), positions.getX(xSegments))
   let column = 0
-  while (column < X_SEGMENTS - 1 && positions.getX(column + 1) < clampedX) column += 1
-  const a = row * (X_SEGMENTS + 1) + column
-  const b = a + X_SEGMENTS + 1
+  while (column < xSegments - 1 && positions.getX(column + 1) < clampedX) column += 1
+  const a = row * (xSegments + 1) + column
+  const b = a + xSegments + 1
   const d = a + 1
   const c = b + 1
   const u = (clampedX - positions.getX(a)) / (positions.getX(d) - positions.getX(a))
@@ -322,15 +334,15 @@ function surfaceHeightAt(chunk, x, worldZ) {
     : positions.getY(c) * (u + v - 1) + positions.getY(d) * (1 - v) + positions.getY(b) * (1 - u)
 }
 
-function createMountainRing(hazeColor, getViewerZ) {
+function createMountainRing(hazeColor, getViewerZ, moonDirection = MOON_DIRECTION) {
   const group = new THREE.Group()
   group.name = 'moonlit-mountain-ring'
   const haze = new THREE.Color(hazeColor ?? 0x142943)
   const tint = new THREE.Color()
   const rim = new THREE.Color(0x9fb4d8)
   const normal = new THREE.Vector3()
-  const moonAngle = Math.atan2(MOON_DIRECTION.x, MOON_DIRECTION.z)
-  const moonElevation = Math.asin(MOON_DIRECTION.y)
+  const moonAngle = Math.atan2(moonDirection.x, moonDirection.z)
+  const moonElevation = Math.asin(moonDirection.y)
   const angular = 1024
   const radial = 6
   const rings = [
@@ -390,7 +402,7 @@ function createMountainRing(hazeColor, getViewerZ) {
       for (let i = 0; i <= angular; i += 1) {
         const vertex = j * (angular + 1) + i
         normal.fromBufferAttribute(normals, vertex)
-        const facing = Math.max(0, normal.dot(MOON_DIRECTION))
+        const facing = Math.max(0, normal.dot(moonDirection))
         const speckle = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin((i % angular) * 127.1 + j * 311.7 + ringIndex))
         tint.copy(forest).multiplyScalar((0.3 + 0.7 * facing) * speckle).lerp(haze, mist)
         tint.lerp(rim, facing * rise * 0.025)
@@ -421,7 +433,8 @@ function createMountainRing(hazeColor, getViewerZ) {
   return { group, update }
 }
 
-function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
+function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ, options) {
+  const valleySide = options.valleySide
   const texture = new THREE.TextureLoader().load(broadleafCardUrl)
   texture.colorSpace = THREE.SRGBColorSpace
   const bushMaterial = new THREE.MeshLambertMaterial({ map: texture, color: new THREE.Color(0x4a6058).multiplyScalar(1.15), alphaTest: 0.5, side: THREE.DoubleSide, fog: true })
@@ -453,18 +466,21 @@ function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
     }
     const rebuildCover = () => {
       seed = (Math.imul(chunk.index, 668265263) ^ 0x62757368) >>> 0
+      let bushCount = 0
+      let rockCount = 0
       for (let i = 0; i < 120; i += 1) {
         const height = 1.2 + random() * 2.3
         const width = height * 0.5
-        const x = VALLEY_SIDE * (i % 2 ? 1 : -1) * (i < 48
+        const x = valleySide * (i % 2 ? 1 : -1) * (i < 48
           ? 4 + width * 0.5 + random() * (10 - width * 0.5)
           : i < 72 ? 14 + random() * 26 : 40 + random() * 80)
         const z = random() * CHUNK_LENGTH
         transform.position.set(x, surfaceHeightAt(chunk, x, chunk.index * CHUNK_LENGTH + z) - 0.1, z)
-        transform.rotation.set(0, random() * Math.PI * 2 * VALLEY_SIDE, 0)
+        transform.rotation.set(0, random() * Math.PI * 2 * valleySide, 0)
         transform.scale.set(width, height, width)
+        if (options.omitHillSide && x * valleySide - width * 0.5 < 6) continue
         transform.updateMatrix()
-        bushes.setMatrixAt(i, transform.matrix)
+        bushes.setMatrixAt(bushCount++, transform.matrix)
       }
       for (let cluster = 0; cluster < 20; cluster += 1) {
         const side = cluster % 2 ? 1 : -1
@@ -475,15 +491,18 @@ function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
           const rawX = centreX + (random() - 0.5) * 6
           const size = 0.4 + random() * (Math.abs(rawX) < 20 ? 1.2 : 1.8)
           const scaleY = size * (0.5 + random() * 0.3)
-          const x = VALLEY_SIDE * side * THREE.MathUtils.clamp(Math.abs(rawX), 5 + size, 120 - size)
+          const x = valleySide * side * THREE.MathUtils.clamp(Math.abs(rawX), 5 + size, 120 - size)
           const z = THREE.MathUtils.clamp(centreZ + (random() - 0.5) * 6, 0, CHUNK_LENGTH)
           transform.position.set(x, surfaceHeightAt(chunk, x, chunk.index * CHUNK_LENGTH + z) + scaleY * 0.5, z)
-          transform.rotation.set((random() - 0.5) * 0.1, random() * Math.PI * 2 * VALLEY_SIDE, (random() - 0.5) * 0.1 * VALLEY_SIDE)
+          transform.rotation.set((random() - 0.5) * 0.1, random() * Math.PI * 2 * valleySide, (random() - 0.5) * 0.1 * valleySide)
           transform.scale.set(size, scaleY, size)
+          if (options.omitHillSide && x * valleySide - size < 6) continue
           transform.updateMatrix()
-          rocks.setMatrixAt(cluster * 3 + k, transform.matrix)
+          rocks.setMatrixAt(rockCount++, transform.matrix)
         }
       }
+      bushes.count = bushCount
+      rocks.count = rockCount
       bushes.instanceMatrix.needsUpdate = true
       rocks.instanceMatrix.needsUpdate = true
       bushes.computeBoundingBox(); bushes.computeBoundingSphere()
@@ -515,7 +534,7 @@ function createRails(getViewerZ) {
   return { group, update }
 }
 
-function legacyPolesAndWires() {
+function legacyPolesAndWires(valleySide = VALLEY_SIDE) {
   // Preserve moving-mode infrastructure exactly for this first step: x=11.5,
   // spacing 28 m, legacy 24 drawn poles/arms and TWO complete wire runs.
   // At x=11.5 the old corridor height function is always -2.5, so py=0.75.
@@ -532,15 +551,15 @@ function legacyPolesAndWires() {
     // Legacy's array capacity is 24 although this loop produces 26 wire
     // anchors. Keep that visible result without out-of-bounds matrix writes.
     if (index < 24) {
-      dummy.position.set(11.5 * VALLEY_SIDE, 0.75, z)
+      dummy.position.set(11.5 * valleySide, 0.75, z)
       dummy.updateMatrix()
       poles.setMatrixAt(index, dummy.matrix)
-      dummy.position.set(11.5 * VALLEY_SIDE, 3.55, z)
+      dummy.position.set(11.5 * valleySide, 3.55, z)
       dummy.updateMatrix()
       arms.setMatrixAt(index, dummy.matrix)
     }
-    runs[0].push(new THREE.Vector3(10.75 * VALLEY_SIDE, 3.6, z))
-    runs[1].push(new THREE.Vector3(12.25 * VALLEY_SIDE, 3.6, z))
+    runs[0].push(new THREE.Vector3(10.75 * valleySide, 3.6, z))
+    runs[1].push(new THREE.Vector3(12.25 * valleySide, 3.6, z))
     index += 1
   }
   poles.instanceMatrix.needsUpdate = true
@@ -601,18 +620,26 @@ function createGroundTexture() {
 }
 
 export function createMoonlitValley(options = {}) {
+  const placement = {
+    valleySide: options.valleySide ?? VALLEY_SIDE,
+    omitHillSide: options.omitHillSide ?? false,
+    moonDirection: options.moonDirection ?? MOON_DIRECTION
+  }
+  const chunkCount = options.chunkCount ?? CHUNK_COUNT
+  const aheadChunks = options.chunkCount === undefined ? AHEAD_CHUNKS : Math.floor(chunkCount / 2)
   const group = new THREE.Group()
   group.name = 'outdoor-environment'
+  group.position.set(options.offsetX ?? 0, options.offsetY ?? 0, 0)
   const groundTexture = createGroundTexture()
   const material = new THREE.MeshLambertMaterial({
     color: 0x243b33, map: groundTexture, vertexColors: true, fog: true
   })
-  const chunks = Array.from({ length: CHUNK_COUNT }, () => createChunk(material))
-  const getViewerZ = options.getViewerZ || (() => 0)
+  const chunks = Array.from({ length: chunkCount }, () => createChunk(material, placement))
+  const getViewerZ = options.centerZ !== undefined ? (() => options.centerZ) : options.getViewerZ || (() => 0)
   const viewerZ = { value: getViewerZ() }
   addSceneryFade(material, viewerZ, 'ground')
   let travel = 0
-  let baseIndex = Math.floor(getViewerZ() / CHUNK_LENGTH) - AHEAD_CHUNKS
+  let baseIndex = Math.floor(getViewerZ() / CHUNK_LENGTH) - aheadChunks
   chunks.forEach((chunk, i) => {
     rebuildChunk(chunk, baseIndex + i)
     chunk.group.position.z = chunk.index * CHUNK_LENGTH
@@ -622,20 +649,32 @@ export function createMoonlitValley(options = {}) {
     chunk.onRecycle.add(callback)
     return () => chunk.onRecycle.delete(callback)
   }
-  const forest = createForest(chunks, onChunkRecycle, viewerZ)
-  const coverTexture = createGroundCover(chunks, onChunkRecycle, forest.geometry, viewerZ)
-  const mountains = createMountainRing(options.fogColor, getViewerZ)
-  const rails = createRails(getViewerZ)
-  group.add(mountains.group, rails.group)
-  const trackside = legacyPolesAndWires()
-  group.add(trackside)
-  const speed = options.speed || 35
+  const forest = createForest(chunks, onChunkRecycle, viewerZ, placement)
+  const coverTexture = createGroundCover(chunks, onChunkRecycle, forest.geometry, viewerZ, placement)
+  const mountains = createMountainRing(options.fogColor, getViewerZ, placement.moonDirection)
+  const rails = options.rails === false ? null : createRails(getViewerZ)
+  group.add(mountains.group)
+  if (rails) group.add(rails.group)
+  const trackside = options.poles === false ? null : legacyPolesAndWires(placement.valleySide)
+  if (trackside) group.add(trackside)
+  const speed = options.speed ?? 35
   let disposed = false
+
+  // Full allocated main-pass budget, including instance counts (before culling).
+  const stats = { drawCalls: 0, triangles: 0 }
+  group.traverse((node) => {
+    if (!node.isMesh || (node.isInstancedMesh && node.count === 0)) return
+    stats.drawCalls += 1
+    stats.triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3 * (node.isInstancedMesh ? node.count : 1)
+  })
+  group.userData.drawCalls = stats.drawCalls
+  group.userData.triangles = stats.triangles
 
   return {
     group,
+    stats,
     chunks,
-    heightAt: valleyHeightAt,
+    heightAt: (x, z) => valleyHeightAt(x, z, placement.valleySide),
     surfaceHeightAt,
     // Future props live in a chunk's local coordinates. Register a recycle
     // callback to reseed/re-anchor them when this group gets a new world index.
@@ -647,25 +686,26 @@ export function createMoonlitValley(options = {}) {
     onChunkRecycle,
     update(delta) {
       if (disposed) return
+      if (options.static === true || speed === 0) return
       travel += delta * speed // Signed scenery delta eases forward, stopped or backward.
-      const desiredBase = Math.floor((getViewerZ() - travel) / CHUNK_LENGTH) - AHEAD_CHUNKS
+      const desiredBase = Math.floor((getViewerZ() - travel) / CHUNK_LENGTH) - aheadChunks
       // Integer world indices work in either direction. Rebuild AT MOST ONE
       // existing buffer per frame; eleven groups always remain adjacent. Large
       // teleports catch up across frames instead of rebuilding all eleven at once.
       if (desiredBase < baseIndex) {
-        rebuildChunk(chunks.find((chunk) => chunk.index === baseIndex + CHUNK_COUNT - 1), baseIndex - 1)
+        rebuildChunk(chunks.find((chunk) => chunk.index === baseIndex + chunkCount - 1), baseIndex - 1)
         baseIndex -= 1
       } else if (desiredBase > baseIndex) {
-        rebuildChunk(chunks.find((chunk) => chunk.index === baseIndex), baseIndex + CHUNK_COUNT)
+        rebuildChunk(chunks.find((chunk) => chunk.index === baseIndex), baseIndex + chunkCount)
         baseIndex += 1
       }
       for (const chunk of chunks) chunk.group.position.z = chunk.index * CHUNK_LENGTH + travel
       // Poles intentionally retain their old wrap for now, driven by the SAME
       // accumulated travel. Forests move with their owning terrain chunks.
-      trackside.position.z = ((travel % 28) + 28) % 28 - 14
+      if (trackside) trackside.position.z = ((travel % 28) + 28) % 28 - 14
       viewerZ.value = getViewerZ()
       mountains.update()
-      rails.update()
+      rails?.update()
     },
     dispose() {
       if (disposed) return

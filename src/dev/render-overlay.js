@@ -543,24 +543,11 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     playerView?.snap()
   }
 
-  // Platform side of the locomotive nose, on the concourse, facing the train.
-  // The playable station clamps X/Z, so a nose that has already rolled past
-  // the platform end still drops the player on the platform beside it.
+  // Shift+6: just inside the hall-to-platform entrance, facing along +Z.
+  // Clear of the hall side walls, rear-wall jambs and first gameplay gate.
   function teleportBesideLocomotive() {
-    const loco = worldScene?.getObjectByName('locomotive')
-    const mesh = loco?.getObjectByProperty?.('isMesh', true) ?? null
-    let x = stationBounds.maxX - 0.35
-    let z = stationBounds.maxZ - 0.4
-    if (mesh) {
-      locoBox.setFromObject(mesh)
-      x = Math.min(stationBounds.maxX - 0.35, locoBox.min.x - 1.2)
-      z = THREE.MathUtils.clamp(locoBox.max.z, stationBounds.minZ + 0.4, stationBounds.maxZ - 0.4)
-    } else {
-      console.warn('[dev overlay] teleport train: locomotive not in the scene yet')
-    }
-    x = THREE.MathUtils.clamp(x, stationBounds.minX + 0.4, stationBounds.maxX - 0.35)
-    placePlayer(new THREE.Vector3(x, 0, z), TRAIN_YAW, 0.12)
-    console.log(`[dev overlay] teleport train (${x.toFixed(1)}, 0, ${z.toFixed(1)})`)
+    placePlayer(new THREE.Vector3(-3.5, 0, -24.5), 0, 0.12)
+    console.log('[dev overlay] teleport platform start (-3.5, 0, -24.5)')
   }
 
   function teleportToSpawn() {

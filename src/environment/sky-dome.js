@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { SUN_DIRECTION } from './station-blockout.js'
+import { SUN_DIRECTION, PLATFORM_MOON_DIRECTION } from './station-blockout.js'
 import { disposeObject } from '../core/dispose.js'
 import { SKY_EVALUATE_GLSL } from '../shaders/sky-evaluate.js'
 
@@ -111,6 +111,12 @@ const PRESETS = {
     horizon: 0x3a4a58,
     zenith: 0x1a2838
   }
+}
+
+// A separate record: none of the established level presets is mutated.
+PRESETS['boarding-platform'] = {
+  ...PRESETS['moving-heist'],
+  moonDirection: PLATFORM_MOON_DIRECTION.clone()
 }
 
 function timeScaleOf(timeSystem) {
@@ -352,6 +358,49 @@ export function createSkyDome(presetName) {
   const baseHorizon = new THREE.Color(preset.horizon)
   const baseZenith = new THREE.Color(preset.zenith)
   const baseGlow = new THREE.Color(0xffe0b0)
+  let presetBlend = null
+
+  // Only callers opting in use this path. Blend the existing shader uniforms,
+  // retaining the sky clock, ground mask and material/depth settings.
+  function setPreset(name, seconds = 0) {
+    const next = PRESETS[name]
+    if (!next) throw new Error(`sky-dome: unknown preset "${name}"`)
+    const targets = {
+      uSkyGain: next.skyGain, uHighlightCompress: next.highlightCompress,
+      uSaturation: next.saturation, uTurbidity: next.turbidity,
+      uRayleigh: next.rayleigh, uMieCoefficient: next.mieCoefficient,
+      uMieDirectionalG: next.mieDirectionalG, uShowSunDisc: next.showSunDisc,
+      uMoonStrength: next.moonStrength, uMoonSize: next.moonSize ?? 1,
+      uMoonSoftGlow: next.moonSoftGlow ?? 0, uNightLift: next.nightLift,
+      uStarDensity: next.starDensity, uStarBrightness: next.starBrightness,
+      uCloudAmount: next.cloudAmount, uCloudSpeed: next.cloudSpeed,
+      uGlitch: next.glitch, uSunDirection: next.sunDirection,
+      uMoonDirection: next.moonDirection,
+      uHorizonColor: new THREE.Color(next.horizon),
+      uZenithColor: new THREE.Color(next.zenith)
+    }
+    const starts = Object.fromEntries(Object.keys(targets).map((key) => {
+      const value = uniforms[key].value
+      return [key, value?.clone ? value.clone() : value]
+    }))
+    presetBlend = { starts, targets, seconds, elapsed: 0 }
+    if (seconds <= 0) blendPreset(1)
+  }
+
+  function blendPreset(amount) {
+    const { starts, targets } = presetBlend
+    for (const [key, target] of Object.entries(targets)) {
+      const uniform = uniforms[key]
+      if (target?.isColor) uniform.value.copy(starts[key]).lerp(target, amount)
+      else if (target?.isVector3) uniform.value.copy(starts[key]).lerp(target, amount).normalize()
+      else uniform.value = THREE.MathUtils.lerp(starts[key], target, amount)
+    }
+    if (amount >= 1) {
+      baseHorizon.copy(uniforms.uHorizonColor.value)
+      baseZenith.copy(uniforms.uZenithColor.value)
+      presetBlend = null
+    }
+  }
 
   function setLook({ horizon, zenith, glow, glitch, starBrightness, grade } = {}) {
     if (horizon) uniforms.uHorizonColor.value.copy(horizon)
@@ -364,6 +413,11 @@ export function createSkyDome(presetName) {
 
   function update(delta, timeSystem) {
     uniforms.uTime.value += delta * timeScaleOf(timeSystem)
+    if (presetBlend) {
+      presetBlend.elapsed += delta
+      const t = Math.min(1, presetBlend.elapsed / presetBlend.seconds)
+      blendPreset(t * t * (3 - 2 * t))
+    }
   }
 
   function dispose() {
@@ -389,6 +443,7 @@ export function createSkyDome(presetName) {
     baseGlitch: preset.glitch,
     update,
     setLook,
+    setPreset,
     dispose
   }
 }

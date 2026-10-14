@@ -9,10 +9,12 @@ import {
   APPROACH_CENTER_Z,
   JUNCTION_CHECKPOINT,
   updateStationSunShadow,
-  SUN_DIRECTION
+  SUN_DIRECTION,
+  PLATFORM_MOON_DIRECTION
 } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { createMoonlitValley } from '../environment/moonlit-valley.js'
 import { getBoardingAssets } from '../environment/nature-props.js'
 import { createSkyDome } from '../environment/sky-dome.js'
 import { captureSkyEnvironment } from '../environment/sky-environment.js'
@@ -135,6 +137,7 @@ export function createBoardingLevel({
 
   const nightFog = new THREE.Fog(0x121022, 40, 240)
   const plazaFog = new THREE.FogExp2(0x05060c, 0.023)
+  const platformFog = new THREE.Fog(0x1f3d63, 60, 700)
   const NIGHT_SHADER_FOG = { color: 0x121022, near: 50, far: 260, max: 0.88 }
   const PLAZA_SHADER_FOG = { color: 0x05060c, near: 20, far: 62, max: 0.98 }
 
@@ -191,10 +194,14 @@ export function createBoardingLevel({
   // Runs whenever the visible set changes; see boarding-zones.js.
   const floodIntensity = lights.spotLights.map((spot) => spot.intensity)
   function onZoneChange(zone) {
+    const onPlatform = zone.name === 'platform'
+    // Leaving the platform restores the established look immediately, including
+    // direct dev teleports to the forecourt. Entry blends over one real second.
+    sky.setPreset(onPlatform ? 'boarding-platform' : 'boarding', onPlatform ? 1 : 0)
     // The mountain floods cast no shadows, so indoors they would light the
     // passages straight through the roof.
     lights.spotLights.forEach((spot, i) => {
-      spot.intensity = zone.outdoor ? floodIntensity[i] : 0
+      spot.intensity = zone.outdoor && !onPlatform ? floodIntensity[i] : 0
     })
     // Wherever walls or buildings cover most of the screen, the sky draws
     // after them with a depth test and only shades the pixels left over.
@@ -222,6 +229,13 @@ export function createBoardingLevel({
     // box on the same frame, which switches the zone before the fade-in.
     setOutsideHidden(onPlaza)
     zones.update(viewer)
+    if (zones.zone?.name === 'platform') {
+      platformFog.color = sky.horizonColor
+      scene.fog = platformFog
+      scene.environment = platformSkyTarget?.texture ?? null
+    } else {
+      scene.environment = onPlaza ? null : skyTarget?.texture ?? null
+    }
   }
   const sky = createSkyDome('boarding')
   const outdoorEnv = createOutdoorEnvironment({
@@ -248,14 +262,95 @@ export function createBoardingLevel({
     nature: getBoardingAssets()
   })
 
-  scene.add(sky.mesh, outdoorEnv.group, station, hallDressing, train, landing.group, ...lights)
+  // Track bed bottom is -1.7: the canonical -2.5 valley ground gains 0.8 m.
+  // One-sided terrain begins at world x=13, outside the 4.4 m track bed.
+  const platformValley = createMoonlitValley({
+    static: true, speed: 0, valleySide: 1, offsetX: 7, offsetY: 0.8,
+    chunkCount: 3, centerZ: 0, omitHillSide: true, rails: false, poles: false,
+    fogColor: 0x1f3d63, moonDirection: PLATFORM_MOON_DIRECTION
+  })
+  const platformBackdrop = platformValley.group
+  platformBackdrop.visible = false
 
-  // One environment map from the sky dome. Dim, so a shadowed wall is a
-  // dark blue-grey and rough metal does not pick up a bright reflection.
-  // Regenerated only here, when the level is built.
+  // Two low sheets, with procedural alpha and soft edges. No texture, lights,
+  // collision or per-frame geometry uploads; the shared sky clock drifts noise.
+  const mistMaterial = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      { uTime: sky.timeUniform, uColor: { value: new THREE.Color(0x829eae) } }
+    ]),
+    vertexShader: `
+      varying vec2 vUv;
+      #include <common>
+      #include <fog_pars_vertex>
+      void main() {
+        vUv = uv;
+        #include <begin_vertex>
+        #include <project_vertex>
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform vec3 uColor;
+      varying vec2 vUv;
+      #include <common>
+      #include <fog_pars_fragment>
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        vec2 s = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), s.x),
+          mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), s.x), s.y);
+      }
+      void main() {
+        vec2 edge = smoothstep(vec2(0.0), vec2(0.18), vUv)
+          * smoothstep(vec2(0.0), vec2(0.18), vec2(1.0) - vUv);
+        vec2 p = vUv * vec2(7.0, 3.0) + vec2(uTime * 0.016, uTime * 0.006);
+        float density = smoothstep(0.28, 0.8, noise(p) * 0.7 + noise(p * 2.1) * 0.3);
+        gl_FragColor = vec4(uColor, 0.12 * edge.x * edge.y * density);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }
+    `,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    forceSinglePass: true, fog: true
+  })
+  // UniformsUtils.merge clones uniforms; restore this clock's shared identity.
+  mistMaterial.uniforms.uTime = sky.timeUniform
+  const mistGeometry = new THREE.PlaneGeometry(1, 1)
+  for (const [x, y, z, width, length] of [[65, 1.0, 0, 100, 260], [145, 2.4, 20, 180, 300]]) {
+    const mist = new THREE.Mesh(mistGeometry, mistMaterial)
+    mist.name = 'platform-valley-mist'
+    mist.rotation.x = -Math.PI / 2
+    mist.scale.set(width, length, 1)
+    // Parent carries the track alignment and height offset.
+    mist.position.set(x - 7, y - 0.8, z)
+    mist.raycast = () => {}
+    mist.userData.noCameraCollision = true
+    mist.userData.noInteractionBlocker = true
+    platformBackdrop.add(mist)
+  }
+  platformBackdrop.userData.drawCalls = platformValley.stats.drawCalls + 2
+  platformBackdrop.userData.triangles = platformValley.stats.triangles + 4
+  if (import.meta.env.DEV) console.info('[boarding platform backdrop]', {
+    drawCalls: platformBackdrop.userData.drawCalls,
+    triangles: platformBackdrop.userData.triangles,
+    terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 2
+  })
+
+  scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, landing.group, ...lights)
+
+  // Capture each look once. Retain the original environment map everywhere
+  // outside the platform; no per-frame capture or forecourt reflection change.
   let skyTarget = null
+  let platformSkyTarget = null
   if (renderer) {
     skyTarget = captureSkyEnvironment(renderer, sky.mesh)
+    sky.setPreset('boarding-platform')
+    platformSkyTarget = captureSkyEnvironment(renderer, sky.mesh)
+    sky.setPreset('boarding')
     scene.environment = skyTarget.texture
     scene.environmentIntensity = 0.4
   }
@@ -790,6 +885,7 @@ export function createBoardingLevel({
   zones.addRegion('train', train)
   zones.addRegion('landing', landing.group)
   zones.addRegion('outdoor', outdoorEnv.group)
+  zones.addRegion('platform-backdrop', platformBackdrop)
 
   // Sources stay hidden. These slots are the only point lights and guard
   // torches the shader ever sees, and the count does not change at runtime.
@@ -922,7 +1018,8 @@ export function createBoardingLevel({
       // have to follow it or the facade stays unlit until the run starts.
       if (viewer) {
         applyForecourtFill(viewer)
-        updateStationSunShadow(sunlight, landing.shadowFocus)
+        updateStationSunShadow(sunlight, landing.shadowFocus,
+          zones.zone?.name === 'platform' ? sky.uniforms.uMoonDirection.value : SUN_DIRECTION)
         pointPool.update(viewer, delta)
       }
     },
@@ -934,8 +1031,9 @@ export function createBoardingLevel({
     update(delta) {
       updateDoorFade(delta)
       applyForecourtFill(player.mesh.position)
-      updateStationSunShadow(sunlight, player.mesh.position)
       sky.update(delta, timeSystem)
+      updateStationSunShadow(sunlight, player.mesh.position,
+        zones.zone?.name === 'platform' ? sky.uniforms.uMoonDirection.value : SUN_DIRECTION)
       outdoorEnv.update(delta)
       landing.update(delta)
       tutorialPassage.update(delta)
@@ -1039,16 +1137,19 @@ export function createBoardingLevel({
       stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()
+      platformValley.dispose()
       sky.dispose()
       if (skyTarget) {
-        if (scene.environment === skyTarget.texture || outsideHidden) {
+        if (scene.environment === skyTarget.texture || scene.environment === platformSkyTarget?.texture || outsideHidden) {
           scene.environment = null
           scene.environmentIntensity = 1
         }
         skyTarget.dispose()
         skyTarget = null
       }
-      scene.remove(sky.mesh, outdoorEnv.group, station, hallDressing, train, landing.group, ...lights, lightPools, lampPools)
+      platformSkyTarget?.dispose()
+      platformSkyTarget = null
+      scene.remove(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, landing.group, ...lights, lightPools, lampPools)
       disposeObject([station, hallDressing, train, landing.group, ...lights, lightPools, lampPools])
     }
   }
