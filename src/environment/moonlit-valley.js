@@ -4,16 +4,17 @@ import pineCardBUrl from '../assets/textures/backdrop/pine-card-b.png'
 import broadleafCardUrl from '../assets/textures/backdrop/broadleaf-card.png'
 
 const TREE_TINT = 0x86a8a0
+// Canonical +X is the valley; -1 mirrors it to the right when facing +Z.
+const VALLEY_SIDE = -1
 const FOREST_ROWS = [[16, 24, 8], [28, 36, 11], [42, 50, 14], [58, 70, 17]]
-const UPHILL_ROWS = [[80, 110, 50], [130, 180, 50], [210, 300, 50]]
 const SHOULDER_ROWS = [[14, 40, 40]]
 const DOWNSLOPE_ROWS = [[40, 66, 40], [66, 94, 40], [94, 120, 40]]
 const VALLEY_ROWS = [[120, 210, 60]]
 const TREES_PER_CHUNK = 930
-const MOON_DIRECTION = new THREE.Vector3(0.478, 0.292, -0.828).normalize()
+const MOON_DIRECTION = new THREE.Vector3(-0.478, 0.292, 0.828).normalize()
 
 // Fog alone leaves opaque silhouettes. Fade them out before chunk recycling,
-// including the shorter rear coverage, so they cannot mask the mountain ring.
+// symmetrically in both directions, before the nearest 800 m recycle boundary.
 function addSceneryFade(material, viewerZ) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uSceneryViewerZ = viewerZ
@@ -29,9 +30,7 @@ function addSceneryFade(material, viewerZ) {
     shader.fragmentShader = 'uniform float uSceneryViewerZ;\nvarying vec3 vSceneryWorld;\n' + shader.fragmentShader
     shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', `
       #include <fog_fragment>
-      float rearFade = smoothstep(180.0, 300.0, vSceneryWorld.z - uSceneryViewerZ);
-      float farFade = smoothstep(850.0, 900.0, distance(vSceneryWorld, vec3(0.0, 5.0, uSceneryViewerZ)));
-      float sceneryFade = max(rearFade, farFade);
+      float sceneryFade = smoothstep(640.0, 780.0, distance(vSceneryWorld, vec3(0.0, 5.0, uSceneryViewerZ)));
       #ifdef USE_FOG
         gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, sceneryFade);
       #endif
@@ -39,7 +38,7 @@ function addSceneryFade(material, viewerZ) {
       if (sceneryFade > grain) discard;
     `)
   }
-  material.customProgramCacheKey = () => 'moonlit-valley-scenery-fade-v1'
+  material.customProgramCacheKey = () => 'moonlit-valley-scenery-fade-v2'
 }
 
 function createForest(chunks, onChunkRecycle, viewerZ) {
@@ -90,6 +89,7 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
     })
     let ordinal = 0
     function placeTree(x, localZ, height, belowRoof = false, shoulder = false) {
+      x *= VALLEY_SIDE
       const worldZ = chunk.index * CHUNK_LENGTH + localZ
       const base = surfaceHeightAt(chunk, x, worldZ) - 0.3
       if (belowRoof) height = Math.min(height, 3.8 - base)
@@ -102,7 +102,7 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
       const width = height * 0.5
       x = Math.sign(x) * Math.max(Math.abs(x), 8 + width * 0.5)
       transform.position.set(x, surfaceHeightAt(chunk, x, worldZ) - 0.3, localZ)
-      transform.rotation.set(0, random() * Math.PI * 2, 0)
+      transform.rotation.set(0, random() * Math.PI * 2 * VALLEY_SIDE, 0)
       transform.scale.set(width, height, width)
       transform.updateMatrix()
       const mesh = meshes[ordinal % 2]
@@ -123,26 +123,39 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
         }
       }
     }
+    function groves(count, side, minX, maxX, minHeight, heightRange, favourSlopes = false) {
+      let remaining = count
+      while (remaining > 0) {
+        const size = remaining <= 14 ? remaining : Math.min(6 + Math.floor(random() * 9), remaining - 6)
+        let centreX = minX + random() * (maxX - minX)
+        let centreZ = 12 + random() * (CHUNK_LENGTH - 24)
+        if (favourSlopes) {
+          const candidateX = minX + random() * (maxX - minX)
+          const candidateZ = 12 + random() * (CHUNK_LENGTH - 24)
+          const worldZ = chunk.index * CHUNK_LENGTH
+          const slopeAt = (x, z) => Math.abs(valleyHeightAt((side * x + 1) * VALLEY_SIDE, worldZ + z) - valleyHeightAt((side * x - 1) * VALLEY_SIDE, worldZ + z))
+          if (slopeAt(candidateX, candidateZ) > slopeAt(centreX, centreZ)) { centreX = candidateX; centreZ = candidateZ }
+        }
+        const radius = 6 + random() * 6
+        for (let i = 0; i < size; i += 1) {
+          const angle = random() * Math.PI * 2
+          const distance = radius * Math.sqrt(random())
+          const x = side * THREE.MathUtils.clamp(centreX + Math.cos(angle) * distance, minX, maxX)
+          const z = centreZ + Math.sin(angle) * distance
+          placeTree(x, z, minHeight + random() * heightRange)
+        }
+        remaining -= size
+      }
+    }
     const rebuildForest = () => {
       seed = (Math.imul(chunk.index, 374761393) ^ 0x4d6f6f) >>> 0
       ordinal = 0
       rows(FOREST_ROWS, -1, 20, 12)
-      rows(UPHILL_ROWS, -1, 16, 10)
+      groves(150, -1, 80, 300, 16, 10)
       rows(SHOULDER_ROWS, 1, 10, 8, false, true)
       rows(DOWNSLOPE_ROWS, 1, 16, 10)
       rows(VALLEY_ROWS, 1, 16, 8)
-      for (let i = 0; i < 450; i += 1) {
-        // Pick the steeper of two random sites to favour slopes without rows.
-        let x = 220 + random() * 530
-        let localZ = random() * CHUNK_LENGTH
-        const candidateX = 220 + random() * 530
-        const candidateZ = random() * CHUNK_LENGTH
-        const worldZ = chunk.index * CHUNK_LENGTH
-        const slope = Math.abs(valleyHeightAt(x + 1, worldZ + localZ) - valleyHeightAt(x - 1, worldZ + localZ))
-        const candidateSlope = Math.abs(valleyHeightAt(candidateX + 1, worldZ + candidateZ) - valleyHeightAt(candidateX - 1, worldZ + candidateZ))
-        if (candidateSlope > slope) { x = candidateX; localZ = candidateZ }
-        placeTree(x, localZ, 14 + random() * 10)
-      }
+      groves(450, 1, 220, 750, 14, 10, true)
       for (let i = 0; i < 60; i += 1) placeTree(-(10 + random() * 70), random() * CHUNK_LENGTH, 16 + random() * 10)
       for (const mesh of meshes) {
         mesh.count = Math.floor(ordinal / 2) + (mesh === meshes[0] ? ordinal % 2 : 0)
@@ -159,8 +172,8 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
 }
 
 const CHUNK_LENGTH = 160
-const CHUNK_COUNT = 9
-const AHEAD_CHUNKS = 6
+const CHUNK_COUNT = 11
+const AHEAD_CHUNKS = 5
 const HALF_WIDTH = 450
 const RIGHT_WIDTH = 900
 const X_SEGMENTS = 160
@@ -184,6 +197,7 @@ function smooth(a, b, x) {
 // One continuous world-space surface for ALL chunks and future attached props.
 // No Boarding footprint/depression is included. The moving train is at x=0.
 export function valleyHeightAt(x, worldZ) {
+  x *= VALLEY_SIDE
   if (x > 0) {
     const shoulder = -2.5 - 3.5 * smooth(10, 40, x)
     const floor = shoulder - 39 * smooth(40, 120, x)
@@ -212,7 +226,7 @@ function createChunk(material) {
   const position = geometry.attributes.position
   for (let i = 0; i < position.count; i += 1) {
     const u = position.getX(i) / HALF_WIDTH
-    position.setX(i, Math.sign(u) * Math.pow(Math.abs(u), 1.6) * (u > 0 ? RIGHT_WIDTH : HALF_WIDTH))
+    position.setX(i, Math.sign(u) * Math.pow(Math.abs(u), 1.6) * (u * VALLEY_SIDE > 0 ? RIGHT_WIDTH : HALF_WIDTH))
   }
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(position.count * 3), 3))
   geometry.computeBoundingBox()
@@ -234,21 +248,26 @@ function rebuildChunk(chunk, index) {
   const position = chunk.geometry.attributes.position
   const normal = chunk.geometry.attributes.normal
   const color = chunk.geometry.attributes.color
+  const uv = chunk.geometry.attributes.uv
   for (let i = 0; i < position.count; i += 1) {
     const x = position.getX(i)
     const worldZ = index * CHUNK_LENGTH + position.getZ(i)
     position.setY(i, valleyHeightAt(x, worldZ))
+    // Unscrolled coordinates keep the repeating texture attached to the ground.
+    uv.setXY(i, x / 14, worldZ / 14)
     // Evaluate the SAME height gradient on both sides of each edge. Per-mesh
     // computeVertexNormals() would give the two edge rows different normals.
     const dx = (valleyHeightAt(x + NORMAL_STEP, worldZ) - valleyHeightAt(x - NORMAL_STEP, worldZ)) / (2 * NORMAL_STEP)
     const dz = (valleyHeightAt(x, worldZ + NORMAL_STEP) - valleyHeightAt(x, worldZ - NORMAL_STEP)) / (2 * NORMAL_STEP)
     const length = Math.hypot(dx, 1, dz)
     normal.setXYZ(i, -dx / length, 1 / length, -dz / length)
-    const variation = Math.sin(x * 0.013 + worldZ * 0.008 + PHASE_B) * 0.08 +
-      Math.cos(x * 0.005 - worldZ * 0.014 + PHASE_C) * 0.04
+    const sideX = x * VALLEY_SIDE
+    const variation = Math.sin(sideX * 0.013 + worldZ * 0.008 + PHASE_B) * 0.08 +
+      Math.cos(sideX * 0.005 - worldZ * 0.014 + PHASE_C) * 0.04
     const facingMoon = Math.max(0, (-dx * MOON_DIRECTION.x + MOON_DIRECTION.y - dz * MOON_DIRECTION.z) / length)
-    const tint = THREE.MathUtils.clamp(0.43 + variation * 0.6, 0.35, 0.55) + facingMoon * 0.08
-    const wet = x > 0 ? smooth(100, 120, x) * (1 - smooth(210, 240, x)) : 0
+    const forestShade = sideX < -10 || sideX > 210 ? 0.85 : 1
+    const tint = (THREE.MathUtils.clamp(0.30 + variation * 0.4, 0.22, 0.38) + facingMoon * 0.06) * forestShade
+    const wet = sideX > 0 ? smooth(100, 120, sideX) * (1 - smooth(210, 240, sideX)) : 0
     const ballast = 1 - smooth(4, 6, Math.abs(x))
     const red = tint * (0.65 - wet * 0.15)
     const green = tint * (0.85 - wet * 0.25)
@@ -259,6 +278,7 @@ function rebuildChunk(chunk, index) {
   position.needsUpdate = true
   normal.needsUpdate = true
   color.needsUpdate = true
+  uv.needsUpdate = true
   chunk.geometry.computeBoundingBox()
   chunk.geometry.computeBoundingSphere()
   // Future tree/rock batches rebuild their own placement only when their
@@ -272,7 +292,7 @@ function surfaceHeightAt(chunk, x, worldZ) {
   const positions = chunk.geometry.attributes.position
   const localZ = THREE.MathUtils.clamp(worldZ - chunk.index * CHUNK_LENGTH, 0, CHUNK_LENGTH)
   const row = Math.min(Z_SEGMENTS - 1, Math.floor(localZ / (CHUNK_LENGTH / Z_SEGMENTS)))
-  const clampedX = THREE.MathUtils.clamp(x, -HALF_WIDTH, RIGHT_WIDTH)
+  const clampedX = THREE.MathUtils.clamp(x, VALLEY_SIDE === 1 ? -HALF_WIDTH : -RIGHT_WIDTH, VALLEY_SIDE === 1 ? RIGHT_WIDTH : HALF_WIDTH)
   let column = 0
   while (column < X_SEGMENTS - 1 && positions.getX(column + 1) < clampedX) column += 1
   const a = row * (X_SEGMENTS + 1) + column
@@ -420,12 +440,12 @@ function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
       for (let i = 0; i < 120; i += 1) {
         const height = 1.2 + random() * 2.3
         const width = height * 0.5
-        const x = (i % 2 ? 1 : -1) * (i < 48
+        const x = VALLEY_SIDE * (i % 2 ? 1 : -1) * (i < 48
           ? 4 + width * 0.5 + random() * (10 - width * 0.5)
           : i < 72 ? 14 + random() * 26 : 40 + random() * 80)
         const z = random() * CHUNK_LENGTH
         transform.position.set(x, surfaceHeightAt(chunk, x, chunk.index * CHUNK_LENGTH + z) - 0.1, z)
-        transform.rotation.set(0, random() * Math.PI * 2, 0)
+        transform.rotation.set(0, random() * Math.PI * 2 * VALLEY_SIDE, 0)
         transform.scale.set(width, height, width)
         transform.updateMatrix()
         bushes.setMatrixAt(i, transform.matrix)
@@ -439,10 +459,10 @@ function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
           const rawX = centreX + (random() - 0.5) * 6
           const size = 0.4 + random() * (Math.abs(rawX) < 20 ? 1.2 : 1.8)
           const scaleY = size * (0.5 + random() * 0.3)
-          const x = side * THREE.MathUtils.clamp(Math.abs(rawX), 5 + size, 120 - size)
+          const x = VALLEY_SIDE * side * THREE.MathUtils.clamp(Math.abs(rawX), 5 + size, 120 - size)
           const z = THREE.MathUtils.clamp(centreZ + (random() - 0.5) * 6, 0, CHUNK_LENGTH)
           transform.position.set(x, surfaceHeightAt(chunk, x, chunk.index * CHUNK_LENGTH + z) + scaleY * 0.5, z)
-          transform.rotation.set((random() - 0.5) * 0.1, random() * Math.PI * 2, (random() - 0.5) * 0.1)
+          transform.rotation.set((random() - 0.5) * 0.1, random() * Math.PI * 2 * VALLEY_SIDE, (random() - 0.5) * 0.1 * VALLEY_SIDE)
           transform.scale.set(size, scaleY, size)
           transform.updateMatrix()
           rocks.setMatrixAt(cluster * 3 + k, transform.matrix)
@@ -496,15 +516,15 @@ function legacyPolesAndWires() {
     // Legacy's array capacity is 24 although this loop produces 26 wire
     // anchors. Keep that visible result without out-of-bounds matrix writes.
     if (index < 24) {
-      dummy.position.set(11.5, 0.75, z)
+      dummy.position.set(11.5 * VALLEY_SIDE, 0.75, z)
       dummy.updateMatrix()
       poles.setMatrixAt(index, dummy.matrix)
-      dummy.position.set(11.5, 3.55, z)
+      dummy.position.set(11.5 * VALLEY_SIDE, 3.55, z)
       dummy.updateMatrix()
       arms.setMatrixAt(index, dummy.matrix)
     }
-    runs[0].push(new THREE.Vector3(10.75, 3.6, z))
-    runs[1].push(new THREE.Vector3(12.25, 3.6, z))
+    runs[0].push(new THREE.Vector3(10.75 * VALLEY_SIDE, 3.6, z))
+    runs[1].push(new THREE.Vector3(12.25 * VALLEY_SIDE, 3.6, z))
     index += 1
   }
   poles.instanceMatrix.needsUpdate = true
@@ -523,11 +543,53 @@ function legacyPolesAndWires() {
   return group
 }
 
+function createGroundTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 256
+  const context = canvas.getContext('2d')
+  const image = context.createImageData(256, 256)
+  const hash = (x, y, period) => {
+    x = ((x % period) + period) % period
+    y = ((y % period) + period) % period
+    const value = Math.sin(x * 127.1 + y * 311.7 + SEED) * 43758.5453
+    return value - Math.floor(value)
+  }
+  const noise = (x, y, period) => {
+    const ix = Math.floor(x), iy = Math.floor(y)
+    const fx = smooth(0, 1, x - ix), fy = smooth(0, 1, y - iy)
+    const a = THREE.MathUtils.lerp(hash(ix, iy, period), hash(ix + 1, iy, period), fx)
+    const b = THREE.MathUtils.lerp(hash(ix, iy + 1, period), hash(ix + 1, iy + 1, period), fx)
+    return THREE.MathUtils.lerp(a, b, fy)
+  }
+  for (let y = 0; y < 256; y += 1) {
+    for (let x = 0; x < 256; x += 1) {
+      const value = noise(x / 64, y / 64, 4) * 0.5 + noise(x / 32, y / 32, 8) * 0.25 +
+        noise(x / 16, y / 16, 16) * 0.15 + noise(x / 8, y / 8, 32) * 0.1
+      const speckle = (hash(x, y, 256) - 0.5) * 12
+      const offset = (y * 256 + x) * 4
+      image.data[offset] = 72 + value * 38 + speckle
+      image.data[offset + 1] = 80 + value * 32 + speckle
+      image.data[offset + 2] = 55 + value * 27 + speckle
+      image.data[offset + 3] = 255
+    }
+  }
+  context.putImageData(image, 0, 0)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+  texture.generateMipmaps = true
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.anisotropy = 4 // Three.js clamps this to the renderer's supported maximum.
+  return texture
+}
+
 export function createMoonlitValley(options = {}) {
   const group = new THREE.Group()
   group.name = 'outdoor-environment'
+  const groundTexture = createGroundTexture()
   const material = new THREE.MeshStandardMaterial({
-    color: 0x243b33, vertexColors: true, roughness: 1, metalness: 0, fog: true
+    color: 0x243b33, map: groundTexture, vertexColors: true, roughness: 1, metalness: 0, fog: true
   })
   const chunks = Array.from({ length: CHUNK_COUNT }, () => createChunk(material))
   const getViewerZ = options.getViewerZ || (() => 0)
@@ -572,8 +634,8 @@ export function createMoonlitValley(options = {}) {
       travel += delta * speed // Signed scenery delta eases forward, stopped or backward.
       const desiredBase = Math.floor((getViewerZ() - travel) / CHUNK_LENGTH) - AHEAD_CHUNKS
       // Integer world indices work in either direction. Rebuild AT MOST ONE
-      // existing buffer per frame; nine groups always remain adjacent. Large
-      // teleports catch up across frames instead of rebuilding all nine at once.
+      // existing buffer per frame; eleven groups always remain adjacent. Large
+      // teleports catch up across frames instead of rebuilding all eleven at once.
       if (desiredBase < baseIndex) {
         rebuildChunk(chunks.find((chunk) => chunk.index === baseIndex + CHUNK_COUNT - 1), baseIndex - 1)
         baseIndex -= 1
@@ -597,6 +659,7 @@ export function createMoonlitValley(options = {}) {
       forest.materials.forEach((material) => material.dispose())
       forest.textures.forEach((texture) => texture.dispose())
       coverTexture.dispose()
+      groundTexture.dispose()
       const geometries = new Set()
       const materials = new Set()
       group.traverse((node) => {

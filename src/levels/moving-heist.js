@@ -67,7 +67,7 @@ const ROOF_GROUND_COLOR = 0x141a24
 const ROOF_SKY_INTENSITY = 1.1
 // Game-lighting cheat: light camera-facing surfaces from the right/rear;
 // the visible moon keeps its independent direction in the sky preset.
-const ROOF_MOON_DIRECTION = new THREE.Vector3(0.75, 0.6, 0.28).normalize()
+const ROOF_MOON_DIRECTION = new THREE.Vector3(-0.75, 0.6, -0.28).normalize()
 
 function createChronoCore() {
   const core = new THREE.Group()

@@ -75,7 +75,7 @@ const PRESETS = {
     saturation: 1,
     sunDirection: new THREE.Vector3(0.2, -0.28, -0.55).normalize(),
     showSunDisc: 0,
-    moonDirection: new THREE.Vector3(0.478, 0.292, -0.828).normalize(),
+    moonDirection: new THREE.Vector3(-0.478, 0.292, 0.828).normalize(),
     moonSize: 2,
     moonSoftGlow: 1,
     moonStrength: 1,
