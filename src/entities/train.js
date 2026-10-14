@@ -438,6 +438,69 @@ function countVisual(root) {
   return { drawCalls, triangles: Math.round(triangles) }
 }
 
+// Objective cues are siblings of the interaction target, so highlighting the
+// door cannot change their materials. Train-local coordinates keep alignment
+// with the gap; the existing level teardown disposes both meshes/materials.
+function createBoardingMarker(doorZ) {
+  const group = new THREE.Group()
+  group.name = 'boarding-objective-marker'
+  const time = { value: 0 }
+  const vertexShader = `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `
+  const fragmentShader = `
+    uniform float uTime;
+    uniform float uFloor;
+    uniform float uOpacity;
+    uniform vec3 uGold;
+    varying vec2 vUv;
+    void main() {
+      vec2 p = vUv * 2.0 - 1.0;
+      vec2 q = abs(p) - vec2(0.72, 0.80);
+      float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.12;
+      float halo = exp(-pow(d / 0.09, 2.0));
+      float fill = 1.0 - smoothstep(-0.12, 0.08, d);
+      float ring = halo * 0.8 + fill * 0.12;
+      float edges = smoothstep(0.0, 0.18, vUv.x) * smoothstep(0.0, 0.18, 1.0-vUv.x)
+        * smoothstep(0.0, 0.12, vUv.y) * smoothstep(0.0, 0.12, 1.0-vUv.y);
+      float shimmer = edges * (0.88 + 0.12 * sin(vUv.y * 18.0 - uTime * 1.5));
+      float pulse = 0.8 + 0.2 * cos(uTime * 6.28318530718 / 1.6);
+      float alpha = mix(shimmer, ring, uFloor) * uOpacity * pulse;
+      gl_FragColor = vec4(uGold * 1.8, alpha);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }
+  `
+  const addCue = (name, width, height, floor, opacity) => {
+    const material = new THREE.ShaderMaterial({
+      uniforms: { uTime: time, uFloor: { value: floor }, uOpacity: { value: opacity },
+        uGold: { value: new THREE.Color(0xffcd75) } },
+      vertexShader, fragmentShader,
+      transparent: true, blending: THREE.AdditiveBlending,
+      depthWrite: false, depthTest: true, side: THREE.DoubleSide, fog: false
+    })
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material)
+    mesh.name = name
+    mesh.userData.decor = true
+    mesh.userData.noInteractionBlocker = true
+    mesh.userData.noCameraCollision = true
+    mesh.raycast = () => {}
+    group.add(mesh)
+    return mesh
+  }
+  const floor = addCue('boarding-objective-floor', 0.9, 1.6, 1, 0.42)
+  floor.rotation.x = -Math.PI / 2
+  floor.position.set(4.45 - TRACK_X, 0.025 - TRACK_LEVEL, doorZ)
+  const shimmer = addCue('boarding-objective-doorway', DOOR_WIDTH - 0.06, DOOR_TOP - BODY_BOTTOM, 0, 0.18)
+  shimmer.rotation.y = -Math.PI / 2
+  shimmer.position.set(-BODY_HALF - 0.08, (DOOR_TOP + BODY_BOTTOM) / 2, doorZ)
+  return { group, update: delta => { time.value += delta } }
+}
+
 export function createTrain() {
   const k = getKitMaterials()
   const train = new THREE.Group()
@@ -502,6 +565,8 @@ export function createTrain() {
   const { door, hinge } = createBoardingDoor(k)
   door.position.z = doorZ
   train.add(door)
+  const boardingMarker = createBoardingMarker(doorZ)
+  train.add(boardingMarker.group)
 
   // Hidden boxes so interaction rays stop at the bodies. The door target
   // stands just outside its car's box.
@@ -529,10 +594,12 @@ export function createTrain() {
 
   let doorTarget = DOOR_OPEN_ANGLE
   function closeDoor() {
+    boardingMarker.group.visible = false
     doorTarget = 0
   }
 
   function update(delta) {
+    boardingMarker.update(delta)
     for (const steam of steams) steam.update(delta)
     if (hinge.rotation.y > doorTarget) hinge.rotation.y = Math.max(doorTarget, hinge.rotation.y - delta * 3.4)
   }
