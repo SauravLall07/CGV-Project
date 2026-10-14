@@ -75,7 +75,8 @@ const PRESETS = {
     saturation: 1,
     sunDirection: new THREE.Vector3(0.2, -0.28, -0.55).normalize(),
     showSunDisc: 0,
-    moonDirection: new THREE.Vector3(0.36, 0.36, -0.86).normalize(),
+    moonDirection: new THREE.Vector3(0.49, 0.225, -0.844).normalize(),
+    moonSize: 2,
     moonStrength: 1,
     nightLift: 0.95,
     starDensity: 0.022,
@@ -160,6 +161,7 @@ export function createSkyDome(presetName) {
     // 1 draws the moon disc and lights the clouds from it. Boarding's moon
     // matches the shadow-casting moonlight.
     uMoonStrength: { value: preset.moonStrength },
+    uMoonSize: { value: preset.moonSize ?? 1 },
     // Extra deep-blue lift once the sun is below the horizon. Preetham has
     // no moonlight, so without this the night sky falls to black.
     uNightLift: { value: preset.nightLift },

@@ -6,6 +6,8 @@
 // cut (a hard vertical seam). A direction on the sphere does not.
 
 export const SKY_EVALUATE_GLSL = /* glsl */ `
+  // Unbound consumers (the legacy lake) default to zero: retain the old size.
+  uniform float uMoonSize;
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -129,6 +131,9 @@ export const SKY_EVALUATE_GLSL = /* glsl */ `
     skyColor += (warm + cool) * streak * uCloudAmount;
 
     float moonFacing = dot(direction, moonDir);
+    if (uMoonSize > 1.0) {
+      moonFacing = 1.0 - (1.0 - moonFacing) / (uMoonSize * uMoonSize);
+    }
     // Disc is about 1.5° across. The halo is a thin ring just outside it.
     // The disc used to be written at 5× linear, which bloom turned into a
     // blob. It now sits just above the bloom threshold, so the disc stays

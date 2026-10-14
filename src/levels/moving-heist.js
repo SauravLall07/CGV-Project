@@ -331,7 +331,7 @@ export function createMovingHeistLevel({
   // under the moon. The dome itself is unfogged, so the stars stay visible.
   // The clear stays dark so the minimap inset does not fill with the sky.
   scene.background = new THREE.Color(0x1a1a2e)
-  scene.fog = new THREE.Fog(sky.horizonColor, 80, 1000)
+  scene.fog = new THREE.Fog(sky.horizonColor, 70, 900)
   scene.fog.color = sky.horizonColor
 
   // Geometry that can block the Passenger guard's vision.
