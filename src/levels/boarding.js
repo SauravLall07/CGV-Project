@@ -8,10 +8,12 @@ import {
   APPROACH_START_X,
   APPROACH_CENTER_Z,
   JUNCTION_CHECKPOINT,
-  updateStationSunShadow
+  updateStationSunShadow,
+  SUN_DIRECTION
 } from '../environment/station-blockout.js'
 import { createTrain } from '../entities/train.js'
-import { createTreeLine } from '../environment/tree-line.js'
+import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { getBoardingAssets } from '../environment/nature-props.js'
 import { createSkyDome } from '../environment/sky-dome.js'
 import { captureSkyEnvironment } from '../environment/sky-environment.js'
 import { createTutorialPassage } from '../environment/passageways/passage-tutorial.js'
@@ -133,6 +135,8 @@ export function createBoardingLevel({
 
   const nightFog = new THREE.Fog(0x121022, 40, 240)
   const plazaFog = new THREE.FogExp2(0x05060c, 0.023)
+  const NIGHT_SHADER_FOG = { color: 0x121022, near: 50, far: 260, max: 0.88 }
+  const PLAZA_SHADER_FOG = { color: 0x05060c, near: 20, far: 62, max: 0.98 }
 
   // Guards, cameras and lasers are added to the scene later, not under the
   // station group. The zones place them by where they stand.
@@ -197,8 +201,8 @@ export function createBoardingLevel({
     // after them with a depth test and only shades the pixels left over.
     sky.mesh.material.depthTest = !zone.outdoor
     sky.mesh.renderOrder = zone.outdoor ? -1000 : 1000
-    // The landing is shown only on the cobbles; its hidden lamps must not
-    // take pool slots from the station's.
+    // Off the cobbles the landing is only scenery across the track; its
+    // lamps would take pool slots from the station's.
     for (const light of landingPointLights) light.userData.lightPoolOff = zone.name !== 'plaza'
   }
   const zones = createZoneVisibility({
@@ -213,8 +217,9 @@ export function createBoardingLevel({
     if (ambientFill) ambientFill.intensity = onPlaza ? 0.01 : FORECOURT_FILL.ambient
     scene.environmentIntensity = onPlaza ? 0.06 : FORECOURT_FILL.environment
     scene.fog = onPlaza ? plazaFog : nightFog
-    // The platform, train and tree line are hidden on the cobbles. The sky
-    // and landing stay. The door teleport leaves this
+    outdoorEnv.setFog(onPlaza ? PLAZA_SHADER_FOG : NIGHT_SHADER_FOG)
+    // Not drawn at all past the cobbles: terrain, ranges, the platform and
+    // the train. The sky and the landing stay. The door teleport leaves this
     // box on the same frame, which switches the zone before the fade-in.
     setOutsideHidden(onPlaza)
     zones.update(viewer)
@@ -228,9 +233,31 @@ export function createBoardingLevel({
   })
   // New Game and the title start on the forecourt; zones enable it off the plaza.
   sky.uniforms.uMountainStrength.value = 0
-  const treeLine = createTreeLine()
+  const outdoorEnv = createOutdoorEnvironment({
+    mode: 'station',
+    stationSpotLights: lights.spotLights,
+    // Darker than the sky's purple horizon tint, so the mountain fades out
+    // instead of picking up the afterglow.
+    fogColor: 0x121022,
+    sunPosition: SUN_DIRECTION,
+    // Terrain and trees ignore the real directional light. This is the
+    // same moonlight colour, at 3×, so the hills pick up its shading.
+    sunColor: new THREE.Color(0x9aafd0).multiplyScalar(3),
+    skyColor: 0x243656,
+    groundColor: 0x0c0a10,
+    fogNear: 50,
+    fogFar: 260,
+    fogMax: 0.88,
+    terrainAmbient: 0.88,
+    vegAmbient: 0.64,
+    // Same clock as the sky, so valley-light twinkle and the lake follow
+    // Slow/Freeze/Rewind. The lake also shares the sky colour uniforms.
+    skyTime: sky.timeUniform,
+    skyUniforms: sky.uniforms,
+    nature: getBoardingAssets()
+  })
 
-  scene.add(sky.mesh, treeLine.group, station, hallDressing, train, landing.group, ...lights)
+  scene.add(sky.mesh, outdoorEnv.group, station, hallDressing, train, landing.group, ...lights)
 
   // One environment map from the sky dome. Dim, so a shadowed wall is a
   // dark blue-grey and rough metal does not pick up a bright reflection.
@@ -771,7 +798,7 @@ export function createBoardingLevel({
   zones.addRegion('platform', platformRegion, regionLights[4].pools)
   zones.addRegion('train', train)
   zones.addRegion('landing', landing.group)
-  zones.addRegion('treeline', treeLine.group)
+  zones.addRegion('outdoor', outdoorEnv.group)
 
   // Sources stay hidden. These slots are the only point lights and guard
   // torches the shader ever sees, and the count does not change at runtime.
@@ -918,7 +945,7 @@ export function createBoardingLevel({
       applyForecourtFill(player.mesh.position)
       updateStationSunShadow(sunlight, player.mesh.position)
       sky.update(delta, timeSystem)
-      treeLine.update(delta)
+      outdoorEnv.update(delta)
       landing.update(delta)
       tutorialPassage.update(delta)
       guardPassage.update(delta)
@@ -1020,7 +1047,7 @@ export function createBoardingLevel({
       stationPickupUnregisters.forEach((unregister) => unregister())
       stationDistraction.dispose()
       stealth.dispose()
-      treeLine.dispose()
+      outdoorEnv.dispose()
       sky.dispose()
       if (skyTarget) {
         if (scene.environment === skyTarget.texture || outsideHidden) {
@@ -1030,7 +1057,7 @@ export function createBoardingLevel({
         skyTarget.dispose()
         skyTarget = null
       }
-      scene.remove(sky.mesh, treeLine.group, station, hallDressing, train, landing.group, ...lights, lightPools, lampPools)
+      scene.remove(sky.mesh, outdoorEnv.group, station, hallDressing, train, landing.group, ...lights, lightPools, lampPools)
       disposeObject([station, hallDressing, train, landing.group, ...lights, lightPools, lampPools])
     }
   }
