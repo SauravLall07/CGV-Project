@@ -1,4 +1,3 @@
-import { ONBOARDING_PASSAGE_BOUNDS } from '../environment/passageways/passage-onboarding.js'
 import { TUTORIAL_PASSAGE_BOUNDS } from '../environment/passageways/passage-tutorial.js'
 import { GUARD_PASSAGE_BOUNDS } from '../environment/passageways/passage-guards.js'
 import { BRIDGE_PASSAGE_BOUNDS } from '../environment/passageways/passage-bridge.js'
@@ -13,7 +12,7 @@ import { APPROACH_CENTER_Z, APPROACH_START_X, APPROACH_WIDTH } from '../environm
 // Route order: forecourt → (door) → Passageway 1 (laser training, ref 03)
 // → stairs down → Passageway 2 (guards) → vent → Passageway 3 (maintenance)
 // → stairs up → Passageway 4 (station hall, ref 02) → platform and train
-// (ref 05). Passageway 0 sits west of Passageway 1 behind a closed door.
+// (ref 05). Passageway 1 has a sealed west end.
 
 const HALL_MIN_Z = APPROACH_CENTER_Z - APPROACH_WIDTH / 2 - 0.4
 const HALL_MAX_Z = APPROACH_CENTER_Z + APPROACH_WIDTH / 2 + 0.4
@@ -29,16 +28,10 @@ const ZONES = [
     show: ['landing']
   },
   {
-    name: 'p0',
-    region: 'p0',
-    box: { ...ONBOARDING_PASSAGE_BOUNDS, minY: -1 },
-    show: ['p0', 'p1', 'outdoor']
-  },
-  {
     name: 'p1',
     region: 'p1',
     box: { ...TUTORIAL_PASSAGE_BOUNDS, minY: -6 },
-    show: ['p0', 'p1', 'p2']
+    show: ['p1', 'p2']
   },
   {
     name: 'p2',

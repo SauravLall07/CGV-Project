@@ -4,13 +4,11 @@
 
 import * as THREE from 'three'
 import { bounds as stationBounds } from '../environment/station-blockout.js'
-import { ONBOARDING_PASSAGE_SPAWN } from '../environment/passageways/passage-onboarding.js'
+import { LANDING_FIGURE } from '../environment/landing/layout.js'
 import { createGpuTimer } from './gpu-timer.js'
 
 const TIMING_WINDOW = 60
 const TRAIN_YAW = Math.PI / 2
-const SPAWN_YAW = Math.PI / 2
-const SPAWN_PITCH = -0.08
 const UNLIT_FALLBACK = new THREE.Color(0x6a6f78)
 
 export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, post } = {}) {
@@ -615,8 +613,8 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   }
 
   function teleportToSpawn() {
-    placePlayer(ONBOARDING_PASSAGE_SPAWN.clone(), SPAWN_YAW, SPAWN_PITCH)
-    const spawn = ONBOARDING_PASSAGE_SPAWN
+    const spawn = LANDING_FIGURE
+    placePlayer(new THREE.Vector3(spawn.x, spawn.y, spawn.z), spawn.yaw, spawn.pitch)
     console.log(`[dev overlay] teleport spawn (${spawn.x.toFixed(1)}, ${spawn.y.toFixed(1)}, ${spawn.z.toFixed(1)})`)
   }
 

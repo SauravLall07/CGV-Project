@@ -16,7 +16,6 @@ import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { getBoardingAssets } from '../environment/nature-props.js'
 import { createSkyDome } from '../environment/sky-dome.js'
 import { captureSkyEnvironment } from '../environment/sky-environment.js'
-import { createOnboardingPassage } from '../environment/passageways/passage-onboarding.js'
 import { createTutorialPassage } from '../environment/passageways/passage-tutorial.js'
 import { createGuardPassage } from '../environment/passageways/passage-guards.js'
 import { createBridgePassage } from '../environment/passageways/passage-bridge.js'
@@ -71,19 +70,13 @@ export function createBoardingLevel({
   // and 3 both read/write this same object, so pickups carry across the vent.
   const distractionInventory = { count: 0, max: 3 }
 
-  // Passageway 0 is a short safe onboarding gallery. Passageway 1 then opens
-  // into the existing security-training route, followed by the lower guard hall.
-  const onboardingPassage = createOnboardingPassage({
-    interaction,
-    hud,
-    player
-  })
+  // The station door enters Passageway 1 directly; its west end stays sealed.
   const tutorialPassage = createTutorialPassage({
     interaction,
     hud,
     player,
     respawn,
-    connectedToPassage0: true,
+    connectedToPassage0: false,
     connectedToPassage2: true
   })
   const guardPassage = createGuardPassage({
@@ -106,19 +99,18 @@ export function createBoardingLevel({
     distractionInventory
   })
 
-  station.add(onboardingPassage.group, tutorialPassage.group, guardPassage.group, bridgePassage.group)
+  station.add(tutorialPassage.group, guardPassage.group, bridgePassage.group)
   wallColliders.push(
-    ...onboardingPassage.colliders,
     ...tutorialPassage.colliders,
     ...guardPassage.colliders,
     ...bridgePassage.colliders
   )
 
   const levelBounds = {
-    minX: Math.min(bounds.minX, onboardingPassage.bounds.minX, tutorialPassage.bounds.minX, guardPassage.bounds.minX, bridgePassage.bounds.minX),
-    maxX: Math.max(bounds.maxX, onboardingPassage.bounds.maxX, tutorialPassage.bounds.maxX, guardPassage.bounds.maxX, bridgePassage.bounds.maxX),
-    minZ: Math.min(bounds.minZ, onboardingPassage.bounds.minZ, tutorialPassage.bounds.minZ, guardPassage.bounds.minZ, bridgePassage.bounds.minZ),
-    maxZ: Math.max(bounds.maxZ, onboardingPassage.bounds.maxZ, tutorialPassage.bounds.maxZ, guardPassage.bounds.maxZ, bridgePassage.bounds.maxZ)
+    minX: Math.min(bounds.minX, tutorialPassage.bounds.minX, guardPassage.bounds.minX, bridgePassage.bounds.minX),
+    maxX: Math.max(bounds.maxX, tutorialPassage.bounds.maxX, guardPassage.bounds.maxX, bridgePassage.bounds.maxX),
+    minZ: Math.min(bounds.minZ, tutorialPassage.bounds.minZ, guardPassage.bounds.minZ, bridgePassage.bounds.minZ),
+    maxZ: Math.max(bounds.maxZ, tutorialPassage.bounds.maxZ, guardPassage.bounds.maxZ, bridgePassage.bounds.maxZ)
   }
   // The concourse clamp (x = 4.3) stops short of the plaza. Widen the
   // rectangle, then wall off the tracks and the ground north of the platform
@@ -728,11 +720,8 @@ export function createBoardingLevel({
   )
   let junctionCheckpointActive = false
 
-  // Once the player leaves the safe onboarding gallery, make the original
-  // Passageway 1 spawn the checkpoint. A missed laser should not force them to
-  // walk the training corridor and open its door again.
+  // The station door sets this checkpoint when it teleports into Passageway 1.
   const passage1CheckpointPos = tutorialPassage.spawn.clone()
-  let passage1CheckpointActive = false
 
   // Passageway 2 is the first real stealth test. Reaching it becomes a
   // checkpoint so a learning mistake does not force the player to repeat the
@@ -757,7 +746,6 @@ export function createBoardingLevel({
   // the platform, by where each piece sits. Region groups, rather than the
   // pieces themselves, are toggled, so a collected pickup stays hidden.
   const passageGroups = new Set([
-    onboardingPassage.group,
     tutorialPassage.group,
     guardPassage.group,
     bridgePassage.group
@@ -783,7 +771,6 @@ export function createBoardingLevel({
   lampPools.name = 'lamp-floor-glows'
   scene.add(lampPools)
   const regionLights = [
-    { root: onboardingPassage.group, keep: 2, pools: new THREE.Group() },
     { root: tutorialPassage.group, keep: 3, pools: new THREE.Group() },
     { root: guardPassage.group, keep: 2, pools: new THREE.Group() },
     { root: bridgePassage.group, keep: 2, pools: new THREE.Group() },
@@ -795,12 +782,11 @@ export function createBoardingLevel({
     lampPools.add(region.pools)
   }
 
-  zones.addRegion('p0', onboardingPassage.group, regionLights[0].pools)
-  zones.addRegion('p1', tutorialPassage.group, regionLights[1].pools)
-  zones.addRegion('p2', guardPassage.group, regionLights[2].pools)
-  zones.addRegion('p3', bridgePassage.group, regionLights[3].pools)
-  zones.addRegion('p4', hallRegion, hallDressing, regionLights[4].pools)
-  zones.addRegion('platform', platformRegion, regionLights[5].pools)
+  zones.addRegion('p1', tutorialPassage.group, regionLights[0].pools)
+  zones.addRegion('p2', guardPassage.group, regionLights[1].pools)
+  zones.addRegion('p3', bridgePassage.group, regionLights[2].pools)
+  zones.addRegion('p4', hallRegion, hallDressing, regionLights[3].pools)
+  zones.addRegion('platform', platformRegion, regionLights[4].pools)
   zones.addRegion('train', train)
   zones.addRegion('landing', landing.group)
   zones.addRegion('outdoor', outdoorEnv.group)
@@ -848,7 +834,6 @@ export function createBoardingLevel({
 
   function arriveInside() {
     enteredStation = true
-    passage1CheckpointActive = true
     player.setPose(passage1CheckpointPos, Math.PI / 2)
     camera?.setYaw?.(Math.PI / 2)
     camera?.setPitch?.(0.25)
@@ -915,7 +900,7 @@ export function createBoardingLevel({
       const tutorialHeight = tutorialPassage.getGroundHeight(x, z, Number.NaN)
       if (Number.isFinite(tutorialHeight)) return tutorialHeight
 
-      return onboardingPassage.getGroundHeight(x, z, fallback)
+      return fallback
     },
 
     handleAction(action) {
@@ -953,18 +938,11 @@ export function createBoardingLevel({
       sky.update(delta, timeSystem)
       outdoorEnv.update(delta)
       landing.update(delta)
-      onboardingPassage.update(delta)
       tutorialPassage.update(delta)
       guardPassage.update(delta)
       bridgePassage.update(delta)
       stationDistraction.update(delta)
       updateTrain(delta)
-
-      if (!passage1CheckpointActive && onboardingPassage.hasExited()) {
-        passage1CheckpointActive = true
-        respawn.setCheckpoint(passage1CheckpointPos, Math.PI / 2)
-        hud?.showToast?.('Checkpoint reached — security training begins', 2000)
-      }
 
       if (!passage2CheckpointActive && guardPassage.isInsidePassage()) {
         passage2CheckpointActive = true
@@ -1054,7 +1032,6 @@ export function createBoardingLevel({
       unregisterBoarding()
       unregisterDoor()
       veil.remove()
-      onboardingPassage.dispose()
       tutorialPassage.dispose()
       guardPassage.dispose()
       bridgePassage.dispose()
