@@ -569,7 +569,7 @@ export function createMoonlitValley(options = {}) {
     onChunkRecycle,
     update(delta) {
       if (disposed) return
-      travel += delta * speed // Same positive-Z direction and unscaled delta as before.
+      travel += delta * speed // Signed scenery delta eases forward, stopped or backward.
       const desiredBase = Math.floor((getViewerZ() - travel) / CHUNK_LENGTH) - AHEAD_CHUNKS
       // Integer world indices work in either direction. Rebuild AT MOST ONE
       // existing buffer per frame; nine groups always remain adjacent. Large
@@ -584,7 +584,7 @@ export function createMoonlitValley(options = {}) {
       for (const chunk of chunks) chunk.group.position.z = chunk.index * CHUNK_LENGTH + travel
       // Poles intentionally retain their old wrap for now, driven by the SAME
       // accumulated travel. Forests move with their owning terrain chunks.
-      trackside.position.z = (travel % 28) - 14
+      trackside.position.z = ((travel % 28) + 28) % 28 - 14
       viewerZ.value = getViewerZ()
       mountains.update()
       rails.update()

@@ -324,6 +324,10 @@ export function createMovingHeistLevel({
     speed: 38.0,
     fogColor: sky.horizonColor
   })
+  let sceneryMultiplier = 1
+  let sceneryTarget = 1
+  let sceneryFrom = 1
+  let sceneryEaseTime = 0.3
   const { root, spans, roof } = env
 
   scene.add(sky.mesh, outdoorEnv.group, root)
@@ -2622,7 +2626,18 @@ export function createMovingHeistLevel({
 
     update(delta) {
       sky.update(delta, timeSystem)
-      outdoorEnv.update(delta)
+      const targetSceneryMultiplier = timeSystem.getUniforms().uTimeScale.value
+      if (targetSceneryMultiplier !== sceneryTarget) {
+        sceneryFrom = sceneryMultiplier
+        sceneryTarget = targetSceneryMultiplier
+        sceneryEaseTime = 0
+      }
+      // Real-time smoothstep reaches the signed world rate exactly in 0.3 s.
+      sceneryEaseTime = Math.min(0.3, sceneryEaseTime + delta)
+      const sceneryProgress = sceneryEaseTime / 0.3
+      const sceneryEase = sceneryProgress * sceneryProgress * (3 - 2 * sceneryProgress)
+      sceneryMultiplier = sceneryFrom + (sceneryTarget - sceneryFrom) * sceneryEase
+      outdoorEnv.update(delta * sceneryMultiplier)
       env.update(delta)
       corridorStealth.update(delta)
       lightPool.update(player.mesh.position, delta)
