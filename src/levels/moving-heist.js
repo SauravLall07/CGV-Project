@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { profiler } from '../dev/profiler.js'
 import { disposeObject } from '../core/dispose.js'
 import {
   createCarriageEnvironment,
@@ -2614,12 +2615,23 @@ export function createMovingHeistLevel({
     get isCinematic() { return taken },
 
     update(delta) {
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.sky')
       const skyDelta = sky.update(delta, timeSystem)
       sky.uniforms.uMountainYaw.value += MOUNTAIN_DRIFT_DEGREES_PER_SECOND / 360 * skyDelta
+      if (import.meta.env.DEV) profiler.end('MovingHeist.sky')
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.outdoor')
       outdoorEnv.update(delta)
+      if (import.meta.env.DEV) profiler.end('MovingHeist.outdoor')
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.carriages')
       env.update(delta)
+      if (import.meta.env.DEV) profiler.end('MovingHeist.carriages')
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.stealth')
       corridorStealth.update(delta)
+      if (import.meta.env.DEV) profiler.end('MovingHeist.stealth')
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.lightPool')
       lightPool.update(player.mesh.position, delta)
+      if (import.meta.env.DEV) profiler.end('MovingHeist.lightPool')
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.pickups')
       elapsed += delta
       // Draw the player's eye toward the Chrono Interface until collected.
       for (const pickup of powerPickups) {
@@ -2645,6 +2657,7 @@ export function createMovingHeistLevel({
           Math.sin(elapsed * 4.0) * 5
       }
       failCooldown = Math.max(0, failCooldown - delta)
+      if (import.meta.env.DEV) profiler.end('MovingHeist.pickups')
 
       const pp = player.mesh.position
       const mode = timeSystem.getMode()
@@ -2659,6 +2672,7 @@ export function createMovingHeistLevel({
         ])
       }
 
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.routeControl')
       // A replaying echo reads as a person to anything that watches for one,
       // so the Passenger guard can react to a moving temporal decoy.
       corridorStealth.setDistraction(ghost.isPlaying() ? ghost.getPosition() : null)
@@ -2732,6 +2746,8 @@ export function createMovingHeistLevel({
         pp.z = relayGateZ - 0.48
       }
 
+      if (import.meta.env.DEV) profiler.end('MovingHeist.routeControl')
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.rewindOutlines')
       // Rewind outlines: shown while a machine is away from its parked
       // position and the player is close enough for it to matter.
       for (const m of rewindMachines) {
@@ -2740,6 +2756,8 @@ export function createMovingHeistLevel({
       }
 
       // Core idle animation and shader reaction.
+      if (import.meta.env.DEV) profiler.end('MovingHeist.rewindOutlines')
+      if (import.meta.env.DEV) profiler.begin('MovingHeist.core')
       orb.rotation.y += delta * 0.7
       orb.rotation.x += delta * 0.3
       orb.position.y = 1.34 + Math.sin(elapsed * 1.6) * 0.05
@@ -2757,7 +2775,9 @@ export function createMovingHeistLevel({
           mode === 'NORMAL' ? 0.25 : 0.9
       }
       // Removing the Core is the Level 2 ending, not the emergency brake.
+      if (import.meta.env.DEV) profiler.end('MovingHeist.core')
       if (taken) {
+        if (import.meta.env.DEV) profiler.begin('MovingHeist.ending')
         destabT += delta
         root.rotation.z = Math.sin(destabT * 7) * 0.012 * Math.min(2, destabT)
         root.position.y = Math.sin(destabT * 11) * 0.012 * Math.min(1, destabT)
@@ -2767,10 +2787,12 @@ export function createMovingHeistLevel({
           root.position.y = 0
           advance()
         }
+        if (import.meta.env.DEV) profiler.end('MovingHeist.ending')
         return
       }
 
       if (section === 'interior') {
+        if (import.meta.env.DEV) profiler.begin('MovingHeist.interiorHazards')
         hint(
           'passenger',
           pp.z,
@@ -2939,6 +2961,8 @@ export function createMovingHeistLevel({
         }
 
         // Twin switches latch their door once both are weighted together.
+        if (import.meta.env.DEV) profiler.end('MovingHeist.interiorHazards')
+        if (import.meta.env.DEV) profiler.begin('MovingHeist.switchDoors')
         const stationHeld = (station) =>
           ghost.isOccupying(station.pos, 0.56) || playerOnPad(station.pos, 0.56)
         switchOne.update(stationHeld(switchOne))
@@ -2968,10 +2992,12 @@ export function createMovingHeistLevel({
         }
       }
 
+      if (import.meta.env.DEV) profiler.end('MovingHeist.switchDoors')
       roofSun.intensity = section === 'roof' ? 2.2 : 0
       roofSky.intensity = section === 'roof' ? 1.3 : 0
 
       if (section === 'roof') {
+        if (import.meta.env.DEV) profiler.begin('MovingHeist.roofHazards')
         // Slipstream streaks pulse with the gusts; SLOW calms them.
         gustPhase += delta * (mode === 'SLOW' ? 0.16 : 1)
         const gust = Math.pow(Math.max(0, Math.sin(gustPhase * 1.7)), 0.6)
@@ -3019,6 +3045,8 @@ export function createMovingHeistLevel({
           hud.showToast('Zipline brake released — it locks again the moment the lever lifts.', 3000)
         }
         if (zipRide >= 0) {
+          if (import.meta.env.DEV) profiler.end('MovingHeist.roofHazards')
+          if (import.meta.env.DEV) profiler.begin('MovingHeist.zipPlayer')
           zipRide += delta
           const k = Math.min(1, zipRide / ZIP_DURATION)
           const e = k * k * (3 - 2 * k)
@@ -3033,6 +3061,8 @@ export function createMovingHeistLevel({
             setBounds(env.roofBounds)
             player.setPose(new THREE.Vector3(ZIP_X - 0.15, ROOF_Y, zipTo), 0)
           }
+          if (import.meta.env.DEV) profiler.end('MovingHeist.zipPlayer')
+          if (import.meta.env.DEV) profiler.begin('MovingHeist.roofHazards')
         } else if (trolley.position.z !== zipFrom && pp.z < zipFrom) {
           trolley.position.set(ZIP_X, ROOF_Y + 1.2, zipFrom)
         }
@@ -3047,6 +3077,7 @@ export function createMovingHeistLevel({
         drawbridgeDown += (bridgeTarget - drawbridgeDown) * Math.min(1, delta * 2.5)
         drawbridge.rotation.x = -(1 - drawbridgeDown) * Math.PI / 2
         placeSupport(drawbridgeSupport, 0, 0.8, gapFrom, V0 + 0.2, drawbridgeDown > 0.93)
+        if (import.meta.env.DEV) profiler.end('MovingHeist.roofHazards')
       }
     },
 

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { profiler } from '../dev/profiler.js'
 import {
   createStationBlockout,
   createStationLighting,
@@ -911,17 +912,40 @@ export function createBoardingLevel({
     },
 
     update(delta) {
+      if (import.meta.env.DEV) profiler.begin('Boarding.doorFade')
       updateDoorFade(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.doorFade')
+      if (import.meta.env.DEV) profiler.begin('Boarding.zones')
       applyForecourtFill(player.mesh.position)
+      if (import.meta.env.DEV) profiler.end('Boarding.zones')
+      if (import.meta.env.DEV) profiler.begin('Boarding.sunShadow')
       updateStationSunShadow(sunlight, player.mesh.position)
+      if (import.meta.env.DEV) profiler.end('Boarding.sunShadow')
+      if (import.meta.env.DEV) profiler.begin('Boarding.sky')
       sky.update(delta, timeSystem)
+      if (import.meta.env.DEV) profiler.end('Boarding.sky')
+      if (import.meta.env.DEV) profiler.begin('Boarding.treeline')
       treeLine.update(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.treeline')
+      if (import.meta.env.DEV) profiler.begin('Boarding.landing')
       landing.update(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.landing')
+      if (import.meta.env.DEV) profiler.begin('Boarding.passage1')
       tutorialPassage.update(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.passage1')
+      if (import.meta.env.DEV) profiler.begin('Boarding.passage2')
       guardPassage.update(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.passage2')
+      if (import.meta.env.DEV) profiler.begin('Boarding.passage3')
       bridgePassage.update(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.passage3')
+      if (import.meta.env.DEV) profiler.begin('Boarding.distraction')
       stationDistraction.update(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.distraction')
+      if (import.meta.env.DEV) profiler.begin('Boarding.train')
       updateTrain(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.train')
+      if (import.meta.env.DEV) profiler.begin('Boarding.checkpoints')
 
       if (!passage2CheckpointActive && guardPassage.isInsidePassage()) {
         passage2CheckpointActive = true
@@ -983,12 +1007,19 @@ export function createBoardingLevel({
       }
 
       if (isBoardingCinematic) {
+        if (import.meta.env.DEV) profiler.end('Boarding.checkpoints')
+        if (import.meta.env.DEV) profiler.begin('Boarding.departure')
         cinematicTimer += delta
         // Same +Z roll as before (~19 m over 2.4 s). The track is centered on
         // the scaled consist, so the nose still has rail under it as it leaves.
         train.position.z += delta * (cinematicTimer * 6.5)
+        if (import.meta.env.DEV) profiler.end('Boarding.departure')
+        if (import.meta.env.DEV) profiler.begin('Boarding.pointPool')
         pointPool.update(player.mesh.position, delta)
+        if (import.meta.env.DEV) profiler.end('Boarding.pointPool')
+        if (import.meta.env.DEV) profiler.begin('Boarding.torchPool')
         torchPool.update(player.mesh.position, delta)
+        if (import.meta.env.DEV) profiler.end('Boarding.torchPool')
 
         if (cinematicTimer >= 2.4) {
           isBoardingCinematic = false
@@ -997,9 +1028,16 @@ export function createBoardingLevel({
         return
       }
 
+      if (import.meta.env.DEV) profiler.end('Boarding.checkpoints')
+      if (import.meta.env.DEV) profiler.begin('Boarding.stealth')
       stealth.update(delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.stealth')
+      if (import.meta.env.DEV) profiler.begin('Boarding.pointPool')
       pointPool.update(player.mesh.position, delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.pointPool')
+      if (import.meta.env.DEV) profiler.begin('Boarding.torchPool')
       torchPool.update(player.mesh.position, delta)
+      if (import.meta.env.DEV) profiler.end('Boarding.torchPool')
     },
 
     dispose() {

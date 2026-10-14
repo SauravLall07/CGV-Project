@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { profiler } from '../dev/profiler.js'
 import * as CANNON from 'cannon-es'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createSkyDome } from '../environment/sky-dome.js'
@@ -1256,14 +1257,30 @@ export function createTimewreckLevel({
       const exteriorScale = braking
         ? Math.max(0, 1 - brakeT / 2.5)
         : mode === 'FREEZE' ? 0 : resumeBoost * (mode === 'SLOW' ? 0.2 : 1)
+      if (import.meta.env.DEV) profiler.begin('Timewreck.sky')
       sky.update(delta, timeSystem)
+      if (import.meta.env.DEV) profiler.end('Timewreck.sky')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.outdoor')
       outdoorEnv.update(envDt)
+      if (import.meta.env.DEV) profiler.end('Timewreck.outdoor')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.exterior')
       wreckExterior.update(delta, exteriorScale)
+      if (import.meta.env.DEV) profiler.end('Timewreck.exterior')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.carriages')
       env.update(envDt)
+      if (import.meta.env.DEV) profiler.end('Timewreck.carriages')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.embers')
       embers.update(envDt)
+      if (import.meta.env.DEV) profiler.end('Timewreck.embers')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.sparks')
       sparks.update(envDt)
+      if (import.meta.env.DEV) profiler.end('Timewreck.sparks')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.openingWind')
       openingWind.update(envDt)
+      if (import.meta.env.DEV) profiler.end('Timewreck.openingWind')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.openingSparks')
       openingSparks.update(envDt)
+      if (import.meta.env.DEV) profiler.end('Timewreck.openingSparks')
       elapsed += delta
       failCooldown = Math.max(0, failCooldown - delta)
       if (collapseHintHoldUntil > 0 && elapsed >= collapseHintHoldUntil) {
@@ -1282,6 +1299,7 @@ export function createTimewreckLevel({
       const pp = player.mesh.position
       const modeInt = MODE_INT[mode] ?? 0
 
+      if (import.meta.env.DEV) profiler.begin('Timewreck.fracture')
       if (fractureArmed && pp.z > FRACTURE_Z) {
         fractureArmed = false
         fractureT = 0
@@ -1307,6 +1325,8 @@ export function createTimewreckLevel({
       }
 
       const chronoFade = braking ? Math.max(0, 1 - brakeT * 0.9) : 1
+      if (import.meta.env.DEV) profiler.end('Timewreck.fracture')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.chronoMotes')
       chronoMotes.update(delta, {
         motionScale,
         mode,
@@ -1319,6 +1339,8 @@ export function createTimewreckLevel({
         stasis: finaleFreeze,
         playerZ: pp.z
       })
+      if (import.meta.env.DEV) profiler.end('Timewreck.chronoMotes')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.effectsAndLook')
 
       // Shader uniforms for the frozen-walkway slabs and the time wave.
       const freezePulse = mode === 'FREEZE' ? 0.1 * (0.5 + 0.5 * Math.sin(elapsed * 3.4)) : 0
@@ -1420,7 +1442,9 @@ export function createTimewreckLevel({
       }
 
       // --- Brake pulled: the stop-on-the-bridge cinematic -----------------
+      if (import.meta.env.DEV) profiler.end('Timewreck.effectsAndLook')
       if (braking) {
+        if (import.meta.env.DEV) profiler.begin('Timewreck.braking')
         brakeT += delta
         const shake = Math.max(0, 1 - brakeT / 2.6)
         root.rotation.z = Math.sin(brakeT * 26) * 0.02 * shake
@@ -1451,15 +1475,22 @@ export function createTimewreckLevel({
           braking = false
           root.rotation.z = 0
           root.position.y = 0
+          if (import.meta.env.DEV) profiler.end('Timewreck.braking')
+          if (import.meta.env.DEV) profiler.begin('Timewreck.lightPool')
           lightPool.update(player.mesh.position, delta)
+          if (import.meta.env.DEV) profiler.end('Timewreck.lightPool')
           advance()
           return
         }
+        if (import.meta.env.DEV) profiler.end('Timewreck.braking')
+        if (import.meta.env.DEV) profiler.begin('Timewreck.lightPool')
         lightPool.update(player.mesh.position, delta)
+        if (import.meta.env.DEV) profiler.end('Timewreck.lightPool')
         return
       }
 
       // --- Ambient instability: the whole train lurches, worse over time ---
+      if (import.meta.env.DEV) profiler.begin('Timewreck.checkpointsAndHints')
       if (!finaleFreeze) {
         const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
         root.rotation.z = (Math.sin(elapsed * 1.7) * 0.012 + Math.sin(elapsed * 4.3) * 0.004) * unrest
@@ -1488,6 +1519,8 @@ export function createTimewreckLevel({
       if (failBurstArmed && pp.z < FAIL_BURST_TRIGGER_Z) startFailBurst()
 
       // --- FAST-TIME CAR: runaway pistons ---------------------------------
+      if (import.meta.env.DEV) profiler.end('Timewreck.checkpointsAndHints')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.hazardCollision')
       for (const r of rams) {
         if (Math.abs(pp.z - r.z) < 0.55 && Math.abs(pp.x - r.head.position.x) < 0.5) {
           failSoft('Crushed by a runaway piston!')
@@ -1504,6 +1537,8 @@ export function createTimewreckLevel({
       }
 
       // --- FROZEN CAR: suspended wreckage as a walkway ---------------------
+      if (import.meta.env.DEV) profiler.end('Timewreck.hazardCollision')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.slabSupports')
       const frozen = mode === 'FREEZE'
       slabSettle += ((frozen ? 1 : 0) - slabSettle) * Math.min(1, delta * 7)
       for (const slab of slabs) {
@@ -1534,6 +1569,8 @@ export function createTimewreckLevel({
       }
 
       // --- PASSENGER collapse: Freeze stepping-stones across the hole ------
+      if (import.meta.env.DEV) profiler.end('Timewreck.slabSupports')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.collapseSupports')
       if (collapseArmed && pp.z < collapseTriggerZ) startCollapse()
       collapseSettle += ((frozen && collapseLive ? 1 : 0) - collapseSettle) * Math.min(1, delta * 9)
       if (collapseLive) applyCollapseMotion()
@@ -1579,6 +1616,8 @@ export function createTimewreckLevel({
       }
 
       // --- BREAKING TRAIN --------------------------------------------------
+      if (import.meta.env.DEV) profiler.end('Timewreck.collapseSupports')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.breakup')
       if (breakupT < 0 && pp.z < spans.passenger.maxZ - 1) {
         breakupT = 0
         chunkGroup.visible = true
@@ -1605,6 +1644,8 @@ export function createTimewreckLevel({
       }
 
       // --- FINAL SEQUENCE: depletion, then the sprint ----------------------
+      if (import.meta.env.DEV) profiler.end('Timewreck.breakup')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.depletionWave')
       if (!depleted && pp.z < DEPLETE_Z) {
         depleted = true
         timeSystem.setAbilityAvailability({ SLOW: false, REWIND: false, GHOST: false })
@@ -1635,7 +1676,10 @@ export function createTimewreckLevel({
           waveZ = DEPLETE_Z + WAVE_LEAD
         }
       }
+      if (import.meta.env.DEV) profiler.end('Timewreck.depletionWave')
+      if (import.meta.env.DEV) profiler.begin('Timewreck.lightPool')
       lightPool.update(player.mesh.position, delta)
+      if (import.meta.env.DEV) profiler.end('Timewreck.lightPool')
     },
 
     dispose() {
