@@ -6,7 +6,6 @@ import * as THREE from 'three'
 import { bounds as stationBounds } from '../environment/station-blockout.js'
 import { LANDING_FIGURE } from '../environment/landing/layout.js'
 import { createGpuTimer } from './gpu-timer.js'
-import { profiler } from './profiler.js'
 
 const TIMING_WINDOW = 60
 const TRAIN_YAW = Math.PI / 2
@@ -49,8 +48,6 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   let timingCount = 0
   let previousFrameStart = 0
   let activeFrame = null
-  let showProfiler = true
-  profiler.reset()
 
   function recordFrame(sample) {
     const slot = timingCount % TIMING_WINDOW
@@ -81,11 +78,9 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
         sawMain: false
       }
       activeFrame = sample
-      profiler.beginFrame()
       try {
         return callback(timestamp)
       } finally {
-        profiler.endFrame(sample.sawMain)
         if (sample.sawMain && previousFrameStart) recordFrame(sample)
         if (sample.sawMain) previousFrameStart = start
         if (activeFrame === sample) activeFrame = null
@@ -424,8 +419,6 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       `${fps} FPS`,
       `frame    ${ms(frameTimes)}`,
       `update   ${ms(logicTimes)}`,
-      ...(showProfiler ? ['CPU systems (U hides; last 60 frames)',
-        ...profiler.top(8).map(({ name, ms }) => `  ${name.padEnd(28)} ${ms.toFixed(3)} ms`)] : []),
       `render   ${ms(mainTimes)}`,
       `minimap  ${ms(minimapTimes)}`,
       `gpu shadow  ${gpuMs('shadow')}`,
@@ -450,7 +443,6 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   const keyTargets = [window, document, renderer.domElement].filter(Boolean)
 
   function measurementKey(event) {
-    if (event.code === 'KeyU' || event.key?.toLowerCase() === 'u' || event.keyCode === 85) return 11
     switch (event.code) {
       case 'Digit1':
       case 'Numpad1':
@@ -542,10 +534,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     handledKeys.add(event)
     if (isVisibleTextEntry(event.target)) return
 
-    if (index === 11) {
-      showProfiler = !showProfiler
-      paint()
-    } else if (index === 1) {
+    if (index === 1) {
       pixelRatioForced = !pixelRatioForced
       if (pixelRatioForced) savedPixelRatio = renderer.getPixelRatio()
       applyPixelRatio()
@@ -662,7 +651,6 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   return {
     update,
     dispose() {
-      profiler.reset()
       for (const target of keyTargets) target.removeEventListener('keydown', onKeyDown, true)
       if (window.devTeleport === devTeleport) delete window.devTeleport
       window.requestAnimationFrame = nativeRequestAnimationFrame
