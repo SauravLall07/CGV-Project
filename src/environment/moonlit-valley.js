@@ -15,8 +15,14 @@ const MOON_DIRECTION = new THREE.Vector3(-0.478, 0.292, 0.828).normalize()
 
 // Fog alone leaves opaque silhouettes. Fade them out before chunk recycling,
 // symmetrically in both directions, before the nearest 800 m recycle boundary.
-function addSceneryFade(material, viewerZ) {
+function addSceneryFade(material, viewerZ, materialKey) {
+  // These exact guards are present in the installed r185 lighting chunk.
+  const outdoorLighting = THREE.ShaderChunk.lights_fragment_begin
+    .replace('#if ( NUM_POINT_LIGHTS > 0 ) && defined( RE_Direct )', '#if 0')
+    .replace('#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )', '#if 0')
   material.onBeforeCompile = (shader) => {
+    // Compose the lighting patch and existing fade in the same compile hook.
+    shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_begin>', outdoorLighting)
     shader.uniforms.uSceneryViewerZ = viewerZ
     shader.vertexShader = 'varying vec3 vSceneryWorld;\n' + shader.vertexShader
     shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `
@@ -38,18 +44,18 @@ function addSceneryFade(material, viewerZ) {
       if (sceneryFade > grain) discard;
     `)
   }
-  material.customProgramCacheKey = () => 'moonlit-valley-scenery-fade-v2'
+  material.customProgramCacheKey = () => `moonlit-valley-${materialKey}-no-local-lights-fade-v3`
 }
 
 function createForest(chunks, onChunkRecycle, viewerZ) {
   const loader = new THREE.TextureLoader()
   const textures = [loader.load(pineCardAUrl), loader.load(pineCardBUrl)]
-  const materials = textures.map((map) => {
+  const materials = textures.map((map, i) => {
     map.colorSpace = THREE.SRGBColorSpace
     const material = new THREE.MeshLambertMaterial({
       map, color: TREE_TINT, alphaTest: 0.5, side: THREE.DoubleSide, fog: true
     })
-    addSceneryFade(material, viewerZ)
+    addSceneryFade(material, viewerZ, `pine-${i}`)
     return material
   })
   // Two crossed, bottom-anchored cards. Scaling preserves the source's 1:2 ratio.
@@ -88,6 +94,8 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
       return mesh
     })
     let ordinal = 0
+    let distantOrdinal = 0
+    const counts = [0, 0]
     function placeTree(x, localZ, height, belowRoof = false, shoulder = false) {
       x *= VALLEY_SIDE
       const worldZ = chunk.index * CHUNK_LENGTH + localZ
@@ -99,19 +107,25 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
         const slope = Math.tan(10 * Math.PI / 180)
         height = Math.min(height, (5 - base + Math.abs(x) * slope) / (1 + slope * 0.25))
       }
+      // Retain 13 of every 20 distant candidates; consume the same random
+      // values even for omitted trees so near placements remain unchanged.
+      const distant = Math.abs(x) > 300
+      const keep = !distant || Math.floor((++distantOrdinal) * 0.65) > Math.floor((distantOrdinal - 1) * 0.65)
+      if (distant) height *= 1.2
       const width = height * 0.5
       x = Math.sign(x) * Math.max(Math.abs(x), 8 + width * 0.5)
       transform.position.set(x, surfaceHeightAt(chunk, x, worldZ) - 0.3, localZ)
       transform.rotation.set(0, random() * Math.PI * 2 * VALLEY_SIDE, 0)
       transform.scale.set(width, height, width)
-      transform.updateMatrix()
-      const mesh = meshes[ordinal % 2]
-      const instance = Math.floor(ordinal / 2)
-      mesh.setMatrixAt(instance, transform.matrix)
       const shade = 0.88 + random() * 0.12
+      const variant = ordinal++ % 2
+      if (!keep) return
+      transform.updateMatrix()
+      const mesh = meshes[variant]
+      const instance = counts[variant]++
+      mesh.setMatrixAt(instance, transform.matrix)
       tint.setRGB(shade, shade, shade)
       mesh.setColorAt(instance, tint)
-      ordinal += 1
     }
     function rows(layout, side, minHeight, heightRange, belowRoof = false, shoulder = false) {
       for (const row of layout) {
@@ -150,6 +164,8 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
     const rebuildForest = () => {
       seed = (Math.imul(chunk.index, 374761393) ^ 0x4d6f6f) >>> 0
       ordinal = 0
+      distantOrdinal = 0
+      counts[0] = counts[1] = 0
       rows(FOREST_ROWS, -1, 20, 12)
       groves(150, -1, 80, 300, 16, 10)
       rows(SHOULDER_ROWS, 1, 10, 8, false, true)
@@ -158,7 +174,7 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
       groves(450, 1, 220, 750, 14, 10, true)
       for (let i = 0; i < 60; i += 1) placeTree(-(10 + random() * 70), random() * CHUNK_LENGTH, 16 + random() * 10)
       for (const mesh of meshes) {
-        mesh.count = Math.floor(ordinal / 2) + (mesh === meshes[0] ? ordinal % 2 : 0)
+        mesh.count = counts[mesh === meshes[0] ? 0 : 1]
         mesh.instanceMatrix.needsUpdate = true
         mesh.instanceColor.needsUpdate = true
         mesh.computeBoundingBox()
@@ -410,8 +426,8 @@ function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
   texture.colorSpace = THREE.SRGBColorSpace
   const bushMaterial = new THREE.MeshLambertMaterial({ map: texture, color: new THREE.Color(0x4a6058).multiplyScalar(1.15), alphaTest: 0.5, side: THREE.DoubleSide, fog: true })
   const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2e31, flatShading: true, roughness: 1, fog: true })
-  addSceneryFade(bushMaterial, viewerZ)
-  addSceneryFade(rockMaterial, viewerZ)
+  addSceneryFade(bushMaterial, viewerZ, 'bush')
+  addSceneryFade(rockMaterial, viewerZ, 'rock')
   const bushGeometry = cardGeometry.clone()
   const rockGeometry = new THREE.DodecahedronGeometry(1, 0)
   const transform = new THREE.Object3D()
@@ -588,13 +604,13 @@ export function createMoonlitValley(options = {}) {
   const group = new THREE.Group()
   group.name = 'outdoor-environment'
   const groundTexture = createGroundTexture()
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x243b33, map: groundTexture, vertexColors: true, roughness: 1, metalness: 0, fog: true
+  const material = new THREE.MeshLambertMaterial({
+    color: 0x243b33, map: groundTexture, vertexColors: true, fog: true
   })
   const chunks = Array.from({ length: CHUNK_COUNT }, () => createChunk(material))
   const getViewerZ = options.getViewerZ || (() => 0)
   const viewerZ = { value: getViewerZ() }
-  addSceneryFade(material, viewerZ)
+  addSceneryFade(material, viewerZ, 'ground')
   let travel = 0
   let baseIndex = Math.floor(getViewerZ() / CHUNK_LENGTH) - AHEAD_CHUNKS
   chunks.forEach((chunk, i) => {
