@@ -46,6 +46,51 @@ const canvas = document.querySelector('#app')
 
 const { renderer, setScene } = createRenderer(canvas)
 const post = createPostProcessing(renderer)
+
+// The existing renderer/composer subscriptions consume transient renderScale.
+// Persist only the quality choice, never Auto's current tier or a benchmark.
+const renderQuality = (() => {
+  const tiers = [1, 0.85, 0.7]
+  const fixed = { high: 1, balanced: 0.85, performance: 0.7 }
+  let tier = 0, override = null, last = 0, smoothed = 0
+  let slowFor = 0, fastFor = 0, holdUntil = 0
+  function apply() {
+    settings.setRuntimeRenderScale(override ?? fixed[settings.get('renderQuality')] ?? tiers[tier])
+  }
+  settings.subscribe((_values, changed) => {
+    if (changed === 'renderQuality' || changed === 'options' || changed === 'all') {
+      tier = 0; slowFor = 0; fastFor = 0; smoothed = 0; last = 0
+      apply()
+    }
+  })
+  apply()
+  return {
+    update(now) {
+      const ms = last ? now - last : 0
+      last = now
+      if (!ms || ms > 250 || document.hidden || override !== null || settings.get('renderQuality') !== 'auto') {
+        slowFor = 0; fastFor = 0; return
+      }
+      smoothed = smoothed ? smoothed + (ms - smoothed) * (1 - Math.exp(-ms / 500)) : ms
+      if (now < holdUntil) return
+      slowFor = smoothed > 33 ? slowFor + ms : 0
+      fastFor = smoothed < 22 ? fastFor + ms : 0
+      if ((slowFor >= 2000 && tier < 2) || (fastFor >= 4000 && tier > 0)) {
+        tier += slowFor >= 2000 ? 1 : -1
+        slowFor = 0; fastFor = 0; holdUntil = now + 2000
+        apply()
+      }
+    },
+    getScale: () => settings.get('renderScale'),
+    setOverride(value) {
+      override = value
+      last = 0; smoothed = 0; slowFor = 0; fastFor = 0
+      apply()
+    }
+  }
+})()
+let benchmark = null
+const benchTarget = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('bench') : null
 const scene = createScene()
 setScene(scene) // lets display settings recompile materials on a shadow toggle
 const { camera } = createCamera()
@@ -272,6 +317,20 @@ if (import.meta.env.DEV) {
   window.renderer = renderer
   window.scene = scene
   renderOverlay = mountRenderOverlay(renderer, { player, playerView, post })
+  if (benchTarget) {
+    import('./dev/benchmark.js').then(({ createBenchmark }) => {
+      benchmark = createBenchmark({
+        camera, overlay: renderOverlay, quality: renderQuality,
+        ready: () => gameStarted && getInputState() === 'PLAYING' && !hud.isTutorialOpen(),
+        prepare() {
+          if (benchTarget === 'platform') {
+            renderOverlay.teleport('train')
+            playerView.update(0, player.mesh, scene, { crouching: player.isCrouching() })
+          }
+        }
+      })
+    })
+  }
 }
 
 // Disabled: running out of lives on Level 2 must not send the player back to
@@ -449,7 +508,7 @@ function getInputState() {
 }
 
 function syncInputState() {
-  const enabled = getInputState() === 'PLAYING'
+  const enabled = getInputState() === 'PLAYING' && !benchmark?.isHolding()
   keyboard.setEnabled(enabled)
   interaction.setEnabled(enabled)
   playerView.setEnabled(enabled)
@@ -484,7 +543,7 @@ function setPaused(value) {
 // Escape while the mouse was captured — browsers consume that keydown — so it
 // doubles as a pause trigger.
 playerView.onLockLost(() => {
-  if (getInputState() === 'PLAYING' && !settingsMenu.isOpen) setPaused(true)
+  if (getInputState() === 'PLAYING' && !settingsMenu.isOpen && !benchmark?.isHolding()) setPaused(true)
 })
 
 function showCompleteCredits() {
@@ -585,6 +644,7 @@ function startGame() {
 //   roof, vault                and door from the earlier cars done
 function devStartOptions() {
   if (!import.meta.env.DEV) return null
+  if (benchTarget === 'platform') return { state: 'Boarding' }
   const target = new URLSearchParams(window.location.search).get('start')?.toLowerCase()
   if (!target) return null
   if (target === 'level2') return { state: 'MovingHeist' }
@@ -640,6 +700,10 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
     loadingScreen.setProgress(1)
     loadingScreen.hide()
     menu.show()
+    if (benchTarget) {
+      menu.hide()
+      startGame()
+    }
   })
 
   menu.onStart(startGame)
@@ -650,7 +714,10 @@ const loop = createLoop({
   scene,
   camera,
   clock,
-  render: post.render,
+  render(world, view) {
+    benchmark?.beforeRender()
+    post.render(world, view)
+  },
 
   afterRender: (gl) => {
     const show = gameStarted && !credits.isOpen
@@ -659,10 +726,13 @@ const loop = createLoop({
     if (show) {
       minimap.render(gl)
     }
+    benchmark?.afterRender()
   }
 })
 
 loop.add((delta) => {
+  renderQuality.update(performance.now())
+  benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /
   // cinematic / credits all used to return before player.update(), which
   // left the detective frozen in bind pose after the first frame.

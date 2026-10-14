@@ -238,6 +238,21 @@ export function createBoardingLevel({
     }
   }
   const sky = createSkyDome('boarding')
+  let hiddenOutdoorDelta = 0
+  let hiddenLandingDelta = 0
+  let hiddenTrainDelta = 0
+  // These updates are analytic visual clocks only. Accumulate skipped time
+  // so their phase catches up BEFORE they next draw, without changing gameplay.
+  function updateVisibleScenery(delta, includeOutdoor = true) {
+    if (includeOutdoor) {
+      hiddenOutdoorDelta += delta
+      if (outdoorEnv.group.visible) { outdoorEnv.update(hiddenOutdoorDelta); hiddenOutdoorDelta = 0 }
+    }
+    hiddenLandingDelta += delta
+    if (landing.group.visible) { landing.update(hiddenLandingDelta); hiddenLandingDelta = 0 }
+    hiddenTrainDelta += delta
+    if (train.visible || isBoardingCinematic) { updateTrain(hiddenTrainDelta); hiddenTrainDelta = 0 }
+  }
   const outdoorEnv = createOutdoorEnvironment({
     mode: 'station',
     stationSpotLights: lights.spotLights,
@@ -1012,8 +1027,6 @@ export function createBoardingLevel({
     // twinkle while the menu camera drifts. The dome recentres itself.
     updateAtmosphere(delta, viewer) {
       sky.update(delta, null)
-      landing.update(delta)
-      updateTrain(delta)
       // The title camera is not the player, so the pool and the moon shadow
       // have to follow it or the facade stays unlit until the run starts.
       if (viewer) {
@@ -1022,6 +1035,7 @@ export function createBoardingLevel({
           zones.zone?.name === 'platform' ? sky.uniforms.uMoonDirection.value : SUN_DIRECTION)
         pointPool.update(viewer, delta)
       }
+      updateVisibleScenery(delta, false)
     },
 
     get isCinematic() {
@@ -1034,13 +1048,11 @@ export function createBoardingLevel({
       sky.update(delta, timeSystem)
       updateStationSunShadow(sunlight, player.mesh.position,
         zones.zone?.name === 'platform' ? sky.uniforms.uMoonDirection.value : SUN_DIRECTION)
-      outdoorEnv.update(delta)
-      landing.update(delta)
+      updateVisibleScenery(delta)
       tutorialPassage.update(delta)
       guardPassage.update(delta)
       bridgePassage.update(delta)
       stationDistraction.update(delta)
-      updateTrain(delta)
 
       if (!passage2CheckpointActive && guardPassage.isInsidePassage()) {
         passage2CheckpointActive = true

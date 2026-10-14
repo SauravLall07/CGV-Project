@@ -123,6 +123,7 @@ export function createPostProcessing(renderer) {
 
   let enabled = true
   let gpu = null
+  let logicalWidth = 0, logicalHeight = 0
 
   function applyBloom() {
     bloomPass.enabled = enabled && settings.get('bloom') !== false
@@ -130,8 +131,14 @@ export function createPostProcessing(renderer) {
 
   function resize() {
     renderer.getSize(size)
-    composer._pixelRatio = renderer.getPixelRatio()
-    composer.setSize(Math.max(1, size.x), Math.max(1, size.y))
+    composer.setPixelRatio(renderer.getPixelRatio())
+    const width = Math.max(1, size.x), height = Math.max(1, size.y)
+    // setPixelRatio already resizes at the cached logical size. Avoid a
+    // second render-target resize/allocation on every Auto tier change.
+    if (width !== logicalWidth || height !== logicalHeight) {
+      composer.setSize(width, height)
+      logicalWidth = width; logicalHeight = height
+    }
     for (let i = 3; i < bloomPass.renderTargetsHorizontal.length; i += 1) {
       bloomPass.renderTargetsHorizontal[i].setSize(1, 1)
       bloomPass.renderTargetsVertical[i].setSize(1, 1)

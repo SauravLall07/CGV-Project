@@ -194,6 +194,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     if (Math.abs(renderer.getPixelRatio() - ratio) < 1e-4) return
     renderer.setPixelRatio(ratio)
     renderer.setSize(window.innerWidth, window.innerHeight)
+    post?.resize()
   }
 
   function invalidateMaterials(scene) {
@@ -404,6 +405,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     if (unlit) active.push(`Shift+0  unlit MeshBasicMaterial (${unlitOriginal.size} meshes)`)
     panel.textContent = [
       `${fps} FPS`,
+      `render scale ${Math.round(ratio / Math.min(window.devicePixelRatio, 1.25) * 100)}%`,
       `frame    ${ms(frameTimes)}`,
       `update   ${ms(logicTimes)}`,
       `render   ${ms(mainTimes)}`,
@@ -426,6 +428,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   // event also reaches window (capture, then bubble). One handled event
   // must not flip the toggle again from the second listener.
   const handledKeys = new WeakSet()
+  let benchmarkActive = false
   const keyTargets = [window, document, renderer.domElement].filter(Boolean)
 
   function measurementKey(event) {
@@ -479,6 +482,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   }
 
   function onKeyDown(event) {
+    if (benchmarkActive) return
     if (handledKeys.has(event) || event.repeat) return
     const index = measurementKey(event)
     if (!index) return
@@ -564,6 +568,28 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
 
   window.devTeleport = devTeleport
 
+  function captureToggles() {
+    return { pixelRatioForced, savedPixelRatio, shadowsOff, savedShadowEnabled,
+      lightsLimited, sceneryHidden, minimapOff, glowsHidden, unlit, postEnabled: post?.isEnabled() ?? true }
+  }
+
+  function applyToggles(state) {
+    const previousRatio = pixelRatioForced, previousShadows = shadowsOff
+    pixelRatioForced = Boolean(state.pixelRatioForced)
+    if (state.savedPixelRatio !== undefined) savedPixelRatio = state.savedPixelRatio
+    if (previousRatio || pixelRatioForced) applyPixelRatio()
+    shadowsOff = Boolean(state.shadowsOff)
+    if (state.savedShadowEnabled !== undefined) savedShadowEnabled = state.savedShadowEnabled
+    if (previousShadows || shadowsOff) applyShadows()
+    lightsLimited = Boolean(state.lightsLimited)
+    sceneryHidden = Boolean(state.sceneryHidden)
+    minimapOff = Boolean(state.minimapOff)
+    glowsHidden = Boolean(state.glowsHidden)
+    unlit = Boolean(state.unlit)
+    if (post && state.postEnabled !== undefined) post.setEnabled(state.postEnabled)
+    syncLights(); syncScenery(); syncGlows(); syncUnlit()
+  }
+
   for (const target of keyTargets) target.addEventListener('keydown', onKeyDown, true)
 
   function update(delta) {
@@ -588,6 +614,14 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
 
   return {
     update,
+    captureToggles,
+    applyToggles,
+    teleport: devTeleport,
+    setBenchmarkActive(value) { benchmarkActive = Boolean(value) },
+    sampleFrame() {
+      return { frameMs: activeFrame?.frame ?? 0, cpuMs: activeFrame?.logic ?? 0,
+        gpuSceneMs: gpu.supported ? gpu.average('scene') : null }
+    },
     dispose() {
       for (const target of keyTargets) target.removeEventListener('keydown', onKeyDown, true)
       if (window.devTeleport === devTeleport) delete window.devTeleport

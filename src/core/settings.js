@@ -44,17 +44,6 @@ export const OPTION_DEFS = [
     format: (v) => `${Math.round(v)}°`
   },
   {
-    id: 'renderScale',
-    label: 'Render Resolution',
-    hint: 'Lower this first if the frame rate drops on weaker hardware.',
-    group: 'Display',
-    type: 'slider',
-    min: 0.5,
-    max: 1,
-    step: 0.05,
-    format: (v) => `${Math.round(v * 100)}%`
-  },
-  {
     id: 'bloom',
     label: 'Bloom',
     hint: 'Soft glow on lamps, lit windows and the moon. The blur is half resolution.',
@@ -72,6 +61,19 @@ export const OPTION_DEFS = [
       { value: 'low', label: 'Low' },
       { value: 'medium', label: 'Medium' },
       { value: 'high', label: 'High' }
+    ]
+  },
+  {
+    id: 'renderQuality',
+    label: 'Render quality',
+    hint: 'Auto adjusts resolution gradually for weak laptops. HTML menus and HUD stay sharp.',
+    group: 'Display',
+    type: 'choice',
+    choices: [
+      { value: 'auto', label: 'Auto' },
+      { value: 'high', label: 'High (100%)' },
+      { value: 'balanced', label: 'Balanced (85%)' },
+      { value: 'performance', label: 'Performance (70%)' }
     ]
   },
   {
@@ -170,6 +172,7 @@ export const DEFAULT_OPTIONS = {
   brightness: 1.15,
   fov: 60,
   renderScale: 1,
+  renderQuality: 'auto',
   bloom: true,
   shadowQuality: 'medium',
   grassDensity: 'medium',
@@ -367,6 +370,8 @@ function createSettingsStore() {
   }
   const bindings = cloneBindings(storedBindings)
   const listeners = new Set()
+  // Internal scale is transient: Auto/benchmark changes must not write saves.
+  let runtimeRenderScale = 1
   if (migrateCrouch && stored.bindings) persist()
 
   function persist() {
@@ -386,7 +391,15 @@ function createSettingsStore() {
   }
 
   function get(id) {
+    if (id === 'renderScale') return runtimeRenderScale
     return id === undefined ? values : values[id]
+  }
+
+  function setRuntimeRenderScale(value) {
+    const next = Math.min(1, Math.max(0.7, value))
+    if (runtimeRenderScale === next) return
+    runtimeRenderScale = next
+    notify('renderScale') // Existing renderer and composer listeners resize together.
   }
 
   function set(id, value) {
@@ -465,6 +478,7 @@ function createSettingsStore() {
   return {
     get,
     set,
+    setRuntimeRenderScale,
     subscribe,
     getBindings,
     getBinding,

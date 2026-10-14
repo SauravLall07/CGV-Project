@@ -90,8 +90,68 @@ export function createStealthSystem({
   const guards = []
   const cameras = []
   const laserGrids = []
+  const guardCircles = []
+  let bumpedGuardThisFrame = false
 
   const raycaster = new THREE.Raycaster()
+  const rayCandidates = []
+  const rayHits = []
+  const rayBounds = new WeakMap()
+  const boundHit = new THREE.Vector3()
+  // Use the SAME sphere Mesh.raycast uses. Only reject a leaf plain mesh
+  // when the finite ray cannot reach that sphere. Groups, custom raycasters,
+  // skinning, instances and morphs keep the original path unchanged.
+  function sightHits(objects, recursive) {
+    rayCandidates.length = 0
+    for (const object of objects) {
+      const geometry = object.geometry
+      const trusted = object.isMesh && !object.isSkinnedMesh && !object.isInstancedMesh &&
+        !object.isBatchedMesh && object.children.length === 0 &&
+        object.raycast === THREE.Mesh.prototype.raycast && !geometry.morphAttributes.position &&
+        Number.isFinite(raycaster.far)
+      if (trusted) {
+        if (geometry.boundingSphere === null) geometry.computeBoundingSphere()
+        const local = geometry.boundingSphere
+        let cached = rayBounds.get(object)
+        if (!cached) {
+          cached = { matrix: new THREE.Matrix4(), local: new THREE.Sphere(), world: new THREE.Sphere(),
+            localBox: new THREE.Box3(), worldBox: new THREE.Box3(), hasBox: false, geometry: null }
+          rayBounds.set(object, cached)
+        }
+        // Reparenting, moving doors and changed geometry bounds invalidate the
+        // cached world sphere. Never update matrixWorld here: preserve exactly
+        // the transform the original raycaster would have read this frame.
+        const box = geometry.boundingBox
+        if (cached.geometry !== geometry || !cached.matrix.equals(object.matrixWorld) || !cached.local.equals(local) ||
+            cached.hasBox !== Boolean(box) || (box && !cached.localBox.equals(box))) {
+          cached.geometry = geometry
+          cached.matrix.copy(object.matrixWorld)
+          cached.local.copy(local)
+          cached.world.copy(local).applyMatrix4(object.matrixWorld)
+          cached.world.radius += 1e-4 // Conservative tangent/rounding padding.
+          cached.hasBox = Boolean(box)
+          if (box) {
+            cached.localBox.copy(box)
+            cached.worldBox.copy(box).applyMatrix4(object.matrixWorld).expandByScalar(1e-4)
+          }
+        }
+        const sphere = cached.world
+        if (!sphere.containsPoint(raycaster.ray.origin)) {
+          const hit = raycaster.ray.intersectSphere(sphere, boundHit)
+          if (!hit || hit.distanceToSquared(raycaster.ray.origin) > (raycaster.far + 1e-4) ** 2) continue
+        }
+        if (cached.hasBox && !cached.worldBox.containsPoint(raycaster.ray.origin)) {
+          const hit = raycaster.ray.intersectBox(cached.worldBox, boundHit)
+          if (!hit || hit.distanceToSquared(raycaster.ray.origin) > (raycaster.far + 1e-4) ** 2) continue
+        }
+      }
+      rayCandidates.push(object)
+    }
+    rayHits.length = 0
+    // Keep recursion, ordering, layers, material sides, near/far and the
+    // narrow-phase implementation unchanged; reuse only the output array.
+    return raycaster.intersectObjects(rayCandidates, recursive, rayHits)
+  }
   if (assets) preloadPoliceVisual(assets)
 
   // Every guard ray starts at the guard's eyes and is at most this long, so
@@ -221,6 +281,7 @@ export function createStealthSystem({
       stridePhase: 0,
       lookAroundTimer: 0,
       investigateTarget: null,
+      investigateBuffer: new THREE.Vector3(),
       investigateTimer: 0,
       investigateGiveUpTimer: 0,
       investigateArrived: false
@@ -273,6 +334,15 @@ export function createStealthSystem({
     }
 
     guards.push(guard)
+    guardCircles.push({
+      x: group.position.x, z: group.position.z, radius: GUARD_BUMP_RADIUS,
+      onCollide() {
+        guard.state = 'ALERT'
+        suspicion = maxSuspicion
+        bumpedGuardThisFrame = true
+        if (hud) hud.showToast('Bumped into a guard!', 1200)
+      }
+    })
     scene.add(group)
     return guard
   }
@@ -296,7 +366,7 @@ export function createStealthSystem({
       if (dy > 2.25 || dx * dx + dz * dz > radius * radius) return
 
       guard.state = 'INVESTIGATE'
-      guard.investigateTarget = new THREE.Vector3(position.x, guard.group.position.y, position.z)
+      guard.investigateTarget = guard.investigateBuffer.set(position.x, guard.group.position.y, position.z)
       guard.investigateTimer = duration
       guard.investigateGiveUpTimer = Math.max(9, duration + 6)
       guard.investigateArrived = false
@@ -440,7 +510,10 @@ export function createStealthSystem({
       sweepRange,
       sweepSpeed,
       range,
-      elapsed: Math.random() * 10
+      elapsed: Math.random() * 10,
+      clipAge: Infinity,
+      clipAngle: Infinity,
+      clipPosition: new THREE.Vector3(Infinity, Infinity, Infinity)
     }
 
     cameras.push(camera)
@@ -577,6 +650,7 @@ export function createStealthSystem({
   const guardEyePos = new THREE.Vector3()
   const toPlayer = new THREE.Vector3()
   const flatToPlayer = new THREE.Vector3()
+  const facingDir = new THREE.Vector3()
 
   function playerDetectionHeight() {
     return player?.isCrouching?.()
@@ -650,7 +724,7 @@ export function createStealthSystem({
 
     flatToPlayer.normalize()
 
-    const facingDir = new THREE.Vector3(
+    facingDir.set(
       Math.sin(guard.facing),
       0,
       Math.cos(guard.facing)
@@ -684,7 +758,7 @@ export function createStealthSystem({
     raycaster.far = dist
 
     const hits =
-      raycaster.intersectObjects(
+      sightHits(
         guardBlockers(guard, guardEyePos),
         false
       )
@@ -700,6 +774,8 @@ export function createStealthSystem({
 
   const camEyePos = new THREE.Vector3()
   const camToPlayer = new THREE.Vector3()
+  const camDir = new THREE.Vector3()
+  const toPlayerHoriz = new THREE.Vector3()
 
   function checkCameraDetection(cam, playerPos) {
     if (!playerPos) return false
@@ -713,9 +789,9 @@ export function createStealthSystem({
 
     // Forward direction of camera sweep
     const currentAngle = cam.baseAngle + Math.sin(cam.elapsed * cam.sweepSpeed) * cam.sweepRange
-    const camDir = new THREE.Vector3(Math.sin(currentAngle), 0, Math.cos(currentAngle)).normalize()
+    camDir.set(Math.sin(currentAngle), 0, Math.cos(currentAngle)).normalize()
 
-    const toPlayerHoriz = new THREE.Vector3(dx, 0, dz).normalize()
+    toPlayerHoriz.set(dx, 0, dz).normalize()
     const dot = camDir.dot(toPlayerHoriz)
     if (dot <= 0.72) return false // outside the camera beam cone
 
@@ -730,7 +806,7 @@ export function createStealthSystem({
 
     raycaster.set(camEyePos, camToPlayer)
     raycaster.far = losDist
-    const hits = raycaster.intersectObjects(collidables, true)
+    const hits = sightHits(collidables, true)
     for (const hit of hits) {
       if (hit.distance < losDist - 0.3) return false
     }
@@ -792,7 +868,7 @@ export function createStealthSystem({
     raycaster.far = dist
 
     const hits =
-      raycaster.intersectObjects(
+      sightHits(
         guardBlockers(guard, guardEyePos),
         false
       )
@@ -862,6 +938,7 @@ export function createStealthSystem({
   }
 
   function update(delta) {
+    bumpedGuardThisFrame = false
     const playerPos = player?.mesh?.position
     let isDetectedThisFrame = false
     let detectionReason = null
@@ -926,7 +1003,7 @@ export function createStealthSystem({
         }
       } else if (lured && guard.state !== 'INVESTIGATE') {
         guard.state = 'INVESTIGATE'
-        guard.investigateTarget = distraction.position.clone()
+        guard.investigateTarget = guard.investigateBuffer.copy(distraction.position)
         guard.investigateTimer = 3.2
         guard.investigateGiveUpTimer = 9.2
         guard.investigateArrived = false
@@ -1129,7 +1206,7 @@ export function createStealthSystem({
       raycaster.set(coneEye, coneDir)
       raycaster.far = guard.coneDistance
       let coneHitDist = guard.coneDistance
-      for (const hit of raycaster.intersectObjects(guardBlockers(guard, coneEye), false)) {
+      for (const hit of sightHits(guardBlockers(guard, coneEye), false)) {
         if (hit.distance < coneHitDist) coneHitDist = hit.distance
       }
       guard.visionCone.scale.setScalar(THREE.MathUtils.clamp(coneHitDist / guard.coneDistance, 0.05, 1))
@@ -1144,18 +1221,12 @@ export function createStealthSystem({
     })
 
     if (playerPos) {
-      const guardCircles = guards.map((guard) => ({
-        x: guard.group.position.x,
-        z: guard.group.position.z,
-        radius: GUARD_BUMP_RADIUS,
-        onCollide: () => {
-          guard.state = 'ALERT'
-          suspicion = maxSuspicion
-          reportDetection('guard-bump')
-          if (hud) hud.showToast('Bumped into a guard!', 1200)
-        }
-      }))
+      for (let i = 0; i < guards.length; i++) {
+        guardCircles[i].x = guards[i].group.position.x
+        guardCircles[i].z = guards[i].group.position.z
+      }
       resolveCircleCollision(playerPos, guardCircles)
+      if (bumpedGuardThisFrame) reportDetection('guard-bump')
     }
 
     // 2. Update Cameras
@@ -1171,11 +1242,18 @@ export function createStealthSystem({
       coneEye.copy(cam.camGroup.position)
       raycaster.set(coneEye, coneDir)
       raycaster.far = cam.range
-      let camConeHitDist = cam.range
-      for (const hit of raycaster.intersectObjects(collidables, true)) {
-        if (hit.distance < camConeHitDist) camConeHitDist = hit.distance
+      cam.clipAge += delta
+      if (cam.clipAge >= 0.1 || Math.abs(angle - cam.clipAngle) >= 0.06 ||
+          cam.clipPosition.distanceToSquared(cam.camGroup.position) >= 0.01) {
+        let camConeHitDist = cam.range
+        for (const hit of sightHits(collidables, true)) {
+          if (hit.distance < camConeHitDist) camConeHitDist = hit.distance
+        }
+        cam.coneMesh.scale.setScalar(THREE.MathUtils.clamp(camConeHitDist / cam.range, 0.05, 1))
+        cam.clipAge = 0
+        cam.clipAngle = angle
+        cam.clipPosition.copy(cam.camGroup.position)
       }
-      cam.coneMesh.scale.setScalar(THREE.MathUtils.clamp(camConeHitDist / cam.range, 0.05, 1))
 
       const isSeeing = checkCameraDetection(cam, playerPos)
       if (isSeeing) {
