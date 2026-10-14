@@ -3,7 +3,7 @@ import pineCardAUrl from '../assets/textures/backdrop/pine-card-a.png'
 import pineCardBUrl from '../assets/textures/backdrop/pine-card-b.png'
 import broadleafCardUrl from '../assets/textures/backdrop/broadleaf-card.png'
 
-const TREE_TINT = 0x6d8a86
+const TREE_TINT = 0x86a8a0
 const FOREST_ROWS = [[16, 24, 8], [28, 36, 11], [42, 50, 14], [58, 70, 17]]
 const UPHILL_ROWS = [[80, 110, 50], [130, 180, 50], [210, 300, 50]]
 const SHOULDER_ROWS = [[14, 40, 40]]
@@ -298,8 +298,8 @@ function createMountainRing(hazeColor, getViewerZ) {
   const angular = 1024
   const radial = 6
   const rings = [
-    { inner: 1050, outer: 1300, height: 210, amplitude: 90, color: 0x0b1a1f, topHaze: 0.15, baseHaze: 0.5, contrast: 0.65 },
-    { inner: 1350, outer: 1750, height: 350, amplitude: 100, color: 0x15263c, topHaze: 0.35, baseHaze: 0.7, contrast: 0.75 }
+    { inner: 1050, outer: 1300, height: 210, amplitude: 90, color: 0x0b1a1f, topHaze: 0.15, baseHaze: 0.5, contrast: 0.8 },
+    { inner: 1350, outer: 1750, height: 350, amplitude: 100, color: 0x15263c, topHaze: 0.35, baseHaze: 0.7, contrast: 0.88 }
   ]
   rings.forEach((ring, ringIndex) => {
     const forest = new THREE.Color(ring.color)
@@ -388,7 +388,7 @@ function createMountainRing(hazeColor, getViewerZ) {
 function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
   const texture = new THREE.TextureLoader().load(broadleafCardUrl)
   texture.colorSpace = THREE.SRGBColorSpace
-  const bushMaterial = new THREE.MeshLambertMaterial({ map: texture, color: 0x4a6058, alphaTest: 0.5, side: THREE.DoubleSide, fog: true })
+  const bushMaterial = new THREE.MeshLambertMaterial({ map: texture, color: new THREE.Color(0x4a6058).multiplyScalar(1.15), alphaTest: 0.5, side: THREE.DoubleSide, fog: true })
   const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2e31, flatShading: true, roughness: 1, fog: true })
   addSceneryFade(bushMaterial, viewerZ)
   addSceneryFade(rockMaterial, viewerZ)

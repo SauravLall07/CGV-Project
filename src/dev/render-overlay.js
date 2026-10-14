@@ -1,5 +1,5 @@
 // Temporary DEV-only readout, measurement toggles and teleports. Not shipped.
-// Digit0–9 are taken in the capture phase so they do not also fire the
+// Shift+Digit0–9 are taken in the capture phase so they do not also fire the
 // number-row time abilities. Letter bindings (Q/F/C/G) are unchanged.
 
 import * as THREE from 'three'
@@ -394,14 +394,14 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     }
     const ratio = renderer.getPixelRatio()
     const active = []
-    if (pixelRatioForced) active.push(`1  pixel ratio ${ratio.toFixed(2)} (saved ${savedPixelRatio.toFixed(2)})`)
-    if (shadowsOff) active.push('2  shadows off')
-    if (lightsLimited) active.push(`3  point/spot lights ${limitedLightCount}/${totalLocalLights} visible nearest`)
-    if (sceneryHidden) active.push(`4  outdoor scenery hidden (whole group; ${hiddenSceneryCount} found)`)
-    if (minimapOff) active.push('5  minimap off')
-    if (post && !post.isEnabled()) active.push('8  post off')
-    if (glowsHidden) active.push(`9  additive glows hidden (${hiddenGlowCount})`)
-    if (unlit) active.push(`0  unlit MeshBasicMaterial (${unlitOriginal.size} meshes)`)
+    if (pixelRatioForced) active.push(`Shift+1  pixel ratio ${ratio.toFixed(2)} (saved ${savedPixelRatio.toFixed(2)})`)
+    if (shadowsOff) active.push('Shift+2  shadows off')
+    if (lightsLimited) active.push(`Shift+3  point/spot lights ${limitedLightCount}/${totalLocalLights} visible nearest`)
+    if (sceneryHidden) active.push(`Shift+4  outdoor scenery hidden (whole group; ${hiddenSceneryCount} found)`)
+    if (minimapOff) active.push('Shift+5  minimap off')
+    if (post && !post.isEnabled()) active.push('Shift+8  post off')
+    if (glowsHidden) active.push(`Shift+9  additive glows hidden (${hiddenGlowCount})`)
+    if (unlit) active.push(`Shift+0  unlit MeshBasicMaterial (${unlitOriginal.size} meshes)`)
     panel.textContent = [
       `${fps} FPS`,
       `frame    ${ms(frameTimes)}`,
@@ -418,78 +418,42 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       `textures    ${pass.textures}`,
       `minimap draws  ${minimapPass.calls}`,
       `minimap tris   ${minimapPass.triangles}`,
-      active.length ? active.join('\n') : 'toggles off  (1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 spawn · 8 post · 9 glows · 0 unlit)'
+      active.length ? active.join('\n') : 'toggles off  Shift+[1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 spawn · 8 post · 9 glows · 0 unlit]'
     ].join('\n')
   }
 
-  // Pointer lock retargets keys at the canvas, and keyboard lock can deliver
-  // the number row with `key` set and `code` left Unidentified. The same
+  // Match the physical number row, independent of its shifted symbol. The same
   // event also reaches window (capture, then bubble). One handled event
   // must not flip the toggle again from the second listener.
   const handledKeys = new WeakSet()
   const keyTargets = [window, document, renderer.domElement].filter(Boolean)
 
   function measurementKey(event) {
+    if (!event.shiftKey) return 0
     switch (event.code) {
       case 'Digit1':
-      case 'Numpad1':
         return 1
       case 'Digit2':
-      case 'Numpad2':
         return 2
       case 'Digit3':
-      case 'Numpad3':
         return 3
       case 'Digit4':
-      case 'Numpad4':
         return 4
       case 'Digit5':
-      case 'Numpad5':
         return 5
       case 'Digit6':
-      case 'Numpad6':
         return 6
       case 'Digit7':
-      case 'Numpad7':
         return 7
       case 'Digit8':
-      case 'Numpad8':
         return 8
       case 'Digit9':
-      case 'Numpad9':
         return 9
       case 'Digit0':
-      case 'Numpad0':
         return 10
       default:
         break
     }
-    switch (event.key) {
-      case '1': return 1
-      case '2': return 2
-      case '3': return 3
-      case '4': return 4
-      case '5': return 5
-      case '6': return 6
-      case '7': return 7
-      case '8': return 8
-      case '9': return 9
-      case '0': return 10
-      default:
-        break
-    }
-    // Last resort when lock/pointer-lock leaves both key and code blank.
-    const which = event.keyCode || event.which || 0
-    if (which === 49 || which === 97) return 1
-    if (which === 50 || which === 98) return 2
-    if (which === 51 || which === 99) return 3
-    if (which === 52 || which === 100) return 4
-    if (which === 53 || which === 101) return 5
-    if (which === 54 || which === 102) return 6
-    if (which === 55 || which === 103) return 7
-    if (which === 56 || which === 104) return 8
-    if (which === 57 || which === 105) return 9
-    if (which === 48 || which === 96) return 10
     return 0
   }
 

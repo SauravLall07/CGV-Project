@@ -59,11 +59,15 @@ import { signMaterial } from '../environment/textures.js'
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
 // Fewer real point lights make per-pixel lighting cheaper; the pool follows the nearest lamps.
 const LEVEL2_LIGHT_POOL_SIZE = 8
-const ROOF_MOON_COLOR = 0x9fb4d8
-const ROOF_MOON_INTENSITY = 1.3
-const ROOF_SKY_COLOR = 0x2a3c60
-const ROOF_GROUND_COLOR = 0x0b0d14
-const ROOF_SKY_INTENSITY = 0.6
+// Level 2 night look — roof-only lights, tuned together for readable cool nights.
+const ROOF_MOON_COLOR = 0xa9bfe6
+const ROOF_MOON_INTENSITY = 2.0
+const ROOF_SKY_COLOR = 0x3d5a8a
+const ROOF_GROUND_COLOR = 0x141a24
+const ROOF_SKY_INTENSITY = 1.1
+// Game-lighting cheat: light camera-facing surfaces from the right/rear;
+// the visible moon keeps its independent direction in the sky preset.
+const ROOF_MOON_DIRECTION = new THREE.Vector3(0.75, 0.6, 0.28).normalize()
 
 function createChronoCore() {
   const core = new THREE.Group()
@@ -2055,12 +2059,12 @@ export function createMovingHeistLevel({
   const roofSupports = []
   const roofObstacles = []
 
-  // Roof lighting: cool light from the sky's moon direction and a sky fill. They
+  // Roof lighting: cool light from the tuned camera-facing direction and sky fill. They
   // stay in the scene at zero intensity indoors — changing the light count
   // would recompile every material on the climb out.
   const roofSun = new THREE.DirectionalLight(ROOF_MOON_COLOR, 0)
   roofSun.target.position.set(0, ROOF_Y, F0 + 10)
-  roofSun.position.copy(sky.uniforms.uMoonDirection.value).multiplyScalar(50).add(roofSun.target.position)
+  roofSun.position.copy(ROOF_MOON_DIRECTION).multiplyScalar(50).add(roofSun.target.position)
   const roofSky = new THREE.HemisphereLight(ROOF_SKY_COLOR, ROOF_GROUND_COLOR, 0)
   root.add(roofSun, roofSun.target, roofSky)
   const roofVoids = [
