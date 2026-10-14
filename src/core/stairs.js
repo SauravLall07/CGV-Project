@@ -1,5 +1,9 @@
 import * as THREE from 'three'
 
+// Merged stair volumes cast on this layer. The sun's shadow camera enables it;
+// the gameplay camera does not, so the volumes never draw into the colour pass.
+export const SUN_SHADOW_LAYER = 1
+
 // Builds visible stepped geometry while exposing a smooth floor-height sampler
 // for the player controller. The player therefore travels cleanly up/down the
 // stairs without requiring a full 3D character controller rewrite.
@@ -60,7 +64,6 @@ export function createStaircase({
     )
     tread.position.set(cx, lowY + height / 2, cz)
     tread.rotation.y = yaw
-    tread.castShadow = true
     tread.receiveShadow = true
     group.add(tread)
 
@@ -75,7 +78,6 @@ export function createStaircase({
         cz + pz * side * (width / 2 + 0.09)
       )
       wall.rotation.y = yaw
-      wall.castShadow = true
       wall.receiveShadow = true
       group.add(wall)
     }
@@ -90,6 +92,51 @@ export function createStaircase({
       ceiling.receiveShadow = true
       group.add(ceiling)
     }
+  }
+
+  // One shadow volume for the step mass, one per side wall, and one for the
+  // ceiling. The per-step meshes stay visible and receive shadows; these
+  // proxies are what actually occlude the sun, so a flight is a handful of
+  // casters instead of three meshes per step.
+  const shadowMat = new THREE.MeshBasicMaterial()
+  const yMin = Math.min(start.y, end.y)
+  const yMax = Math.max(start.y, end.y)
+  const midX = (start.x + end.x) / 2
+  const midZ = (start.z + end.z) / 2
+
+  function addShadowVolume(sizeX, sizeY, sizeZ, x, y, z) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(sizeX, sizeY, sizeZ), shadowMat)
+    mesh.name = 'stair-shadow-volume'
+    mesh.position.set(x, y, z)
+    mesh.rotation.y = yaw
+    mesh.castShadow = true
+    mesh.layers.set(SUN_SHADOW_LAYER)
+    group.add(mesh)
+  }
+
+  addShadowVolume(width, yMax - lowY, runLength, midX, (lowY + yMax) / 2, midZ)
+  const wallSpan = (yMax - yMin) + wallHeight
+  for (const side of [-1, 1]) {
+    addShadowVolume(
+      0.22,
+      wallSpan,
+      runLength + stepDepth,
+      midX + px * side * (width / 2 + 0.09),
+      yMin + wallSpan / 2,
+      midZ + pz * side * (width / 2 + 0.09)
+    )
+  }
+  if (addCeiling) {
+    const ceilLow = yMin + wallHeight
+    const ceilHigh = yMax + wallHeight + 0.18
+    addShadowVolume(
+      width + 0.36,
+      ceilHigh - ceilLow,
+      runLength + stepDepth,
+      midX,
+      (ceilLow + ceilHigh) / 2,
+      midZ
+    )
   }
 
   function getFloorHeight(x, z) {

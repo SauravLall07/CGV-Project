@@ -7,7 +7,8 @@
 // makes that frame a slow one instead.
 const MAX_DELTA = 0.1 // seconds
 
-export function createLoop({ renderer, scene, camera, clock, afterRender }) {
+export function createLoop({ renderer, scene, camera, clock, afterRender, render }) {
+  const draw = render ?? ((nextScene, nextCamera) => renderer.render(nextScene, nextCamera))
   const updateCallbacks = []
 
   function add(callback) {
@@ -30,7 +31,7 @@ export function createLoop({ renderer, scene, camera, clock, afterRender }) {
     renderer.setViewport(0, 0, width, height)
     renderer.setScissor(0, 0, width, height)
     renderer.clear()
-    renderer.render(scene, camera)
+    draw(scene, camera)
     if (afterRender) afterRender(renderer)
 
     requestAnimationFrame(tick)

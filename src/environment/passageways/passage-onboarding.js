@@ -1,12 +1,16 @@
 import * as THREE from 'three'
+import { getKitMaterials } from '../level1-kit/kit-materials.js'
+import { retile } from '../level1-kit/kit-props.js'
+import { dressWalls } from '../level1-kit/wall-dressing.js'
+import { dressOnboardingGallery } from './level1-dressing.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
-  plasterMaterial,
-  woodMaterial
+  plasterMaterial
 } from '../textures.js'
 import { createTutorialHintSystem } from '../../systems/tutorial-hints.js'
 import { createAxisAlignedCorridor, createPuzzleDoor } from './passage-components.js'
+import { addIronRailing, addPassageShell } from './passage-exterior.js'
 import { TUTORIAL_PASSAGE_WEST_ENTRY_X } from './passage-tutorial.js'
 
 // Passageway 0 — a short, completely safe onboarding gallery.
@@ -23,8 +27,10 @@ const EXTERIOR_START_X = PASSAGE_START_X - 11.5
 const EXTERIOR_WIDTH = 4.8
 const EXIT_DOOR_X = PASSAGE_END_X - 2.15
 
+// Far enough along the gantry that the normal 4.8 m follow camera sits on
+// the deck, in front of the rear rail, instead of crowding the detective.
 export const ONBOARDING_PASSAGE_SPAWN = new THREE.Vector3(
-  EXTERIOR_START_X + 1.7,
+  EXTERIOR_START_X + 6.4,
   FLOOR_Y,
   CORRIDOR_Z
 )
@@ -112,7 +118,6 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     grout: 0x332f2d
   })
   const wallMat = plasterMaterial({ repeat: [9, 3], base: 0x655d56, roughness: 0.9 })
-  const panelMat = woodMaterial({ repeat: [7, 2], light: 0x66452e, dark: 0x321f17 })
   const ceilingMat = plasterMaterial({ repeat: [9, 2], base: 0x3d3a3c, roughness: 0.96 })
   const ironMat = metalMaterial({ repeat: [6, 1], base: 0x2c3640, roughness: 0.48, metalness: 0.72 })
 
@@ -183,7 +188,8 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     for (const y of [0.55, 1.05]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(exteriorLength, 0.07, 0.07), railMat)
       rail.position.set((EXTERIOR_START_X + PASSAGE_START_X) / 2, y, railZ)
-      rail.castShadow = true
+      rail.userData.cameraClearance = 0.22
+      rail.visible = false
       group.add(rail)
     }
     // Rail collision is intentionally thin; the circle-vs-box player
@@ -201,6 +207,8 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   for (const y of [0.55, 1.05]) {
     const rearRail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, EXTERIOR_WIDTH), railMat)
     rearRail.position.set(EXTERIOR_START_X, y, CORRIDOR_Z)
+    rearRail.userData.cameraClearance = 0.22
+    rearRail.visible = false
     group.add(rearRail)
   }
   colliders.push({
@@ -214,19 +222,61 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   for (const side of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 3.0, 0.16), liftFrameMat)
     post.position.set(EXTERIOR_START_X - 0.15, 1.5, CORRIDOR_Z + side * (EXTERIOR_WIDTH / 2 - 0.18))
+    post.userData.cameraClearance = 0.22
     group.add(post)
   }
   const liftHeader = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, EXTERIOR_WIDTH), liftFrameMat)
   liftHeader.position.set(EXTERIOR_START_X - 0.15, 2.95, CORRIDOR_Z)
+  liftHeader.userData.cameraClearance = 0.22
   group.add(liftHeader)
 
-  for (let x = EXTERIOR_START_X + 0.6; x < PASSAGE_START_X; x += 2.2) {
-    for (const side of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.15, 0.09), railMat)
-      post.position.set(x, 0.575, CORRIDOR_Z + side * EXTERIOR_WIDTH / 2)
-      group.add(post)
-    }
+  // The follow camera spawns west of this gate. A centre ray at head height
+  // misses the 7 cm rails, so these invisible slabs are what pull it back
+  // onto the deck, in front of the rails and the lift frame.
+  const rearBlock = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.4, EXTERIOR_WIDTH + 0.5))
+  rearBlock.visible = false
+  rearBlock.position.set(EXTERIOR_START_X - 0.02, 2.1, CORRIDOR_Z)
+  rearBlock.userData.cameraClearance = 0.22
+  rearBlock.name = 'onboarding-gantry-rear-camera-block'
+  group.add(rearBlock)
+  for (const side of [-1, 1]) {
+    const sideBlock = new THREE.Mesh(new THREE.BoxGeometry(exteriorLength, 4.4, 0.24))
+    sideBlock.visible = false
+    sideBlock.position.set(
+      (EXTERIOR_START_X + PASSAGE_START_X) / 2,
+      2.1,
+      CORRIDOR_Z + side * EXTERIOR_WIDTH / 2
+    )
+    sideBlock.userData.cameraClearance = 0.22
+    sideBlock.name = `onboarding-gantry-side-camera-block-${side}`
+    group.add(sideBlock)
   }
+
+  for (const side of [-1, 1]) {
+    addIronRailing(group, {
+      min: EXTERIOR_START_X,
+      max: PASSAGE_START_X,
+      fixed: CORRIDOR_Z + side * EXTERIOR_WIDTH / 2
+    })
+  }
+  addIronRailing(group, {
+    min: CORRIDOR_Z - EXTERIOR_WIDTH / 2,
+    max: CORRIDOR_Z + EXTERIOR_WIDTH / 2,
+    fixed: EXTERIOR_START_X,
+    axis: 'z'
+  })
+
+  addPassageShell(group, {
+    name: 'onboarding-exterior',
+    minX: PASSAGE_START_X,
+    maxX: PASSAGE_END_X,
+    minZ: CORRIDOR_Z - CORRIDOR_WIDTH / 2,
+    maxZ: CORRIDOR_Z + CORRIDOR_WIDTH / 2,
+    floorY: FLOOR_Y,
+    wallHeight: ROOM_HEIGHT,
+    skipEast: true,
+    signs: true
+  })
 
   // Heavy portal trim makes the open doorway read as the point where the
   // player physically enters the building, rather than another arbitrary gap.
@@ -246,23 +296,30 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
   topTrim.position.set(PASSAGE_START_X - 0.02, serviceDoorHeight, CORRIDOR_Z)
   group.add(topTrim)
 
-  // Warm exterior utility lamps lead the eye toward the doorway.
+  // Warm exterior utility lamps lead the eye toward the doorway. The bulb
+  // stays emissive so the fixture still reads as lit when the light pool
+  // gives this lamp's real light to something closer to the player.
+  const utilityHousingMat = new THREE.MeshStandardMaterial({
+    color: 0x2a3036,
+    roughness: 0.45,
+    metalness: 0.75
+  })
+  const utilityBulbMat = new THREE.MeshStandardMaterial({
+    color: 0xffe0b0,
+    emissive: 0xffb66d,
+    emissiveIntensity: 2.4,
+    roughness: 0.2
+  })
   for (const x of [EXTERIOR_START_X + 2.2, EXTERIOR_START_X + 7.2]) {
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.14, 8), utilityHousingMat)
+    housing.position.set(x, 2.78, CORRIDOR_Z)
+    group.add(housing)
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), utilityBulbMat)
+    bulb.position.set(x, 2.66, CORRIDOR_Z)
+    group.add(bulb)
     const lamp = new THREE.PointLight(0xffb66d, 9, 7, 2)
-    lamp.position.set(x, 2.7, CORRIDOR_Z)
+    lamp.position.copy(bulb.position)
     group.add(lamp)
-  }
-
-  // Match the station's wood-and-brass language so the onboarding space feels
-  // like part of the level rather than a separate grey test room.
-  for (const side of [-1, 1]) {
-    const z = CORRIDOR_Z + side * (CORRIDOR_WIDTH / 2 - 0.16)
-    const wainscot = new THREE.Mesh(
-      new THREE.BoxGeometry(PASSAGE_END_X - PASSAGE_START_X - 0.5, 1.35, 0.07),
-      panelMat
-    )
-    wainscot.position.set((PASSAGE_START_X + PASSAGE_END_X) / 2, 0.68, z)
-    group.add(wainscot)
   }
 
   const bulbMat = new THREE.MeshStandardMaterial({
@@ -393,6 +450,16 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     exitDoor.update(delta)
     hints.update()
   }
+
+  // Same ticket-hall surfaces as Passageway 4 (reference 02).
+  const kit = getKitMaterials()
+  retile(group, [
+    [floorMat, kit.checker, 2.4],
+    [wallMat, kit.plaster, 3],
+    [ceilingMat, kit.ceiling, 3]
+  ])
+  dressWalls(group, { walls: [kit.plaster], finish: 'wood', name: 'onboarding-wall-dressing' })
+  dressOnboardingGallery(group, colliders)
 
   function dispose() {
     unregisterPanel?.()

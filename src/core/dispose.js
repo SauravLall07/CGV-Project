@@ -15,6 +15,11 @@ export function disposeObject(root) {
   function disposeTexture(value) {
     if (value?.isTexture && !textures.has(value)) {
       textures.add(value)
+      // Procedural maps in environment/textures.js are clones of a cached
+      // texture. Disposing the clone drops this level's GPU ref; the cached
+      // Source stays, so the next visit uploads it once instead of allocating
+      // a new one. The canonical texture itself is never disposed.
+      if (value.userData?.sharedTexture) return
       value.dispose()
     } else if (Array.isArray(value)) {
       value.forEach(disposeTexture)
@@ -45,6 +50,11 @@ export function disposeObject(root) {
     // WebGLObjects listens for this event to release instanceMatrix and
     // instanceColor GPU attributes owned by InstancedMesh.
     if (node.isInstancedMesh && typeof node.dispose === 'function') node.dispose()
+
+    // A skinned mesh owns a bone DataTexture the renderer allocates on first
+    // draw. Guard clones are detached before this runs; their textures are
+    // released in police-visual.js. This covers any skeleton still in the tree.
+    if (node.skeleton?.boneTexture) node.skeleton.dispose()
 
     // DirectionalLight/PointLight/SpotLight own a shadow render target that
     // their own dispose() releases.

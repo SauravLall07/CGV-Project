@@ -40,6 +40,7 @@ export function createMinimap({
     1,
     80
   )
+  camera.name = 'minimap'
   camera.up.set(0, 0, 1) // world +Z is "up" on the map (yaw 0 faces up)
   camera.layers.set(MINIMAP_LAYER)
 

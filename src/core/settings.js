@@ -10,6 +10,8 @@
 // preferences between sessions.
 
 const STORAGE_KEY = 'chrono-express:settings:v1'
+// 2: crouch defaults to X/Z again (1 had moved it to Ctrl).
+const BINDINGS_VERSION = 2
 
 // ---------------------------------------------------------------
 // Option definitions
@@ -42,30 +44,49 @@ export const OPTION_DEFS = [
     format: (v) => `${Math.round(v)}°`
   },
   {
-    id: 'renderScale',
-    label: 'Render Resolution',
-    hint: 'Lower this first if the frame rate drops on weaker hardware.',
-    group: 'Display',
-    type: 'slider',
-    min: 0.5,
-    max: 1,
-    step: 0.05,
-    format: (v) => `${Math.round(v * 100)}%`
-  },
-  {
-    id: 'shadows',
-    label: 'Shadows',
-    hint: 'Dynamic shadow casting from lamps and the train shed.',
+    id: 'bloom',
+    label: 'Bloom',
+    hint: 'Soft glow on lamps, lit windows and the moon. The blur is half resolution.',
     group: 'Display',
     type: 'toggle'
   },
   {
-    id: 'softShadows',
-    label: 'Soft Shadows',
-    hint: 'Percentage-closer filtering. Costs a little performance.',
+    id: 'shadowQuality',
+    label: 'Shadow Quality',
+    hint: 'PCF shadows on the evening sun. Off, or a 1024, 2048, or 4096 map. Applies immediately.',
     group: 'Display',
-    type: 'toggle',
-    dependsOn: 'shadows'
+    type: 'choice',
+    choices: [
+      { value: 'off', label: 'Off' },
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High' }
+    ]
+  },
+  {
+    id: 'renderQuality',
+    label: 'Render quality',
+    hint: 'Auto adjusts resolution gradually for weak laptops. HTML menus and HUD stay sharp.',
+    group: 'Display',
+    type: 'choice',
+    choices: [
+      { value: 'auto', label: 'Auto' },
+      { value: 'high', label: 'High (100%)' },
+      { value: 'balanced', label: 'Balanced (85%)' },
+      { value: 'performance', label: 'Performance (70%)' }
+    ]
+  },
+  {
+    id: 'grassDensity',
+    label: 'Grass Density',
+    hint: 'How many blades are drawn around the Boarding spawn. Applies immediately.',
+    group: 'Display',
+    type: 'choice',
+    choices: [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High' }
+    ]
   },
   {
     id: 'showStats',
@@ -100,6 +121,17 @@ export const OPTION_DEFS = [
     type: 'toggle'
   },
   {
+    id: 'crouchMode',
+    label: 'Crouch',
+    hint: 'Toggle: press once to crouch, again to stand. Hold: crouch only while the key is down.',
+    group: 'Gameplay',
+    type: 'choice',
+    choices: [
+      { value: 'toggle', label: 'Toggle' },
+      { value: 'hold', label: 'Hold' }
+    ]
+  },
+  {
     id: 'cameraDistance',
     label: 'Camera Distance',
     hint: 'How far the camera sits behind the player in open space.',
@@ -130,16 +162,25 @@ export const OPTION_DEFS = [
   }
 ]
 
+export const SHADOW_MAP_SIZES = { low: 1024, medium: 2048, high: 4096 }
+
+export function shadowMapSize(quality) {
+  return SHADOW_MAP_SIZES[quality] ?? 0
+}
+
 export const DEFAULT_OPTIONS = {
   brightness: 1.15,
   fov: 60,
   renderScale: 1,
-  shadows: true,
-  softShadows: true,
+  renderQuality: 'auto',
+  bloom: true,
+  shadowQuality: 'medium',
+  grassDensity: 'medium',
   showStats: false,
   captureShortcuts: true,
   mouseSensitivity: 1,
   invertY: false,
+  crouchMode: 'toggle',
   cameraDistance: 4.8,
   masterVolume: 0.5,
   mute: false
@@ -160,8 +201,8 @@ export const ACTIONS = [
   { id: 'right', label: 'Move Right', group: 'Movement', held: true },
   { id: 'run', label: 'Run', group: 'Movement', held: true },
   // Jump and crouch are held rather than press actions: the player reads
-  // `jump` as a held flag and edge-detects the press itself, and `duck` is a
-  // hold-to-crouch.
+  // `jump` as a held flag and edge-detects the press itself. `duck` is read
+  // as held in Hold mode and as a key-down edge (consumePress) in Toggle mode.
   { id: 'jump', label: 'Jump', group: 'Movement', held: true },
   { id: 'duck', label: 'Crouch', group: 'Movement', held: true },
   { id: 'interact', label: 'Interact', group: 'Actions' },
@@ -181,8 +222,9 @@ export const DEFAULT_BINDINGS = {
   right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'],
   jump: ['Space', null],
-  // Ctrl is captured with the browser shortcut keys while the game is active.
-  duck: ['ControlLeft', 'ControlRight'],
+  // Not Ctrl: outside fullscreen the browser takes Ctrl+W (close tab) before
+  // the page sees it, so crouch + forward would close the game.
+  duck: ['KeyX', 'KeyZ'],
   interact: ['KeyE', null],
   distract: ['KeyT', null],
   toggleView: ['KeyV', null],
@@ -255,6 +297,13 @@ export function bindingLabel(codes) {
   return parts.length ? parts.join('/') : 'Unbound'
 }
 
+// "press X/Z" or "hold X/Z", for hint text that tells the
+// player how to crouch in the current crouch mode.
+export function crouchKeyHint() {
+  const keys = bindingLabel(settings.getBinding('duck'))
+  return settings.get('crouchMode') === 'hold' ? `hold ${keys}` : `press ${keys}`
+}
+
 // ---------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------
@@ -290,24 +339,47 @@ function createSettingsStore() {
       values[def.id] = value
     } else if (def.type === 'slider' && typeof value === 'number' && Number.isFinite(value)) {
       values[def.id] = Math.min(def.max, Math.max(def.min, value))
+    } else if (def.type === 'choice' && def.choices.some((choice) => choice.value === value)) {
+      values[def.id] = value
     }
   }
 
+  // Older saves had a Shadows toggle and a Soft Shadows toggle. Soft shadows
+  // were already rewritten to hard PCF by Three r185, so a saved "on" becomes
+  // Medium and a saved "off" stays off.
+  if (stored.options && stored.options.shadowQuality === undefined && stored.options.shadows === false) {
+    values.shadowQuality = 'off'
+  }
+
   const storedBindings = { ...(stored.bindings ?? {}) }
-  // Move existing installs off the previous X/Z crouch defaults while
-  // preserving any custom crouch binding the player chose themselves.
+  // Saves from when crouch defaulted to Ctrl go back to X/Z, once. Any other
+  // crouch binding was the player's own choice and is kept, as are saves where
+  // X or Z has since been given to another action. The version stops a later,
+  // deliberate Ctrl binding from being reverted on every load.
+  const migrateCrouch = (stored.bindingsVersion ?? 1) < BINDINGS_VERSION
+  const xzTaken = Object.entries(storedBindings).some(
+    ([id, pair]) => id !== 'duck' && pair?.some((code) => code === 'KeyX' || code === 'KeyZ')
+  )
   if (
-    storedBindings.duck?.[0] === 'KeyX' &&
-    storedBindings.duck?.[1] === 'KeyZ'
+    migrateCrouch &&
+    storedBindings.duck?.[0] === 'ControlLeft' &&
+    storedBindings.duck?.[1] === 'ControlRight' &&
+    !xzTaken
   ) {
-    storedBindings.duck = DEFAULT_BINDINGS.duck
+    storedBindings.duck = [...DEFAULT_BINDINGS.duck]
   }
   const bindings = cloneBindings(storedBindings)
   const listeners = new Set()
+  // Internal scale is transient: Auto/benchmark changes must not write saves.
+  let runtimeRenderScale = 1
+  if (migrateCrouch && stored.bindings) persist()
 
   function persist() {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ options: values, bindings }))
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ options: values, bindings, bindingsVersion: BINDINGS_VERSION })
+      )
     } catch {
       // Storage unavailable (private mode, blocked site data) — settings still
       // apply for this session, they just are not remembered.
@@ -319,7 +391,15 @@ function createSettingsStore() {
   }
 
   function get(id) {
+    if (id === 'renderScale') return runtimeRenderScale
     return id === undefined ? values : values[id]
+  }
+
+  function setRuntimeRenderScale(value) {
+    const next = Math.min(1, Math.max(0.7, value))
+    if (runtimeRenderScale === next) return
+    runtimeRenderScale = next
+    notify('renderScale') // Existing renderer and composer listeners resize together.
   }
 
   function set(id, value) {
@@ -398,6 +478,7 @@ function createSettingsStore() {
   return {
     get,
     set,
+    setRuntimeRenderScale,
     subscribe,
     getBindings,
     getBinding,

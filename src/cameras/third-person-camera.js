@@ -139,7 +139,18 @@ export function createThirdPersonCamera(camera, domElement) {
       for (const hit of hits) {
         if (isDescendantOf(hit.object, playerMesh)) continue
         if (hit.object.userData.noCameraCollision) continue
-        allowed = Math.max(minDistance, hit.distance - collisionPadding)
+        const clearance = hit.object.userData.cameraClearance
+        if (typeof clearance === 'number') {
+          // Thin rails. The usual minimum follow distance would leave the
+          // camera on the far side of a gantry rail, so stay in front of
+          // the hit even when that is close to the player.
+          const gap = Math.min(clearance, hit.distance * 0.55)
+          // Never further out than the player's follow distance. The rail
+          // only pulls the camera in when it would otherwise sit past it.
+          allowed = Math.min(maxDistance, Math.max(0.35, hit.distance - gap))
+        } else {
+          allowed = Math.max(minDistance, hit.distance - collisionPadding)
+        }
         break
       }
     }
@@ -170,6 +181,14 @@ export function createThirdPersonCamera(camera, domElement) {
     if (typeof value === 'number') yaw = value
   }
 
+  // Optional spawn pitch. Undefined restores the usual slight downward look
+  // so a level that asked to start looking up does not leak into the next one.
+  function setPitch(value) {
+    pitch = typeof value === 'number'
+      ? THREE.MathUtils.clamp(value, PITCH_MIN, PITCH_MAX)
+      : 0.25
+  }
+
   // Menus (pause, settings, title) turn the camera off: no mouse look, no
   // pointer-lock grab when the player clicks a button that happens to sit
   // over the canvas, and no lock-lost callback while the lock is released on
@@ -195,6 +214,7 @@ export function createThirdPersonCamera(camera, domElement) {
     update,
     snap,
     setYaw,
+    setPitch,
     setEnabled,
     onLockLost,
     requestLock,

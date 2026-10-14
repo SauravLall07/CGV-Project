@@ -23,6 +23,7 @@ import {
   routeControlLayout
 } from '../environment/carriage-bounds.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
+import { createSkyDome } from '../environment/sky-dome.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
@@ -56,6 +57,17 @@ import { signMaterial } from '../environment/textures.js'
 // target. Removing it destabilises the train and hands the game to Level 3.
 
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
+// Fewer real point lights make per-pixel lighting cheaper; the pool follows the nearest lamps.
+const LEVEL2_LIGHT_POOL_SIZE = 8
+// Level 2 night look — roof-only lights, tuned together for readable cool nights.
+const ROOF_MOON_COLOR = 0xa9bfe6
+const ROOF_MOON_INTENSITY = 2.0
+const ROOF_SKY_COLOR = 0x3d5a8a
+const ROOF_GROUND_COLOR = 0x141a24
+const ROOF_SKY_INTENSITY = 1.1
+// Game-lighting cheat: light camera-facing surfaces from the right/rear;
+// the visible moon keeps its independent direction in the sky preset.
+const ROOF_MOON_DIRECTION = new THREE.Vector3(-0.75, 0.6, -0.28).normalize()
 
 function createChronoCore() {
   const core = new THREE.Group()
@@ -293,8 +305,10 @@ function makeBarrierProp({ width = 0.68, height = 0.95, depth = 0.9, color = 0x5
 export function createMovingHeistLevel({
   scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic,
   assets = null,
-  startAt = null
+  startAt = null,
+  post = null
 }) {
+  post?.setGrade({ warmth: 0 })
 
   const powerPickups = []
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.0)
@@ -306,11 +320,27 @@ export function createMovingHeistLevel({
   hud?.setChronoVisible?.(false)
 
   const env = createCarriageEnvironment()
-  const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 38.0 })
+  const sky = createSkyDome('moving-heist')
+  const outdoorEnv = createOutdoorEnvironment({
+    mode: 'moving',
+    sceneryStyle: 'moonlit-valley',
+    getViewerZ: () => player.mesh.position.z,
+    speed: 38.0,
+    fogColor: sky.horizonColor
+  })
+  let sceneryMultiplier = 1
+  let sceneryTarget = 1
+  let sceneryFrom = 1
+  let sceneryEaseTime = 0.3
   const { root, spans, roof } = env
 
-  scene.add(outdoorEnv.group, root)
-  scene.fog = new THREE.Fog(0x241d24, 30, 250)
+  scene.add(sky.mesh, outdoorEnv.group, root)
+  // Night sky. Fog matches the horizon so the hills don't drop to black
+  // under the moon. The dome itself is unfogged, so the stars stay visible.
+  // The clear stays dark so the minimap inset does not fill with the sky.
+  scene.background = new THREE.Color(0x1a1a2e)
+  scene.fog = new THREE.Fog(sky.horizonColor, 70, 900)
+  scene.fog.color = sky.horizonColor
 
   // Geometry that can block the Passenger guard's vision.
   // This includes walls, seats, luggage, bulkheads, etc.
@@ -2029,13 +2059,13 @@ export function createMovingHeistLevel({
   const roofSupports = []
   const roofObstacles = []
 
-  // Roof lighting: a low warm sun ahead of the train and a sky fill. They
+  // Roof lighting: cool light from the tuned camera-facing direction and sky fill. They
   // stay in the scene at zero intensity indoors — changing the light count
   // would recompile every material on the climb out.
-  const roofSun = new THREE.DirectionalLight(0xffb27a, 0)
-  roofSun.position.set(-8, ROOF_Y + 12, V0 + 30)
+  const roofSun = new THREE.DirectionalLight(ROOF_MOON_COLOR, 0)
   roofSun.target.position.set(0, ROOF_Y, F0 + 10)
-  const roofSky = new THREE.HemisphereLight(0xffc49a, 0x3a2a2a, 0)
+  roofSun.position.copy(ROOF_MOON_DIRECTION).multiplyScalar(50).add(roofSun.target.position)
+  const roofSky = new THREE.HemisphereLight(ROOF_SKY_COLOR, ROOF_GROUND_COLOR, 0)
   root.add(roofSun, roofSun.target, roofSky)
   const roofVoids = [
     { minX: -9, maxX: 9, minZ: spans.convergence.maxZ, maxZ: roofZ(ROOF_RUN.shell[0]) },
@@ -2502,7 +2532,7 @@ export function createMovingHeistLevel({
   }
 
   // Only the lights nearest the player are real; see core/light-pool.js.
-  const lightPool = createLightPool({ root, size: 12 })
+  const lightPool = createLightPool({ root, size: LEVEL2_LIGHT_POOL_SIZE })
 
   // Only the parts of the train the camera could see are drawn; see
   // environment/carriage-culling.js. Built here, once every prop is placed.
@@ -2599,10 +2629,22 @@ export function createMovingHeistLevel({
     get isCinematic() { return taken },
 
     update(delta) {
-      outdoorEnv.update(delta)
+      sky.update(delta, timeSystem)
+      const targetSceneryMultiplier = timeSystem.getUniforms().uTimeScale.value
+      if (targetSceneryMultiplier !== sceneryTarget) {
+        sceneryFrom = sceneryMultiplier
+        sceneryTarget = targetSceneryMultiplier
+        sceneryEaseTime = 0
+      }
+      // Real-time smoothstep reaches the signed world rate exactly in 0.3 s.
+      sceneryEaseTime = Math.min(0.3, sceneryEaseTime + delta)
+      const sceneryProgress = sceneryEaseTime / 0.3
+      const sceneryEase = sceneryProgress * sceneryProgress * (3 - 2 * sceneryProgress)
+      sceneryMultiplier = sceneryFrom + (sceneryTarget - sceneryFrom) * sceneryEase
+      outdoorEnv.update(delta * sceneryMultiplier)
       env.update(delta)
       corridorStealth.update(delta)
-      lightPool.update(player.mesh.position)
+      lightPool.update(player.mesh.position, delta)
       elapsed += delta
       // Draw the player's eye toward the Chrono Interface until collected.
       for (const pickup of powerPickups) {
@@ -2951,8 +2993,8 @@ export function createMovingHeistLevel({
         }
       }
 
-      roofSun.intensity = section === 'roof' ? 2.2 : 0
-      roofSky.intensity = section === 'roof' ? 1.3 : 0
+      roofSun.intensity = section === 'roof' ? ROOF_MOON_INTENSITY : 0
+      roofSky.intensity = section === 'roof' ? ROOF_SKY_INTENSITY : 0
 
       if (section === 'roof') {
         // Slipstream streaks pulse with the gusts; SLOW calms them.
@@ -3034,13 +3076,15 @@ export function createMovingHeistLevel({
     },
 
     dispose() {
+      post?.resetGrade()
       if (scene.onBeforeRender === cullBeforeRender) scene.onBeforeRender = previousBeforeRender
       if (scene.onAfterRender === cullAfterRender) scene.onAfterRender = previousAfterRender
       unregisters.forEach((fn) => fn())
       timeSystem?.setStrainEnabled?.(false)
       outdoorEnv.dispose()
+      sky.dispose()
       corridorStealth.dispose()
-      scene.remove(outdoorEnv.group, root)
+      scene.remove(sky.mesh, outdoorEnv.group, root)
       disposeObject(root)
     }
   }

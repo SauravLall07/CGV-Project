@@ -1,5 +1,15 @@
 import * as THREE from 'three'
 
+function solidTexture(r, g, b) {
+  const data = new Uint8Array([r, g, b, 255])
+  const texture = new THREE.DataTexture(data, 1, 1)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.colorSpace = THREE.NoColorSpace
+  texture.needsUpdate = true
+  return texture
+}
+
 /**
  * Custom Terrain GLSL Shader Material
  * Features:
@@ -26,6 +36,20 @@ export function createTerrainShaderMaterial(options = {}) {
     uFogColor: { value: new THREE.Color(options.fogColor || 0x241d24) },
     uFogNear: { value: options.fogNear ?? 30.0 },
     uFogFar: { value: options.fogFar ?? 250.0 },
+    // 1 replaces the surface completely at uFogFar. Lower keeps shading.
+    uFogMax: { value: options.fogMax ?? 1.0 },
+    uAmbient: { value: options.ambient ?? 0.7 },
+    // 0 leaves the surface alone. Boarding raises this for valley mist.
+    uMist: { value: options.mist ?? 0 },
+    // 1 draws the worn valley tracks. 0 on the moving levels.
+    uPaths: { value: options.paths ?? 0 },
+    // Forest-floor and rock photos near Boarding's playable run.
+    // 0 keeps the procedural colour on the moving levels.
+    uPhoto: { value: options.photo ?? 0 },
+    uGroundMap: { value: options.groundMap || solidTexture(80, 90, 60) },
+    uGroundNormal: { value: options.groundNormal || solidTexture(128, 128, 255) },
+    uRockMap: { value: options.rockMap || solidTexture(90, 86, 80) },
+    uRockNormal: { value: options.rockNormal || solidTexture(128, 128, 255) },
 
     uStationSpotLightCount: { value: 0 },
     uStationSpotLightPos: { value: defaultLightPos },
@@ -69,6 +93,16 @@ export function createTerrainShaderMaterial(options = {}) {
     uniform vec3 uFogColor;
     uniform float uFogNear;
     uniform float uFogFar;
+    uniform float uFogMax;
+    uniform float uAmbient;
+    uniform float uMist;
+    uniform float uPaths;
+    uniform float uPhoto;
+    uniform sampler2D uGroundMap;
+    uniform sampler2D uGroundNormal;
+    uniform sampler2D uRockMap;
+    uniform sampler2D uRockNormal;
+    uniform float uTime;
 
     uniform int uStationSpotLightCount;
     uniform vec3 uStationSpotLightPos[3];
@@ -78,6 +112,13 @@ export function createTerrainShaderMaterial(options = {}) {
 
     float hash(vec2 p) {
       return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
+    float segDist(vec2 p, vec2 a, vec2 b) {
+      vec2 pa = p - a;
+      vec2 ba = b - a;
+      float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+      return length(pa - ba * h);
     }
 
     float noise(vec2 p) {
@@ -118,15 +159,81 @@ export function createTerrainShaderMaterial(options = {}) {
       baseColor = mix(baseColor, gravelCol, trackGravelFactor * (1.0 - cliffFactor * 0.5));
 
       // Mountain peak snow/grey rock highlight for tall hills
+      // Worn earth. Two segments leave the station area and head up the
+      // valley. uPaths is 0 on the moving levels, so this stays off there.
+      float pathA = segDist(vWorldPosition.xz, vec2(-168.0, -18.0), vec2(-30.0, 28.0));
+      float pathB = segDist(vWorldPosition.xz, vec2(-30.0, 28.0), vec2(55.0, 78.0));
+      float worn = 1.0 - smoothstep(1.1, 3.4, min(pathA, pathB));
+      baseColor = mix(baseColor, uGravelColor * 0.72 + vec3(0.06, 0.04, 0.02), worn * uPaths);
+
       float peakFactor = smoothstep(25.0, 60.0, height);
       baseColor = mix(baseColor, uRockColor * 1.3 + vec3(0.1, 0.1, 0.12), peakFactor * (1.0 - slope * 0.4));
+
+      // Photo ground near the walkable run. The maps are sRGB stored as
+      // raw texels, so they are converted before the moonlight multiply.
+      // uPhoto is 0 on the moving levels and this block stays off.
+      vec2 playMin = vec2(-189.0, -52.0);
+      vec2 playMax = vec2(4.3, 27.0);
+      vec2 clampedXZ = clamp(vWorldPosition.xz, playMin, playMax);
+      float playGap = length(vWorldPosition.xz - clampedXZ);
+      float nearPlay = (1.0 - smoothstep(6.0, 40.0, playGap)) * uPhoto;
+      if (nearPlay > 0.001) {
+        vec2 groundUv = vWorldPosition.xz * 0.11;
+        vec2 rockUv = vWorldPosition.xz * 0.07;
+        // Two scales of the same photo. The broad sample breaks the
+        // repeat that shows in the gaps between grass blades.
+        vec3 groundFine = pow(texture2D(uGroundMap, groundUv).rgb, vec3(2.2));
+        vec3 groundBroad = pow(texture2D(uGroundMap, vWorldPosition.xz * 0.027).rgb, vec3(2.2));
+        float tileMix = 0.38 + 0.28 * noise(vWorldPosition.xz * 0.041);
+        vec3 groundTex = mix(groundFine, groundBroad, tileMix);
+        // Patches many metres across, so the soil is not one flat tint.
+        float patch = noise(vWorldPosition.xz * 0.011);
+        // Stay in the green. The old high end (1.08, 1.00, 0.88) lifted the
+        // red leaf-litter in the photo, and the blue night multiply turned
+        // those patches magenta.
+        groundTex *= mix(vec3(0.66, 0.86, 0.60), vec3(0.80, 1.06, 0.68), patch);
+        vec3 rockTex = pow(texture2D(uRockMap, rockUv).rgb, vec3(2.2));
+        vec3 photo = mix(groundTex, rockTex, cliffFactor);
+        // Daylight photos are too green and too saturated for moonlight.
+        // Pull them toward a cool grey so the grain stays and the hue does not.
+        float photoLuma = dot(photo, vec3(0.299, 0.587, 0.114));
+        photo = mix(photo, vec3(photoLuma), 0.32);
+        photo.r = min(photo.r, max(photo.g, 0.02) * 0.88);
+        photo.b = min(photo.b, photo.g * 1.02);
+        photo *= vec3(0.76, 0.98, 0.78);
+        // Meadow bed under the spawn grass. Gaps were reading as bright
+        // dirt. This pulls that band toward a dark cool green-brown
+        // while the patch variation above still shows through.
+        float bedSpawn = length(vWorldPosition.xz - vec2(-182.1, -24.5));
+        float bedDoor = length(vWorldPosition.xz - vec2(-166.0, -24.5));
+        float bedDist = min(bedSpawn, bedDoor);
+        float grassBed = (1.0 - smoothstep(5.0, 40.0, bedDist)) * (1.0 - cliffFactor);
+        vec3 bedSoil = vec3(0.030, 0.042, 0.024);
+        photo = mix(photo, photo * vec3(0.48, 0.58, 0.46) + bedSoil, grassBed * 0.85);
+        baseColor = mix(baseColor, photo * (0.9 + detailNoise * 0.16), nearPlay);
+        vec3 groundN = texture2D(uGroundNormal, groundUv).xyz * 2.0 - 1.0;
+        vec3 rockN = texture2D(uRockNormal, rockUv).xyz * 2.0 - 1.0;
+        vec3 photoN = mix(groundN, rockN, cliffFactor);
+        normal = normalize(normal + vec3(photoN.x, photoN.z, photoN.y) * nearPlay * 0.5);
+      }
 
       // Hemisphere & Directional Lighting
       float NdotL = max(0.0, dot(normal, uSunDirection));
       float skyDiff = clamp(0.5 + 0.5 * normal.y, 0.0, 1.0);
 
       vec3 diffuse = NdotL * uSunColor * 1.2;
-      vec3 ambient = mix(uGroundColor, uSkyColor, skyDiff) * 0.7;
+      vec3 ambient = mix(uGroundColor, uSkyColor, skyDiff) * uAmbient;
+
+      // Textured Boarding ground uses the same diffuse model as a standard
+      // material: station moonlight (0xc8daf6 at 1.95), the hemisphere
+      // (0x2a4068 over 0x0a090e at 0.48), and a dim cool fill for the
+      // environment map at intensity 0.4. Diffuse is divided by PI.
+      // nearPlay is 0 on the moving levels, so they keep the line above.
+      vec3 moonIrradiance = vec3(0.784, 0.855, 0.965) * 1.95 * NdotL;
+      vec3 hemiIrradiance = mix(vec3(0.039, 0.035, 0.055), vec3(0.165, 0.251, 0.408), skyDiff) * 0.48;
+      vec3 envIrradiance = vec3(0.10, 0.12, 0.18) * 0.4;
+      vec3 standardLit = baseColor * (moonIrradiance + hemiIrradiance + envIrradiance) * 0.3183;
+      vec3 legacyLit = baseColor * (diffuse + ambient);
 
       // Station Exterior Spotlight Illumination
       vec3 stationLightContrib = vec3(0.0);
@@ -158,13 +265,26 @@ export function createTerrainShaderMaterial(options = {}) {
         }
       }
 
-      vec3 litColor = baseColor * (diffuse + ambient + stationLightContrib);
+      vec3 litColor = mix(legacyLit, standardLit, nearPlay) + baseColor * stationLightContrib;
 
       // Distance fog calculation
-      float fogFactor = smoothstep(uFogNear, uFogFar, vViewDistance);
+      float fogFactor = min(smoothstep(uFogNear, uFogFar, vViewDistance), uFogMax);
       vec3 finalColor = mix(litColor, uFogColor, fogFactor);
 
+      // Low mist. Stronger in the valley floor, drifting slowly with uTime.
+      // uMist is 0 on the moving levels.
+      float drift = noise(vWorldPosition.xz * 0.02 + vec2(uTime * 0.012, 0.0));
+      float mist = smoothstep(9.0, 0.4, vWorldPosition.y);
+      mist *= smoothstep(30.0, 110.0, vViewDistance);
+      mist *= (0.55 + 0.45 * drift) * uMist;
+      finalColor = mix(finalColor, uFogColor * 0.72 + vec3(0.025, 0.03, 0.045), mist);
+
       gl_FragColor = vec4(finalColor, 1.0);
+      // Same ACES curve and sRGB output as the standard materials. Without
+      // this, a shadowed slope's linear colour is stored as if it were already
+      // display-ready and reads as black.
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
     }
   `
 

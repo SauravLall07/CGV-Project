@@ -19,7 +19,7 @@ import * as THREE from 'three'
 const DEFAULT_CHECKPOINT = { position: new THREE.Vector3(0, 0, 0), yaw: 0 }
 
 export function createLevelManager({
-  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, levels,
+  scene, interaction, assets, hud, player, camera, respawn, loadingScreen, timeSystem, renderer, levels,
   onEnter, onLeave, onInputStateChange
 }) {
   const sequence = levels.map((l) => l.state)
@@ -36,7 +36,7 @@ export function createLevelManager({
   let currentOptions = null
 
   const ctx = {
-    scene, interaction, assets, hud, timeSystem, player, camera, respawn, advance,
+    scene, interaction, assets, hud, timeSystem, player, camera, respawn, renderer, advance,
     beginCinematic() {
       respawn.cancel()
       onInputStateChange?.()
@@ -81,6 +81,8 @@ export function createLevelManager({
       // Movement is camera-relative, so the spawn yaw has to reach the camera or
       // "forward" would still mean whatever the previous level was facing.
       if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
+      // Levels omit pitch. Boarding sets one so the opening view includes the moon.
+      if (camera.setPitch) camera.setPitch(checkpoint.pitch)
       camera.snap()
       // snap() only arms the follow camera for the next update(). The title
       // menu cinematic parks the render camera outside the train (x≈7, z≈28);
@@ -103,6 +105,24 @@ export function createLevelManager({
     transitioning = value
     if (value) interaction.setEnabled(false)
     onInputStateChange?.()
+  }
+
+  // The title screen already built Boarding. Adopting it keeps that scene in
+  // place so New Game can glide the camera instead of flashing a reload.
+  // The checkpoint and objective are applied; the camera is left where it is.
+  function adopt(state, level) {
+    if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
+    pendingToken += 1
+    if (current) teardown()
+    currentState = state
+    currentOptions = null
+    current = level
+    transitioning = false
+    const checkpoint = level.checkpoint ?? DEFAULT_CHECKPOINT
+    respawn.setCheckpoint(checkpoint.position, checkpoint.yaw, checkpoint)
+    hud.setObjective(level.objective ?? '')
+    timeSystem?.resetForLevel({ preserveEnergy: false })
+    if (onEnter) onEnter(state)
   }
 
   function enter(state, { preserveEnergy = false, levelOptions = null } = {}) {
@@ -199,6 +219,7 @@ export function createLevelManager({
 
   return {
     enter,
+    adopt,
     restart,
     unload,
     advance,

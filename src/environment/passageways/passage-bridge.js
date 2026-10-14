@@ -1,11 +1,15 @@
 import * as THREE from 'three'
+import { getKitMaterials } from '../level1-kit/kit-materials.js'
+import { retile } from '../level1-kit/kit-props.js'
+import { dressWalls } from '../level1-kit/wall-dressing.js'
+import { dressBridgePassage } from './level1-dressing.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
   plasterMaterial,
   woodMaterial
 } from '../textures.js'
-import { bindingLabel, settings } from '../../core/settings.js'
+import { bindingLabel, crouchKeyHint, settings } from '../../core/settings.js'
 import { GUARD_PASSAGE_EXIT } from './passage-guards.js'
 import { createTutorialHintSystem } from '../../systems/tutorial-hints.js'
 import { createDistractionSystem } from '../../systems/distraction.js'
@@ -269,7 +273,7 @@ function createCrouchVent({ group, colliders, floorMat, wallMat, ironMat, player
     if (crouched || warnedStanding) return
     if (insideMouth) {
       warnedStanding = true
-      hud?.showToast?.(`Too low to stand — hold ${bindingLabel(settings.getBinding('duck'))} and crouch through the vent.`, 2500)
+      hud?.showToast?.(`Too low to stand — ${crouchKeyHint()} to crouch through the vent.`, 2500)
     }
   }
 
@@ -1277,7 +1281,6 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     group.add(fixture)
 
     const housing = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.38, 0.46), stairHousingMat)
-    housing.castShadow = true
     fixture.add(housing)
 
     const lens = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.23, 0.30), stairLensMat)
@@ -1345,7 +1348,7 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     id: 'bridge-vent',
     center: { x: BRIDGE_PASSAGE_VENT_ENTRY.x + 0.7, y: BRIDGE_PASSAGE_FLOOR_Y, z: BRIDGE_PASSAGE_VENT_ENTRY.z },
     size: { x: 2.2, y: 2.3, z: 2.5 },
-    text: () => `MAINTENANCE VENT — hold ${bindingLabel(settings.getBinding('duck'))} and stay crouched until you clear all three low ribs.`,
+    text: () => `MAINTENANCE VENT — ${crouchKeyHint()} to crouch and stay crouched until you clear all three low ribs.`,
     duration: 4200
   })
   hints.addZone({
@@ -1525,6 +1528,22 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     puzzleDoor.update(delta)
     hints.update()
   }
+
+  // Maintenance level in the laser passage's kit (reference 03).
+  const kit = getKitMaterials()
+  retile(group, [
+    [floorMat, kit.concrete, 3],
+    [wallMat, kit.brick, 0.46],
+    [ceilingMat, kit.ceiling, 3]
+  ])
+  dressWalls(group, {
+    walls: [kit.brick],
+    finish: 'tile',
+    name: 'bridge-wall-dressing',
+    // The relay chamber has its own machinery panels on these walls.
+    skip: (mesh) => mesh.name.endsWith('-camera-friendly')
+  })
+  dressBridgePassage(group, colliders)
 
   function dispose() {
     powerPuzzle.dispose()

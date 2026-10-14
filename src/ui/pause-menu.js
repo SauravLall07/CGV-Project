@@ -297,7 +297,10 @@ export function createPauseMenu({
         continue
       }
 
-      addControlRow(action.label, bindingLabel(settings.getBinding(id)))
+      const label = id === 'duck'
+        ? `Crouch (${settings.get('crouchMode') === 'hold' ? 'hold' : 'toggle'})`
+        : action.label
+      addControlRow(label, bindingLabel(settings.getBinding(id)))
     }
     addControlRow('Look', 'Mouse')
     addControlRow('Pause', 'Esc')

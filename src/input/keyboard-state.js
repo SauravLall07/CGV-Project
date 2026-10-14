@@ -6,6 +6,8 @@
 // actions (movement, run) land in `state` for the player to read each frame;
 // everything else is delivered through onAction(), which fires once per press
 // — that is what the time abilities, interact and restart-level hook into.
+// consumePress(action) is the polled form of the same edge: true once per
+// key-down (repeats ignored) since it was last read.
 //
 // setEnabled(false) is what makes pausing safe: the held state is cleared so
 // the player does not resume mid-stride, and no action fires while a menu is
@@ -29,6 +31,7 @@ export function createKeyboardState() {
   for (const action of HELD_ACTIONS) state[action] = false
 
   const listeners = new Map()
+  const pressed = new Set()
   let codeToAction = new Map()
   let enabled = true
 
@@ -66,33 +69,43 @@ export function createKeyboardState() {
 
   function reset() {
     for (const action of HELD_ACTIONS) state[action] = false
+    pressed.clear()
+  }
+
+  function consumePress(action) {
+    return pressed.delete(action)
   }
 
   function onKeyDown(event) {
     if (!enabled) return
 
     // Modifier chords belong to the browser or operating system, not to game
-    // actions. In particular, Ctrl+R must not invoke the restart action while
-    // Ctrl is also being held as crouch. Keyboard Lock captures the browser's
+    // actions. In particular, Ctrl+R must not invoke the restart action if the
+    // player has rebound crouch to Ctrl. Keyboard Lock captures the browser's
     // reserved chords in fullscreen; this also prevents captured keydowns from
     // reaching the game's action map.
     const isModifierKey = [
       'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'
     ].includes(event.code)
+    const action = codeToAction.get(event.code)
     if ((event.ctrlKey || event.altKey || event.metaKey) && !isModifierKey) {
       event.preventDefault()
+      // Held actions still track the key, so W pressed while a modifier is
+      // held as a game key (crouch rebound to Ctrl) moves the player. Only
+      // presses (Ctrl+R restart) are blocked.
+      if (action && action in state) state[action] = true
       return
     }
 
-    const action = codeToAction.get(event.code)
     if (!action) return
 
     if (SCROLL_KEYS.has(event.code)) event.preventDefault()
 
     if (action in state) state[action] = true
 
-    if (!event.repeat && listeners.has(action)) {
-      listeners.get(action).forEach((cb) => cb(event))
+    if (!event.repeat) {
+      pressed.add(action)
+      listeners.get(action)?.forEach((cb) => cb(event))
     }
   }
 
@@ -126,5 +139,5 @@ export function createKeyboardState() {
     listeners.clear()
   }
 
-  return { state, onAction, setEnabled, reset, dispose }
+  return { state, onAction, consumePress, setEnabled, reset, dispose }
 }

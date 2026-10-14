@@ -49,6 +49,18 @@ function isWorldVisible(object) {
   return true
 }
 
+// The station train keeps its carriage and door boxes invisible so the GLB
+// can be the only thing drawn. Those boxes still have to stop a line of
+// sight, which is what the old visible carriage meshes did.
+function isHiddenCollider(object) {
+  let current = object
+  while (current) {
+    if (current.userData?.interactionCollider) return true
+    current = current.parent
+  }
+  return false
+}
+
 function isNonBlockingEffect(object) {
   let current = object
   while (current) {
@@ -270,7 +282,7 @@ export function createInteractionSystem({ camera, input } = {}) {
     const hits = raycaster.intersectObjects(blockers, false)
     for (const hit of hits) {
       if (isDescendantOf(hit.object, entry.object)) continue
-      if (!isWorldVisible(hit.object)) continue
+      if (!isWorldVisible(hit.object) && !isHiddenCollider(hit.object)) continue
       if (isNonBlockingEffect(hit.object)) continue
       return false
     }

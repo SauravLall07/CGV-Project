@@ -12,7 +12,9 @@ export function createSecurityLaserMaterial(options = {}) {
     uTime: { value: 0.0 },
     uState: { value: 0 }, // 0: Active, 1: Disabled, 2: Alarm
     uBeamCount: { value: options.beamCount || 4.0 },
-    uScanSpeed: { value: 3.5 }
+    uScanSpeed: { value: 3.5 },
+    // Above 1 so an armed beam clears the bloom threshold and glows.
+    uBoost: { value: options.boost ?? 3.2 }
   }
 
   const vertexShader = /* glsl */ `
@@ -36,6 +38,7 @@ export function createSecurityLaserMaterial(options = {}) {
     uniform int uState;
     uniform float uBeamCount;
     uniform float uScanSpeed;
+    uniform float uBoost;
 
     varying vec2 vUv;
     varying vec3 vViewPosition;
@@ -86,6 +89,7 @@ export function createSecurityLaserMaterial(options = {}) {
         alpha *= 0.2; // Fade background volume heavily when disabled
       }
 
+      if (uState != 1) finalColor *= uBoost;
       gl_FragColor = vec4(finalColor, alpha);
     }
   `
@@ -102,4 +106,70 @@ export function createSecurityLaserMaterial(options = {}) {
 
   material.customUniforms = uniforms
   return material
+}
+
+// Soft glow where a beam meets its emitter or the wall. Camera-facing quads,
+// one draw for all of a laser's points, sharing the beam's time and state
+// so it turns green or flashes with it. points are local to `parent`.
+export function addLaserGlow(parent, laserMaterial, points, size = 0.55) {
+  if (!points.length) return null
+  const positions = new Float32Array(points.length * 12)
+  const corners = new Float32Array(points.length * 8)
+  const index = []
+  points.forEach((p, i) => {
+    for (let c = 0; c < 4; c += 1) {
+      positions.set([p.x, p.y, p.z], i * 12 + c * 3)
+    }
+    corners.set([0, 0, 1, 0, 1, 1, 0, 1], i * 8)
+    index.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3)
+  })
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.BufferAttribute(corners, 2))
+  geometry.setIndex(index)
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4)
+
+  const shared = laserMaterial.customUniforms
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: shared.uTime,
+      uState: shared.uState,
+      uSize: { value: size }
+    },
+    vertexShader: /* glsl */ `
+      uniform float uSize;
+      varying vec2 vCorner;
+      void main() {
+        vCorner = uv - 0.5;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        mv.xy += vCorner * uSize;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform int uState;
+      varying vec2 vCorner;
+      void main() {
+        float r = length(vCorner) * 2.0;
+        if (r >= 1.0) discard;
+        float glow = pow(1.0 - r, 2.4);
+        vec3 color = vec3(1.0, 0.16, 0.1) * 2.6;
+        if (uState == 1) color = vec3(0.05, 0.5, 0.3) * 0.35;
+        if (uState == 2) color *= 0.7 + 0.6 * step(0.5, sin(uTime * 14.0));
+        gl_FragColor = vec4(color * glow, glow);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  })
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.name = 'laser-glow'
+  mesh.renderOrder = 3
+  mesh.userData.decor = true
+  mesh.userData.noInteractionBlocker = true
+  mesh.userData.noCameraCollision = true
+  parent.add(mesh)
+  return mesh
 }

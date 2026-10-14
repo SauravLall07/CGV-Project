@@ -1,4 +1,8 @@
 import * as THREE from 'three'
+import { getKitMaterials } from '../level1-kit/kit-materials.js'
+import { retile } from '../level1-kit/kit-props.js'
+import { dressWalls } from '../level1-kit/wall-dressing.js'
+import { dressGuardPassage } from './level1-dressing.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
@@ -14,6 +18,7 @@ import {
   createSweepingLaser,
   createTimedLaserController
 } from './passage-components.js'
+import { addPassageShell } from './passage-exterior.js'
 
 const PASSAGE_X_SHIFT = -66
 const worldX = (x) => x + PASSAGE_X_SHIFT
@@ -312,6 +317,17 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     grout: 0x27252a
   })
   const wallMat = plasterMaterial({ repeat: [18, 3], base: 0x4d5155, roughness: 0.92 })
+  addPassageShell(group, {
+    name: 'guards-exterior',
+    minX: ENTRY_X,
+    maxX: STAGE3_WALL_X,
+    minZ: CORRIDOR_Z - MAIN_WIDTH / 2,
+    maxZ: CORRIDOR_Z + MAIN_WIDTH / 2,
+    floorY: GUARD_PASSAGE_FLOOR_Y,
+    wallHeight: ROOM_HEIGHT,
+    skipWest: true,
+    skipEast: true
+  })
   const ceilingMat = plasterMaterial({ repeat: [16, 2], base: 0x292d31, roughness: 0.98 })
   const ironMat = metalMaterial({ repeat: [10, 2], base: 0x293540, roughness: 0.5, metalness: 0.75 })
   const woodMat = woodMaterial({ repeat: [6, 2], light: 0x5c402c, dark: 0x2b1d15 })
@@ -333,7 +349,6 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.26, 10), bodyMat)
     body.rotation.z = Math.PI / 2
     body.position.y = 0.16
-    body.castShadow = true
     pickup.add(body)
     group.add(pickup)
 
@@ -717,6 +732,16 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     puzzleDoor.update(delta)
     hints.update()
   }
+
+  // Service level in the laser passage's kit (reference 03).
+  const kit = getKitMaterials()
+  retile(group, [
+    [floorMat, kit.concrete, 3],
+    [wallMat, kit.brick, 0.46],
+    [ceilingMat, kit.ceiling, 3]
+  ])
+  dressWalls(group, { walls: [kit.brick], finish: 'wood', name: 'guards-wall-dressing' })
+  dressGuardPassage(group, colliders)
 
   function dispose() {
     signalPuzzle.dispose()

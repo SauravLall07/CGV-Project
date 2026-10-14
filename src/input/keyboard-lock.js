@@ -2,8 +2,8 @@
 //
 // A page cannot cancel Ctrl+W, Ctrl+T or Ctrl+Tab with preventDefault(): the
 // browser claims those before the document ever sees the keydown. That is why
-// holding Ctrl to crouch and pressing W to walk forward used to close the tab
-// mid-run.
+// crouch defaults to X/Z: with crouch on Ctrl, crouching and pressing W to walk
+// forward closes the tab mid-run unless this lock is up.
 //
 // The one web API that does capture them is the Keyboard Lock API, and it
 // only applies while the document is fullscreen. So "block browser shortcuts"

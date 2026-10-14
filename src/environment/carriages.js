@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
   carpetMaterial,
   metalMaterial,
@@ -3148,7 +3149,9 @@ function buildRoof(spans, shared, fx) {
   const deckW = WALL_X * 2 + 0.3
   const roofMat = metalMaterial({ repeat: [3, 20], base: 0x3b4048, roughness: 0.6, metalness: 0.7 })
   const deckMat = woodMaterial({ repeat: [2, 6], light: 0x9a6c3e, dark: 0x5a3a1e })
-  const glassMat = lampGlassMaterial()
+  // One unlit HDR bulb finish for all roof lanterns, including decorations:
+  // identical warm bloom even when no pooled point light is assigned nearby.
+  const glassMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc27a).multiplyScalar(3) })
 
   function roofSlab(minZ, maxZ) {
     const slab = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2 + 0.2, 0.2, maxZ - minZ), roofMat)
@@ -3181,7 +3184,8 @@ function buildRoof(spans, shared, fx) {
     }
   }
 
-  // Lantern on a short post at the deck edge; every other one casts light.
+  // Five sources alternate +X/-X along the roof; every bulb glows equally.
+  const roofPointLanterns = new Set([0, 2, 5, 6, 9])
   let lanternCount = 0
   function lantern(s, z) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.9, 8), shared.darkSteel)
@@ -3191,7 +3195,7 @@ function buildRoof(spans, shared, fx) {
     const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.2, 8), glassMat)
     glass.position.set(post.position.x, ROOF_Y + 0.99, z)
     group.add(post, cap, glass)
-    if (lanternCount++ % 2 === 0) {
+    if (roofPointLanterns.has(lanternCount++)) {
       const l = new THREE.PointLight(0xffc27a, 9, 8, 2)
       l.position.set(post.position.x - s * 0.3, ROOF_Y + 1.0, z)
       addLight(group, fx, l, false)
@@ -3200,11 +3204,167 @@ function buildRoof(spans, shared, fx) {
 
   const F0 = spans.freight.minZ
   const V0 = spans.vault.minZ
-  roofSlab(spans.passenger.minZ, spans.convergence.maxZ)
-  roofSlab(V0, spans.vault.maxZ)
-
   const zStart = spans.convergence.maxZ - 3.2
   const zEnd = V0 + ROOF_RUN.vaultDeck
+
+  // Exterior-only rear roofs. Merge static parts by material, sharing the
+  // existing roof finish, iron, brass and emissive glass without new lights.
+  const unitBox = new THREE.BoxGeometry(1, 1, 1)
+  const lampPost = new THREE.CylinderGeometry(0.04, 0.05, 0.9, 8)
+  const lampCap = new THREE.CylinderGeometry(0.05, 0.12, 0.06, 8)
+  const lampGlass = new THREE.CylinderGeometry(0.09, 0.08, 0.2, 8)
+  const slabY = CARRIAGE_CEILING_Y + 0.45
+  const slabTop = slabY + 0.1
+  function addPart(parts, material, geometry, x, y, z, sx = 1, sy = 1, sz = 1) {
+    if (!parts.has(material)) parts.set(material, [])
+    parts.get(material).push(geometry.clone().scale(sx, sy, sz).translate(x, y, z))
+  }
+  function addBox(parts, material, w, h, d, x, y, z) {
+    addPart(parts, material, unitBox, x, y, z, w, h, d)
+  }
+  function finishParts(parts, name, noCameraCollision = false, parent = group) {
+    for (const [material, geometries] of parts) {
+      const geometry = mergeGeometries(geometries, false)
+      geometries.forEach((part) => part.dispose())
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.name = name
+      mesh.receiveShadow = true
+      mesh.userData.noCameraCollision = noCameraCollision
+      parent.add(mesh)
+    }
+  }
+  const rearKeys = ['passenger', 'security', 'relay', 'cargo', 'mechanical', 'convergence']
+  rearKeys.forEach((key, index) => {
+    const span = spans[key]
+    const minZ = span.minZ + (index === 0 ? 0 : 0.4)
+    const maxZ = index === rearKeys.length - 1 ? zStart : span.maxZ - 0.4
+    const centre = (minZ + maxZ) / 2
+    const length = maxZ - minZ
+    const parts = new Map()
+    addBox(parts, roofMat, WALL_X * 2 + 0.2, 0.2, length, 0, slabY, centre)
+    for (const side of [-1, 1]) {
+      addBox(parts, shared.darkSteel, 0.12, 0.55, length, side * (WALL_X + 0.1), CARRIAGE_CEILING_Y + 0.25, centre)
+    }
+    for (let z = minZ + 1; z < maxZ - 0.5; z += 2) {
+      addBox(parts, shared.rivet, WALL_X * 2 + 0.2, 0.04, 0.08, 0, slabTop + 0.02, z)
+    }
+    for (const fraction of [0.28, 0.72]) {
+      const z = minZ + length * fraction
+      addBox(parts, shared.darkSteel, 0.8, 0.24, 0.6, 0, slabTop + 0.12, z)
+      for (let slat = 0; slat < 4; slat += 1) {
+        addBox(parts, shared.rivet, 0.7, 0.03, 0.04, 0, slabTop + 0.255, z - 0.21 + slat * 0.14)
+      }
+      const x = fraction < 0.5 ? -2.35 : 2.35
+      addPart(parts, shared.darkSteel, lampPost, x, slabTop + 0.45, z)
+      addPart(parts, shared.brass, lampCap, x, slabTop + 1.12, z)
+      addPart(parts, glassMat, lampGlass, x, slabTop + 0.99, z)
+    }
+    if (index < rearKeys.length - 1) {
+      // Low dark bellows bridge the 0.8 m roof gap above the unchanged ceiling.
+      const z = span.maxZ
+      addBox(parts, shared.rivet, WALL_X * 2 - 0.2, 0.12, 0.8, 0, slabY - 0.13, z)
+      for (let fold = 0; fold < 4; fold += 1) {
+        addBox(parts, shared.rivet, WALL_X * 2 - 0.1, 0.04, 0.05, 0, slabY - 0.03, z - 0.3 + fold * 0.2)
+      }
+    }
+    finishParts(parts, `rear-roof-${key}`)
+  })
+
+  // Behind the reachable bound (zStart + 0.5), clear of the ladder, hatch and
+  // roof arrival at zStart + 0.8. Bounds already block walking and jumping.
+  const barrier = new Map()
+  for (const x of [-2.71, -1.35, 0, 1.35, 2.71]) {
+    addBox(barrier, shared.darkSteel, 0.08, 1.25, 0.08, x, ROOF_Y + 0.475, zStart)
+  }
+  for (const y of [ROOF_Y + 0.45, ROOF_Y + 1.06]) {
+    addBox(barrier, shared.darkSteel, deckW, 0.08, 0.1, 0, y, zStart)
+  }
+  for (const x of [-1.6, 0, 1.6]) {
+    const z = zStart - 0.65
+    addBox(barrier, deckMat, 1.0, 0.7, 0.8, x, slabTop + 0.35, z)
+    addBox(barrier, shared.darkSteel, 1.02, 0.025, 0.06, x, slabTop + 0.7125, z)
+    addBox(barrier, shared.darkSteel, 0.06, 0.025, 0.82, x, slabTop + 0.7125, z)
+    for (const side of [-1, 1]) {
+      addBox(barrier, shared.darkSteel, 0.025, 0.7, 0.06, x + side * 0.51, slabTop + 0.35, z)
+      addBox(barrier, shared.darkSteel, 0.06, 0.7, 0.025, x, slabTop + 0.35, z + side * 0.41)
+    }
+  }
+  finishParts(barrier, 'rear-roof-entry-barrier', true)
+
+  // The +Z bound is zEnd - 0.4; the nearest rail face remains 0.35 m
+  // beyond it, clear of the drop hatch at V0 + 3.2. No collider is needed.
+  const vaultBarrier = new Map()
+  for (const x of [-2.71, -1.35, 0, 1.35, 2.71]) {
+    addBox(vaultBarrier, shared.darkSteel, 0.08, 1.25, 0.08, x, ROOF_Y + 0.475, zEnd)
+  }
+  for (const y of [ROOF_Y + 0.45, ROOF_Y + 1.06]) {
+    addBox(vaultBarrier, shared.darkSteel, deckW, 0.08, 0.1, 0, y, zEnd)
+  }
+  finishParts(vaultBarrier, 'vault-roof-end-barrier', true)
+
+  // A separate exterior group leaves the existing roof's culling bounds
+  // unchanged. It lies beyond every playable carriage span and has no gameplay.
+  const exteriorContinuation = new THREE.Group()
+  exteriorContinuation.name = 'decorative-vault-continuation'
+  const exteriorWindow = nightViewMaterial({ repeat: [1, 1], emissiveIntensity: 0.85 })
+  const exteriorFrame = woodMaterial({ repeat: [1, 1], light: 0x4a2c16, dark: 0x24140a })
+  let extensionEnd = spans.vault.maxZ
+  const extensions = [{ key: 'passenger', length: 20 }, { key: 'security', length: 20 }, { key: 'relay', length: 18 }]
+  extensions.forEach(({ key, length }, index) => {
+    const minZ = extensionEnd + 0.8
+    const maxZ = minZ + length
+    const centre = (minZ + maxZ) / 2
+    const parts = new Map()
+    const body = wallMaterialFor(key, length, false)
+    for (const side of [-1, 1]) {
+      addBox(parts, body, 0.12, CARRIAGE_CEILING_Y, length, side * WALL_X, CARRIAGE_CEILING_Y / 2, centre)
+      addBox(parts, shared.darkSteel, 0.12, 0.55, length, side * (WALL_X + 0.1), CARRIAGE_CEILING_Y + 0.25, centre)
+      for (const y of [0.95, 2.72]) {
+        addBox(parts, exteriorFrame, 0.05, 0.06, length, side * (WALL_X + 0.085), y, centre)
+      }
+      for (const localZ of windowBayZs(length / 2)) {
+        const z = centre + localZ
+        // The same framed pane pattern, placed on the exterior face of the
+        // solid shell; no room, curtains or interior geometry is built.
+        addBox(parts, exteriorFrame, 0.07, 1.22, 1.42, side * (WALL_X + 0.07), 1.62, z)
+        addBox(parts, shared.brass, 0.04, 1.1, 1.3, side * (WALL_X + 0.11), 1.62, z)
+        addBox(parts, exteriorWindow, 0.02, 1.04, 1.24, side * (WALL_X + 0.135), 1.62, z)
+      }
+    }
+    for (const z of [minZ + 0.06, maxZ - 0.06]) {
+      addBox(parts, body, WALL_X * 2, CARRIAGE_CEILING_Y, 0.12, 0, CARRIAGE_CEILING_Y / 2, z)
+    }
+    addBox(parts, roofMat, WALL_X * 2 + 0.2, 0.2, length, 0, slabY, centre)
+    for (let z = minZ + 1; z < maxZ - 0.5; z += 2) {
+      addBox(parts, shared.rivet, WALL_X * 2 + 0.2, 0.04, 0.08, 0, slabTop + 0.02, z)
+    }
+    for (const fraction of [0.28, 0.72]) {
+      const z = minZ + length * fraction
+      addBox(parts, shared.darkSteel, 0.8, 0.24, 0.6, 0, slabTop + 0.12, z)
+      for (let slat = 0; slat < 4; slat += 1) {
+        addBox(parts, shared.rivet, 0.7, 0.03, 0.04, 0, slabTop + 0.255, z - 0.21 + slat * 0.14)
+      }
+      const x = fraction < 0.5 ? -2.35 : 2.35
+      addPart(parts, shared.darkSteel, lampPost, x, slabTop + 0.45, z)
+      addPart(parts, shared.brass, lampCap, x, slabTop + 1.12, z)
+      addPart(parts, glassMat, lampGlass, x, slabTop + 0.99, z)
+    }
+    const gapCentre = extensionEnd + 0.4
+    addBox(parts, shared.rivet, WALL_X * 2 - 0.4, CARRIAGE_CEILING_Y, 0.8, 0, CARRIAGE_CEILING_Y / 2, gapCentre)
+    addBox(parts, shared.rivet, WALL_X * 2 - 0.2, 0.12, 0.8, 0, slabY - 0.13, gapCentre)
+    for (let fold = 0; fold < 4; fold += 1) {
+      const z = gapCentre - 0.3 + fold * 0.2
+      addBox(parts, shared.rivet, WALL_X * 2 - 0.2, CARRIAGE_CEILING_Y, 0.05, 0, CARRIAGE_CEILING_Y / 2, z)
+      addBox(parts, shared.rivet, WALL_X * 2 - 0.1, 0.04, 0.05, 0, slabY - 0.03, z)
+    }
+    finishParts(parts, `decorative-carriage-${index + 1}`, true, exteriorContinuation)
+    extensionEnd = maxZ
+  })
+  unitBox.dispose(); lampPost.dispose(); lampCap.dispose(); lampGlass.dispose()
+
+  // Keep the underlying slab and every existing deck/prop on the walkable run.
+  roofSlab(zStart, spans.convergence.maxZ)
+  roofSlab(V0, spans.vault.maxZ)
   deck(zStart, spans.convergence.maxZ)
   for (const [a, b] of ROOF_RUN.decks) deck(F0 + a, F0 + b)
   deck(V0, zEnd)
@@ -3249,7 +3409,7 @@ function buildRoof(spans, shared, fx) {
   dropHatch.position.set(0, ROOF_Y + 0.02, V0 + 3.2)
   group.add(dropHatch)
 
-  return { group, zStart, zEnd, streaks, dropHatch }
+  return { group, exteriorContinuation, zStart, zEnd, streaks, dropHatch }
 }
 
 // -----------------------------------------------------------------------
@@ -3355,6 +3515,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   if (!damaged) {
     roof = buildRoof(spans, shared, fx)
     root.add(roof.group)
+    root.add(roof.exteriorContinuation)
   } else {
     fx.car = 'cab'
     const cab = buildLocomotiveCab(shared, fx)

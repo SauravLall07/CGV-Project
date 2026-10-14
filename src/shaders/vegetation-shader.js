@@ -3,7 +3,9 @@ import * as THREE from 'three'
 /**
  * Custom Vegetation GLSL Shader Material
  * Features:
- * - Vertex wind sway displacement for foliage and trees
+ * - Vertex wind sway, stronger at the treetop, with a per-tree phase.
+ *   uTime is the sky clock on Boarding, so Slow, Freeze and Rewind
+ *   move the wind with the rest of the sky.
  * - Translucent leaf lighting (subsurface scattering simulation)
  * - Base-to-tip ambient occlusion darkening
  * - Distance fog integration
@@ -18,6 +20,8 @@ export function createVegetationShaderMaterial(options = {}) {
     uTime: { value: 0.0 },
     uWindSpeed: { value: options.windSpeed ?? 1.8 },
     uWindStrength: { value: options.windStrength ?? 0.15 },
+    // Height at which sway is full. Trees use ~7.5. Grass uses the blade height.
+    uSwayHeight: { value: options.swayHeight ?? 7.5 },
     uSunDirection: { value: options.sunDirection || new THREE.Vector3(1, 1, -0.5).normalize() },
     uSunColor: { value: new THREE.Color(options.sunColor || 0xffb173) },
     uSkyColor: { value: new THREE.Color(options.skyColor || 0x5e6f96) },
@@ -26,6 +30,9 @@ export function createVegetationShaderMaterial(options = {}) {
     uFogColor: { value: new THREE.Color(options.fogColor || 0x241d24) },
     uFogNear: { value: options.fogNear ?? 30.0 },
     uFogFar: { value: options.fogFar ?? 250.0 },
+    uFogMax: { value: options.fogMax ?? 1.0 },
+    uAmbient: { value: options.ambient ?? 0.6 },
+    uMist: { value: options.mist ?? 0 },
 
     uStationSpotLightCount: { value: 0 },
     uStationSpotLightPos: { value: defaultLightPos },
@@ -38,34 +45,40 @@ export function createVegetationShaderMaterial(options = {}) {
     uniform float uTime;
     uniform float uWindSpeed;
     uniform float uWindStrength;
+    uniform float uSwayHeight;
 
     varying vec3 vWorldPosition;
     varying vec3 vNormal;
     varying vec2 vUv;
     varying float vViewDistance;
     varying float vHeight;
+    varying vec3 vTint;
 
     void main() {
       vUv = uv;
       vNormal = normalize(mat3(modelMatrix * instanceMatrix) * normal);
-      
+      vTint = instanceColor;
+
       vec3 pos = position;
 
-      // Wind sway effect: displacement increases with height in local space Y
-      float heightFactor = max(0.0, pos.y);
+      // Sway grows toward the crown. The phase is the tree's own position,
+      // so neighbours do not rock in lockstep. Trunks (low y) stay still.
+      float heightFactor = smoothstep(0.05, uSwayHeight, pos.y);
+      heightFactor *= heightFactor;
       vec4 instanceWorldPos = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-      
-      float windWave = sin(uTime * uWindSpeed + instanceWorldPos.x * 0.5 + instanceWorldPos.z * 0.5);
-      float gustWave = cos(uTime * uWindSpeed * 0.7 + instanceWorldPos.z * 0.3);
-      
+      float phase = instanceWorldPos.x * 0.37 + instanceWorldPos.z * 0.23;
+
+      float windWave = sin(uTime * uWindSpeed + phase);
+      float gustWave = cos(uTime * uWindSpeed * 0.62 + phase * 1.7);
+
       vec3 windOffset = vec3(
-        (windWave + gustWave * 0.5) * uWindStrength * heightFactor * 0.25,
-        sin(uTime * uWindSpeed * 1.5 + pos.x) * 0.04 * heightFactor,
-        (cos(windWave) * 0.5) * uWindStrength * heightFactor * 0.25
+        (windWave + gustWave * 0.45) * uWindStrength * heightFactor,
+        sin(uTime * uWindSpeed * 1.3 + phase) * 0.05 * heightFactor,
+        (cos(windWave) * 0.55) * uWindStrength * heightFactor
       );
 
       pos += windOffset;
-      vHeight = heightFactor;
+      vHeight = max(0.0, pos.y);
 
       vec4 worldPosition = modelMatrix * instanceMatrix * vec4(pos, 1.0);
       vWorldPosition = worldPosition.xyz;
@@ -83,6 +96,7 @@ export function createVegetationShaderMaterial(options = {}) {
     varying vec2 vUv;
     varying float vViewDistance;
     varying float vHeight;
+    varying vec3 vTint;
 
     uniform vec3 uSunDirection;
     uniform vec3 uSunColor;
@@ -92,6 +106,10 @@ export function createVegetationShaderMaterial(options = {}) {
     uniform vec3 uFogColor;
     uniform float uFogNear;
     uniform float uFogFar;
+    uniform float uFogMax;
+    uniform float uAmbient;
+    uniform float uMist;
+    uniform float uTime;
 
     uniform int uStationSpotLightCount;
     uniform vec3 uStationSpotLightPos[3];
@@ -104,7 +122,7 @@ export function createVegetationShaderMaterial(options = {}) {
 
       // Base color gradient from trunk/bottom to canopy top
       float topGradient = smoothstep(0.0, 4.0, vHeight);
-      vec3 baseColor = mix(uFoliageColor, uHighlightColor, topGradient);
+      vec3 baseColor = mix(uFoliageColor, uHighlightColor, topGradient) * vTint;
 
       // Directional light & backlight translucency
       float NdotL = max(0.0, dot(normal, uSunDirection));
@@ -113,7 +131,7 @@ export function createVegetationShaderMaterial(options = {}) {
       float skyDiff = clamp(0.5 + 0.5 * normal.y, 0.0, 1.0);
 
       vec3 diffuse = (NdotL + backLight) * uSunColor * 1.1;
-      vec3 ambient = uSkyColor * skyDiff * 0.6;
+      vec3 ambient = uSkyColor * skyDiff * uAmbient;
 
       // Station Exterior Spotlight Illumination
       vec3 stationLightContrib = vec3(0.0);
@@ -148,10 +166,16 @@ export function createVegetationShaderMaterial(options = {}) {
       vec3 litColor = baseColor * (diffuse + ambient + stationLightContrib);
 
       // Distance fog calculation
-      float fogFactor = smoothstep(uFogNear, uFogFar, vViewDistance);
+      float fogFactor = min(smoothstep(uFogNear, uFogFar, vViewDistance), uFogMax);
       vec3 finalColor = mix(litColor, uFogColor, fogFactor);
+      float drift = 0.5 + 0.5 * sin(vWorldPosition.x * 0.03 + vWorldPosition.z * 0.021 + uTime * 0.08);
+      float mist = smoothstep(8.0, 0.6, vWorldPosition.y) * smoothstep(18.0, 80.0, vViewDistance);
+      mist *= (0.65 + 0.35 * drift) * uMist;
+      finalColor = mix(finalColor, uFogColor * 0.7 + vec3(0.02, 0.025, 0.04), mist);
 
       gl_FragColor = vec4(finalColor, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
     }
   `
 
