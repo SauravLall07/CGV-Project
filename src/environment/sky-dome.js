@@ -2,7 +2,6 @@ import * as THREE from 'three'
 import { SUN_DIRECTION } from './station-blockout.js'
 import { disposeObject } from '../core/dispose.js'
 import { SKY_EVALUATE_GLSL } from '../shaders/sky-evaluate.js'
-import nightMountainsUrl from '../assets/textures/backdrop/night-mountains.png?url'
 
 // One sky for every level. The mesh is a sphere drawn from the inside, kept
 // on the camera so the horizon never slides off as the train moves. Presets
@@ -120,29 +119,9 @@ function timeScaleOf(timeSystem) {
   return 1
 }
 
-export function createSkyDome(presetName, {
-  mountainStrength = 0,
-  mountainScale = 0.5,
-  mountainYaw = 0,
-  mountainBrightness = 1.0
-} = {}) {
+export function createSkyDome(presetName) {
   const preset = PRESETS[presetName]
   if (!preset) throw new Error(`sky-dome: unknown preset "${presetName}"`)
-
-  // One load per enabled sky instance, never per frame; Timewreck loads none.
-  // TextureLoader's default flipY keeps the upright image's top at UV v = 1.
-  const mountainTexture = mountainStrength > 0
-    ? new THREE.TextureLoader().load(nightMountainsUrl)
-    : null
-  if (mountainTexture) {
-    mountainTexture.colorSpace = THREE.SRGBColorSpace
-    mountainTexture.wrapS = THREE.RepeatWrapping
-    mountainTexture.wrapT = THREE.ClampToEdgeWrapping
-    mountainTexture.magFilter = THREE.LinearFilter
-    // Always magnified on screen: no mipmaps means no seam line where u wraps.
-    mountainTexture.minFilter = THREE.LinearFilter
-    mountainTexture.generateMipmaps = false
-  }
 
   // Live colours. scene.fog.color is assigned to uHorizonColor, and setLook()
   // copies into these objects rather than replacing them.
@@ -151,13 +130,6 @@ export function createSkyDome(presetName, {
     uTime: { value: 0 },
     // 1 only while captureSkyEnvironment renders this dome into the env map.
     uEnvCapture: { value: 0 },
-    uMountainMap: { value: mountainTexture },
-    uMountainStrength: { value: mountainStrength },
-    // Use 1, 0.5 or 1/3: whole-number repeats keep the azimuth seam continuous.
-    uMountainScale: { value: mountainScale },
-    // Turns added before scale; increasing yaw moves the scenery toward -Z at +X.
-    uMountainYaw: { value: mountainYaw },
-    uMountainBrightness: { value: mountainBrightness },
     // Exposure applied to the scattering before ACES. The three.js Sky
     // example uses 0.04. A bright low sun needs less or the tone map
     // flattens the sunset to white.
@@ -306,11 +278,6 @@ export function createSkyDome(presetName, {
     uniform vec3 uHorizonColor;
     uniform vec3 uZenithColor;
     uniform float uGroundBlack;
-    uniform sampler2D uMountainMap;
-    uniform float uMountainStrength;
-    uniform float uMountainScale;
-    uniform float uMountainYaw;
-    uniform float uMountainBrightness;
 
     ${SKY_EVALUATE_GLSL}
 
@@ -319,27 +286,6 @@ export function createSkyDome(presetName, {
       // inside evaluateSky(), not from an azimuth, so the sky has no seam.
       vec3 direction = normalize(vWorldPosition - cameraPosition);
       vec3 skyColor = evaluateSky(direction);
-      // Distant mountains are a sky layer, with no extra mesh or draw call.
-      // Composite AFTER stars/moon/clouds: opaque peaks hide everything behind
-      // them, while transparent sky leaves the existing sky above untouched.
-      // Keep the environment capture unchanged so existing lighting is preserved.
-      if (uMountainStrength > 0.0 && uEnvCapture < 0.5) {
-        float elevation = asin(clamp(direction.y, -1.0, 1.0));
-        float scale = max(uMountainScale, 0.001);
-        float azimuth = atan(direction.z, direction.x); // +X = zero, +Z = positive
-        float u = fract((azimuth / 6.28318530718 + uMountainYaw) / scale);
-        float v = 0.5 + elevation / (scale * 3.14159265359);
-        // Reject elevations outside the source instead of stretching its edges.
-        float inImage = step(0.0, v) * step(v, 1.0);
-        float belowFade = smoothstep(-0.03490658504, 0.0, elevation); // -2 degrees
-        vec4 mountain = texture2D(uMountainMap, vec2(u, clamp(v, 0.0, 1.0)));
-        // sRGB texture samples are decoded to linear before this blend and ACES.
-        vec3 mountainColor = mountain.rgb * uMountainBrightness;
-        float baseMist = 1.0 - smoothstep(0.0, 0.05235987756, elevation); // 0..3 degrees
-        mountainColor = mix(mountainColor, uHorizonColor, baseMist * 0.45);
-        float alpha = mountain.a * clamp(uMountainStrength, 0.0, 1.0) * belowFade * inImage;
-        skyColor = mix(skyColor, mountainColor, alpha);
-      }
       float ground = 1.0 - smoothstep(-0.015, 0.05, direction.y);
       // The low sky goes nearly black too, so gaps between rooftops read as
       // night rather than glowing horizon. The moon (y ≈ 0.5) and the
@@ -413,15 +359,12 @@ export function createSkyDome(presetName, {
   }
 
   function update(delta, timeSystem) {
-    const skyDelta = delta * timeScaleOf(timeSystem)
-    uniforms.uTime.value += skyDelta
-    return skyDelta // Consumers can drift scenery on precisely the same clock.
+    uniforms.uTime.value += delta * timeScaleOf(timeSystem)
   }
 
   function dispose() {
     mesh.onBeforeRender = function () {}
     disposeObject(mesh)
-    mountainTexture?.dispose()
   }
 
   return {

@@ -182,7 +182,6 @@ export function createBoardingLevel({
     // while they are hidden.
     landing.town.visible = hide
     sky.uniforms.uGroundBlack.value = hide ? 1 : 0
-    sky.uniforms.uMountainStrength.value = hide ? 0 : 1
     // At the plaza's 0.06 the environment map is invisible but still costs
     // two cube-map lookups per lit pixel. The light count and fog type change
     // on this same frame, so dropping it adds no extra shader recompile.
@@ -224,15 +223,7 @@ export function createBoardingLevel({
     setOutsideHidden(onPlaza)
     zones.update(viewer)
   }
-  const sky = createSkyDome('boarding', {
-    mountainStrength: 1,
-    mountainScale: 0.5,
-    // Across the tracks is +X (azimuth 0): sample u = 0.08 / 0.5 = 0.16,
-    // inside the tall peak band and away from the dark patch at u = 0.09..0.12.
-    mountainYaw: 0.08
-  })
-  // New Game and the title start on the forecourt; zones enable it off the plaza.
-  sky.uniforms.uMountainStrength.value = 0
+  const sky = createSkyDome('boarding')
   const outdoorEnv = createOutdoorEnvironment({
     mode: 'station',
     stationSpotLights: lights.spotLights,
