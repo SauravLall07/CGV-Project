@@ -260,7 +260,7 @@ const levelManager = createLevelManager({
   onInputStateChange: () => syncInputState(),
   levels: [
     { state: 'Boarding', create: createBoardingLevel },
-    { state: 'MovingHeist', create: createMovingHeistLevel },
+    { state: 'MovingHeist', create: (ctx) => createMovingHeistLevel({ ...ctx, post }) },
     { state: 'Timewreck', create: createTimewreckLevel },
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]

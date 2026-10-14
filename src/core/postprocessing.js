@@ -106,6 +106,12 @@ export function createPostProcessing(renderer) {
   outputPass.uniforms.uVignette = { value: 0.34 }
   outputPass.uniforms.uSaturation = { value: 1.06 }
   outputPass.uniforms.uWarmth = { value: 0.04 }
+  const defaultGrade = { vignette: 0.34, saturation: 1.06, warmth: 0.04 }
+  function setGrade({ vignette = defaultGrade.vignette, saturation = defaultGrade.saturation, warmth = defaultGrade.warmth } = {}) {
+    outputPass.uniforms.uVignette.value = vignette
+    outputPass.uniforms.uSaturation.value = saturation
+    outputPass.uniforms.uWarmth.value = warmth
+  }
   outputPass.material.fragmentShader = FINAL_FRAGMENT
   outputPass.material.depthTest = false
   outputPass.material.depthWrite = false
@@ -176,6 +182,8 @@ export function createPostProcessing(renderer) {
     render,
     resize,
     dispose,
+    setGrade,
+    resetGrade() { setGrade(defaultGrade) },
     setEnabled(value) {
       enabled = Boolean(value)
       applyBloom()

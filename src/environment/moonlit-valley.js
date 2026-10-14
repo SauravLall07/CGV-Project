@@ -85,7 +85,101 @@ function createForest(chunks, onChunkRecycle) {
     onChunkRecycle(chunk, rebuildForest)
     rebuildForest()
   }
-  return textures
+  return { textures, geometry, materials }
+}
+
+function createDistantRidges({ hazeColor, getViewerZ }) {
+  const group = new THREE.Group()
+  group.name = 'moonlit-valley-ridges'
+  const haze = new THREE.Color(hazeColor ?? 0x142943)
+  const layers = [
+    { distance: 260, bottom: 10, height: 55, rolling: 12, teeth: 3, color: 0x081b20, factor: 0.35 },
+    { distance: 500, bottom: -30, height: 90, rolling: 12, teeth: 8, color: 0x10283a, factor: 0.15 },
+    { distance: 850, bottom: -30, height: 140, rolling: 20, teeth: 10, color: 0x142943, factor: 0.05 }
+  ]
+  const period = 512
+  // 5,120 m covers two repeat periods plus the 3,600 m camera diameter.
+  const length = 5120
+  const sideMeshes = []
+  const crossMeshes = []
+  const materials = []
+  const geometries = []
+  function strip(layer, span, segments, repeat, phase, across = false) {
+    const positions = new Float32Array((segments + 1) * 6)
+    const colors = new Float32Array(positions.length)
+    const indices = new Uint16Array(segments * 6)
+    const body = new THREE.Color(layer.color)
+    if (layer === layers[2]) body.lerp(haze, 0.8)
+    const rim = body.clone().lerp(haze.clone().lerp(new THREE.Color(0x9fb4d8), 0.12), 0.18)
+    const toothCount = across ? 256 : 64
+    for (let i = 0; i <= segments; i += 1) {
+      const along = i * span / segments
+      const angle = along / repeat * Math.PI * 2
+      const rolling = 0.55 * Math.sin(angle + phase) +
+        0.3 * Math.sin(angle * 2 + phase * 1.7) + 0.15 * Math.sin(angle * 3 + phase * 0.6)
+      const toothPhase = along / repeat * toothCount
+      const tooth = 1 - Math.abs((toothPhase - Math.floor(toothPhase)) * 2 - 1)
+      const top = layer.height + layer.rolling * rolling + layer.teeth * tooth
+      const offset = i * 6
+      if (across) {
+        positions[offset] = positions[offset + 3] = along - span / 2
+      } else {
+        positions[offset + 2] = positions[offset + 5] = along - span / 2
+      }
+      positions[offset + 1] = layer.bottom
+      positions[offset + 4] = top
+      colors[offset] = haze.r; colors[offset + 1] = haze.g; colors[offset + 2] = haze.b
+      colors[offset + 3] = rim.r; colors[offset + 4] = rim.g; colors[offset + 5] = rim.b
+      if (i < segments) {
+        const vertex = i * 2
+        indices.set([vertex, vertex + 1, vertex + 2, vertex + 1, vertex + 3, vertex + 2], i * 6)
+      }
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+    geometry.computeBoundingSphere()
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide, depthWrite: true })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.renderOrder = -900 // Sky is -1000; depth keeps these behind nearer scenery.
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+    mesh.raycast = () => {}
+    mesh.userData.noCameraCollision = true
+    group.add(mesh)
+    geometries.push(geometry)
+    materials.push(material)
+    return mesh
+  }
+  layers.forEach((layer, index) => {
+    for (const side of [-1, 1]) {
+      const mesh = strip(layer, length, 1280, period, index * 1.9 + side * 0.8)
+      mesh.position.x = side * layer.distance
+      sideMeshes.push({ mesh, factor: layer.factor })
+    }
+  })
+  for (const side of [-1, 1]) {
+    const mesh = strip(layers[2], 3000, 512, 3000, side * 1.3, true)
+    crossMeshes.push({ mesh, side })
+  }
+  function update(travel) {
+    const viewerZ = getViewerZ()
+    for (const entry of sideMeshes) {
+      // Both hills and teeth repeat exactly every 512 m, including wrap seams.
+      const offset = ((travel * entry.factor) % period + period) % period
+      entry.mesh.position.z = viewerZ + offset
+    }
+    for (const entry of crossMeshes) entry.mesh.position.z = viewerZ + entry.side * 900
+  }
+  update(0)
+  return {
+    group, update,
+    dispose() {
+      geometries.forEach((geometry) => geometry.dispose())
+      materials.forEach((material) => material.dispose())
+    }
+  }
 }
 
 const CHUNK_LENGTH = 160
@@ -260,7 +354,9 @@ export function createMoonlitValley(options = {}) {
     chunk.onRecycle.add(callback)
     return () => chunk.onRecycle.delete(callback)
   }
-  const forestTextures = createForest(chunks, onChunkRecycle)
+  const forest = createForest(chunks, onChunkRecycle)
+  const ridges = createDistantRidges({ hazeColor: options.fogColor, getViewerZ })
+  group.add(ridges.group)
   const trackside = legacyPolesAndWires()
   group.add(trackside)
   const speed = options.speed || 35
@@ -297,20 +393,30 @@ export function createMoonlitValley(options = {}) {
       // Poles intentionally retain their old wrap for now, driven by the SAME
       // accumulated travel. Forests move with their owning terrain chunks.
       trackside.position.z = (travel % 28) - 14
+      ridges.update(travel)
     },
     dispose() {
       if (disposed) return
       disposed = true
+      // Dispose these owned shared resources once, outside the generic traversal.
+      ridges.dispose()
+      forest.geometry.dispose()
+      forest.materials.forEach((material) => material.dispose())
+      forest.textures.forEach((texture) => texture.dispose())
       const geometries = new Set()
       const materials = new Set()
       group.traverse((node) => {
+        if (node.parent === ridges.group) return
+        if (node.geometry === forest.geometry) {
+          if (node.isInstancedMesh) node.dispose()
+          return
+        }
         if (node.geometry) geometries.add(node.geometry)
         if (node.material) materials.add(node.material)
         if (node.isInstancedMesh) node.dispose()
       })
       geometries.forEach((geometry) => geometry.dispose())
       materials.forEach((material) => material.dispose())
-      forestTextures.forEach((texture) => texture.dispose())
       chunks.forEach((chunk) => chunk.onRecycle.clear())
     }
   }

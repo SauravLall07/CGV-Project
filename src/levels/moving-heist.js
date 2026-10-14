@@ -301,8 +301,10 @@ function makeBarrierProp({ width = 0.68, height = 0.95, depth = 0.9, color = 0x5
 export function createMovingHeistLevel({
   scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic,
   assets = null,
-  startAt = null
+  startAt = null,
+  post = null
 }) {
+  post?.setGrade({ warmth: 0 })
 
   const powerPickups = []
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.0)
@@ -3055,6 +3057,7 @@ export function createMovingHeistLevel({
     },
 
     dispose() {
+      post?.resetGrade()
       if (scene.onBeforeRender === cullBeforeRender) scene.onBeforeRender = previousBeforeRender
       if (scene.onAfterRender === cullAfterRender) scene.onAfterRender = previousAfterRender
       unregisters.forEach((fn) => fn())
