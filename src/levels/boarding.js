@@ -34,8 +34,6 @@ import { resetKitMaterials } from '../environment/level1-kit/kit-materials.js'
 // - Suspicion / alert fail-state
 // - Cinematic train departure sequence into Level 2
 
-const BOARDING_MOUNTAIN_BRIGHTNESS = 1.5
-
 export function createBoardingLevel({
   scene,
   interaction,
@@ -133,7 +131,7 @@ export function createBoardingLevel({
   const ambientFill = lights.find((node) => node.name === 'station-fill')
   const FORECOURT_FILL = { sky: 0.48, ambient: 0.06, environment: 0.4 }
 
-  const nightFog = new THREE.Fog(0x070a12, 60, 320)
+  const nightFog = new THREE.Fog(0x121022, 40, 240)
   const plazaFog = new THREE.FogExp2(0x05060c, 0.023)
 
   // Guards, cameras and lasers are added to the scene later, not under the
@@ -150,11 +148,11 @@ export function createBoardingLevel({
   let outsideHidden = false
 
   // Lights the forecourt never needs. Every visible light runs in every lit
-  // shader, even at intensity 0: the empty torch slots,
+  // shader, even at intensity 0: the mountain floods, the empty torch slots,
   // and the point slots past the forecourt's own lights. The station regions
   // are not drawn from the forecourt, so its lights hold the first slots.
   function plazaSpareLights() {
-    const spare = []
+    const spare = [...lights.spotLights]
     for (const node of lightPools.children) {
       if (!node.isLight) continue
       if (node.name.startsWith('torch-pool-')) spare.push(node)
@@ -188,7 +186,13 @@ export function createBoardingLevel({
   }
 
   // Runs whenever the visible set changes; see boarding-zones.js.
+  const floodIntensity = lights.spotLights.map((spot) => spot.intensity)
   function onZoneChange(zone) {
+    // The mountain floods cast no shadows, so indoors they would light the
+    // passages straight through the roof.
+    lights.spotLights.forEach((spot, i) => {
+      spot.intensity = zone.outdoor ? floodIntensity[i] : 0
+    })
     // Wherever walls or buildings cover most of the screen, the sky draws
     // after them with a depth test and only shades the pixels left over.
     sky.mesh.material.depthTest = !zone.outdoor
@@ -224,7 +228,6 @@ export function createBoardingLevel({
   })
   // New Game and the title start on the forecourt; zones enable it off the plaza.
   sky.uniforms.uMountainStrength.value = 0
-  sky.uniforms.uMountainBrightness.value = BOARDING_MOUNTAIN_BRIGHTNESS
   const treeLine = createTreeLine()
 
   scene.add(sky.mesh, treeLine.group, station, hallDressing, train, landing.group, ...lights)

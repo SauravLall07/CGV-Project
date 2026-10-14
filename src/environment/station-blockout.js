@@ -1021,6 +1021,7 @@ function createExteriorLightFixtures() {
   const group = new THREE.Group()
   group.name = 'exterior-light-fixtures'
 
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.4, metalness: 0.8 })
   const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.9 })
   const bulbMat = new THREE.MeshStandardMaterial({
     color: 0xfff0cc,
@@ -1029,7 +1030,38 @@ function createExteriorLightFixtures() {
     roughness: 0.1
   })
 
-  // Wall sconces remain glow-only; the removed mountain floods had separate fixtures.
+  // 1. Roof Exterior Floodlight Fixtures (3 mounted along rear eave X = -5.0, Y = 6.2, facing -X towards mountains)
+  for (const z of [-12, 0, 12]) {
+    const fixture = new THREE.Group()
+    fixture.position.set(-5.0, 6.2, z)
+
+    // Base bracket attached to roof eave
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), metalMat)
+    base.position.set(0.15, 0, 0)
+    fixture.add(base)
+
+    // Swivel arm
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 8), brassMat)
+    arm.rotation.z = Math.PI / 4
+    arm.position.set(-0.1, 0, 0)
+    fixture.add(arm)
+
+    // Floodlight housing cone angled towards negative X (towards mountain)
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.25, 0.55, 12), metalMat)
+    housing.rotation.z = -Math.PI / 3.2
+    housing.position.set(-0.35, 0.1, 0)
+    fixture.add(housing)
+
+    // Emissive Lens Face
+    const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.06, 12), bulbMat)
+    lens.rotation.z = -Math.PI / 3.2
+    lens.position.set(-0.55, 0.22, 0)
+    fixture.add(lens)
+
+    group.add(fixture)
+  }
+
+  // 2. Wall Sconces on Outer Face of Rear Wall (X = -5.2, Y = 3.8, Z = -12, -4, 4, 12)
   for (const z of [-12, -4, 4, 12]) {
     const sconce = new THREE.Group()
     sconce.position.set(-5.2, 3.8, z)
@@ -1237,9 +1269,45 @@ export function createStationLighting() {
   const fill = new THREE.AmbientLight(0x10131c, 0.06)
   fill.name = 'station-fill'
 
+  // -------------------------------------------------------------
+  // Exterior Mountain Floodlights & Architectural Spotlights
+  // -------------------------------------------------------------
+  const spotLights = []
+  const spotTargets = []
+
+  // Floodlight 1 — Left mountain sector
+  const spotLeft = new THREE.SpotLight(0xffb86c, 6.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
+  spotLeft.position.set(-5.0, 6.2, -12.0)
+  const targetLeft = new THREE.Object3D()
+  targetLeft.position.set(-65.0, 18.0, -25.0)
+  spotLeft.target = targetLeft
+  spotLights.push(spotLeft)
+  spotTargets.push(targetLeft)
+
+  // Floodlight 2 — Center mountain peak. The light stays; it does not cast
+  // a shadow map. The sun is the only shadow caster on this level.
+  const spotCenter = new THREE.SpotLight(0xffc480, 8.0, 165.0, Math.PI / 2.6, 0.8, 1.4)
+  spotCenter.position.set(-5.0, 6.4, 0.0)
+  const targetCenter = new THREE.Object3D()
+  targetCenter.position.set(-75.0, 24.0, 0.0)
+  spotCenter.target = targetCenter
+  spotCenter.castShadow = false
+  spotLights.push(spotCenter)
+  spotTargets.push(targetCenter)
+
+  // Floodlight 3 — Right mountain sector
+  const spotRight = new THREE.SpotLight(0xffb86c, 6.0, 145.0, Math.PI / 2.8, 0.75, 1.5)
+  spotRight.position.set(-5.0, 6.2, 12.0)
+  const targetRight = new THREE.Object3D()
+  targetRight.position.set(-65.0, 18.0, 25.0)
+  spotRight.target = targetRight
+  spotLights.push(spotRight)
+  spotTargets.push(targetRight)
+
   // The outer-wall sconces are glow only: the walls hide them from every
   // walkable spot, and a real light each would crowd the light pool.
-  const allLights = [sunlight, sunlight.target, sky, fill]
+  const allLights = [sunlight, sunlight.target, sky, fill, ...spotLights, ...spotTargets]
+  allLights.spotLights = spotLights
 
   return allLights
 }
