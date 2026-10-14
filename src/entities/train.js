@@ -6,10 +6,9 @@ import { addFloorGlows } from '../environment/landing/light-pools.js'
 
 // Level 1's Chrono Express, built from the Level 1 kit: four deep green
 // carriages with gold lining, panelled sides, curved roofs, bogies and
-// underframe gear, and lamplit windows with red curtains. There is no
-// locomotive; the front car runs off the platform end into steam.
+// underframe gear, lamplit windows with red curtains, and a steam locomotive.
 //
-// The second car's front door stands open with steps down to the platform.
+// The front car's forward door stands open with steps down to the platform.
 // That doorway is the boarding interaction. The group sits on the station
 // track and the departure cinematic slides it along +Z, so the steam rolls
 // away with it. Train-local y = 0 is the rail head; the platform is y = 1.
@@ -43,15 +42,15 @@ const BOGIE_Z = 7
 const AXLE_HALF = 1.25
 const WHEEL_RADIUS = 0.46
 const DOOR_OPEN_ANGLE = 0.65
-const PLATFORM_END_Z = 28
+const PLATFORM_END_Z = 62
 
 export const TRAIN_LENGTH = CAR_COUNT * CAR_LENGTH + (CAR_COUNT - 1) * CAR_GAP
 
-// The open door is on car 1 (car 0 is the front), at world z = 22: inside the
-// boarding zone, clear of the gate at z = 20 and the column at z = 24.
-const BOARDING_CAR = 1
-const BOARDING_Z = 22
-export const TRAIN_FRONT_Z = BOARDING_Z - DOOR_Z + BOARDING_CAR * (CAR_LENGTH + CAR_GAP) + HALF
+// Front-car doorway at world z=43.2, clear of columns and cover clusters.
+const BOARDING_CAR = 0
+// Fixed independently of which carriage is boarded: never slide the consist
+// when relocating its open doorway.
+export const TRAIN_FRONT_Z = 44.3
 export const TRAIN_Z = TRAIN_FRONT_Z - TRAIN_LENGTH / 2
 
 function carZ(index) {
@@ -400,12 +399,20 @@ function addSteam(train) {
     })
   }
   // A bank past the platform end that swallows the front of the train.
-  const front = TRAIN_LENGTH / 2
   const banks = [
     { z: PLATFORM_END_Z + 3 - TRAIN_Z, color: 0x8d939b, opacity: 0.4, seed: 51 },
-    { z: front - 7, color: 0x6a7079, opacity: 0.46, seed: 52 },
-    { z: front - 1, color: 0x3c4048, opacity: 0.55, seed: 53 }
+    { z: 54 - TRAIN_Z, color: 0x6a7079, opacity: 0.46, seed: 52 },
+    { z: 60 - TRAIN_Z, color: 0x3c4048, opacity: 0.55, seed: 53 }
   ]
+  // Locomotive chimney/cylinders. All emitters move with the departing train.
+  emit(0, 4.7, 56.5 - TRAIN_Z, {
+    count: 34, height: 7, spread: 2, period: 9, size: 4.5,
+    color: 0x9da9b5, opacity: 0.36, wind: new THREE.Vector3(-0.8, 0, -2), seed: 63
+  })
+  emit(-7, 0.9, 63 - TRAIN_Z, {
+    count: 28, height: 3.5, spread: 5.5, period: 13, size: 5,
+    color: 0x667c91, opacity: 0.28, wind: new THREE.Vector3(-0.1, 0, -0.8), seed: 64
+  })
   for (const bank of banks) {
     emit(0.4, 2.6, bank.z, {
       count: 46, height: 6.5, spread: 2.4, period: 11, size: 5.5,
@@ -436,7 +443,9 @@ export function createTrain() {
   const train = new THREE.Group()
   train.name = 'train'
 
-  const b = createKitBuilder()
+  let b = createKitBuilder()
+  const visual = new THREE.Group()
+  visual.name = 'chrono-express-visual'
   const doorZ = carZ(BOARDING_CAR) + DOOR_Z
   for (let i = 0; i < CAR_COUNT; i += 1) {
     const M = translate(0, 0, carZ(i))
@@ -445,11 +454,50 @@ export function createTrain() {
     roofAndEnds(b, k, M, i === 0, i === CAR_COUNT - 1)
     underframe(b, k, M)
     for (const z of [-BOGIE_Z, BOGIE_Z]) bogie(b, k, translate(0, 0, carZ(i) + z))
+    // Each 20 m car is its own material batch, allowing useful frustum culling.
+    b.build(visual, `carriage-${i}`)
+    b = createKitBuilder()
   }
-  const visual = new THREE.Group()
-  visual.name = 'chrono-express-visual'
-  b.build(visual, 'carriage')
   train.add(visual)
+
+  const engine = new THREE.Group()
+  engine.name = 'locomotive-and-tender'
+  const loco = createKitBuilder()
+  const part = (mat, w, h, d, x, y, z) => loco.add(mat, kbox(w, h, d, x, y, z - TRAIN_Z))
+  part(k.iron, 2.5, 0.35, 14, 0, 1.05, 52.3)
+  part(k.carriageGreen, 2.6, 1.7, 3.4, 0, 2.1, 46.8) // tender
+  part(k.iron, 2.2, 0.2, 3.1, 0, 3, 46.8)
+  part(k.carriageGreen, 2.6, 2.6, 2.1, 0, 2.65, 50)
+  part(k.carriageRoof, 2.95, 0.16, 2.5, 0, 4.02, 50)
+  for (const side of [-1, 1]) {
+    part(k.lampShade, 0.025, 0.8, 0.8, side * 1.31, 3.1, 50)
+    part(k.brass, 0.03, 0.035, 12.8, side * 1.26, 1.4, 52.3)
+  }
+  const boiler = new THREE.CylinderGeometry(1.02, 1.02, 6.4, 16)
+  boiler.rotateX(Math.PI / 2); boiler.translate(0, 2.55, 54.2 - TRAIN_Z)
+  loco.add(k.iron, boiler)
+  for (const z of [52, 54, 56.4]) {
+    const band = new THREE.TorusGeometry(1.03, 0.025, 4, 16)
+    band.translate(0, 2.55, z - TRAIN_Z); loco.add(k.brass, band)
+  }
+  for (const [z, radius, height] of [[56.5, 0.25, 1.05], [53, 0.34, 0.5]]) {
+    const chimney = new THREE.CylinderGeometry(radius * 1.2, radius, height, 12)
+    chimney.translate(0, 3.4 + height / 2, z - TRAIN_Z); loco.add(k.iron, chimney)
+  }
+  for (const z of [46, 48, 51.6, 53.4, 55.2, 57.3]) for (const side of [-1, 1]) {
+    const radius = z > 50 && z < 57 ? 0.69 : 0.43
+    const wheel = new THREE.CylinderGeometry(radius, radius, 0.16, 16)
+    wheel.rotateZ(Math.PI / 2); wheel.translate(side * 0.88, radius, z - TRAIN_Z)
+    loco.add(k.iron, wheel)
+    const rim = new THREE.TorusGeometry(radius - 0.04, 0.04, 4, 16)
+    rim.rotateY(Math.PI / 2); rim.translate(side * 0.98, radius, z - TRAIN_Z)
+    loco.add(k.brass, rim)
+  }
+  for (const side of [-1, 1]) part(k.brass, 0.07, 0.08, 4.2, side * 1.01, 0.72, 53.4)
+  part(k.iron, 2.7, 0.3, 0.25, 0, 1.2, 58.8)
+  part(k.lampShade, 0.35, 0.35, 0.1, 0, 2.8, 57.46)
+  loco.build(engine, 'locomotive')
+  train.add(engine)
 
   const { door, hinge } = createBoardingDoor(k)
   door.position.z = doorZ

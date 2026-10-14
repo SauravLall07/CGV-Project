@@ -299,6 +299,40 @@ export function stationSconce(b, k, M) {
   b.add(k.iron, kbox(0.27, 0.035, 0.25, 0, -0.025, 0.3), M)
 }
 
+// Rectangular station bay with a shallow, warmly painted room behind glazing.
+// Origin is sill/threshold; +Z faces out of the wall. No additional Light.
+export function platformWindow(b, k, M, door = false) {
+  const h = door ? 3.4 : 2.9, w = door ? 1.35 : 1.6
+  b.add(k.wood, kbox(w + 0.22, h + 0.24, 0.1, 0, h / 2, 0.03), M)
+  const pane = new THREE.PlaneGeometry(w, h)
+  pane.translate(0, h / 2, 0.09)
+  b.add(k.stationWindows[0], pane, M)
+  for (const x of [-w / 2, 0, w / 2]) b.add(k.wood, kbox(0.07, h, 0.12, x, h / 2, 0.13), M)
+  for (const y of [0, h * 0.68, h]) b.add(k.wood, kbox(w + 0.1, 0.08, 0.13, 0, y, 0.13), M)
+  b.add(k.stationStone, kbox(w + 0.35, 0.12, 0.3, 0, 0, 0.1), M)
+  if (door) b.add(k.brass, kbox(0.06, 0.2, 0.06, w * 0.32, 1.2, 0.23), M)
+}
+
+export function platformLantern(b, k, M) {
+  b.add(k.iron, kbox(0.16, 0.9, 0.09, 0, 0, 0), M)
+  b.add(k.brass, kbox(0.32, 0.75, 0.22, 0, 0, 0.22), M)
+  b.add(k.lantern, kbox(0.24, 0.64, 0.24, 0, 0, 0.24), M)
+  for (const x of [-0.15, 0.15]) for (const z of [0.09, 0.39]) {
+    b.add(k.iron, kbox(0.028, 0.82, 0.028, x, 0, z), M)
+  }
+  for (const y of [-0.42, 0.42]) b.add(k.brass, kbox(0.4, 0.07, 0.4, 0, y, 0.24), M)
+}
+
+export function platformConifer(b, k, M) {
+  b.add(k.wood, kbox(0.9, 0.72, 0.9, 0, 0.36, 0), M)
+  for (const y of [0.08, 0.68]) b.add(k.brass, kbox(0.93, 0.04, 0.93, 0, y, 0), M)
+  for (let i = 0; i < 4; i++) {
+    const cone = new THREE.ConeGeometry(0.57 - i * 0.1, 0.92, 8)
+    cone.translate(0, 1.02 + i * 0.38, 0)
+    b.add(k.conifer, cone, M)
+  }
+}
+
 export function fireBucketRack(b, k, M) {
   for (const x of [-0.65, 0.65]) b.add(k.iron, kbox(0.04, 1.3, 0.04, x, 0.65, 0), M)
   b.add(k.wood, kbox(1.5, 0.24, 0.06, 0, 1.32, 0), M)

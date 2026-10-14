@@ -2,6 +2,9 @@ import * as THREE from 'three'
 import { carpetMaterial, plasterMaterial, signMaterial, woodMaterial } from '../textures.js'
 import {
   drawChecker,
+  drawPlatformStone,
+  drawWetPaving,
+  drawChronoPoster,
   drawClockFace,
   drawConcrete,
   drawConcreteRoughness,
@@ -163,6 +166,14 @@ function createMaterials() {
     tyre: standard({ color: 0x6d6b66, roughness: 0.35, metalness: 0.9 }),
     // Platform canopy.
     stationWindows,
+    platformStone: textured(drawPlatformStone, 'platform-stone', [1, 1], { roughness: 0.86 }, 0.6),
+    platformPaving: textured(drawWetPaving, 'platform-paving', [1, 1], {
+      roughness: 0.23, roughnessMap: concreteRough, metalness: 0.12
+    }, 0.18),
+    chronoPoster: textured(drawChronoPoster, 'platform-chrono-poster', [1, 1], {
+      roughness: 0.58, emissive: 0xffcf91, emissiveIntensity: 0.18
+    }),
+    conifer: standard({ color: 0x173529, roughness: 0.95 }),
     stationStone: plasterMaterial({ repeat: [1, 1], seed: 81, base: 0xb2a38a, roughness: 0.87 }),
     bucketRed: standard({ color: 0x74251e, roughness: 0.65, metalness: 0.18 }),
     sack: standard({ color: 0x877963, roughness: 0.98 }),

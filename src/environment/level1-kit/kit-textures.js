@@ -8,6 +8,56 @@ import * as THREE from 'three'
 
 const canvases = new Map()
 
+// Platform-only maps. Keep the hall's shared marble/plaster maps intact.
+export function drawPlatformStone() {
+  return cached('platform-stone', () => {
+    const canvas = makeCanvas(512), ctx = canvas.getContext('2d'), rand = random(181)
+    ctx.fillStyle = '#383631'; ctx.fillRect(0, 0, 512, 512)
+    for (let row = 0; row < 4; row++) for (let col = -1; col < 3; col++) {
+      const x = col * 256 + (row % 2) * 128
+      ctx.fillStyle = css(0x9a8a72, 0.83 + rand() * 0.22)
+      ctx.fillRect(x + 2, row * 128 + 2, 252, 124)
+    }
+    speckle(ctx, 512, rand, 2600, 0x302b24, 0.12, 2)
+    return canvas
+  })
+}
+
+export function drawWetPaving() {
+  return cached('platform-paving', () => {
+    const canvas = makeCanvas(512), ctx = canvas.getContext('2d'), rand = random(182)
+    ctx.fillStyle = '#24272b'; ctx.fillRect(0, 0, 512, 512)
+    for (let row = 0; row < 4; row++) for (let col = 0; col < 2; col++) {
+      ctx.fillStyle = css(0x77736a, 0.62 + rand() * 0.25)
+      ctx.fillRect(col * 256 + 2, row * 128 + 2, 252, 124)
+    }
+    speckle(ctx, 512, rand, 3000, 0x222934, 0.14, 3)
+    return canvas
+  })
+}
+
+export function drawChronoPoster() {
+  return cached('platform-chrono-poster', () => {
+    const canvas = makeCanvas(512, 768), ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#101c23'; ctx.fillRect(0, 0, 512, 768)
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = ['#8c7753', '#6a6353', '#414c48', '#26383c'][i]
+      ctx.beginPath(); ctx.moveTo(0, 390 + i * 75)
+      ctx.lineTo(160, 245 + i * 70); ctx.lineTo(290, 380 + i * 30)
+      ctx.lineTo(420, 270 + i * 80); ctx.lineTo(512, 370 + i * 70)
+      ctx.lineTo(512, 768); ctx.lineTo(0, 768); ctx.fill()
+    }
+    ctx.fillStyle = '#10171a'; ctx.fillRect(130, 525, 295, 90)
+    ctx.beginPath(); ctx.arc(400, 567, 53, 0, Math.PI * 2); ctx.fill()
+    ctx.fillRect(370, 460, 30, 65)
+    ctx.strokeStyle = '#d3b37b'; ctx.lineWidth = 5; ctx.strokeRect(16, 16, 480, 736)
+    ctx.fillStyle = '#dfbd81'; ctx.textAlign = 'center'; ctx.font = '52px Georgia'
+    ctx.fillText('CHRONO', 256, 110); ctx.fillText('EXPRESS', 256, 175)
+    ctx.font = '19px Georgia'; ctx.fillText('THE NIGHT BELONGS TO YOU', 256, 710)
+    return canvas
+  })
+}
+
 function makeCanvas(width, height = width) {
   const canvas = document.createElement('canvas')
   canvas.width = width
