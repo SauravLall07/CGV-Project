@@ -82,6 +82,15 @@ export function createLevelManager({
       // "forward" would still mean whatever the previous level was facing.
       if (camera.setYaw) camera.setYaw(checkpoint.yaw ?? 0)
       camera.snap()
+      // snap() only arms the follow camera for the next update(). The title
+      // menu cinematic parks the render camera outside the train (x≈7, z≈28);
+      // TRANSITION early-outs skip playerView.update(), so a direct jump to
+      // Timewreck (?start=level3) can keep that exterior angle after load.
+      // Frame the spawn immediately without scene collision (collision resumes
+      // on the first PLAYING playerView.update).
+      if (typeof camera.update === 'function' && player?.mesh) {
+        camera.update(0, player.mesh, null)
+      }
       hud.setObjective(current.objective ?? '')
     }
     console.log(

@@ -112,16 +112,30 @@ export function makeHourglassEmblem(material, height = 0.6) {
 // Deterministic scatter so a rebuilt level looks identical to the first build.
 const skew = (n) => (Math.sin(n * 12.9898) * 43758.5453) % 1
 
+// ACES + dark L3 fill crush low-luminance albedo maps. Multiply the map by a
+// soft tint so luxury woods stay readable without raising light counts.
+function liftAlbedo(mat, tintHex) {
+  mat.color.setHex(tintHex)
+  return mat
+}
+
 function makeShared(damaged) {
   return {
     steel: metalMaterial({ repeat: [3, 2], base: damaged ? 0x626870 : 0x6b7078, roughness: damaged ? 0.7 : 0.5, metalness: 0.85 }),
     darkSteel: new THREE.MeshStandardMaterial({ color: damaged ? 0x282c34 : 0x23262c, roughness: 0.65, metalness: 0.6 }),
-    brass: new THREE.MeshStandardMaterial({ color: damaged ? 0x6d5628 : 0xb08d3f, roughness: damaged ? 0.62 : 0.3, metalness: 0.9 }),
+    // Damaged: aged brass — brighter mid so door surrounds / frames read under storm light.
+    brass: new THREE.MeshStandardMaterial({
+      color: damaged ? 0xc4a052 : 0xb08d3f,
+      roughness: damaged ? 0.42 : 0.3,
+      metalness: damaged ? 0.88 : 0.9,
+      emissive: damaged ? 0x3a2810 : 0x000000,
+      emissiveIntensity: damaged ? 0.12 : 0
+    }),
     rivet: new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 0.5, metalness: 0.7 }),
     warmGlass: new THREE.MeshStandardMaterial({
-      color: damaged ? 0x5a2a22 : 0xffe0ac,
-      emissive: damaged ? 0xc43a22 : 0xffce8a,
-      emissiveIntensity: damaged ? 1.15 : 1.3,
+      color: damaged ? 0xffe0b8 : 0xffe0ac,
+      emissive: damaged ? 0xffb060 : 0xffce8a,
+      emissiveIntensity: damaged ? 1.05 : 1.3,
       roughness: 0.25
     })
   }
@@ -131,41 +145,162 @@ function wallMaterialFor(key, length, damaged) {
   const r = [Math.max(1, Math.round(length / 4)), 1]
   switch (key) {
     case 'passenger':
-      return woodMaterial({ repeat: r, light: damaged ? 0x454240 : 0x8a5c33, dark: damaged ? 0x242628 : 0x452a16 })
+      // L3 luxury wreck: muted teal wood, lifted so viewport bands read under ACES.
+      return damaged
+        ? liftAlbedo(woodMaterial({
+          repeat: r,
+          light: 0x6a9a90,
+          dark: 0x2a4a44,
+          roughness: 0.55,
+          seed: 41
+        }), 0xd2ebe6)
+        : woodMaterial({ repeat: r, light: 0x8a5c33, dark: 0x452a16 })
     case 'security':
       return damaged
-        ? metalMaterial({ repeat: r, base: 0x2f343c, roughness: 0.7, metalness: 0.8 })
+        ? liftAlbedo(woodMaterial({
+          repeat: r,
+          light: 0x5f8f86,
+          dark: 0x243e3a,
+          roughness: 0.56,
+          seed: 43
+        }), 0xd0e8e2)
         : woodMaterial({ repeat: r, light: 0x7a4a26, dark: 0x3a2211 })
     case 'relay':
       if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
-      return metalMaterial({ repeat: r, base: damaged ? 0x293138 : 0x344957, roughness: damaged ? 0.72 : 0.48, metalness: 0.8 })
+      // L3 Room 5: deep teal luxury panels (dash-door / temporal-rift car).
+      return liftAlbedo(woodMaterial({
+        repeat: r,
+        light: 0x5f8f86,
+        dark: 0x243e3a,
+        roughness: 0.52,
+        seed: 47
+      }), 0xd4ebe4)
     case 'cargo':
-      return woodMaterial({ repeat: r, light: damaged ? 0x323230 : 0x6e3b1e, dark: damaged ? 0x161616 : 0x2e160a })
-    case 'mechanical':
-    case 'convergence':
+      if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
+      // L3 Room 4: deep teal luxury panels (time-loop luggage car).
+      return liftAlbedo(woodMaterial({
+        repeat: r,
+        light: 0x5f8f86,
+        dark: 0x243e3a,
+        roughness: 0.52,
+        seed: 109
+      }), 0xd4ebe4)
     case 'freight':
       if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
       return metalMaterial({ repeat: r, base: damaged ? 0x282c33 : 0x3c4149, roughness: 0.6, metalness: 0.75 })
+    case 'mechanical':
+      if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
+      // L3 Room 3: deep teal wood panels (luggage-storm carriage).
+      return liftAlbedo(woodMaterial({
+        repeat: r,
+        light: 0x5a8a80,
+        dark: 0x1e3a34,
+        roughness: 0.52,
+        seed: 97
+      }), 0xd2ebe4)
+    case 'convergence':
+      if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
+      // L3 Room 2: deep teal lower-panel wood (reference shattered luxury car).
+      return liftAlbedo(woodMaterial({
+        repeat: r,
+        light: 0x5f8f86,
+        dark: 0x243e3a,
+        roughness: 0.52,
+        seed: 77
+      }), 0xd4ebe4)
     case 'vault':
       if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
-      return metalMaterial({ repeat: r, base: damaged ? 0x1f2228 : 0x2b2e35, roughness: 0.45, metalness: 0.9 })
+      // L3 Room 1 only: dark polished teal-wood (industrial metal was crushing to black).
+      return liftAlbedo(woodMaterial({
+        repeat: r,
+        light: 0x5a7a72,
+        dark: 0x1c322e,
+        roughness: 0.5,
+        seed: 61
+      }), 0xd8ebe4)
     case 'cab':
-      return metalMaterial({ repeat: r, base: 0x2e3339, roughness: 0.62, metalness: 0.78 })
+      // L3 Room 8: deep teal luxury panels (locomotive / emergency-brake car).
+      return damaged
+        ? liftAlbedo(woodMaterial({
+          repeat: r,
+          light: 0x5a8a80,
+          dark: 0x1e3a34,
+          roughness: 0.5,
+          seed: 151
+        }), 0xd2ebe4)
+        : metalMaterial({ repeat: r, base: 0x2e3339, roughness: 0.62, metalness: 0.78 })
     default:
       return plasterMaterial({ repeat: r })
   }
+}
+
+// Level-3-only carriage door leaf: teal wood, brass border, small glass lite.
+// Dimensions match the existing doorway — never placed across an open passage
+// unless `sealed` (end-of-train plate). Shared materials keep draw cost low.
+let wreckDoorMatsCache = null
+function createWreckDoorMaterials() {
+  if (wreckDoorMatsCache) return wreckDoorMatsCache
+  wreckDoorMatsCache = {
+    panel: liftAlbedo(woodMaterial({
+      repeat: [1, 2], light: 0x4a6e66, dark: 0x1e342e, roughness: 0.55, seed: 91
+    }), 0xc8e0d8),
+    glass: new THREE.MeshStandardMaterial({
+      color: 0xa8c8d8,
+      emissive: 0xffc090,
+      emissiveIntensity: 0.22,
+      roughness: 0.2,
+      metalness: 0.05,
+      transparent: true,
+      opacity: 0.55
+    })
+  }
+  return wreckDoorMatsCache
+}
+
+function addWreckDoorLeaf(parent, shared, mats, { x = 0, y = DOOR_H / 2, z = 0, openYaw = 0 } = {}) {
+  const leaf = new THREE.Group()
+  leaf.name = 'wreck-carriage-door'
+  const body = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W * 0.48, DOOR_H - 0.08, 0.07), mats.panel)
+  leaf.add(body)
+  for (const [w, h, px, py] of [
+    [DOOR_W * 0.5, 0.05, 0, (DOOR_H - 0.08) / 2],
+    [DOOR_W * 0.5, 0.05, 0, -(DOOR_H - 0.08) / 2],
+    [0.05, DOOR_H - 0.08, -DOOR_W * 0.22, 0],
+    [0.05, DOOR_H - 0.08, DOOR_W * 0.22, 0]
+  ]) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.08), shared.brass)
+    bar.position.set(px, py, 0.01)
+    leaf.add(bar)
+  }
+  const lite = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W * 0.22, 0.32, 0.02), mats.glass)
+  lite.position.set(0, 0.55, 0.045)
+  leaf.add(lite)
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.06), shared.brass)
+  handle.position.set(DOOR_W * 0.14, 0, 0.06)
+  leaf.add(handle)
+  leaf.position.set(x, y, z)
+  leaf.rotation.y = openYaw
+  noCam(leaf)
+  parent.add(leaf)
+  return leaf
 }
 
 // Two side panels and a lintel around a centred doorway, plus a brass surround.
 // `sealed` fills the doorway in with a solid plate — used at the two ends of
 // the train, where an open doorway would otherwise look straight out of the
 // train at the scrolling outdoor scenery.
-function addBulkhead(group, z, shared, sealed = false) {
+// When `damaged`, Level 3 uses teal/brass wreck-door styling (visual only).
+function addBulkhead(group, z, shared, sealed = false, damaged = false) {
   const sideW = (WALL_X * 2 - DOOR_W) / 2
+  const panelMat = damaged
+    ? liftAlbedo(woodMaterial({
+      repeat: [1, 2], light: 0x5a7a72, dark: 0x1c322e, roughness: 0.55, seed: 93
+    }), 0xd0e6de)
+    : shared.darkSteel
   for (const s of [-1, 1]) {
     const panel = new THREE.Mesh(
       new THREE.BoxGeometry(sideW, CARRIAGE_CEILING_Y, 0.14),
-      shared.darkSteel
+      panelMat
     )
     panel.position.set(s * (DOOR_W / 2 + sideW / 2), CARRIAGE_CEILING_Y / 2, z)
     panel.receiveShadow = true
@@ -173,19 +308,57 @@ function addBulkhead(group, z, shared, sealed = false) {
   }
   const lintel = new THREE.Mesh(
     new THREE.BoxGeometry(DOOR_W, CARRIAGE_CEILING_Y - DOOR_H, 0.14),
-    shared.darkSteel
+    panelMat
   )
   lintel.position.set(0, DOOR_H + (CARRIAGE_CEILING_Y - DOOR_H) / 2, z)
   group.add(lintel)
 
   const surround = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W + 0.12, DOOR_H + 0.06, 0.05), shared.brass)
+  surround.name = damaged ? 'wreck-door-surround' : 'door-surround'
   surround.position.set(0, DOOR_H / 2, z)
   group.add(surround)
 
+  // Warm overhead lamp cue on the lintel (emissive mesh — no new PointLight).
+  if (damaged) {
+    const lamp = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.06, 0.12),
+      new THREE.MeshStandardMaterial({
+        color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.05, roughness: 0.35
+      })
+    )
+    lamp.name = 'wreck-door-lamp'
+    lamp.position.set(0, DOOR_H + 0.12, z + (z >= 0 ? -0.1 : 0.1))
+    noCam(lamp)
+    group.add(lamp)
+  }
+
   if (sealed) {
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W, DOOR_H, 0.1), shared.darkSteel)
-    plate.position.set(0, DOOR_H / 2, z)
-    group.add(plate)
+    if (damaged) {
+      const mats = createWreckDoorMaterials()
+      // Closed end-cap: two leaves filling the opening (same footprint as old plate).
+      addWreckDoorLeaf(group, shared, mats, { x: -DOOR_W * 0.25, y: DOOR_H / 2, z })
+      addWreckDoorLeaf(group, shared, mats, { x: DOOR_W * 0.25, y: DOOR_H / 2, z })
+    } else {
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W, DOOR_H, 0.1), shared.darkSteel)
+      plate.position.set(0, DOOR_H / 2, z)
+      group.add(plate)
+    }
+  } else if (damaged) {
+    // Open passage: park leaves against the bulkhead sides — never block the aisle.
+    const mats = createWreckDoorMaterials()
+    const toward = z >= 0 ? -1 : 1
+    addWreckDoorLeaf(group, shared, mats, {
+      x: -(DOOR_W / 2 + 0.02),
+      y: DOOR_H / 2,
+      z: z + toward * 0.08,
+      openYaw: toward * 1.15
+    })
+    addWreckDoorLeaf(group, shared, mats, {
+      x: DOOR_W / 2 + 0.02,
+      y: DOOR_H / 2,
+      z: z + toward * 0.08,
+      openYaw: -toward * 1.15
+    })
   }
 }
 
@@ -197,17 +370,83 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
 
   let floorMat
   if (key === 'passenger' && damaged) {
-    floorMat = carpetMaterial({
+    // Aged polished wood — midtones raised so the aisle reads under storm fill.
+    floorMat = liftAlbedo(woodMaterial({
       repeat: [2, Math.round(length / 2)],
-      base: damaged ? 0x342e34 : 0x5e1f28,
-      accent: damaged ? 0x484448 : 0x9a7238
-    })
+      light: 0x8a6440,
+      dark: 0x3a2414,
+      roughness: 0.46,
+      seed: 19
+    }), 0xf0dcc4)
+  } else if (key === 'vault' && damaged) {
+    // Room 1: dark reflective plank aisle (collision/floor mesh unchanged).
+    floorMat = liftAlbedo(woodMaterial({
+      repeat: [2, Math.round(length / 2)],
+      light: 0x7a5234,
+      dark: 0x2e1a10,
+      roughness: 0.42,
+      seed: 67
+    }), 0xead2b6)
+  } else if (key === 'convergence' && damaged) {
+    // Room 2: warm plank deck (same mesh/collision — visual only).
+    floorMat = liftAlbedo(woodMaterial({
+      repeat: [2, Math.round(length / 2)],
+      light: 0x8a6440,
+      dark: 0x3a2414,
+      roughness: 0.44,
+      seed: 79
+    }), 0xf0dcc4)
+  } else if (key === 'mechanical' && damaged) {
+    // Room 3: dark polished wood aisle under floating trunks.
+    floorMat = liftAlbedo(woodMaterial({
+      repeat: [2, Math.round(length / 2)],
+      light: 0x7a5234,
+      dark: 0x2e1a10,
+      roughness: 0.44,
+      seed: 101
+    }), 0xead2b6)
+  } else if (key === 'cargo' && damaged) {
+    // Room 4: dark wood under the track/walkway overlay.
+    floorMat = liftAlbedo(woodMaterial({
+      repeat: [2, Math.round(length / 2)],
+      light: 0x7a5234,
+      dark: 0x2e1a10,
+      roughness: 0.44,
+      seed: 111
+    }), 0xead2b6)
+  } else if (key === 'relay' && damaged) {
+    // Room 5: dark polished plank aisle under the dash-door run.
+    floorMat = liftAlbedo(woodMaterial({
+      repeat: [2, Math.round(length / 2)],
+      light: 0x7a5234,
+      dark: 0x2e1a10,
+      roughness: 0.42,
+      seed: 121
+    }), 0xead2b6)
+  } else if (key === 'security' && damaged) {
+    // Room 6: dark polished wood under / around the freeze-tile gap.
+    floorMat = liftAlbedo(woodMaterial({
+      repeat: [2, Math.round(length / 2)],
+      light: 0x7a5234,
+      dark: 0x2e1a10,
+      roughness: 0.42,
+      seed: 131
+    }), 0xead2b6)
+  } else if (key === 'cab' && damaged) {
+    // Room 8: dark polished plank deck toward the emergency brake.
+    floorMat = liftAlbedo(woodMaterial({
+      repeat: [2, Math.round(length / 2)],
+      light: 0x7a5234,
+      dark: 0x2e1a10,
+      roughness: 0.42,
+      seed: 153
+    }), 0xead2b6)
   } else if (['passenger', 'security', 'relay', 'cargo', 'mechanical', 'convergence', 'freight', 'vault'].includes(key) && !damaged) {
     floorMat = woodMaterial({ repeat: [2, Math.round(length / 2)], light: 0x6b4526, dark: 0x2e1a0c })
   } else {
     floorMat = metalMaterial({
       repeat: [3, Math.round(length / 2)],
-      base: key === 'vault' ? (damaged ? 0x323840 : 0x3a3f47) : (damaged ? 0x454b54 : 0x50555d),
+      base: damaged ? 0x454b54 : 0x50555d,
       roughness: damaged ? 0.75 : 0.6,
       metalness: 0.7
     })
@@ -247,37 +486,57 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
   g.add(floor)
 
   const wallMat = wallMaterialFor(key, length, damaged)
-  // Level 3 passenger/cab: omit the solid side walls so blown viewports can
-  // look through to the rushing exterior. Other cars keep a continuous hull.
-  const openSides = damaged && (key === 'passenger' || key === 'cab')
+  // Open sides: passenger/cab + L3 Vault–Relay + Security — storm reads through.
+  const openSides = damaged && (
+    key === 'passenger' || key === 'cab' || key === 'vault'
+    || key === 'convergence' || key === 'mechanical' || key === 'cargo'
+    || key === 'relay' || key === 'security'
+  )
   if (!openSides) {
     const wallGeo = new THREE.BoxGeometry(0.12, CARRIAGE_CEILING_Y, length)
     for (const s of [-1, 1]) {
       const w = new THREE.Mesh(wallGeo, wallMat)
+      w.name = `wall-${key}`
       w.position.set(s * WALL_X, CARRIAGE_CEILING_Y / 2, 0)
       w.receiveShadow = true
       g.add(w)
     }
   }
 
-  const ceilingMat = (key === 'security' || key === 'vault') && !damaged
-    ? plasterMaterial({ repeat: [2, Math.round(length / 3)], base: 0xd8ccb0, roughness: 0.85 })
-    : damaged
-      ? metalMaterial({
-        repeat: [2, Math.round(length / 3)],
-        base: 0x424850,
-        roughness: 0.72,
-        metalness: 0.62
-      })
-      : wallMat
+  let ceilingMat
+  if ((key === 'security' || key === 'vault') && !damaged) {
+    ceilingMat = plasterMaterial({ repeat: [2, Math.round(length / 3)], base: 0xd8ccb0, roughness: 0.85 })
+  } else if ((key === 'vault' || key === 'convergence' || key === 'mechanical' || key === 'cargo'
+    || key === 'relay' || key === 'security' || key === 'passenger' || key === 'cab') && damaged) {
+    const warmCeil = key === 'convergence' || key === 'mechanical' || key === 'cargo'
+      || key === 'relay' || key === 'security' || key === 'passenger' || key === 'cab'
+    ceilingMat = liftAlbedo(woodMaterial({
+      repeat: [2, Math.round(length / 3)],
+      light: warmCeil ? 0x6a4a2e : 0x4a6a62,
+      dark: warmCeil ? 0x2e1a10 : 0x1a2e2a,
+      roughness: 0.58,
+      seed: key === 'cab' ? 155 : key === 'passenger' ? 141 : key === 'security' ? 133 : key === 'relay' ? 123
+        : key === 'cargo' ? 113 : key === 'mechanical' ? 103 : key === 'convergence' ? 81 : 63
+    }), warmCeil ? 0xe8d2b4 : 0xc5ddd6)
+  } else if (damaged) {
+    ceilingMat = metalMaterial({
+      repeat: [2, Math.round(length / 3)],
+      base: 0x424850,
+      roughness: 0.72,
+      metalness: 0.62
+    })
+  } else {
+    ceilingMat = wallMat
+  }
   if (hasCeiling) {
     const ceiling = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, length), ceilingMat)
+    ceiling.name = `ceiling-${key}`
     ceiling.position.y = CARRIAGE_CEILING_Y
     g.add(ceiling)
   }
 
-  addBulkhead(g, -half, shared, Boolean(seals.min))
-  addBulkhead(g, half, shared, Boolean(seals.max))
+  addBulkhead(g, -half, shared, Boolean(seals.min), damaged)
+  addBulkhead(g, half, shared, Boolean(seals.max), damaged)
 
   return { group: g, half }
 }
@@ -315,9 +574,16 @@ function addBlownViewports(g, half, key, shared) {
   const lintelY = paneY + paneH / 2
   const lowerH = Math.max(0.2, sillY)
   const upperH = Math.max(0.2, CARRIAGE_CEILING_Y - lintelY)
+  // Subtle cyan time-leak on glass shards — keep opacity/emissive low (not neon).
   const shardMat = new THREE.MeshStandardMaterial({
-    color: 0x4a5560, roughness: 0.08, metalness: 0.18,
-    transparent: true, opacity: 0.07, depthWrite: false
+    color: 0x4a5560,
+    emissive: 0x38bdf8,
+    emissiveIntensity: 0.12,
+    roughness: 0.08,
+    metalness: 0.18,
+    transparent: true,
+    opacity: 0.09,
+    depthWrite: false
   })
   const shardCount = zs.length * 2
   const shards = new THREE.InstancedMesh(new THREE.BoxGeometry(0.016, 0.14, 0.12), shardMat, shardCount)
@@ -327,10 +593,12 @@ function addBlownViewports(g, half, key, shared) {
   for (const s of [-1, 1]) {
     const x = s * WALL_X
     const lower = new THREE.Mesh(new THREE.BoxGeometry(0.12, lowerH, half * 2), wallMat)
+    lower.name = `wall-band-${key}-lower`
     lower.position.set(x, lowerH / 2, 0)
     lower.receiveShadow = true
     g.add(lower)
     const upper = new THREE.Mesh(new THREE.BoxGeometry(0.12, upperH, half * 2), wallMat)
+    upper.name = `wall-band-${key}-upper`
     upper.position.set(x, lintelY + upperH / 2, 0)
     upper.receiveShadow = true
     g.add(upper)
@@ -372,10 +640,19 @@ function addBlownViewports(g, half, key, shared) {
 }
 
 function addWreckage(g, half, shared, fx, key) {
-  const panelMat = new THREE.MeshStandardMaterial({ color: 0x3a3e45, roughness: 0.72, metalness: 0.58 })
+  // Torn lining edges pick up a faint cyan rim from the storm / chrono leak.
+  const panelMat = new THREE.MeshStandardMaterial({
+    color: 0x3a3e45,
+    roughness: 0.72,
+    metalness: 0.58,
+    emissive: 0x0e7490,
+    emissiveIntensity: 0.1
+  })
   const sites = damageSites(half)
   const n = sites.length
-  const openView = key === 'passenger' || key === 'cab'
+  const openView = key === 'passenger' || key === 'cab' || key === 'vault'
+    || key === 'convergence' || key === 'mechanical' || key === 'cargo'
+    || key === 'relay' || key === 'security'
 
   // Torn lining hinged off the wall at the ceiling joint — still wall-aligned.
   // On cars with blown viewports, hang it inside the opening instead of filling it.
@@ -523,82 +800,424 @@ function dressDamagedMechanical(g, half, shared, fx) {
 }
 
 function dressDamagedCargo(g, half, shared, fx) {
-  const sites = damageSites(half)
-  const lidMat = woodMaterial({ repeat: [1, 1], light: 0x4a463c, dark: 0x1c1b18 })
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.62, 0.04, 0.58), lidMat, sites.length), sites.length, (d, i) => {
-    const c = sites[i]
-    d.position.set(c.side * 1.12, 0.88, c.z)
-    d.rotation.set(0.05, 0.12 * c.side, c.side * 0.18)
-  }))
+  // Kept for call-site compatibility; L3 damaged Cargo uses dressDamagedCargoLuxury.
+  dressDamagedCargoLuxury(g, half, shared, fx)
+}
 
-  const slatMat = woodMaterial({ repeat: [1, 1], light: 0x3e3c36, dark: 0x181714 })
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.035, 0.62), slatMat, sites.length * 2), sites.length * 2, (d, i) => {
-    const c = sites[i >> 1]
-    d.position.set(c.side * 1.12, 0.06, c.z + (i % 2 ? 0.2 : -0.16))
-    d.rotation.set(0, 0.08 * c.side, 0)
-  }))
-
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.TorusGeometry(0.07, 0.016, 6, 10), shared.steel, sites.length), sites.length, (d, i) => {
-    const c = sites[i]
-    d.position.set(c.side * 1.15, CARRIAGE_CEILING_Y - 0.55, c.z)
-    d.rotation.set(1.15, 0, 0)
-  }))
-
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.15), shared.darkSteel, sites.length), sites.length, (d, i) => {
-    const c = sites[i]
-    d.position.set(c.side * 1.15, CARRIAGE_CEILING_Y - 0.2, c.z)
-    d.rotation.set(0, 0, c.side * 0.08)
-  }))
-
-  const purple = new THREE.MeshStandardMaterial({
-    color: 0x3b0764, emissive: 0xa855f7, emissiveIntensity: 1.15, roughness: 0.4
+// Low-poly antique clock face (decorative only — no gameplay).
+function addCargoAntiqueClock(g, x, y, z, facing = 1) {
+  const clock = new THREE.Group()
+  clock.name = 'cargo-antique-clock'
+  const brass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.12
   })
-  for (const c of sites) {
-    const mark = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.95, 0.18), purple)
-    mark.position.set(c.side * (WALL_X - 0.08), 1.35, c.z)
-    noCam(mark)
-    g.add(mark)
+  const face = new THREE.Mesh(
+    new THREE.CircleGeometry(0.28, 20),
+    new THREE.MeshStandardMaterial({ color: 0xf2ebe0, roughness: 0.55, metalness: 0.02 })
+  )
+  face.position.z = 0.02
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.035, 6, 20), brass)
+  const cyan = new THREE.Mesh(
+    new THREE.TorusGeometry(0.38, 0.018, 6, 20),
+    new THREE.MeshStandardMaterial({
+      color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.85, roughness: 0.35
+    })
+  )
+  const handH = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.16, 0.01), brass)
+  handH.position.set(0, 0.06, 0.03)
+  const handM = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.22, 0.01), brass)
+  handM.position.set(0.04, 0.08, 0.03)
+  handM.rotation.z = -0.7
+  clock.add(face, rim, cyan, handH, handM)
+  clock.position.set(x, y, z)
+  clock.rotation.y = facing * Math.PI / 2
+  noCam(clock)
+  g.add(clock)
+  return clock
+}
+
+// L3 Room 4: shattered luxury Cargo — teal walls, luggage crates, clock, amber fill.
+function dressDamagedCargoLuxury(g, half, shared, fx) {
+  addBlownViewports(g, half, 'cargo', shared)
+
+  const strip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
+    })
+  )
+  strip.name = 'cargo-ceiling-strip'
+  strip.position.y = CARRIAGE_CEILING_Y - 0.06
+  g.add(strip)
+
+  const rupture = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.04, half * 0.85),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1848, emissive: 0x7c3aed, emissiveIntensity: 1.2, roughness: 0.4
+    })
+  )
+  rupture.name = 'cargo-rupture-strip'
+  rupture.position.set(0, CARRIAGE_CEILING_Y - 0.05, 0)
+  g.add(rupture)
+
+  for (const s of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
+    rail.name = 'cargo-wall-rail'
+    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    noCam(rail)
+    g.add(rail)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
+    edge.name = 'cargo-floor-edge'
+    edge.position.set(s * (WALL_X - 0.24), 0.012, 0)
+    noCam(edge)
+    g.add(edge)
+  }
+
+  // Side luggage trunks (static InstancedMesh — aisle kept clear for loop hazards).
+  const trunkWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x6a4a2c, dark: 0x2e1a10, roughness: 0.62, seed: 115
+  }), 0xe0c8a8)
+  const trunkLeather = new THREE.MeshStandardMaterial({
+    color: 0x3a2818, roughness: 0.88, metalness: 0.04, emissive: 0x120c08, emissiveIntensity: 0.06
+  })
+  const spots = []
+  for (let z = -half + 2.4; z <= half - 2.4; z += 2.8) {
+    spots.push([-(WALL_X - 0.5), 0.42, z, 0])
+    spots.push([WALL_X - 0.5, 0.42, z, 1])
+  }
+  const bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(0.72, 0.55, 0.95), trunkWood, spots.length)
+  const lids = new THREE.InstancedMesh(new THREE.BoxGeometry(0.74, 0.12, 0.97), trunkLeather, spots.length)
+  const bands = new THREE.InstancedMesh(new THREE.BoxGeometry(0.76, 0.04, 0.99), shared.brass, spots.length)
+  bodies.name = 'cargo-luggage-bodies'
+  const dummy = new THREE.Object3D()
+  const sites = damageSites(half)
+  spots.forEach(([x, y, z, seed], k) => {
+    const wrecked = nearSite(sites, z, Math.sign(x) || -1, 1.6)
+    dummy.position.set(x, wrecked ? y - 0.04 : y, z)
+    dummy.rotation.set(wrecked ? 0.06 : 0, skew(seed + k) * 0.25, wrecked ? Math.sign(x) * 0.08 : 0)
+    dummy.updateMatrix()
+    bodies.setMatrixAt(k, dummy.matrix)
+    dummy.position.y += 0.28
+    dummy.updateMatrix()
+    lids.setMatrixAt(k, dummy.matrix)
+    dummy.position.y -= 0.12
+    dummy.updateMatrix()
+    bands.setMatrixAt(k, dummy.matrix)
+  })
+  for (const mesh of [bodies, lids, bands]) {
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    noCam(mesh)
+    g.add(mesh)
+  }
+
+  // Burgundy benches — ends of the car only (centre kept clear for door/beam).
+  const velvet = new THREE.MeshStandardMaterial({
+    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  })
+  const seatWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 117
+  }), 0xe8d0b0)
+  const seatZs = [-half + 3.2, half - 3.2]
+  const sn = seatZs.length * 2
+  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.14, 0.8), seatWood, sn)
+  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.12, 0.74), velvet, sn)
+  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.68, 0.76), velvet, sn)
+  frames.name = 'cargo-bench-frames'
+  cushions.name = 'cargo-bench-cushions'
+  let si = 0
+  for (const z of seatZs) {
+    for (const s of [-1, 1]) {
+      const x = s * (WALL_X - 0.52)
+      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
+      frames.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
+      cushions.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(s * (WALL_X - 0.28), 0.68, z); dummy.updateMatrix()
+      backs.setMatrixAt(si, dummy.matrix)
+      si++
+    }
+  }
+  for (const mesh of [frames, cushions, backs]) {
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    noCam(mesh)
+    g.add(mesh)
+  }
+
+  // Wall clock + faint second clock deeper in the rupture (cheap geometry).
+  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, -half * 0.15, 1)
+  addCargoAntiqueClock(g, WALL_X + 0.55, 1.85, half * 0.35, -1)
+
+  // Sparse floating luggage outside the hull (storm read — not walkable).
+  const floatN = 6
+  const floatBody = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.4, 0.75), trunkWood, floatN)
+  floatBody.name = 'cargo-float-luggage'
+  for (let i = 0; i < floatN; i++) {
+    const s = i % 2 ? 1 : -1
+    dummy.position.set(s * (WALL_X + 0.9), 0.5 + (i % 3) * 0.4, -half + 3.5 + i * 3.8)
+    dummy.rotation.set(0.08 * s, 0.35 * s, s * 0.15)
+    dummy.updateMatrix()
+    floatBody.setMatrixAt(i, dummy.matrix)
+  }
+  floatBody.instanceMatrix.needsUpdate = true
+  noCam(floatBody)
+  g.add(floatBody)
+
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.35, roughness: 0.35
+  })
+  for (const z of [-half + 5, half - 5]) {
+    for (const s of [-1, 1]) {
+      const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
+      shade.name = 'cargo-sconce'
+      shade.position.set(s * (WALL_X - 0.35), 2.05, z)
+      noCam(shade)
+      g.add(shade)
+    }
+  }
+
+  // Ceiling hang point (visual only — moving girder/trunk is in timewreck.js).
+  const hangChain = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.55, 6), shared.brass)
+  hangChain.position.set(0, CARRIAGE_CEILING_Y - 0.45, half * 0.05)
+  noCam(hangChain)
+  g.add(hangChain)
+
+  // Same light budget as before (2 amber aisle + 1 violet temporal accent).
+  for (const z of [-half * 0.5, half * 0.5]) {
+    const l = new THREE.PointLight(0xffc090, 7.5, 7.5, 2)
+    l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
+    addLight(g, fx, l, true)
   }
   const loopGlow = new THREE.PointLight(0xa855f7, 3.6, 5, 2)
   loopGlow.position.set(sites[0].side * 0.95, 1.5, sites[0].z)
   addLight(g, fx, loopGlow, true)
 }
 
+// L3 Room 6: shattered luxury Security — teal wood, burgundy benches, clock,
+// amber fill, storm openings. Freeze tiles are built in timewreck.js.
 function dressDamagedSecurity(g, half, shared, fx) {
-  const sites = damageSites(half)
-  const doorMat = metalMaterial({ repeat: [1, 1], base: 0x2a3140, roughness: 0.5, metalness: 0.75 })
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 1.15, 0.48), doorMat, sites.length), sites.length, (d, i) => {
-    const c = sites[i]
-    d.position.set(c.side * (WALL_X - 0.08), 0.95, c.z)
-    d.rotation.set(0.04, c.side * -0.45, c.side * 0.06)
-  }))
+  addBlownViewports(g, half, 'security', shared)
 
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.028, 0.028, 1.35, 6), shared.darkSteel, sites.length), sites.length, (d, i) => {
-    const c = sites[i]
-    d.position.set(c.side * (WALL_X - 0.12), 1.55, c.z)
-    d.rotation.set(Math.PI / 2, 0, c.side * 0.04)
-  }))
+  const strip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
+    })
+  )
+  strip.name = 'security-ceiling-strip'
+  strip.position.y = CARRIAGE_CEILING_Y - 0.06
+  g.add(strip)
 
-  const fixtureMat = new THREE.MeshStandardMaterial({
-    color: 0x1e293b, emissive: 0x1d4ed8, emissiveIntensity: 0.45, roughness: 0.45, metalness: 0.6
+  const rupture = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.04, half * 0.9),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1848, emissive: 0x7c3aed, emissiveIntensity: 1.2, roughness: 0.4
+    })
+  )
+  rupture.name = 'security-rupture-strip'
+  rupture.position.set(0, CARRIAGE_CEILING_Y - 0.05, 0)
+  g.add(rupture)
+
+  const cyanEdge = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.7, roughness: 0.35
   })
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.05, 0.5), fixtureMat, sites.length), sites.length, (d, i) => {
-    const c = sites[i]
-    d.position.set(c.side * 1.18, CARRIAGE_CEILING_Y - 0.12, c.z)
-    d.rotation.set(0, 0, c.side * 0.18)
-  }))
+  for (const s of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
+    rail.name = 'security-wall-rail'
+    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    noCam(rail)
+    g.add(rail)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
+    edge.name = 'security-floor-edge'
+    edge.position.set(s * (WALL_X - 0.24), 0.012, 0)
+    noCam(edge)
+    g.add(edge)
+    const cyan = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.018, half * 2 - 2.4), cyanEdge)
+    cyan.name = 'security-floor-cyan'
+    cyan.position.set(s * (WALL_X - 0.32), 0.02, 0)
+    noCam(cyan)
+    g.add(cyan)
+  }
+
+  // Burgundy benches at the intact ends — centre kept clear for freeze tiles.
+  const velvet = new THREE.MeshStandardMaterial({
+    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  })
+  const seatWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 135
+  }), 0xe8d0b0)
+  const seatZs = [-half + 3.2, half - 3.2]
+  const sn = seatZs.length * 2
+  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.14, 0.8), seatWood, sn)
+  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.12, 0.74), velvet, sn)
+  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.78, 0.76), velvet, sn)
+  frames.name = 'security-bench-frames'
+  cushions.name = 'security-bench-cushions'
+  const dummy = new THREE.Object3D()
+  let si = 0
+  for (const z of seatZs) {
+    for (const s of [-1, 1]) {
+      const x = s * (WALL_X - 0.52)
+      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
+      frames.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
+      cushions.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(s * (WALL_X - 0.28), 0.72, z); dummy.updateMatrix()
+      backs.setMatrixAt(si, dummy.matrix)
+      si++
+    }
+  }
+  for (const mesh of [frames, cushions, backs]) {
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    noCam(mesh)
+    g.add(mesh)
+  }
+
+  // Antique clock on the approach side (reuse Room 4 helper).
+  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, half * 0.55, 1)
+
+  // A few static floating panels in the exterior void (not walkable).
+  const panelWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x6a4a2c, dark: 0x2e1a10, roughness: 0.62, seed: 137
+  }), 0xe0c8a8)
+  const floatN = 4
+  const floatPanels = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.08, 1.1), panelWood, floatN)
+  floatPanels.name = 'security-float-panels'
+  for (let i = 0; i < floatN; i++) {
+    const s = i % 2 ? 1 : -1
+    dummy.position.set(s * (WALL_X + 0.85), 1.2 + (i % 3) * 0.35, -half * 0.2 + i * 2.4)
+    dummy.rotation.set(0.2 * s, 0.3 * s, s * 0.25)
+    dummy.updateMatrix()
+    floatPanels.setMatrixAt(i, dummy.matrix)
+  }
+  floatPanels.instanceMatrix.needsUpdate = true
+  noCam(floatPanels)
+  g.add(floatPanels)
+
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.35, roughness: 0.35
+  })
+  for (const z of [-half + 4.2, half - 4.2]) {
+    for (const s of [-1, 1]) {
+      const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
+      shade.name = 'security-sconce'
+      shade.position.set(s * (WALL_X - 0.35), 2.05, z)
+      noCam(shade)
+      g.add(shade)
+    }
+  }
+
+  // Soft cyan fracture cue on torn lining (emissive only — no PointLight).
+  const cyanTear = new THREE.MeshStandardMaterial({
+    color: 0x1e293b, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4
+  })
+  for (const c of damageSites(half)) {
+    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.1, 0.7), cyanTear)
+    tear.name = 'security-chrono-tear'
+    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z)
+    tear.rotation.z = c.side * 0.1
+    noCam(tear)
+    g.add(tear)
+  }
+
+  // Same light budget as before (3 amber aisle fills).
+  for (const z of [-half * 0.55, 0, half * 0.55]) {
+    const l = new THREE.PointLight(0xffc090, 7.5, 7.5, 2)
+    l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
+    addLight(g, fx, l, true)
+  }
 }
 
+// L3 Room 7 finale dress: luxury accents + storm read. Seats/lights are added
+// by dressPassenger; collapse/detach/debris live in timewreck.js.
 function dressDamagedPassenger(g, half, shared, fx) {
   const sites = damageSites(half)
-  const luggageMat = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 0.82, metalness: 0.05 })
+
+  const rupture = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.05, half * 1.15),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1848, emissive: 0x7c3aed, emissiveIntensity: 1.35, roughness: 0.4
+    })
+  )
+  rupture.name = 'passenger-rupture-strip'
+  rupture.position.set(0, CARRIAGE_CEILING_Y - 0.05, half * 0.1)
+  g.add(rupture)
+
+  // Soft violet storm veils outside the hull — intensifies purple read through openings.
+  const veilMat = new THREE.MeshStandardMaterial({
+    color: 0x1a0a30, emissive: 0x6d28d9, emissiveIntensity: 0.85,
+    roughness: 1, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide
+  })
+  for (const s of [-1, 1]) {
+    const veil = new THREE.Mesh(new THREE.PlaneGeometry(half * 1.6, CARRIAGE_CEILING_Y * 1.2), veilMat)
+    veil.name = 'passenger-storm-veil'
+    veil.position.set(s * (WALL_X + 1.4), CARRIAGE_CEILING_Y * 0.45, 0)
+    veil.rotation.y = s * Math.PI / 2
+    noCam(veil)
+    g.add(veil)
+  }
+
+  const cyanEdge = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
+  })
+  for (const s of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
+    rail.name = 'passenger-wall-rail'
+    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    noCam(rail)
+    g.add(rail)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
+    edge.name = 'passenger-floor-edge'
+    edge.position.set(s * (WALL_X - 0.24), 0.012, 0)
+    noCam(edge)
+    g.add(edge)
+    const cyan = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.018, half * 2 - 2.4), cyanEdge)
+    cyan.name = 'passenger-floor-cyan'
+    cyan.position.set(s * (WALL_X - 0.32), 0.02, 0)
+    noCam(cyan)
+    g.add(cyan)
+  }
+
+  // Burgundy runner — visual only on the existing floor.
+  const runner = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.62, half * 2 - 3.5),
+    new THREE.MeshStandardMaterial({
+      color: 0x6a1824, roughness: 0.92, metalness: 0,
+      emissive: 0x1a0608, emissiveIntensity: 0.08
+    })
+  )
+  runner.name = 'passenger-runner'
+  runner.rotation.x = -Math.PI / 2
+  runner.position.y = 0.015
+  noCam(runner)
+  g.add(runner)
+
+  // Exposed brass ceiling beams at damage sites.
+  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(WALL_X * 1.6, 0.07, 0.1), shared.brass, sites.length), sites.length, (d, i) => {
+    const c = sites[i]
+    d.position.set(0, CARRIAGE_CEILING_Y - 0.14, c.z)
+    d.rotation.set(0, 0, c.side * 0.04)
+  }))
+
+  const luggageMat = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x6a4a2c, dark: 0x2e1a10, roughness: 0.65, seed: 143
+  }), 0xe0c8a8)
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.38, 0.2, 0.5), luggageMat, sites.length), sites.length, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * 1.08, 0.58, c.z + 0.55)
     d.rotation.set(0.04, 0.12 * c.side, 0)
   }))
 
-  const seatFrag = new THREE.MeshStandardMaterial({ color: 0x3a4552, roughness: 0.88, metalness: 0.04 })
+  const seatFrag = new THREE.MeshStandardMaterial({
+    color: 0x7a2430,
+    roughness: 0.9,
+    metalness: 0.02,
+    emissive: 0x1a0608,
+    emissiveIntensity: 0.08
+  })
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.1, 0.4), seatFrag, sites.length), sites.length, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * 1.12, 0.12, c.z - 0.35)
@@ -610,6 +1229,50 @@ function dressDamagedPassenger(g, half, shared, fx) {
     d.position.set(c.side * (WALL_X - 0.05), 1.45, c.z + 0.72)
     d.rotation.set(0.04, 0, c.side * 0.12)
   }))
+
+  // Sparse floating wall panels in the exterior void (static, not walkable).
+  const panelWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x4a6a62, dark: 0x1a2e2a, roughness: 0.55, seed: 145
+  }), 0xc8ddd6)
+  const floatN = 5
+  const floatPanels = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 1.0, 1.2), panelWood, floatN)
+  floatPanels.name = 'passenger-float-panels'
+  const dummy = new THREE.Object3D()
+  for (let i = 0; i < floatN; i++) {
+    const s = i % 2 ? 1 : -1
+    dummy.position.set(s * (WALL_X + 1.1), 0.9 + (i % 3) * 0.45, -half * 0.35 + i * 2.8)
+    dummy.rotation.set(0.15 * s, 0.35 * s, s * 0.35)
+    dummy.updateMatrix()
+    floatPanels.setMatrixAt(i, dummy.matrix)
+  }
+  floatPanels.instanceMatrix.needsUpdate = true
+  noCam(floatPanels)
+  g.add(floatPanels)
+
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.35, roughness: 0.35
+  })
+  for (const z of [-half + 4.5, half - 4.5]) {
+    for (const s of [-1, 1]) {
+      const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
+      shade.name = 'passenger-sconce'
+      shade.position.set(s * (WALL_X - 0.35), 2.05, z)
+      noCam(shade)
+      g.add(shade)
+    }
+  }
+
+  const cyanTear = new THREE.MeshStandardMaterial({
+    color: 0x1e293b, emissive: 0x38bdf8, emissiveIntensity: 0.6, roughness: 0.4
+  })
+  for (const c of sites) {
+    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.2, 0.75), cyanTear)
+    tear.name = 'passenger-chrono-tear'
+    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z)
+    tear.rotation.z = c.side * 0.12
+    noCam(tear)
+    g.add(tear)
+  }
 }
 
 function rememberVaultPiece(fx, mesh) {
@@ -631,49 +1294,98 @@ function rememberVaultMat(fx, mat) {
   fx.vaultMats.push(mat)
 }
 
+// L3 Vault luxury wreck: side benches hug the walls so the centre aisle and
+// laser gates stay clear. Decorative only — no colliders / noCam.
+function addVaultLuxuryBenches(g, half, shared) {
+  const wood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 71
+  }), 0xe8d0b0)
+  const velvet = new THREE.MeshStandardMaterial({
+    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  })
+  // Keep |x| high so the walkway (±~1.0) stays empty; lasers still span the aisle.
+  const zs = [-half + 3.2, 0.4, half - 5.2]
+  const n = zs.length * 2
+  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.52, 0.14, 0.9), wood, n)
+  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.12, 0.84), velvet, n)
+  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.72, 0.88), velvet, n)
+  const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(0.06, 0.05, 0.9), shared.brass, n)
+  frames.name = 'vault-bench-frames'
+  cushions.name = 'vault-bench-cushions'
+  const dummy = new THREE.Object3D()
+  let i = 0
+  for (const z of zs) {
+    for (const s of [-1, 1]) {
+      const x = s * (WALL_X - 0.55)
+      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
+      frames.setMatrixAt(i, dummy.matrix)
+      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
+      cushions.setMatrixAt(i, dummy.matrix)
+      dummy.position.set(s * (WALL_X - 0.28), 0.72, z); dummy.updateMatrix()
+      backs.setMatrixAt(i, dummy.matrix)
+      dummy.position.set(s * (WALL_X - 0.28), 1.1, z); dummy.updateMatrix()
+      rails.setMatrixAt(i, dummy.matrix)
+      i++
+    }
+  }
+  for (const mesh of [frames, cushions, backs, rails]) {
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    noCam(mesh)
+    g.add(mesh)
+  }
+}
+
 function dressDamagedVault(g, half, shared, fx) {
   const sites = [{ z: half - 1.8, side: -1 }, { z: half - 1.8, side: 1 }]
-  const plateMat = metalMaterial({ repeat: [1, 1], base: 0x252830, roughness: 0.48, metalness: 0.82 })
+  // Torn wall plates — wood with restrained cyan chrono-edge (fracture FX still drives these mats).
+  const plateMat = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x4a6a62, dark: 0x1a2e2a, roughness: 0.52, seed: 73
+  }), 0xc8ddd6)
+  plateMat.emissive.setHex(0x0e7490)
+  plateMat.emissiveIntensity = 0.18
   rememberVaultMat(fx, plateMat)
   const plates = scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.04, 1.2, 1.15), plateMat, 2), 2, (d, i) => {
     const c = sites[i]
-    d.position.set(c.side * (WALL_X - 0.08), 1.15, c.z)
-    d.rotation.set(0, 0, c.side * 0.08)
+    d.position.set(c.side * (WALL_X - 0.48), 1.15, c.z)
+    d.rotation.set(0, 0, c.side * 0.12)
   })
   g.add(plates)
   rememberVaultPiece(fx, plates)
 
-  const rails = scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.2), shared.steel, 2), 2, (d, i) => {
+  const rails = scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.2), shared.brass, 2), 2, (d, i) => {
     const c = sites[i]
-    d.position.set(c.side * 1.18, 0.14, c.z)
+    d.position.set(c.side * 1.35, 0.14, c.z)
     d.rotation.set(0, 0, c.side * 0.05)
   })
   g.add(rails)
   rememberVaultPiece(fx, rails)
 
   const scorch = new THREE.MeshStandardMaterial({
-    color: 0x1e1b4b, emissive: 0x6d28d9, emissiveIntensity: 0.85, roughness: 0.7
+    color: 0x1e1b4b, emissive: 0x6d28d9, emissiveIntensity: 0.7, roughness: 0.7
   })
   rememberVaultMat(fx, scorch)
   g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.38, 0.015, 1.05), scorch, 2), 2, (d, i) => {
     const c = sites[i]
-    d.position.set(c.side * 1.18, 0.02, c.z)
+    d.position.set(c.side * 1.35, 0.02, c.z)
     d.rotation.set(0, 0, 0)
   }))
 
   const vein = new THREE.MeshStandardMaterial({
-    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 1.35, roughness: 0.35
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.95, roughness: 0.35
   })
   rememberVaultMat(fx, vein)
   for (const c of sites) {
     const streak = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.5, 0.08), vein)
-    streak.position.set(c.side * (WALL_X - 0.07), 1.15, c.z)
+    streak.name = 'vault-chrono-vein'
+    streak.position.set(c.side * (WALL_X - 0.42), 1.15, c.z)
     noCam(streak)
     g.add(streak)
     rememberVaultPiece(fx, streak)
-    addSagCable(g, vein, c.side * (WALL_X - 0.1), 2.18, c.z - 0.3, c.side * 1.12, 0.7, c.z + 0.25, 0.24)
+    addSagCable(g, vein, c.side * (WALL_X - 0.45), 2.18, c.z - 0.3, c.side * 1.2, 0.7, c.z + 0.25, 0.24)
   }
 
+  // Existing temporal accent light — keep violet (no new PointLights).
   const coreGlow = new THREE.PointLight(0x7c3aed, 5, 6, 2)
   coreGlow.position.set(0, 1.4, half - 1.2)
   addLight(g, fx, coreGlow, true)
@@ -691,28 +1403,39 @@ function dressPassenger(g, half, shared, damaged, fx) {
   const strip = new THREE.Mesh(
     new THREE.BoxGeometry(0.4, 0.05, half * 2 - 2),
     new THREE.MeshStandardMaterial({
-      color: damaged ? 0x6a2218 : 0xfff2d6,
-      emissive: damaged ? 0xc42818 : 0xffe0ae,
-      emissiveIntensity: damaged ? 1.35 : 2.3
+      color: 0xffe2b8,
+      emissive: 0xffb060,
+      emissiveIntensity: 1.15
     })
   )
+  strip.name = 'passenger-ceiling-strip'
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
+  // Same light budget as before (2 amber aisle fills — no new PointLights).
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(damaged ? 0xff6a48 : 0xffcf96, damaged ? 8.5 : 22, damaged ? 6.5 : 12, 2)
+    const l = new THREE.PointLight(0xffc090, 8.5, 6.5, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
-    addLight(g, fx, l, damaged)
+    addLight(g, fx, l, true)
   }
-  if (damaged) dressDamagedPassenger(g, half, shared, fx)
+  dressDamagedPassenger(g, half, shared, fx)
 }
 
 // Level 3: the original narrow-car seat bays, tilted and dropped near the
 // damage sites so the same instanced set reads as thrown about.
 function addWreckedSeatBays(g, half) {
   const bays = Math.max(1, Math.floor((half * 2 - 4) / 3.4))
-  const seatMat = new THREE.MeshStandardMaterial({ color: 0x3d4a58, roughness: 0.88, metalness: 0.03 })
+  // Deep crimson velvet — albedo high enough to survive ACES, not neon.
+  const seatMat = new THREE.MeshStandardMaterial({
+    color: 0x9a2c38,
+    roughness: 0.88,
+    metalness: 0.02,
+    emissive: 0x2a080c,
+    emissiveIntensity: 0.1
+  })
   const bases = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.16, 0.95), seatMat, bays * 2)
   const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.8, 0.16), seatMat, bays * 2)
+  bases.name = 'seats-passenger-bases'
+  backs.name = 'seats-passenger-backs'
   const dummy = new THREE.Object3D()
   const sites = damageSites(half)
   let i = 0
@@ -1064,57 +1787,6 @@ function dressSecurity(g, half, shared, damaged, fx) {
     dressVintageSecurity(g, half, shared, fx)
     return
   }
-  const slitMat = new THREE.MeshStandardMaterial({
-    color: 0x1b2733, emissive: 0x1e3a5f, emissiveIntensity: 0.5, roughness: 0.4
-  })
-  for (let z = -half + 2; z <= half - 2; z += 2.6) {
-    for (const s of [-1, 1]) {
-      const slit = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.34, 0.9), slitMat)
-      slit.position.set(s * (WALL_X - 0.04), 1.7, z)
-      g.add(slit)
-      for (let k = -1; k <= 1; k++) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.03), shared.rivet)
-        bar.position.set(s * (WALL_X - 0.03), 1.7, z + k * 0.28)
-        g.add(bar)
-      }
-    }
-  }
-
-  const lockerMat = metalMaterial({
-    repeat: [1, 1], base: 0x262b32, roughness: 0.55, metalness: 0.7
-  })
-  const cols = Math.max(2, Math.floor((half * 2 - 5) / 0.62))
-  const lockers = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 1.7, 0.5), lockerMat, cols * 2)
-  const dummy = new THREE.Object3D()
-  const sites = damaged ? damageSites(half) : []
-  let i = 0
-  for (let c = 0; c < cols; c++) {
-    const z = -half + 2.5 + c * 0.62
-    for (const s of [-1, 1]) {
-      dummy.rotation.set(0, damaged && nearSite(sites, z, s, 0.9) ? s * -0.18 : 0, 0)
-      dummy.position.set(s * (WALL_X - 0.32), 0.86, z); dummy.updateMatrix()
-      lockers.setMatrixAt(i++, dummy.matrix)
-    }
-  }
-  lockers.instanceMatrix.needsUpdate = true
-  lockers.castShadow = true
-  g.add(lockers)
-
-  for (const z of [-half * 0.55, 0, half * 0.55]) {
-    const cage = new THREE.Mesh(
-      new THREE.BoxGeometry(0.5, 0.08, 0.5),
-      new THREE.MeshStandardMaterial({
-        color: 0x1e3a4a,
-        emissive: 0x3b82f6,
-        emissiveIntensity: 1.6
-      })
-    )
-    cage.position.set(0, CARRIAGE_CEILING_Y - 0.07, z)
-    g.add(cage)
-    const l = new THREE.PointLight(0x8fb4d4, 8, 7, 2)
-    l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
-    addLight(g, fx, l, damaged)
-  }
   dressDamagedSecurity(g, half, shared, fx)
 }
 
@@ -1227,71 +1899,156 @@ function dressRelay(g, half, shared, damaged, fx) {
     dressRouteControl(g, half, shared, fx)
     return
   }
-  const rackMat = metalMaterial({
-    repeat: [1, 1],
-    base: damaged ? 0x252c31 : 0x33434f,
-    roughness: 0.55,
-    metalness: 0.78
+  dressDamagedRelayLuxury(g, half, shared, fx)
+}
+
+// L3 Room 5: shattered luxury Relay — teal wood, burgundy benches, antique clock,
+// amber fill, storm openings. Dash blast doors are built in timewreck.js.
+function dressDamagedRelayLuxury(g, half, shared, fx) {
+  addBlownViewports(g, half, 'relay', shared)
+
+  const strip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
+    })
+  )
+  strip.name = 'relay-ceiling-strip'
+  strip.position.y = CARRIAGE_CEILING_Y - 0.06
+  g.add(strip)
+
+  const rupture = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.04, half * 0.95),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1848, emissive: 0x7c3aed, emissiveIntensity: 1.2, roughness: 0.4
+    })
+  )
+  rupture.name = 'relay-rupture-strip'
+  rupture.position.set(0, CARRIAGE_CEILING_Y - 0.05, -half * 0.08)
+  g.add(rupture)
+
+  const cyanEdge = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.7, roughness: 0.35
   })
+  for (const s of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
+    rail.name = 'relay-wall-rail'
+    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    noCam(rail)
+    g.add(rail)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
+    edge.name = 'relay-floor-edge'
+    edge.position.set(s * (WALL_X - 0.24), 0.012, 0)
+    noCam(edge)
+    g.add(edge)
+    const cyan = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.018, half * 2 - 2.4), cyanEdge)
+    cyan.name = 'relay-floor-cyan'
+    cyan.position.set(s * (WALL_X - 0.32), 0.02, 0)
+    noCam(cyan)
+    g.add(cyan)
+  }
 
-  const statusMat = new THREE.MeshStandardMaterial({
-    color: damaged ? 0x6b261d : 0x38bdf8,
-    emissive: damaged ? 0xc43120 : 0x38bdf8,
-    emissiveIntensity: 2.2,
-    roughness: 0.2
+  // Thin burgundy runner — visual only on the existing floor mesh.
+  const runner = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.55, half * 2 - 3.2),
+    new THREE.MeshStandardMaterial({
+      color: 0x6a1824, roughness: 0.92, metalness: 0,
+      emissive: 0x1a0608, emissiveIntensity: 0.08
+    })
+  )
+  runner.name = 'relay-runner'
+  runner.rotation.x = -Math.PI / 2
+  runner.position.y = 0.015
+  noCam(runner)
+  g.add(runner)
+
+  // Burgundy high-back benches — keep centre clear for the dash.
+  const velvet = new THREE.MeshStandardMaterial({
+    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
   })
+  const seatWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 125
+  }), 0xe8d0b0)
+  const seatZs = [-half + 3.4, -half * 0.15, half * 0.4, half - 3.6]
+  const sn = seatZs.length * 2
+  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.14, 0.8), seatWood, sn)
+  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.12, 0.74), velvet, sn)
+  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.78, 0.76), velvet, sn)
+  frames.name = 'relay-bench-frames'
+  cushions.name = 'relay-bench-cushions'
+  const dummy = new THREE.Object3D()
+  let si = 0
+  for (const z of seatZs) {
+    for (const s of [-1, 1]) {
+      const x = s * (WALL_X - 0.52)
+      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
+      frames.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
+      cushions.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(s * (WALL_X - 0.28), 0.72, z); dummy.updateMatrix()
+      backs.setMatrixAt(si, dummy.matrix)
+      si++
+    }
+  }
+  for (const mesh of [frames, cushions, backs]) {
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    noCam(mesh)
+    g.add(mesh)
+  }
 
-  // Electrical racks down both walls.
-  for (let z = -half + 2.2; z <= half - 2.2; z += 2.8) {
-    for (const side of [-1, 1]) {
-      const rack = new THREE.Mesh(
-        new THREE.BoxGeometry(0.48, 1.9, 1.35),
-        rackMat
-      )
+  // Antique clock on the approach wall (reuse Room 4 helper).
+  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, half * 0.55, 1)
 
-      rack.position.set(
-        side * (WALL_X - 0.3),
-        0.95,
-        z
-      )
+  // Sparse floating luggage in the exterior void (static, non-interactive).
+  const trunkWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x6a4a2c, dark: 0x2e1a10, roughness: 0.62, seed: 127
+  }), 0xe0c8a8)
+  const floatN = 5
+  const floatBody = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.4, 0.75), trunkWood, floatN)
+  floatBody.name = 'relay-float-luggage'
+  for (let i = 0; i < floatN; i++) {
+    const s = i % 2 ? 1 : -1
+    dummy.position.set(s * (WALL_X + 0.95), 0.55 + (i % 3) * 0.45, -half + 3.2 + i * 3.2)
+    dummy.rotation.set(0.1 * s, 0.4 * s, s * 0.18)
+    dummy.updateMatrix()
+    floatBody.setMatrixAt(i, dummy.matrix)
+  }
+  floatBody.instanceMatrix.needsUpdate = true
+  noCam(floatBody)
+  g.add(floatBody)
 
-      rack.castShadow = true
-      g.add(rack)
-
-      const status = new THREE.Mesh(
-        new THREE.BoxGeometry(0.04, 0.16, 0.75),
-        statusMat
-      )
-
-      status.position.set(
-        side * (WALL_X - 0.045),
-        1.4,
-        z
-      )
-
-      g.add(status)
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.35, roughness: 0.35
+  })
+  for (const z of [-half + 4.5, 0, half - 4.5]) {
+    for (const s of [-1, 1]) {
+      const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
+      shade.name = 'relay-sconce'
+      shade.position.set(s * (WALL_X - 0.35), 2.05, z)
+      noCam(shade)
+      g.add(shade)
     }
   }
 
-  // Central ceiling power conduit.
-  const conduit = new THREE.Mesh(
-    new THREE.BoxGeometry(0.12, 0.08, half * 2 - 2),
-    shared.darkSteel
-  )
+  // Soft cyan fracture cue on torn lining (emissive only — no PointLight).
+  const cyanTear = new THREE.MeshStandardMaterial({
+    color: 0x1e293b, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4
+  })
+  for (const c of damageSites(half)) {
+    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.1, 0.7), cyanTear)
+    tear.name = 'relay-chrono-tear'
+    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z)
+    tear.rotation.z = c.side * 0.1
+    noCam(tear)
+    g.add(tear)
+  }
 
-  conduit.position.set(0, CARRIAGE_CEILING_Y - 0.12, 0)
-  g.add(conduit)
-
+  // Same light budget as the old Relay dress (3 aisle fills — amber, not red).
   for (const z of [-half * 0.55, 0, half * 0.55]) {
-    const light = new THREE.PointLight(
-      damaged ? 0xff5030 : 0x67c8ff,
-      damaged ? 12 : 15,
-      9,
-      2
-    )
-
-    light.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
-    addLight(g, fx, light, damaged)
+    const light = new THREE.PointLight(0xffc090, 7.5, 8, 2)
+    light.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
+    addLight(g, fx, light, true)
   }
 }
 
@@ -1359,60 +2116,7 @@ function dressCargo(g, half, shared, damaged, fx) {
     dressVintageCargo(g, half, shared, fx)
     return
   }
-  const crateMat = woodMaterial({
-    repeat: [1, 1], light: damaged ? 0x4a463c : 0x8a6a40, dark: damaged ? 0x1c1b18 : 0x4c3620
-  })
-  const spots = []
-  for (let z = -half + 2; z <= half - 2; z += 2.2) {
-    spots.push([-(WALL_X - 0.45), 0.45, z, 0])
-    spots.push([WALL_X - 0.45, 0.45, z, 1])
-    if ((z | 0) % 2 === 0) spots.push([-(WALL_X - 0.5), 1.35, z, 2])
-  }
-  const crates = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), crateMat, spots.length)
-  const dummy = new THREE.Object3D()
-  const sites = damaged ? damageSites(half) : []
-  spots.forEach(([x, y, z, seed], k) => {
-    const wrecked = damaged && nearSite(sites, z, Math.sign(x) || -1, 1.6)
-    dummy.position.set(x, wrecked ? y - 0.05 : y, z)
-    dummy.rotation.set(
-      wrecked ? 0.08 : 0,
-      skew(seed + k) * 0.4,
-      wrecked ? Math.sign(x) * 0.1 : 0
-    )
-    dummy.updateMatrix()
-    crates.setMatrixAt(k, dummy.matrix)
-  })
-  crates.instanceMatrix.needsUpdate = true
-  crates.castShadow = true
-  crates.receiveShadow = true
-  g.add(crates)
-
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, half * 2 - 2), shared.darkSteel)
-  rail.position.set(0, CARRIAGE_CEILING_Y - 0.2, 0)
-  g.add(rail)
-  const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.7, 6), shared.rivet)
-  chain.position.set(0, CARRIAGE_CEILING_Y - 0.55, half - 4)
-  g.add(chain)
-  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 8, 12), shared.steel)
-  hook.position.set(0, CARRIAGE_CEILING_Y - 0.95, half - 4)
-  g.add(hook)
-
-  const work = new THREE.Mesh(
-    new THREE.BoxGeometry(0.4, 0.06, 0.4),
-    new THREE.MeshStandardMaterial({
-      color: damaged ? 0x6a2818 : 0xffdca0,
-      emissive: damaged ? 0xc43414 : 0xffb454,
-      emissiveIntensity: 1.6
-    })
-  )
-  work.position.set(0, CARRIAGE_CEILING_Y - 0.09, 0)
-  g.add(work)
-  for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(damaged ? 0xff7048 : 0xffb264, damaged ? 7.5 : 16, damaged ? 6 : 11, 2)
-    l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
-    addLight(g, fx, l, damaged)
-  }
-  if (damaged) dressDamagedCargo(g, half, shared, fx)
+  dressDamagedCargoLuxury(g, half, shared, fx)
 }
 // Level 2 Mechanical: the rewind car. A burgundy runner, curtained windows
 // with trunks beneath, a brass handrail, sconces between the windows and
@@ -1480,8 +2184,11 @@ function dressVintageConvergence(g, half, shared, fx) {
 }
 
 function dressMechanical(g, half, shared, damaged, fx) {
+  // L3 damaged Mechanical is the luggage-storm luxury carriage (Room 3).
+  if (damaged) return dressDamagedMechanicalLuxury(g, half, shared, fx)
+
   const pipeMat = metalMaterial({
-    repeat: [1, 4], base: damaged ? 0x555b63 : 0x707781, roughness: damaged ? 0.7 : 0.45, metalness: 0.85
+    repeat: [1, 4], base: 0x707781, roughness: 0.45, metalness: 0.85
   })
   const pipeGeo = new THREE.CylinderGeometry(0.07, 0.07, half * 2 - 1.2, 10)
   pipeGeo.rotateX(Math.PI / 2)
@@ -1506,37 +2213,296 @@ function dressMechanical(g, half, shared, damaged, fx) {
     g.add(spoke)
   }
 
-  const boilerLight = new THREE.PointLight(damaged ? 0xff6a32 : 0xff7a3c, damaged ? 14 : 18, damaged ? 8 : 12, 2)
+  const boilerLight = new THREE.PointLight(0xff7a3c, 18, 12, 2)
   boilerLight.position.set(0, 1.4, half - 4)
   addLight(g, fx, boilerLight, damaged)
 
   const grate = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 0.7, 0.1),
     new THREE.MeshStandardMaterial({
-      color: 0x2a1508, emissive: 0xff5a1e, emissiveIntensity: damaged ? 2.6 : 2.6, roughness: 0.7
+      color: 0x2a1508, emissive: 0xff5a1e, emissiveIntensity: 2.6, roughness: 0.7
     })
   )
   grate.position.set(0, 0.6, half - 0.3)
   g.add(grate)
 
-  const ceil = new THREE.PointLight(damaged ? 0xd8c8b8 : 0xffb066, damaged ? 7 : 12, damaged ? 8 : 10, 2)
+  const ceil = new THREE.PointLight(0xffb066, 12, 10, 2)
   ceil.position.set(0, CARRIAGE_CEILING_Y - 0.3, -half * 0.4)
   addLight(g, fx, ceil, damaged)
 
-  const access = addRoofAccess(g, half - 2.5, shared)
-  if (damaged) dressDamagedMechanical(g, half, shared, fx)
-  return access
+  return addRoofAccess(g, half - 2.5, shared)
 }
 
-// Extra emergency lamps for the Timewreck Convergence car (the ladder room).
+// L3 Room 3 shell: teal wood, burgundy benches, amber fill. Moving luggage trunks
+// are built in timewreck.js on the existing piston heads (motion/collision unchanged).
+function dressDamagedMechanicalLuxury(g, half, shared, fx) {
+  addBlownViewports(g, half, 'mechanical', shared)
+
+  const strip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
+    })
+  )
+  strip.name = 'mechanical-ceiling-strip'
+  strip.position.y = CARRIAGE_CEILING_Y - 0.06
+  g.add(strip)
+
+  const rupture = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.04, half * 0.9),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1848, emissive: 0x7c3aed, emissiveIntensity: 1.15, roughness: 0.4
+    })
+  )
+  rupture.name = 'mechanical-rupture-strip'
+  rupture.position.set(0, CARRIAGE_CEILING_Y - 0.05, -half * 0.1)
+  g.add(rupture)
+
+  for (const s of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
+    rail.name = 'mechanical-wall-rail'
+    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    noCam(rail)
+    g.add(rail)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
+    edge.name = 'mechanical-floor-edge'
+    edge.position.set(s * (WALL_X - 0.24), 0.012, 0)
+    noCam(edge)
+    g.add(edge)
+  }
+
+  // Burgundy benches — keep clear of the centre piston sweep.
+  const velvet = new THREE.MeshStandardMaterial({
+    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  })
+  const seatWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 105
+  }), 0xe8d0b0)
+  const seatZs = [-half + 3.5, half - 4.5]
+  const sn = seatZs.length * 2
+  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.14, 0.8), seatWood, sn)
+  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.12, 0.74), velvet, sn)
+  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.68, 0.76), velvet, sn)
+  frames.name = 'mechanical-bench-frames'
+  cushions.name = 'mechanical-bench-cushions'
+  const dummy = new THREE.Object3D()
+  let si = 0
+  for (const z of seatZs) {
+    for (const s of [-1, 1]) {
+      const x = s * (WALL_X - 0.52)
+      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
+      frames.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
+      cushions.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(s * (WALL_X - 0.28), 0.68, z); dummy.updateMatrix()
+      backs.setMatrixAt(si, dummy.matrix)
+      si++
+    }
+  }
+  for (const mesh of [frames, cushions, backs]) {
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    noCam(mesh)
+    g.add(mesh)
+  }
+
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.35, roughness: 0.35
+  })
+  for (const z of [-half + 5, half - 5]) {
+    for (const s of [-1, 1]) {
+      const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
+      shade.name = 'mechanical-sconce'
+      shade.position.set(s * (WALL_X - 0.35), 2.05, z)
+      noCam(shade)
+      g.add(shade)
+    }
+  }
+
+  // Retune existing mechanical fill lights to warm amber (same count, no new lights).
+  const boilerLight = new THREE.PointLight(0xffc090, 10, 9, 2)
+  boilerLight.position.set(0, 1.6, half - 4)
+  addLight(g, fx, boilerLight, true)
+  const ceil = new THREE.PointLight(0xffc090, 8, 9, 2)
+  ceil.position.set(0, CARRIAGE_CEILING_Y - 0.3, -half * 0.35)
+  addLight(g, fx, ceil, true)
+
+  // Soft cyan fracture cue on torn lining (emissive only — no PointLight).
+  const cyanTear = new THREE.MeshStandardMaterial({
+    color: 0x1e293b, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4
+  })
+  for (const c of damageSites(half)) {
+    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.1, 0.7), cyanTear)
+    tear.name = 'mechanical-chrono-tear'
+    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z)
+    tear.rotation.z = c.side * 0.1
+    noCam(tear)
+    g.add(tear)
+  }
+
+  return addRoofAccess(g, half - 2.5, shared)
+}
+
+// Warm amber fill for the Timewreck Convergence car (existing 4-light budget).
 // Registered through addLight so they pick up that car's flicker only.
 function addConvergenceFlickerLights(g, half, fx) {
   const spots = [-half + 5, -half * 0.35, half * 0.15, half - 3.2]
   for (const z of spots) {
-    const light = new THREE.PointLight(0xff6a40, 4.2, 6.5, 2)
+    const light = new THREE.PointLight(0xffc090, 5.2, 7.2, 2)
     light.position.set(0, 2.15, z)
     addLight(g, fx, light, true)
   }
+}
+
+// L3 Room 2: shattered luxury Convergence — wood platforms look, burgundy
+// benches, cyan fracture accents, storm openings. Ladder preserved; no new lights.
+function dressDamagedConvergence(g, half, shared, fx) {
+  addBlownViewports(g, half, 'convergence', shared)
+
+  const strip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
+    })
+  )
+  strip.name = 'convergence-ceiling-strip'
+  strip.position.y = CARRIAGE_CEILING_Y - 0.06
+  g.add(strip)
+
+  // Violet accent band — temporal rupture cue (emissive mesh, not a PointLight).
+  const rupture = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.04, half * 1.1),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1848, emissive: 0x7c3aed, emissiveIntensity: 1.2, roughness: 0.4
+    })
+  )
+  rupture.name = 'convergence-rupture-strip'
+  rupture.position.set(0, CARRIAGE_CEILING_Y - 0.05, half * 0.15)
+  g.add(rupture)
+
+  // Brass rails + floor edging.
+  for (const s of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
+    rail.name = 'convergence-wall-rail'
+    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    noCam(rail)
+    g.add(rail)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
+    edge.name = 'convergence-floor-edge'
+    edge.position.set(s * (WALL_X - 0.24), 0.012, 0)
+    noCam(edge)
+    g.add(edge)
+  }
+
+  // "Broken platform" deck plates on the existing floor — same walkable surface.
+  const plankWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x8a6440, dark: 0x3a2414, roughness: 0.48, seed: 83
+  }), 0xf0dcc4)
+  const cyanEdge = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.85, roughness: 0.35
+  })
+  const deckZs = []
+  for (let z = -half + 3.5; z <= half - 3.5; z += 3.6) deckZs.push(z)
+  const deckN = deckZs.length
+  const decks = new THREE.InstancedMesh(new THREE.BoxGeometry(1.35, 0.04, 1.15), plankWood, deckN)
+  decks.name = 'convergence-platform-decks'
+  const edges = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 0.025, 0.06), cyanEdge, deckN * 2)
+  edges.name = 'convergence-platform-cyan-edges'
+  const dummy = new THREE.Object3D()
+  deckZs.forEach((z, i) => {
+    dummy.position.set(0, 0.03, z)
+    dummy.rotation.set(0, 0, 0)
+    dummy.updateMatrix()
+    decks.setMatrixAt(i, dummy.matrix)
+    dummy.position.set(0, 0.04, z - 0.56)
+    dummy.updateMatrix()
+    edges.setMatrixAt(i * 2, dummy.matrix)
+    dummy.position.set(0, 0.04, z + 0.56)
+    dummy.updateMatrix()
+    edges.setMatrixAt(i * 2 + 1, dummy.matrix)
+  })
+  decks.instanceMatrix.needsUpdate = true
+  edges.instanceMatrix.needsUpdate = true
+  noCam(decks)
+  noCam(edges)
+  g.add(decks, edges)
+
+  // Burgundy benches along walls — aisle clear for surges / player.
+  const velvet = new THREE.MeshStandardMaterial({
+    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  })
+  const seatWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 85
+  }), 0xe8d0b0)
+  const seatZs = [-half + 4.5, -half * 0.2, half * 0.35, half - 6]
+  const sn = seatZs.length * 2
+  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.14, 0.85), seatWood, sn)
+  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.46, 0.12, 0.8), velvet, sn)
+  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.7, 0.82), velvet, sn)
+  frames.name = 'convergence-bench-frames'
+  cushions.name = 'convergence-bench-cushions'
+  let si = 0
+  for (const z of seatZs) {
+    for (const s of [-1, 1]) {
+      const x = s * (WALL_X - 0.55)
+      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
+      frames.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
+      cushions.setMatrixAt(si, dummy.matrix)
+      dummy.position.set(s * (WALL_X - 0.3), 0.7, z); dummy.updateMatrix()
+      backs.setMatrixAt(si, dummy.matrix)
+      si++
+    }
+  }
+  for (const mesh of [frames, cushions, backs]) {
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    noCam(mesh)
+    g.add(mesh)
+  }
+
+  // Static floating debris planks outside the hull — storm rupture read, not walkable.
+  const floatN = 8
+  const floatPlank = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.08, 1.05), plankWood, floatN)
+  const floatCyan = new THREE.InstancedMesh(new THREE.BoxGeometry(0.74, 0.03, 0.05), cyanEdge, floatN * 2)
+  floatPlank.name = 'convergence-float-debris'
+  for (let i = 0; i < floatN; i++) {
+    const s = i % 2 ? 1 : -1
+    const z = -half + 4 + i * 4.2
+    dummy.position.set(s * (WALL_X + 0.85), 0.35 + (i % 3) * 0.35, z)
+    dummy.rotation.set(0.05 * s, 0.2 * s, s * 0.12)
+    dummy.updateMatrix()
+    floatPlank.setMatrixAt(i, dummy.matrix)
+    dummy.position.y += 0.05
+    dummy.position.z -= 0.5
+    dummy.updateMatrix()
+    floatCyan.setMatrixAt(i * 2, dummy.matrix)
+    dummy.position.z += 1.0
+    dummy.updateMatrix()
+    floatCyan.setMatrixAt(i * 2 + 1, dummy.matrix)
+  }
+  floatPlank.instanceMatrix.needsUpdate = true
+  floatCyan.instanceMatrix.needsUpdate = true
+  noCam(floatPlank)
+  noCam(floatCyan)
+  g.add(floatPlank, floatCyan)
+
+  // Vintage lamp shades (emissive geometry only — fill comes from existing pool lights).
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.35, roughness: 0.35
+  })
+  for (const z of [-half + 6, 0, half - 5]) {
+    for (const s of [-1, 1]) {
+      const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
+      shade.name = 'convergence-sconce'
+      shade.position.set(s * (WALL_X - 0.35), 2.05, z)
+      noCam(shade)
+      g.add(shade)
+    }
+  }
+
+  // Keep roof ladder / hatch — required climb set piece.
+  return addRoofAccess(g, half - 2.5, shared)
 }
 
 // Roof hatch (a sliding cover in the ceiling) and the ladder up to it.
@@ -1814,23 +2780,90 @@ function dressVault(g, half, shared, damaged, fx) {
     spoke.rotation.z = k * Math.PI / 4
     door.add(spoke)
   }
+  // Aged-brass door rim (visual only — door transform/collision unchanged).
+  if (damaged) {
+    for (const [w, h, x, y] of [
+      [0.08, 2.3, -1.1, 0], [0.08, 2.3, 1.1, 0], [2.28, 0.08, 0, 1.15], [2.28, 0.08, 0, -1.15]
+    ]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.05), shared.brass)
+      bar.name = 'vault-door-brass-frame'
+      bar.position.set(x, y, -0.02)
+      noCam(bar)
+      door.add(bar)
+    }
+  }
   door.position.set(0, 1.2, half - 0.16)
   g.add(door)
 
-  const strip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.35, 0.05, half * 2 - 2),
-    new THREE.MeshStandardMaterial({
-      color: damaged ? 0x2a1848 : 0xbfe0ff,
-      emissive: damaged ? 0x7c3aed : 0x5ab6ff,
-      emissiveIntensity: 1.6
-    })
-  )
-  strip.position.y = CARRIAGE_CEILING_Y - 0.06
-  g.add(strip)
-  if (damaged) rememberVaultMat(fx, strip.material)
-  const l = new THREE.PointLight(damaged ? 0x8b6cff : 0x7cc4ff, damaged ? 9 : 16, damaged ? 8 : 12, 2)
-  l.position.set(0, CARRIAGE_CEILING_Y - 0.3, 0)
-  addLight(g, fx, l, damaged)
+  if (damaged) {
+    // Warm amber aisle fill (retune of existing strip + PointLight — no new lights).
+    const strip = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, 0.05, half * 2 - 2),
+      new THREE.MeshStandardMaterial({
+        color: 0xffe2b8,
+        emissive: 0xffb060,
+        emissiveIntensity: 1.15
+      })
+    )
+    strip.name = 'vault-ceiling-strip'
+    strip.position.y = CARRIAGE_CEILING_Y - 0.06
+    g.add(strip)
+    // Short violet accent over the temporal fracture end (same mesh budget).
+    const ruptureStrip = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.04, 2.4),
+      new THREE.MeshStandardMaterial({
+        color: 0x2a1848,
+        emissive: 0x7c3aed,
+        emissiveIntensity: 1.35
+      })
+    )
+    ruptureStrip.name = 'vault-rupture-strip'
+    ruptureStrip.position.set(0, CARRIAGE_CEILING_Y - 0.05, half - 2.2)
+    g.add(ruptureStrip)
+    rememberVaultMat(fx, ruptureStrip.material)
+    const l = new THREE.PointLight(0xffc090, 9, 8, 2)
+    l.position.set(0, CARRIAGE_CEILING_Y - 0.3, 0)
+    addLight(g, fx, l, damaged)
+
+    addBlownViewports(g, half, 'vault', shared)
+
+    // Brass wall rails + floor edging — low poly, noCam, aisle clear.
+    for (const s of [-1, 1]) {
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, 0.04, half * 2 - 2.4),
+        shared.brass
+      )
+      rail.name = 'vault-wall-rail'
+      rail.position.set(s * (WALL_X - 0.2), 1.05, 0)
+      noCam(rail)
+      g.add(rail)
+      const edge = new THREE.Mesh(
+        new THREE.BoxGeometry(0.07, 0.02, half * 2 - 1.8),
+        shared.brass
+      )
+      edge.name = 'vault-floor-edge'
+      edge.position.set(s * (WALL_X - 0.22), 0.012, 0)
+      noCam(edge)
+      g.add(edge)
+    }
+
+    addVaultLuxuryBenches(g, half, shared)
+    dressDamagedVault(g, half, shared, fx)
+  } else {
+    const strip = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, 0.05, half * 2 - 2),
+      new THREE.MeshStandardMaterial({
+        color: 0xbfe0ff,
+        emissive: 0x5ab6ff,
+        emissiveIntensity: 1.6
+      })
+    )
+    strip.position.y = CARRIAGE_CEILING_Y - 0.06
+    g.add(strip)
+    const l = new THREE.PointLight(0x7cc4ff, 16, 12, 2)
+    l.position.set(0, CARRIAGE_CEILING_Y - 0.3, 0)
+    addLight(g, fx, l, damaged)
+  }
 
   const hatch = new THREE.Mesh(
     new THREE.BoxGeometry(1.2, 0.06, 1.2),
@@ -1840,57 +2873,233 @@ function dressVault(g, half, shared, damaged, fx) {
   hatch.userData.noCameraCollision = true
   g.add(hatch)
 
-  if (damaged) dressDamagedVault(g, half, shared, fx)
-
   return { door }
 }
 
 // --- Locomotive cab (Level 3's escape target) ------------------------------
+
+// Room 8 luxury wreck dressing — decorative only. Keeps the centre aisle clear
+// for the brake approach; floating storm props sit outside WALL_X.
+function dressDamagedCabLuxury(g, half, shared, fx) {
+  const sites = damageSites(half)
+
+  // Soft violet storm veils outside the hull.
+  const veilMat = new THREE.MeshStandardMaterial({
+    color: 0x1a0a30, emissive: 0x6d28d9, emissiveIntensity: 0.9,
+    roughness: 1, transparent: true, opacity: 0.58, depthWrite: false, side: THREE.DoubleSide
+  })
+  for (const s of [-1, 1]) {
+    const veil = new THREE.Mesh(new THREE.PlaneGeometry(half * 2.2, CARRIAGE_CEILING_Y * 1.25), veilMat)
+    veil.name = 'cab-storm-veil'
+    veil.position.set(s * (WALL_X + 1.55), CARRIAGE_CEILING_Y * 0.48, 0)
+    veil.rotation.y = s * Math.PI / 2
+    noCam(veil)
+    g.add(veil)
+  }
+
+  // Cyan temporal glow along broken floor / wall edges (not walkable geometry).
+  const cyanEdge = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.8, roughness: 0.35
+  })
+  for (const s of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 1.2), shared.brass)
+    rail.name = 'cab-wall-rail'
+    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    noCam(rail)
+    g.add(rail)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 0.8), shared.brass)
+    edge.name = 'cab-floor-edge'
+    edge.position.set(s * (WALL_X - 0.24), 0.012, 0)
+    noCam(edge)
+    g.add(edge)
+    const cyan = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.018, half * 2 - 1.0), cyanEdge)
+    cyan.name = 'cab-floor-cyan'
+    cyan.position.set(s * (WALL_X - 0.32), 0.02, 0)
+    noCam(cyan)
+    g.add(cyan)
+  }
+
+  // Warm amber sconces framing the blown openings.
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.4, roughness: 0.35
+  })
+  for (const s of [-1, 1]) {
+    const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
+    shade.name = 'cab-sconce'
+    shade.position.set(s * (WALL_X - 0.35), 2.05, 0.6)
+    noCam(shade)
+    g.add(shade)
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.18), shared.brass)
+    arm.position.set(s * (WALL_X - 0.28), 2.05, 0.6)
+    noCam(arm)
+    g.add(arm)
+  }
+
+  // Red velvet curtain scraps at the viewport (visual only).
+  const velvet = new THREE.MeshStandardMaterial({
+    color: 0x7a2430, roughness: 0.92, metalness: 0, emissive: 0x1a0608, emissiveIntensity: 0.1
+  })
+  for (const s of [-1, 1]) {
+    const drape = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.05, 0.28), velvet)
+    drape.name = 'cab-curtain'
+    drape.position.set(s * (WALL_X - 0.2), 1.55, 0.6 + s * 0.55)
+    drape.rotation.z = s * 0.12
+    noCam(drape)
+    g.add(drape)
+  }
+
+  // Ceiling brass ribs + violet rupture accent (replaces flat red strip).
+  g.add(scatterInstances(
+    new THREE.InstancedMesh(new THREE.BoxGeometry(WALL_X * 1.55, 0.06, 0.09), shared.brass, 3),
+    3,
+    (d, i) => {
+      d.position.set(0, CARRIAGE_CEILING_Y - 0.14, -half + 1.4 + i * 2.1)
+      d.rotation.set(0, 0, (i - 1) * 0.03)
+    }
+  ))
+  const rupture = new THREE.Mesh(
+    new THREE.BoxGeometry(0.26, 0.05, half * 1.4),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1848, emissive: 0x7c3aed, emissiveIntensity: 1.25, roughness: 0.4
+    })
+  )
+  rupture.name = 'cab-rupture-strip'
+  rupture.position.set(0, CARRIAGE_CEILING_Y - 0.05, 0.2)
+  g.add(rupture)
+
+  // Static cyan “lightning” shards around openings (emissive boxes, no particles).
+  const boltMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 1.35, roughness: 0.3
+  })
+  const bolts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.03, 0.55, 0.04), boltMat, 6)
+  bolts.name = 'cab-chrono-bolts'
+  const dummy = new THREE.Object3D()
+  for (let i = 0; i < 6; i++) {
+    const s = i % 2 ? 1 : -1
+    dummy.position.set(s * (WALL_X + 0.55), 1.1 + (i % 3) * 0.35, -0.4 + (i % 3) * 0.7)
+    dummy.rotation.set(0.4 * s, 0.2, s * (0.55 + (i % 3) * 0.2))
+    dummy.updateMatrix()
+    bolts.setMatrixAt(i, dummy.matrix)
+  }
+  bolts.instanceMatrix.needsUpdate = true
+  noCam(bolts)
+  g.add(bolts)
+
+  // Floating luggage / panels / clock in the exterior void — outside the aisle.
+  const luggageMat = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x6a4a2c, dark: 0x2e1a10, roughness: 0.65, seed: 157
+  }), 0xe0c8a8)
+  g.add(scatterInstances(
+    new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.22, 0.55), luggageMat, 4),
+    4,
+    (d, i) => {
+      const s = i % 2 ? 1 : -1
+      d.position.set(s * (WALL_X + 1.35), 0.7 + (i % 2) * 0.55, -half * 0.2 + i * 1.1)
+      d.rotation.set(0.12 * s, 0.4 * s, s * 0.25)
+    }
+  ))
+  const panelWood = liftAlbedo(woodMaterial({
+    repeat: [1, 1], light: 0x4a6a62, dark: 0x1a2e2a, roughness: 0.55, seed: 159
+  }), 0xc8ddd6)
+  g.add(scatterInstances(
+    new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.95, 1.05), panelWood, 3),
+    3,
+    (d, i) => {
+      const s = i % 2 ? 1 : -1
+      d.position.set(s * (WALL_X + 1.85), 1.0 + i * 0.25, -1.2 + i * 1.4)
+      d.rotation.set(0.1 * s, 0.5 * s, s * 0.4)
+    }
+  ))
+  addCargoAntiqueClock(g, -(WALL_X + 1.65), 1.35, half * 0.15, -1)
+  addCargoAntiqueClock(g, WALL_X + 1.7, 0.95, -half * 0.35, 1)
+
+  // Wall-hugging seat scraps (keep |x| high).
+  const seatFrag = new THREE.MeshStandardMaterial({
+    color: 0x7a2430, roughness: 0.9, metalness: 0.02, emissive: 0x1a0608, emissiveIntensity: 0.08
+  })
+  g.add(scatterInstances(
+    new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.1, 0.36), seatFrag, sites.length * 2),
+    sites.length * 2,
+    (d, i) => {
+      const c = sites[i >> 1]
+      const s = i % 2 ? 1 : -1
+      d.position.set(s * 1.15, 0.12, c.z + (i % 2 ? 0.35 : -0.35))
+      d.rotation.set(0.05, 0.1 * s, s * 0.1)
+    }
+  ))
+
+  // Cool storm fill through the openings (one light — pool already caps at 12).
+  const stormFill = new THREE.PointLight(0x7c3aed, 4.5, 6.5, 2)
+  stormFill.position.set(0, 1.6, half * 0.35)
+  addLight(g, fx, stormFill, false)
+}
 
 function buildLocomotiveCab(shared, fx) {
   // The front bulkhead is sealed — this is the head of the train.
   const { group, half } = buildShell('cab', CAB_LENGTH, shared, true, { min: true })
   group.name = 'locomotive-cab'
 
-  // Backhead: the driver's control face, pressed against the front bulkhead.
+  // Backhead: same footprint as carriage-bounds `backhead` collider.
+  const backheadWood = liftAlbedo(woodMaterial({
+    repeat: [2, 1], light: 0x4a6e66, dark: 0x1e342e, roughness: 0.5, seed: 161
+  }), 0xc8e0d8)
   const backhead = new THREE.Mesh(
     new THREE.BoxGeometry(2.2, 1.5, 0.35),
-    new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.55, metalness: 0.7 })
+    backheadWood
   )
+  backhead.name = 'cab-backhead'
   backhead.position.set(0, 0.9, -half + 0.5)
   backhead.castShadow = true
   group.add(backhead)
+  // Brass framing / rivet plate over the backhead (visual only).
+  const backPlate = new THREE.Mesh(new THREE.BoxGeometry(2.05, 1.35, 0.04), shared.brass)
+  backPlate.position.set(0, 0.9, -half + 0.68)
+  group.add(backPlate)
+  for (const [x, y] of [[-0.95, 1.45], [0.95, 1.45], [-0.95, 0.4], [0.95, 0.4]]) {
+    const rivet = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), shared.brass)
+    rivet.position.set(x, y, -half + 0.72)
+    group.add(rivet)
+  }
 
   // Pressure gauges — small emissive dials across the backhead.
   const dialFace = new THREE.MeshStandardMaterial({
-    color: 0xf2ead6, emissive: 0xffcf8a, emissiveIntensity: 1.6, roughness: 0.5
+    color: 0xf2ead6, emissive: 0xffcf8a, emissiveIntensity: 1.55, roughness: 0.5
   })
   for (const [x, y] of [[-0.62, 1.32], [0, 1.4], [0.62, 1.32], [-0.35, 0.95], [0.35, 0.95]]) {
     const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.05, 16), dialFace)
     dial.rotation.x = Math.PI / 2
-    dial.position.set(x, y, -half + 0.68)
+    dial.position.set(x, y, -half + 0.74)
     group.add(dial)
     const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.02, 8, 16), shared.brass)
-    bezel.position.set(x, y, -half + 0.7)
+    bezel.position.set(x, y, -half + 0.76)
     group.add(bezel)
   }
 
-  // Firebox: the strongest light source in the cab, flickering hard.
+  // Firebox: same collider footprint — restyled as a warm brass grate (not a flat orange slab).
   const firebox = new THREE.Mesh(
     new THREE.BoxGeometry(0.9, 0.6, 0.12),
-    new THREE.MeshStandardMaterial({ color: 0x2a1004, emissive: 0xff5210, emissiveIntensity: 4.2, roughness: 0.8 })
+    new THREE.MeshStandardMaterial({
+      color: 0x2a2218, emissive: 0xff8a3c, emissiveIntensity: 1.65, roughness: 0.55, metalness: 0.45
+    })
   )
+  firebox.name = 'cab-firebox'
   firebox.position.set(0, 0.42, -half + 0.72)
   group.add(firebox)
-  const fireLight = new THREE.PointLight(0xff6a24, 16, 7, 2)
+  const grate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.78, 0.48, 0.03),
+    shared.brass
+  )
+  grate.position.set(0, 0.42, -half + 0.8)
+  group.add(grate)
+  const fireLight = new THREE.PointLight(0xffb060, 11, 6.5, 2)
   fireLight.position.set(0, 0.6, -half + 1.1)
   addLight(group, fx, fireLight, true)
 
-  // Regulator and reverser levers.
-  for (const [x, tilt, colour] of [[-0.75, -0.5, 0xb08d3f], [0.75, 0.35, 0x8d939c]]) {
+  // Regulator and reverser levers (brass / steel — wall-side of aisle).
+  for (const [x, tilt] of [[-0.75, -0.5], [0.75, 0.35]]) {
     const lever = new THREE.Mesh(
       new THREE.CylinderGeometry(0.035, 0.045, 0.8, 10),
-      new THREE.MeshStandardMaterial({ color: colour, metalness: 0.9, roughness: 0.32 })
+      shared.brass
     )
     lever.position.set(x, 1.15, -half + 1.05)
     lever.rotation.x = tilt
@@ -1898,16 +3107,10 @@ function buildLocomotiveCab(shared, fx) {
     group.add(lever)
   }
 
-  // Blown side openings onto the night rushing past.
+  // Blown side openings onto the temporal storm.
   addBlownViewports(group, half, 'cab', shared)
 
-  const strip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, 0.05, CAB_LENGTH - 2),
-    new THREE.MeshStandardMaterial({ color: 0x4a1c16, emissive: 0xc42818, emissiveIntensity: 1.35 })
-  )
-  strip.position.y = CARRIAGE_CEILING_Y - 0.06
-  group.add(strip)
-
+  dressDamagedCabLuxury(group, half, shared, fx)
   addWreckage(group, half, shared, fx, 'cab')
   return { group, half }
 }
@@ -2136,8 +3339,8 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     else if (cfg.key === 'mechanical') parts.mechanical = dressMechanical(group, half, shared, damaged, fx)
     else if (cfg.key === 'convergence' && !damaged) parts.convergence = dressVintageConvergence(group, half, shared, fx)
     else if (cfg.key === 'convergence') {
-      parts.convergence = dressMechanical(group, half, shared, damaged, fx)
-      if (damaged) addConvergenceFlickerLights(group, half, fx)
+      parts.convergence = dressDamagedConvergence(group, half, shared, fx)
+      addConvergenceFlickerLights(group, half, fx)
     }
     else if (cfg.key === 'vault' && !damaged) dressVintageVault(group, half, shared, fx)
     else if (cfg.key === 'vault') parts.vault = dressVault(group, half, shared, damaged, fx)
