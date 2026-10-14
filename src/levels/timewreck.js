@@ -3,6 +3,7 @@ import * as CANNON from 'cannon-es'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
+import { createLightPool } from '../core/light-pool.js'
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
@@ -116,7 +117,16 @@ export function createTimewreckLevel({
 
   const env = createCarriageEnvironment({ damaged: true })
   const { root, spans, carriages } = env
-  const outdoorEnv = createOutdoorEnvironment({ mode: 'moving', speed: 45.0, stormy: true })
+  // MEDIUM outdoor density: stormy sky/fog/palette unchanged, but far fewer
+  // instanced trees/terrain segments. L3 is fill-rate bound (~16→42 FPS at
+  // 50% render scale; shadows off did not help), so this is the cheapest
+  // GPU win that does not touch lights, hazards or carriage gameplay.
+  const outdoorEnv = createOutdoorEnvironment({
+    mode: 'moving',
+    speed: 45.0,
+    stormy: true,
+    quality: 'MEDIUM'
+  })
   const wreckExterior = createTimewreckExterior({
     minZ: spans.cab.minZ - 10,
     maxZ: spans.vault.maxZ + 12,
@@ -876,12 +886,17 @@ export function createTimewreckLevel({
   root.add(ramBank)
 
   let ramT = 0
+  // Cleared each level frame; when false, clock still advances for Rewind.
+  let mechVisualsActive = true
   function applyRams() {
     for (const r of rams) r.head.position.x = Math.sin(ramT * 3.4 + r.phase) * RAM_SWEEP
   }
   applyRams()
   unregisters.push(timeSystem.register(ramBank, {
-    onUpdate(scaledDelta) { ramT += scaledDelta; applyRams() },
+    onUpdate(scaledDelta) {
+      ramT += scaledDelta
+      if (mechVisualsActive) applyRams()
+    },
     getSnapshot: () => ({ ramT }),
     restoreSnapshot: (s) => { ramT = s.ramT; applyRams() }
   }))
@@ -993,6 +1008,8 @@ export function createTimewreckLevel({
   let loopT = 0
   let loopDoorOpen = 1
   let loopBeamDown = 0
+  // Cleared each level frame; when false, clock still advances for Rewind.
+  let cargoVisualsActive = true
   function applyLoop() {
     const phase = ((loopT % LOOP_PERIOD) + LOOP_PERIOD) % LOOP_PERIOD
     let colour = 0x10b981 // open — go
@@ -1016,7 +1033,10 @@ export function createTimewreckLevel({
   }
   applyLoop()
   unregisters.push(timeSystem.register(loopDoor, {
-    onUpdate(scaledDelta) { loopT += scaledDelta; applyLoop() },
+    onUpdate(scaledDelta) {
+      loopT += scaledDelta
+      if (cargoVisualsActive) applyLoop()
+    },
     getSnapshot: () => ({ loopT }),
     restoreSnapshot: (s) => { loopT = s.loopT; applyLoop() }
   }))
@@ -1322,6 +1342,16 @@ export function createTimewreckLevel({
     }
   }
 
+  // Floor/spark drop still in progress, or Freeze is still settling pads.
+  // Nearby tumbling is driven by nearCollapse in update(); far-away tumble
+  // can pause and resync from collapseFallT when the player returns.
+  function collapseMotionNeedsUpdate(frozen) {
+    if (!collapseLive) return false
+    if (collapseFloorT < 1.05) return true
+    if (frozen && collapseSettle < 0.98) return true
+    return false
+  }
+
   function startCollapse() {
     if (!collapseArmed) return
     collapseArmed = false
@@ -1406,6 +1436,7 @@ export function createTimewreckLevel({
     c.vy = 0.3 + Math.abs(skew(s + 7)) * 1.4
     c.vz = -(7 + Math.abs(skew(s + 9)) * 6)
     c.life = 4.0
+    c.mesh.visible = true
     if (!c.body) return
     c.body.position.set(c.x, c.y, c.z)
     c.body.velocity.set(c.vx, c.vy, c.vz)
@@ -1434,59 +1465,6 @@ export function createTimewreckLevel({
     chunks.push(c)
   }
 
-  // Registered with the time system, so Slow/Freeze visibly bite on the flying
-  // wreckage too. scaledDelta is the Cannon step so Freeze holds the bodies and
-  // Slow runs the world at 0.2x; meshes copy rigid-body pose each tick.
-  unregisters.push(timeSystem.register(chunkGroup, {
-    onUpdate(scaledDelta) {
-      const burstLive = failBurstT >= 0 && failBurstT < 2.8
-      if (breakupT < 0 && !burstLive) return
-      if (breakupT >= 0) {
-        for (const c of chunks) {
-          c.life -= Math.abs(scaledDelta)
-          if (c.life <= 0) { respawnChunk(c) }
-        }
-      }
-      if (scaledDelta !== 0) {
-        const simBodies = breakupT >= 0 ? chunks : burstDebris
-        const rewinding = scaledDelta < 0
-        const saved = rewinding
-          ? simBodies.map((c) => ({
-            v: c.body.velocity.clone(),
-            w: c.body.angularVelocity.clone()
-          }))
-          : null
-        if (rewinding) {
-          for (const c of simBodies) {
-            c.body.velocity.scale(-1)
-            c.body.angularVelocity.scale(-1)
-          }
-        }
-        debrisWorld.step(1 / 60, Math.abs(scaledDelta), 3)
-        if (rewinding) {
-          simBodies.forEach((c, i) => {
-            c.body.velocity.copy(saved[i].v)
-            c.body.angularVelocity.copy(saved[i].w)
-          })
-        }
-      }
-      if (breakupT >= 0) {
-        for (const c of chunks) {
-          c.mesh.position.copy(c.body.position)
-          c.mesh.quaternion.copy(c.body.quaternion)
-          c.x = c.body.position.x
-          c.y = c.body.position.y
-          c.z = c.body.position.z
-        }
-      }
-      for (const c of burstDebris) {
-        if (!c.mesh.visible) continue
-        c.mesh.position.copy(c.body.position)
-        c.mesh.quaternion.copy(c.body.quaternion)
-      }
-    }
-  }))
-
   // One-shot structural failure as the player comes through Security into
   // Passenger. Placed a few metres inside the car so the third-person camera
   // (behind the player, looking forward) sees it drop instead of already
@@ -1496,6 +1474,7 @@ export function createTimewreckLevel({
   const FAIL_BURST_TRIGGER_Z = spans.passenger.maxZ + 0.85
   let failBurstArmed = true
   let failBurstT = -1
+  let failBurstSettled = false
 
   const burstGroup = new THREE.Group()
   burstGroup.name = 'passenger-fail-burst'
@@ -1585,11 +1564,105 @@ export function createTimewreckLevel({
     burstDebris.push({ mesh, body })
   }
 
+  function sleepChunk(c) {
+    c.life = 0
+    c.body.velocity.set(0, 0, 0)
+    c.body.angularVelocity.set(0, 0, 0)
+    c.body.sleep()
+    c.mesh.visible = false
+  }
+
+  function settleFailBurstBodies() {
+    for (const c of burstDebris) {
+      c.mesh.visible = false
+      c.body.velocity.set(0, 0, 0)
+      c.body.angularVelocity.set(0, 0, 0)
+      c.body.sleep()
+    }
+  }
+
+  // position.x saturates last (min(9, t²·0.4)); security delay is 3.8s.
+  // Keep the debris storm briefly after the last carriage finishes sliding away.
+  const DETACH_SATURATE_T = Math.sqrt(9 / 0.4)
+  const DEBRIS_STORM_S = DETACH_SATURATE_T + 3.8 + 1.5
+
+  // Registered with the time system, so Slow/Freeze visibly bite on the flying
+  // wreckage too. scaledDelta is the Cannon step so Freeze holds the bodies and
+  // Slow runs the world at 0.2x; meshes copy rigid-body pose each tick.
+  unregisters.push(timeSystem.register(chunkGroup, {
+    onUpdate(scaledDelta) {
+      const burstSim = failBurstT >= 0 && !failBurstSettled
+      const stormActive = breakupT >= 0 && breakupT < DEBRIS_STORM_S
+      if (breakupT < 0 && !burstSim) return
+
+      let chunksAwake = false
+      if (breakupT >= 0) {
+        for (const c of chunks) {
+          if (!c.mesh.visible && c.life <= 0) continue
+          c.life -= Math.abs(scaledDelta)
+          if (c.life <= 0) {
+            if (stormActive) respawnChunk(c)
+            else sleepChunk(c)
+          }
+          if (c.mesh.visible) chunksAwake = true
+        }
+      }
+
+      const needStep = scaledDelta !== 0 && (
+        (breakupT >= 0 && (stormActive || chunksAwake))
+        || burstSim
+      )
+      if (needStep) {
+        const simBodies = breakupT >= 0 ? chunks : burstDebris
+        const rewinding = scaledDelta < 0
+        const saved = rewinding
+          ? simBodies.map((c) => ({
+            v: c.body.velocity.clone(),
+            w: c.body.angularVelocity.clone()
+          }))
+          : null
+        if (rewinding) {
+          for (const c of simBodies) {
+            c.body.velocity.scale(-1)
+            c.body.angularVelocity.scale(-1)
+          }
+        }
+        debrisWorld.step(1 / 60, Math.abs(scaledDelta), 3)
+        if (rewinding) {
+          simBodies.forEach((c, i) => {
+            c.body.velocity.copy(saved[i].v)
+            c.body.angularVelocity.copy(saved[i].w)
+          })
+        }
+      }
+      if (breakupT >= 0) {
+        for (const c of chunks) {
+          if (!c.mesh.visible) continue
+          c.mesh.position.copy(c.body.position)
+          c.mesh.quaternion.copy(c.body.quaternion)
+          c.x = c.body.position.x
+          c.y = c.body.position.y
+          c.z = c.body.position.z
+        }
+      }
+      if (burstSim) {
+        for (const c of burstDebris) {
+          if (!c.mesh.visible) continue
+          c.mesh.position.copy(c.body.position)
+          c.mesh.quaternion.copy(c.body.quaternion)
+        }
+      }
+    }
+  }))
+
   function applyFailBurst() {
     if (failBurstT < 0) {
       burstGroup.visible = false
+      failBurstSettled = false
       return
     }
+    if (failBurstSettled) return
+
     burstGroup.visible = true
     const t = failBurstT
     const drop = Math.min(1, Math.max(0, t) / 0.55)
@@ -1619,11 +1692,23 @@ export function createTimewreckLevel({
     }
     burstSparkMat.opacity = Math.max(0, 1 - t / 1.7)
     burstSparkMat.emissiveIntensity = Math.max(0, 7 * (1 - t / 1.55))
+
+    // Animation complete: keep the fallen panel/beam, kill lights/sparks/physics.
+    if (t >= 2.2) {
+      burstLight.intensity = 0
+      burstFill.intensity = 0
+      for (const spark of burstSparks) spark.visible = false
+      burstSparkMat.opacity = 0
+      burstSparkMat.emissiveIntensity = 0
+      settleFailBurstBodies()
+      failBurstSettled = true
+    }
   }
 
   function startFailBurst() {
     failBurstArmed = false
     failBurstT = 0
+    failBurstSettled = false
     burstDebris.forEach((c, i) => {
       c.mesh.visible = true
       c.body.wakeUp()
@@ -1638,20 +1723,38 @@ export function createTimewreckLevel({
   unregisters.push(timeSystem.register(burstGroup, {
     onUpdate(scaledDelta) {
       if (failBurstT < 0) return
+      if (failBurstSettled) {
+        if (scaledDelta >= 0) return
+        failBurstSettled = false
+      }
       failBurstT = THREE.MathUtils.clamp(failBurstT + scaledDelta, 0, 2.2)
       applyFailBurst()
     },
     getSnapshot: () => ({ failBurstT }),
-    restoreSnapshot: (s) => { failBurstT = s.failBurstT; applyFailBurst() }
+    restoreSnapshot: (s) => {
+      failBurstT = s.failBurstT
+      failBurstSettled = false
+      applyFailBurst()
+    }
   }))
 
   function detachCarriage(group, delay, dir) {
     const t = breakupT - delay
-    if (t <= 0) return
+    if (t <= 0) {
+      group.userData.detachSettled = false
+      group.visible = true
+      return
+    }
+    if (group.userData.detachSettled && t >= DETACH_SATURATE_T) return
     group.rotation.y = dir * Math.min(0.5, t * 0.2)
     group.rotation.z = dir * Math.min(0.3, t * 0.12)
     group.position.x = dir * Math.min(9, t * t * 0.4)
     group.position.y = -Math.min(8, t * t * 0.45)
+    // At saturation the car is at |x|=9, y=-8 — well outside the playable aisle.
+    if (t >= DETACH_SATURATE_T) {
+      group.userData.detachSettled = true
+      group.visible = false
+    }
   }
 
   // ============================================================
@@ -1846,6 +1949,12 @@ export function createTimewreckLevel({
   })
   root.add(embers.points, sparks.points, openingWind.points, openingSparks.points, chronoMotes.points)
 
+  // Same forward-light budget as Level 2. Built only after every L3 PointLight
+  // (carriage lamps, hazard washes, Freeze glows, finale wave/stasis) is on
+  // `root`. Sources stay in the graph for flicker/intensity animation; a fixed
+  // set of 12 real lights is what the renderer sees.
+  const lightPool = createLightPool({ root, size: 12 })
+
   // ============================================================
   const lever = brake.getObjectByName('brake-lever')
   let elapsed = 0
@@ -1879,6 +1988,8 @@ export function createTimewreckLevel({
       for (const { group, position, rotation } of saved.carriages) {
         group.position.copy(position)
         group.rotation.copy(rotation)
+        group.userData.detachSettled = false
+        group.visible = true
       }
 
       ramT = 0
@@ -2017,9 +2128,27 @@ export function createTimewreckLevel({
       }
 
       const pp = player.mesh.position
-      updateVaultGates(envDt, pp)
-      updateElectricalSurges(envDt, pp)
-      updateBlastDoors(envDt, pp)
+      // Distance gates for rooms the player has already cleared (travel is −Z).
+      // Returning / respawning to a higher Z re-enables the same paths.
+      const HAZARD_PAD = 10
+      const vaultActive = pp.z > spans.vault.minZ - HAZARD_PAD
+      const surgeActive = pp.z > spans.convergence.minZ - HAZARD_PAD
+      const blastActive = pp.z > doorZ - HAZARD_PAD
+      const mechHazardActive = pp.z > spans.mechanical.minZ - HAZARD_PAD
+        && pp.z < spans.mechanical.maxZ + HAZARD_PAD
+      const cargoHazardActive = pp.z > spans.cargo.minZ - HAZARD_PAD
+        && pp.z < spans.cargo.maxZ + HAZARD_PAD
+      const walkwayActive = pp.z > gapMinZ - HAZARD_PAD && pp.z < gapMaxZ + HAZARD_PAD
+      mechVisualsActive = mechHazardActive
+      cargoVisualsActive = cargoHazardActive
+      // Refresh poses immediately on re-entry so collision matches the clock
+      // that kept running while visuals were gated.
+      if (mechHazardActive) applyRams()
+      if (cargoHazardActive) applyLoop()
+
+      if (vaultActive) updateVaultGates(envDt, pp)
+      if (surgeActive) updateElectricalSurges(envDt, pp)
+      if (blastActive) updateBlastDoors(envDt, pp)
       const modeInt = MODE_INT[mode] ?? 0
 
       if (fractureArmed && pp.z > FRACTURE_Z) {
@@ -2078,7 +2207,9 @@ export function createTimewreckLevel({
         : 1.0
       waveMat.customUniforms.uOpacity.value = finaleFreeze ? 0.92 : 0.6
       wave.scale.set(finaleFreeze ? 1.14 : 1, finaleFreeze ? 1.18 : 1, 1)
-      walkwayGlow.intensity = slabSettle * (mode === 'FREEZE' ? 5.5 : 2.4)
+      walkwayGlow.intensity = walkwayActive
+        ? slabSettle * (mode === 'FREEZE' ? 5.5 : 2.4)
+        : 0
 
       if (!finaleFreeze) lever.rotation.x = -0.4 + Math.sin(elapsed * 2.2) * 0.05
 
@@ -2224,60 +2355,70 @@ export function createTimewreckLevel({
       if (failBurstArmed && pp.z < FAIL_BURST_TRIGGER_Z) startFailBurst()
 
       // --- FAST-TIME CAR: runaway pistons ---------------------------------
-      for (const r of rams) {
-        if (Math.abs(pp.z - r.z) < 0.55 && Math.abs(pp.x - r.head.position.x) < 0.5) {
-          failSoft('Crushed by a runaway piston!')
-          break
+      if (mechHazardActive) {
+        for (const r of rams) {
+          if (Math.abs(pp.z - r.z) < 0.55 && Math.abs(pp.x - r.head.position.x) < 0.5) {
+            failSoft('Crushed by a runaway piston!')
+            break
+          }
         }
       }
 
       // --- TIME-LOOP CAR: crushing bulkhead and falling girder -------------
-      if (loopDoorOpen < 0.35 && Math.abs(pp.z - loopDoorZ) < 0.5) {
-        failSoft('The bulkhead slammed shut on you!')
-      }
-      if (loopBeamDown > 0.55 && Math.abs(pp.z - loopBeamZ) < 0.65) {
-        failSoft('Crushed by the falling girder!')
+      if (cargoHazardActive) {
+        if (loopDoorOpen < 0.35 && Math.abs(pp.z - loopDoorZ) < 0.5) {
+          failSoft('The bulkhead slammed shut on you!')
+        }
+        if (loopBeamDown > 0.55 && Math.abs(pp.z - loopBeamZ) < 0.65) {
+          failSoft('Crushed by the falling girder!')
+        }
       }
 
       // --- FROZEN CAR: suspended wreckage as a walkway ---------------------
       const frozen = mode === 'FREEZE'
-      slabSettle += ((frozen ? 1 : 0) - slabSettle) * Math.min(1, delta * 7)
-      for (const slab of slabs) {
-        const seed = slab.userData.seed
-        const driftY = 0.8 + Math.sin(slabDriftT * 1.2 + seed) * 0.32
-        const driftX = Math.sin(slabDriftT * 0.8 + seed) * 0.5
-        slab.position.y = THREE.MathUtils.lerp(driftY, 0.06, slabSettle)
-        slab.position.x = THREE.MathUtils.lerp(driftX, 0, slabSettle)
-        slab.rotation.z = THREE.MathUtils.lerp(Math.sin(slabDriftT + seed) * 0.5, 0, slabSettle)
-        slab.rotation.x = THREE.MathUtils.lerp(Math.cos(slabDriftT * 0.9 + seed) * 0.4, 0, slabSettle)
-      }
       slabSupports.length = 0
-      if (frozen) {
+      if (walkwayActive) {
+        slabSettle += ((frozen ? 1 : 0) - slabSettle) * Math.min(1, delta * 7)
         for (const slab of slabs) {
-          slabSupports.push({
-            minX: slab.position.x - SLAB_HALF_X - 0.3,
-            maxX: slab.position.x + SLAB_HALF_X + 0.3,
-            minZ: slab.position.z - SLAB_HALF_Z - 0.12,
-            maxZ: slab.position.z + SLAB_HALF_Z + 0.12,
-            y: slab.position.y + SLAB_HALF_Y
-          })
+          const seed = slab.userData.seed
+          const driftY = 0.8 + Math.sin(slabDriftT * 1.2 + seed) * 0.32
+          const driftX = Math.sin(slabDriftT * 0.8 + seed) * 0.5
+          slab.position.y = THREE.MathUtils.lerp(driftY, 0.06, slabSettle)
+          slab.position.x = THREE.MathUtils.lerp(driftX, 0, slabSettle)
+          slab.rotation.z = THREE.MathUtils.lerp(Math.sin(slabDriftT + seed) * 0.5, 0, slabSettle)
+          slab.rotation.x = THREE.MathUtils.lerp(Math.cos(slabDriftT * 0.9 + seed) * 0.4, 0, slabSettle)
         }
-      }
-      if (pp.z > gapMinZ && pp.z < gapMaxZ && !frozen) {
-        failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
-      } else if (pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.3) {
-        failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
+        if (frozen) {
+          for (const slab of slabs) {
+            slabSupports.push({
+              minX: slab.position.x - SLAB_HALF_X - 0.3,
+              maxX: slab.position.x + SLAB_HALF_X + 0.3,
+              minZ: slab.position.z - SLAB_HALF_Z - 0.12,
+              maxZ: slab.position.z + SLAB_HALF_Z + 0.12,
+              y: slab.position.y + SLAB_HALF_Y
+            })
+          }
+        }
+        if (pp.z > gapMinZ && pp.z < gapMaxZ && !frozen) {
+          failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
+        } else if (pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.3) {
+          failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
+        }
       }
 
       // --- PASSENGER collapse: Freeze stepping-stones across the hole ------
       if (collapseArmed && pp.z < collapseTriggerZ) startCollapse()
       collapseSettle += ((frozen && collapseLive ? 1 : 0) - collapseSettle) * Math.min(1, delta * 9)
-      if (collapseLive) applyCollapseMotion()
-      collapseGlow.intensity = collapseLive
+      const nearCollapse = pp.z > collapseMinZ - HAZARD_PAD && pp.z < collapseMaxZ + HAZARD_PAD
+      const collapseFxLive = collapseLive && (nearCollapse || collapseMotionNeedsUpdate(frozen))
+      if (collapseFxLive) applyCollapseMotion()
+      collapseGlow.intensity = collapseFxLive
         ? (frozen ? 8 : 2.4 + Math.sin(elapsed * 3.2) * 0.4)
         : 0
-      collapseSteel.emissiveIntensity = frozen && collapseLive ? 1.1 : 0.22
-      collapsePaint.emissiveIntensity = frozen && collapseLive ? 0.85 : 0.18
+      if (collapseFxLive) {
+        collapseSteel.emissiveIntensity = frozen ? 1.1 : 0.22
+        collapsePaint.emissiveIntensity = frozen ? 0.85 : 0.18
+      }
       if (frozen && collapseLive) {
         for (const p of collapsePieces) {
           slabSupports.push({
@@ -2371,6 +2512,10 @@ export function createTimewreckLevel({
           waveZ = DEPLETE_Z + WAVE_LEAD
         }
       }
+
+      // After all intensity/colour writes for this frame (env flicker, Freeze
+      // glows, blast, wave/stasis) so nearby hazards win the nearest-12 set.
+      lightPool.update(pp)
     },
 
     dispose() {
