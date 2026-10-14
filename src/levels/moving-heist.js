@@ -310,6 +310,8 @@ export function createMovingHeistLevel({
   const sky = createSkyDome('moving-heist')
   const outdoorEnv = createOutdoorEnvironment({
     mode: 'moving',
+    sceneryStyle: 'moonlit-valley',
+    getViewerZ: () => player.mesh.position.z,
     speed: 38.0,
     fogColor: sky.horizonColor
   })

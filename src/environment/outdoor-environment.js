@@ -10,6 +10,7 @@ import { SUN_DIRECTION } from './station-blockout.js'
 import { insideLanding, LANDING_CLEAR } from './landing/layout.js'
 import { disposeObject } from '../core/dispose.js'
 import { createGrassField, grassDistance } from './grass-field.js'
+import { createMoonlitValley } from './moonlit-valley.js'
 
 /**
  * 3D Realistic Outdoor Environment System
@@ -136,6 +137,11 @@ function makeRng(seed) {
 }
 
 export function createOutdoorEnvironment(options = {}) {
+  // Opt-in only. Missing sceneryStyle (or 'legacy') follows the original body
+  // unchanged, including Timewreck's terrain, scatter, fog and motion.
+  if (options.mode === 'moving' && options.sceneryStyle === 'moonlit-valley') {
+    return createMoonlitValley(options)
+  }
   const mode = options.mode || 'station' // 'station' | 'moving'
   const speed = options.speed || 35.0 // Speed for moving train mode
   const isStormy = options.stormy || false
