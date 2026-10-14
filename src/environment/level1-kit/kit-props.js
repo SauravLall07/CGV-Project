@@ -259,6 +259,73 @@ export function pipeRun(b, k, a, c, radius = 0.06, material = null, bracketAxis 
 
 // --- Furniture --------------------------------------------------------------
 
+// Platform-only ornamental window. Local +Z faces the platform; origin at sill.
+export function archedStationWindow(b, k, M, variant = 0) {
+  const outline = (w, h, bottom = 0) => {
+    const s = new THREE.Shape()
+    s.moveTo(-w / 2, bottom); s.lineTo(w / 2, bottom)
+    s.lineTo(w / 2, h); s.absarc(0, h, w / 2, 0, Math.PI, false)
+    s.lineTo(-w / 2, bottom)
+    return s
+  }
+  const surround = outline(1.8, 2.24)
+  const hole = outline(1.5, 2.2, 0.1)
+  surround.holes.push(new THREE.Path(hole.getPoints(12)))
+  const stone = new THREE.ExtrudeGeometry(surround, { depth: 0.12, bevelEnabled: false, curveSegments: 12 })
+  b.add(k.stationStone, stone, M)
+  const pane = new THREE.ShapeGeometry(outline(1.4, 2.2, 0.12), 12)
+  const p = pane.attributes.position, uv = pane.attributes.uv
+  for (let i = 0; i < p.count; i++) uv.setXY(i, (p.getX(i) + 0.7) / 1.4, p.getY(i) / 2.9)
+  pane.translate(0, 0, 0.045)
+  b.add(k.stationWindows[variant % 3], pane, M)
+  for (const x of [-0.73, 0, 0.73]) b.add(k.greenDark, kbox(0.045, 2.2, 0.055, x, 1.2, 0.08), M)
+  for (const y of [0.12, 1.28, 2.2]) b.add(k.greenDark, kbox(1.46, 0.05, 0.055, 0, y, 0.08), M)
+  const head = new THREE.TorusGeometry(0.72, 0.025, 4, 16, Math.PI)
+  head.translate(0, 2.2, 0.08)
+  b.add(k.greenDark, head, M)
+  b.add(k.stationStone, kbox(1.98, 0.13, 0.3, 0, 0.03, 0.1), M)
+  b.add(k.stationStone, kbox(0.2, 0.28, 0.17, 0, 3.0, 0.08), M)
+}
+
+// Small wall lantern with warm glass and cage bars; intentionally no Light.
+export function stationSconce(b, k, M) {
+  b.add(k.iron, kbox(0.14, 0.4, 0.055, 0, 0, 0.02), M)
+  b.add(k.iron, rod(new THREE.Vector3(0, -0.08, 0.05), new THREE.Vector3(0, 0.05, 0.3), 0.025, 6), M)
+  b.add(k.lantern, kbox(0.2, 0.28, 0.18, 0, 0.15, 0.3), M)
+  for (const x of [-0.11, 0.11]) for (const z of [0.2, 0.4]) {
+    b.add(k.iron, kbox(0.018, 0.32, 0.018, x, 0.15, z), M)
+  }
+  b.add(k.iron, kbox(0.29, 0.04, 0.27, 0, 0.33, 0.3), M)
+  b.add(k.iron, kbox(0.27, 0.035, 0.25, 0, -0.025, 0.3), M)
+}
+
+export function fireBucketRack(b, k, M) {
+  for (const x of [-0.65, 0.65]) b.add(k.iron, kbox(0.04, 1.3, 0.04, x, 0.65, 0), M)
+  b.add(k.wood, kbox(1.5, 0.24, 0.06, 0, 1.32, 0), M)
+  b.add(k.sign('FIRE · INCENDIE'), kbox(1.35, 0.19, 0.01, 0, 1.32, 0.04), M)
+  for (const x of [-0.45, 0, 0.45]) {
+    b.add(k.bucketRed, cylinder(0.14, 0.105, 0.28, 10, x, 0.8, 0.12), M)
+    const handle = new THREE.TorusGeometry(0.14, 0.012, 4, 10, Math.PI)
+    handle.translate(x, 0.95, 0.12)
+    b.add(k.iron, handle, M)
+  }
+}
+
+export function milkChurn(b, k, M) {
+  b.add(k.tyre, cylinder(0.2, 0.21, 0.55, 10, 0, 0.29, 0), M)
+  b.add(k.tyre, cylinder(0.12, 0.2, 0.12, 10, 0, 0.625, 0), M)
+  b.add(k.iron, cylinder(0.14, 0.14, 0.035, 10, 0, 0.7, 0), M)
+  for (const x of [-0.21, 0.21]) b.add(k.iron, kbox(0.035, 0.11, 0.12, x, 0.5, 0), M)
+}
+
+export function mailSack(b, k, M) {
+  const body = new THREE.SphereGeometry(1, 10, 6)
+  body.scale(0.25, 0.38, 0.22); body.translate(0, 0.38, 0)
+  b.add(k.sack, body, M)
+  b.add(k.leather, cylinder(0.075, 0.09, 0.07, 8, 0, 0.72, 0), M)
+  b.add(k.sign('POST'), kbox(0.21, 0.1, 0.012, 0, 0.42, 0.22), M)
+}
+
 // Station bench with a burgundy cushion. Same footprint as the old blockout
 // bench (x ±0.43, z ±1; the back is at -X), so its collider is unchanged.
 export function cushionedBench(b, k, M) {

@@ -17,6 +17,7 @@ import {
   drawPoster,
   drawSteelDoor,
   drawStencil,
+  drawStationWindow,
   drawValance,
   kitTexture,
   POSTER_COUNT
@@ -80,6 +81,13 @@ function createMaterials() {
   const carriageWindow = textured(drawCarriageWindow, 'carriage-window', [1, 1], { roughness: 0.12, metalness: 0.1, emissive: 0xffffff, emissiveIntensity: 1.25 })
   carriageWindow.emissiveMap = carriageWindow.map
   const signs = new Map()
+  const stationWindows = Array.from({ length: 3 }, (_, i) => {
+    const material = textured(() => drawStationWindow(i), `station-window:${i}`, [1, 1], {
+      roughness: 0.3, emissive: 0xffd49a, emissiveIntensity: 0.9
+    })
+    material.emissiveMap = material.map
+    return material
+  })
   const sign = (text, options = {}) => {
     const key = `${text}:${JSON.stringify(options)}`
     if (!signs.has(key)) {
@@ -154,6 +162,10 @@ function createMaterials() {
     bellows: standard({ color: 0x15130f, roughness: 0.95 }),
     tyre: standard({ color: 0x6d6b66, roughness: 0.35, metalness: 0.9 }),
     // Platform canopy.
+    stationWindows,
+    stationStone: plasterMaterial({ repeat: [1, 1], seed: 81, base: 0xb2a38a, roughness: 0.87 }),
+    bucketRed: standard({ color: 0x74251e, roughness: 0.65, metalness: 0.18 }),
+    sack: standard({ color: 0x877963, roughness: 0.98 }),
     valance: standard({
       map: kitTexture('valance', drawValance),
       alphaTest: 0.5,

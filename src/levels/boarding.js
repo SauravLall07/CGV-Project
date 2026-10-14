@@ -778,7 +778,7 @@ export function createBoardingLevel({
   // The open carriage door is the boarding point; the old pedestal stays as
   // a prop.
   const unregisterBoarding = interaction.register(boardingDoor, {
-    prompt: 'Board the Chrono Express',
+    prompt: 'Sneak aboard',
     onInteract: () => {
       if (isBoardingCinematic) return
       isBoardingCinematic = true

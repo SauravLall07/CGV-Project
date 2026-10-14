@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { getKitMaterials } from '../environment/level1-kit/kit-materials.js'
 import { createKitBuilder, kbox, rod } from '../environment/level1-kit/kit-props.js'
 import { createSteam } from '../environment/landing/steam.js'
+import { addFloorGlows } from '../environment/landing/light-pools.js'
 
 // Level 1's Chrono Express, built from the Level 1 kit: four deep green
 // carriages with gold lining, panelled sides, curved roofs, bogies and
@@ -41,7 +42,7 @@ const ROOF_RISE = ROOF_RADIUS * (1 - Math.cos(ROOF_ANGLE))
 const BOGIE_Z = 7
 const AXLE_HALF = 1.25
 const WHEEL_RADIUS = 0.46
-const DOOR_OPEN_ANGLE = 1.75
+const DOOR_OPEN_ANGLE = 0.65
 const PLATFORM_END_Z = 28
 
 export const TRAIN_LENGTH = CAR_COUNT * CAR_LENGTH + (CAR_COUNT - 1) * CAR_GAP
@@ -291,7 +292,7 @@ function createBoardingDoor(k) {
   const panel = k.wainscot.clone()
   panel.emissive.set(0x5a2c12)
   panel.emissiveMap = panel.map
-  panel.emissiveIntensity = 0.55
+  panel.emissiveIntensity = 0.75
 
   const door = new THREE.Group()
   door.name = 'boarding-door'
@@ -336,7 +337,17 @@ function createBoardingDoor(k) {
   const bulb = new THREE.SphereGeometry(0.08, 10, 6)
   bulb.translate(0, BODY_TOP - 0.2, 0.05)
   b.add(mat(k.bulb), bulb)
+  // Small porter's step, beyond the x=4.5 track barrier and patrol lanes.
+  // World centre (4.75, 0, 22); decor only, not a new walking obstacle.
+  b.add(mat(k.wood), kbox(0.5, 0.07, 0.62, -2.25, 1.22, 0))
+  for (const x of [-2.43, -2.07]) for (const z of [-0.23, 0.23]) {
+    b.add(mat(k.wood), kbox(0.06, 0.19, 0.06, x, 1.095, z))
+  }
   b.build(content, 'boarding-door')
+  const spill = addFloorGlows(content, [{ x: -2.5, y: 1, z: 0, radius: 1.2, strength: 0.24 }], null, 0xffbd75, 'boarding-door-spill')
+  spill.userData.decor = true
+  spill.userData.noInteractionBlocker = true
+  spill.userData.noCameraCollision = true
 
   // The leaf, hinged on the +Z jamb. Closed, its outer face is the bodyside.
   const hinge = new THREE.Group()

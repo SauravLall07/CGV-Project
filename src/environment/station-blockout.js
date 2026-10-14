@@ -13,6 +13,7 @@ import { settings, shadowMapSize } from '../core/settings.js'
 import { getKitMaterials } from './level1-kit/kit-materials.js'
 import {
   at,
+  archedStationWindow,
   createKitBuilder,
   crate,
   cushionedBench,
@@ -22,10 +23,19 @@ import {
   kbox,
   lampPost,
   luggageTrolley,
+  milkChurn,
+  mailSack,
   metreUv,
   pendantLamp,
   pottedPalm,
   railwaySignal,
+  fireBucketRack,
+  stationSconce,
+  suitcase,
+  wasteBin,
+  wallSign,
+  hangingSign,
+  noticeBoard,
   ticketBooth,
   trunk,
   wallClock
@@ -90,9 +100,11 @@ function createConcourse() {
   const group = new THREE.Group()
 
   // Damp concrete; the kit's roughness map leaves wet, glossy patches.
+  const damp = getKitMaterials().concrete.clone()
+  damp.roughness = 0.86 // Platform only; the hall/passages keep their shared material.
   const floor = new THREE.Mesh(
     metreUv(new THREE.PlaneGeometry(PLATFORM_WIDTH, PLATFORM_LENGTH), 3),
-    getKitMaterials().concrete
+    damp
   )
   floor.rotation.x = -Math.PI / 2
   floor.receiveShadow = true
@@ -109,7 +121,7 @@ function createConcourse() {
 
   const safetyLine = new THREE.Mesh(
     new THREE.BoxGeometry(0.35, 0.03, PLATFORM_LENGTH),
-    new THREE.MeshStandardMaterial({ color: 0xe8b81e, roughness: 0.55, emissive: 0x4a3404, emissiveIntensity: 1 })
+    new THREE.MeshStandardMaterial({ color: 0xd4cbb4, roughness: 0.65 })
   )
   safetyLine.position.set(HALF_WIDTH - 0.75, 0.03, 0)
   group.add(safetyLine)
@@ -123,6 +135,13 @@ function createConcourse() {
   edgeFace.position.set(HALF_WIDTH, -0.75, 0)
   edgeFace.receiveShadow = true
   group.add(edgeFace)
+
+  // Hairline slab joints, merged and nonblocking. No raised walking obstacle.
+  const joints = createKitBuilder()
+  const jointMat = new THREE.MeshStandardMaterial({ color: 0x433f39, roughness: 0.95 })
+  for (let z = -26; z <= 26; z += 2) joints.add(jointMat, kbox(9.45, 0.002, 0.012, -0.25, 0.004, z))
+  for (const x of [-2.5, 0, 2.5]) joints.add(jointMat, kbox(0.012, 0.002, 56, x, 0.004, 0))
+  joints.build(group, 'platform-joints', { decor: true })
 
   return group
 }
@@ -232,37 +251,38 @@ function createRearWall() {
   header.position.set(WALL_X - 0.12, DOOR_HEIGHT, APPROACH_CENTER_Z)
   group.add(header)
 
-  // Arched windows: dusk light coming in from outside the station. Skip the
-  // new doorway bay so no window geometry floats across the entrance.
-  const glassMaterial = new THREE.MeshStandardMaterial({
-    color: 0x9fb4d8,
-    emissive: 0xbcd0f0,
-    emissiveIntensity: 1.5,
-    roughness: 0.2
-  })
-  const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.7, metalness: 0.3 })
-  const paneGeometry = new THREE.BoxGeometry(0.08, 2.4, 1.5)
-  const archGeometry = new THREE.CylinderGeometry(0.75, 0.75, 0.08, 16, 1, false, 0, Math.PI)
-  archGeometry.rotateZ(Math.PI / 2)
-  const frameGeometry = new THREE.BoxGeometry(0.05, 2.6, 1.7)
-
-  for (let z = -HALF_LENGTH + 5; z <= HALF_LENGTH - 5; z += 6) {
-    if (z > APPROACH_Z_MIN - 1 && z < APPROACH_Z_MAX + 1) continue
-
-    const frame = new THREE.Mesh(frameGeometry, frameMaterial)
-    frame.position.set(WALL_X + 0.02, 3.4, z)
-    group.add(frame)
-
-    const pane = new THREE.Mesh(paneGeometry, glassMaterial)
-    pane.position.set(WALL_X + 0.01, 3.4, z)
-    group.add(pane)
-
-    const arch = new THREE.Mesh(archGeometry, glassMaterial)
-    arch.position.set(WALL_X + 0.01, 4.6, z)
-    group.add(arch)
+  // East-facing decoration is a separate platform group. The backing wall,
+  // its opening and its colliders retain their original hall-facing geometry.
+  const dressing = new THREE.Group()
+  dressing.name = 'platform-station-wall-dressing'
+  const k = getKitMaterials(), b = createKitBuilder()
+  const windows = [-17, -11, -5, 1, 7, 13, 19]
+  windows.forEach((z, i) => archedStationWindow(b, k, at(-4.96, 2.0, z, Math.PI / 2), i))
+  for (const z of PILLAR_Z.filter((z) => z > APPROACH_Z_MAX)) {
+    b.add(k.stationStone, kbox(0.17, 4.35, 0.24, -4.91, 3.7, z))
+    b.add(k.stationStone, kbox(0.22, 0.13, 0.34, -4.88, 5.84, z))
   }
-
-  return { group, colliders }
+  const sconces = windows.slice(0, -1).map((z) => z + 3)
+  for (const z of sconces) stationSconce(b, k, at(-4.94, 3.7, z, Math.PI / 2))
+  framedPoster(b, k, at(-4.93, 2.45, -20.2, Math.PI / 2), 0, 0.8, 1.25)
+  framedPoster(b, k, at(-4.93, 2.5, 10, Math.PI / 2), 1, 0.75, 1.1)
+  framedPoster(b, k, at(-4.93, 2.5, 22, Math.PI / 2), 2, 0.75, 1.1)
+  for (const z of [-8.9, 16]) {
+    noticeBoard(b, k, at(-4.93, 2.5, z, Math.PI / 2), 0.75, 0.85)
+    wallSign(b, k, at(-4.86, 3.08, z, Math.PI / 2), k.sign('TIMETABLE'), 0.82, 0.16)
+  }
+  // Shallow arch entirely ABOVE the existing 2.6 m opening: no lower jambs.
+  const doorway = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(-4.85, 2.72, APPROACH_Z_MIN),
+    new THREE.Vector3(-4.85, 4.0, APPROACH_CENTER_Z),
+    new THREE.Vector3(-4.85, 2.72, APPROACH_Z_MAX)
+  )
+  b.add(k.stationStone, new THREE.TubeGeometry(doorway, 20, 0.075, 4, false))
+  wallSign(b, k, at(-4.84, 3.85, APPROACH_CENTER_Z, Math.PI / 2), k.sign('WAY OUT · SORTIE'), 2.25, 0.34)
+  b.build(dressing, 'station-window-dressing', { decor: true })
+  const glow = addFloorGlows(dressing, sconces.map((z) => ({ x: -3.95, y: 0, z, radius: 1.25, strength: 0.12 })), null, 0xffb45f, 'station-sconce-pools')
+  markPlatformDecor(glow)
+  return { group, colliders, dressing }
 }
 
 function createApproachCorridor() {
@@ -575,34 +595,29 @@ function createPillars() {
   const ironMaterial = metalMaterial({ repeat: [1, 3], base: 0x33413c, roughness: 0.55, metalness: 0.6 })
   const brassMaterial = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.9 })
 
-  const baseGeometry = new THREE.BoxGeometry(0.85, 0.3, 0.85)
-  const shaftGeometry = new THREE.CylinderGeometry(0.24, 0.3, 5.1, 14)
-  const collarGeometry = new THREE.CylinderGeometry(0.32, 0.32, 0.12, 14)
-  const capitalGeometry = new THREE.BoxGeometry(0.75, 0.3, 0.75)
+  const columns = createKitBuilder()
   const brackets = createKitBuilder()
 
   for (const z of PILLAR_Z) {
-    const base = new THREE.Mesh(baseGeometry, ironMaterial)
-    base.position.set(PILLAR_X, 0.15, z)
-    base.castShadow = true
-    base.receiveShadow = true
-    group.add(base)
-
-    const shaft = new THREE.Mesh(shaftGeometry, ironMaterial)
-    shaft.position.set(PILLAR_X, 2.85, z)
-    shaft.castShadow = true
-    group.add(shaft)
+    // Same solid silhouettes and extents: batching leaves guard occlusion intact.
+    columns.add(ironMaterial, kbox(0.85, 0.3, 0.85, PILLAR_X, 0.15, z), null, true)
+    const shaft = new THREE.CylinderGeometry(0.24, 0.3, 5.1, 14)
+    shaft.translate(PILLAR_X, 2.85, z)
+    columns.add(ironMaterial, shaft, null, true)
 
     for (const y of [0.45, 5.25]) {
-      const collar = new THREE.Mesh(collarGeometry, brassMaterial)
-      collar.position.set(PILLAR_X, y, z)
-      group.add(collar)
+      const collar = new THREE.CylinderGeometry(0.32, 0.32, 0.12, 14)
+      collar.translate(PILLAR_X, y, z)
+      columns.add(brassMaterial, collar)
     }
-
-    const capital = new THREE.Mesh(capitalGeometry, ironMaterial)
-    capital.position.set(PILLAR_X, 5.55, z)
-    capital.castShadow = true
-    group.add(capital)
+    columns.add(ironMaterial, kbox(0.75, 0.3, 0.75, PILLAR_X, 5.55, z), null, true)
+    // Slender flute lines are decorative and do not enlarge the solid column.
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4
+      const flute = new THREE.CylinderGeometry(0.012, 0.012, 4.5, 4)
+      flute.translate(PILLAR_X + Math.cos(angle) * 0.245, 2.8, z + Math.sin(angle) * 0.245)
+      brackets.add(ironMaterial, flute)
+    }
 
     // Arched cast-iron brackets up to the eaves beam, with a ring in each
     // spandrel.
@@ -619,6 +634,7 @@ function createPillars() {
       brackets.add(ironMaterial, ring)
     }
   }
+  columns.build(group, 'platform-columns')
   brackets.add(ironMaterial, kbox(0.2, 0.3, PLATFORM_LENGTH - 0.4, PILLAR_X, 5.55, 0))
   brackets.build(group, 'pillar-brackets', { decor: true })
 
@@ -703,17 +719,14 @@ function createPartitionWalls() {
 
 function createTrainShed() {
   const group = new THREE.Group()
+  const b = createKitBuilder()
+  const k = getKitMaterials()
 
   // Roof deck. Deliberately does NOT cast shadows: the sun rakes in from the
   // open track side, and a shadow-casting deck would flatten the whole
   // platform into darkness for no visual gain.
   // Timber boarding, so the platform reads as a wooden canopy.
-  const deck = new THREE.Mesh(
-    metreUv(new THREE.BoxGeometry(PLATFORM_WIDTH + 2.4, 0.25, PLATFORM_LENGTH), 2.5),
-    getKitMaterials().wood
-  )
-  deck.position.set(-0.3, ROOF_Y, 0)
-  group.add(deck)
+  b.add(k.wood, kbox(PLATFORM_WIDTH + 2.4, 0.25, PLATFORM_LENGTH, -0.3, ROOF_Y, 0, 2.5))
 
   // Glazed skylight strips let the shed read as a Victorian train shed and
   // give the ceiling something to catch the eye.
@@ -724,36 +737,39 @@ function createTrainShed() {
     roughness: 0.25
   })
   for (const x of [-2.6, 1.4]) {
-    const skylight = new THREE.Mesh(
-      new THREE.BoxGeometry(1.5, 0.08, PLATFORM_LENGTH - 3),
-      skylightMaterial
-    )
-    skylight.position.set(x, ROOF_Y - 0.13, 0)
-    group.add(skylight)
+    b.add(skylightMaterial, kbox(1.5, 0.08, PLATFORM_LENGTH - 3, x, ROOF_Y - 0.13, 0))
   }
 
-  // Lattice trusses spanning the platform.
-  const trussMaterial = metalMaterial({ repeat: [4, 1], base: 0x3a3a3c, roughness: 0.6, metalness: 0.7 })
-  const chordGeometry = new THREE.BoxGeometry(PLATFORM_WIDTH + 2, 0.16, 0.2)
-  const webGeometry = new THREE.BoxGeometry(0.9, 0.09, 0.12)
-
-  for (let z = -HALF_LENGTH + 2; z <= HALF_LENGTH - 2; z += 4) {
-    const chord = new THREE.Mesh(chordGeometry, trussMaterial)
-    chord.position.set(-0.3, ROOF_Y - 0.45, z)
-    chord.castShadow = true
-    group.add(chord)
-
-    // Alternating diagonals give the chord a lattice read rather than a row
-    // of parallel bars.
-    let brace = 0
-    for (let x = -5; x <= 4; x += 1.5) {
-      const web = new THREE.Mesh(webGeometry, trussMaterial)
-      web.position.set(x, ROOF_Y - 0.28, z)
-      web.rotation.z = (brace++ % 2 === 0 ? 1 : -1) * 0.5
-      group.add(web)
+  // Nine segmental iron ribs, each a solid shallow arch under the timber deck.
+  for (const z of [-28, ...PILLAR_Z, 28]) {
+    const arch = new THREE.Shape()
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20, x = WALL_X + (PILLAR_X - WALL_X) * t
+      const y = 4.95 + 0.72 * 4 * t * (1 - t)
+      if (i === 0) arch.moveTo(x, y); else arch.lineTo(x, y)
+    }
+    for (let i = 20; i >= 0; i--) {
+      const t = i / 20
+      arch.lineTo(WALL_X + (PILLAR_X - WALL_X) * t, 4.79 + 0.72 * 4 * t * (1 - t))
+    }
+    arch.closePath()
+    const rib = new THREE.ExtrudeGeometry(arch, { depth: 0.12, bevelEnabled: false })
+    rib.translate(0, 0, z - 0.06)
+    b.add(k.iron, rib)
+    for (const side of [-1, 1]) {
+      const x = side < 0 ? WALL_X : PILLAR_X
+      const scroll = new THREE.CubicBezierCurve3(
+        new THREE.Vector3(x, 4.35, z), new THREE.Vector3(x - side * 1.2, 4.3, z),
+        new THREE.Vector3(x - side * 1.15, 5.4, z), new THREE.Vector3(x - side * 0.25, 5.05, z)
+      )
+      b.add(k.iron, new THREE.TubeGeometry(scroll, 16, 0.035, 4, false))
+      const ring = new THREE.TorusGeometry(0.14, 0.022, 4, 12)
+      ring.translate(x - side * 0.6, 4.95, z)
+      b.add(k.brass, ring)
     }
   }
-
+  for (const x of [-4.6, -2.2, 0.2, 2.6, 4.6]) b.add(k.iron, kbox(0.09, 0.13, 56, x, 5.72, 0))
+  b.build(group, 'arched-canopy', { decor: true })
   return group
 }
 
@@ -762,18 +778,88 @@ function createPendantLamps() {
   const kit = createKitBuilder()
   const k = getKitMaterials()
 
-  for (const z of [-21, -14, -7, 0, 7, 14, 21]) {
+  const lampZ = [-26, -20, -12, -4, 4, 12, 20, 26]
+  for (const z of lampZ) {
     pendantLamp(kit, k, at(0.4, ROOF_Y - 0.125, z), 1.5)
 
     // The warm pool on the platform. Moonlight is only a cool fill.
     // and hemisphere lights, and none of these cast shadows.
-    const lamp = new THREE.PointLight(0xffc98a, 22, 13, 2)
-    lamp.position.set(0.4, ROOF_Y - 1.7, z)
-    group.add(lamp)
+    // Two warm sources plus the existing terminal accent = the region's 3.
+    if (z === -12 || z === 12) {
+      const lamp = new THREE.PointLight(0xffc98a, 22, 13, 2)
+      lamp.position.set(0.4, ROOF_Y - 1.7, z)
+      group.add(lamp)
+    }
   }
   kit.build(group, 'platform-pendants', { decor: true })
+  const glow = addFloorGlows(group, lampZ.map((z) => ({ x: 0.4, y: 0, z, radius: 2.0, strength: 0.16 })), null, 0xffaf59, 'pendant-floor-pools')
+  markPlatformDecor(glow)
 
   return group
+}
+
+function markPlatformDecor(object) {
+  if (!object) return
+  object.userData.decor = true
+  object.userData.noInteractionBlocker = true
+  object.userData.noCameraCollision = true
+}
+
+function createPlatformEndWalls() {
+  const group = new THREE.Group()
+  group.name = 'platform-end-walls'
+  const k = getKitMaterials(), solid = createKitBuilder(), decor = createKitBuilder()
+  const colliders = []
+  for (const z of [-28, 28]) {
+    // Flush at the ends, outside both the entrance's z=-27.25 edge and the
+    // original playable clamp. The continuous iron infill is a locked gate.
+    for (const x of [-3.125, 3.125]) solid.add(k.brick, kbox(3.75, 6, 0.24, x, 3, z, 0.65))
+    solid.add(k.brick, kbox(2.5, 2.5, 0.24, 0, 4.75, z, 0.65))
+    solid.add(k.iron, kbox(2.5, 3.5, 0.12, 0, 1.75, z))
+    for (const x of [-1.3, 1.3]) decor.add(k.stationStone, kbox(0.18, 3.6, 0.3, x, 1.8, z))
+    const inward = z > 0 ? -0.14 : 0.14
+    for (let x = -1.1; x <= 1.11; x += 0.22) decor.add(k.greenDark, kbox(0.035, 3.3, 0.035, x, 1.7, z + inward))
+    for (const y of [0.18, 1.3, 3.25]) decor.add(k.greenDark, kbox(2.45, 0.06, 0.035, 0, y, z + inward))
+    decor.add(k.brass, kbox(0.07, 0.16, 0.045, 0.15, 1.65, z + inward * 1.2))
+    const M = at(0, 4.05, z + inward, z > 0 ? Math.PI : 0)
+    stationSconce(decor, k, M)
+    wallSign(decor, k, at(0, 3.72, z + inward, z > 0 ? Math.PI : 0), k.sign('PRIVATE · NO ADMITTANCE'), 2.1, 0.28)
+    colliders.push({ minX: -5, maxX: 5, minZ: z - 0.12, maxZ: z + 0.12 })
+  }
+  // These meshes deliberately remain in the guard/camera collidable set.
+  solid.build(group, 'solid-platform-end')
+  decor.build(group, 'platform-end-detail', { decor: true })
+  const glow = addFloorGlows(group, [-26.6, 26.6].map((z) => ({ x: 0, y: 0, z, radius: 1.35, strength: 0.12 })), null, 0xffaf59, 'end-wall-pools')
+  markPlatformDecor(glow)
+  return { group, colliders }
+}
+
+function createPlatformServiceProps() {
+  const group = new THREE.Group()
+  group.name = 'platform-service-props'
+  const b = createKitBuilder(), k = getKitMaterials()
+  const colliders = []
+  // Wall-side footprints only; no guard path passes through these rectangles.
+  for (const z of [-9.5, 15]) {
+    trunk(b, k, at(-4.32, 0, z), 0.62, 0.42, 0.65)
+    suitcase(b, k, at(-4.3, 0.42, z, 0.08), 0.5, 0.32, 0.18)
+    colliders.push({ minX: -4.72, maxX: -3.9, minZ: z - 0.4, maxZ: z + 0.4 })
+  }
+  // The existing trolley by z=-13 is retained; add only small service objects.
+  wasteBin(b, k, at(-4.35, 0, -2))
+  fireBucketRack(b, k, at(-4.8, 0, 17.5, Math.PI / 2))
+  for (const [z, yaw] of [[24.2, 0], [24.8, 0.1], [25.4, -0.1]]) milkChurn(b, k, at(-4.15, 0, z, yaw))
+  mailSack(b, k, at(-3.9, 0, 23.2, 0.2))
+  mailSack(b, k, at(-4.15, 0, 22.65, -0.2))
+  crate(b, k, at(-4.28, 0, 26.2), 0.62, 0.55, 0.58)
+  crate(b, k, at(-4.28, 0.55, 26.2, 0.08), 0.45, 0.34, 0.42)
+  colliders.push(
+    { minX: -4.67, maxX: -4.03, minZ: -2.32, maxZ: -1.68 },
+    { minX: -4.68, maxX: -3.55, minZ: 22.3, maxZ: 26.6 }
+  )
+  // Small props affect movement only through their AABBs, never new sight cover.
+  b.build(group, 'platform-service', { decor: true })
+  return { group, colliders }
 }
 
 // Platform dressing after ref 05: canopy valance and fascia, lamp posts, a
@@ -787,6 +873,8 @@ function createPlatformDressing() {
   const b = createKitBuilder()
 
   const deckEdge = -0.3 + (PLATFORM_WIDTH + 2.4) / 2
+  const valancePaint = k.valance.clone()
+  valancePaint.color.set(0x263a2c) // Dark platform paint; shared valance stays unchanged.
   const valanceTop = ROOF_Y - 0.125
   const valance = (length) => {
     const plane = new THREE.PlaneGeometry(length, 0.8)
@@ -798,11 +886,11 @@ function createPlatformDressing() {
   const side = valance(PLATFORM_LENGTH)
   side.rotateY(Math.PI / 2)
   side.translate(deckEdge + 0.02, 0, 0)
-  b.add(k.valance, side)
+  b.add(valancePaint, side)
   for (const e of [-1, 1]) {
     const end = valance(PLATFORM_WIDTH + 2.4)
     end.translate(-0.3, 0, e * (HALF_LENGTH + 0.02))
-    b.add(k.valance, end)
+    b.add(valancePaint, end)
   }
   b.add(k.green, kbox(0.06, 0.2, PLATFORM_LENGTH + 0.1, deckEdge + 0.03, ROOF_Y, 0))
 
@@ -883,13 +971,11 @@ function createDepartureBoard() {
 }
 
 function createPlatformSign() {
-  const sign = new THREE.Mesh(
-    new THREE.BoxGeometry(0.1, 0.52, 2),
-    signMaterial({ text: 'PLATFORM 1', background: 0x11223a, foreground: 0xf0e6cf, width: 512, height: 128 })
-  )
-  sign.rotation.y = Math.PI / 2
-  sign.position.set(PILLAR_X - 0.35, 3.1, 0)
-  return sign
+  const group = new THREE.Group(), k = getKitMaterials(), b = createKitBuilder()
+  hangingSign(b, k, at(2.7, 3.5, -23, Math.PI / 2),
+    k.sign('PLATFORM 1', { background: 0x14231d, foreground: 0xf0e6cf }), 2.0, 0.45, 1.2)
+  b.build(group, 'platform-one-sign', { decor: true })
+  return group
 }
 
 function createStationClock() {
@@ -1111,6 +1197,7 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
 
   const rearWall = createRearWall()
   group.add(rearWall.group)
+  group.add(rearWall.dressing)
 
   const approachCorridor = createApproachCorridor()
   group.add(approachCorridor.group)
@@ -1130,6 +1217,10 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
   group.add(createTrainShed())
   group.add(createPendantLamps())
   group.add(createPlatformDressing())
+  const endWalls = createPlatformEndWalls()
+  group.add(endWalls.group)
+  const serviceProps = createPlatformServiceProps()
+  group.add(serviceProps.group)
   group.add(createDepartureBoard())
   group.add(createPlatformSign())
   group.add(createStationClock())
@@ -1144,11 +1235,15 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
     group.add(createCameraPlaceholder(12))
   }
 
+  const benches = createKitBuilder()
   for (const z of [-12, -4, 4, 12]) {
-    const bench = createBench(z)
-    group.add(bench)
-    addFloorPropCollider(bench, 0.09)
+    cushionedBench(benches, getKitMaterials(), at(WALL_X + 0.75, 0, z))
+    // Same inset footprint as the original bench's Box3 collider.
+    stationPropColliders.push({ minX: -4.59, maxX: -3.91, minZ: z - 0.91, maxZ: z + 0.91 })
   }
+  const benchGroup = new THREE.Group()
+  benches.build(benchGroup, 'platform-benches')
+  group.add(benchGroup)
 
   // A red carpet runner leading to the boarding point — luxury cue, and it
   // quietly signposts where the player is meant to go.
@@ -1174,6 +1269,8 @@ export function createStationBlockout({ includePlaceholders = false } = {}) {
       ...rearWall.colliders,
       ...approachCorridor.colliders,
       ...partitionWalls.colliders,
+      ...endWalls.colliders,
+      ...serviceProps.colliders,
       ...stationPropColliders
     ]
   }
@@ -1197,7 +1294,7 @@ export const SUN_DIRECTION = new THREE.Vector3(
   SUN_AZIMUTH.z * Math.cos(SUN_ELEVATION)
 )
 // Opt-in platform moon. The original bearing remains the default everywhere else.
-export const PLATFORM_MOON_DIRECTION = new THREE.Vector3(0.45, 0.30, 0.84).normalize()
+export const PLATFORM_MOON_DIRECTION = new THREE.Vector3(0.85, 0.25, 0.46).normalize()
 const SUN_CAMERA_UP = new THREE.Vector3(0, 1, 0)
 const _camRight = new THREE.Vector3()
 const _camUp = new THREE.Vector3()

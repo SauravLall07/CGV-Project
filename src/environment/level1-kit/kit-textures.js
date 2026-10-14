@@ -100,6 +100,50 @@ function vein(ctx, size, rand, color, alpha) {
 }
 
 // Cream and charcoal marble, 4 × 4 tiles per repeat.
+// Platform-only window variants. Existing carriage/interior canvases stay intact.
+export function drawStationWindow(variant = 0) {
+  return cached(`station-window:${variant}`, () => {
+    const canvas = makeCanvas(256, 512)
+    const ctx = canvas.getContext('2d')
+    const light = ctx.createLinearGradient(0, 0, 256, 512)
+    light.addColorStop(0, '#e8c78c')
+    light.addColorStop(0.55, '#b99559')
+    light.addColorStop(1, '#756044')
+    ctx.fillStyle = light
+    ctx.fillRect(0, 0, 256, 512)
+    if (variant === 1) {
+      for (const side of [0, 1]) {
+        ctx.fillStyle = '#59402c'
+        ctx.beginPath()
+        ctx.moveTo(side ? 256 : 0, 0)
+        ctx.lineTo(side ? 186 : 70, 0)
+        ctx.quadraticCurveTo(side ? 216 : 40, 210, side ? 242 : 14, 460)
+        ctx.lineTo(side ? 256 : 0, 512)
+        ctx.closePath()
+        ctx.fill()
+        ctx.strokeStyle = '#846349'
+        ctx.lineWidth = 3
+        for (let x = 8; x < 65; x += 12) {
+          ctx.beginPath(); ctx.moveTo(side ? 256 - x : x, 0)
+          ctx.lineTo(side ? 256 - x * 0.22 : x * 0.22, 490); ctx.stroke()
+        }
+      }
+    } else if (variant === 2) {
+      ctx.fillStyle = '#9c8055'
+      ctx.fillRect(0, 0, 256, 300)
+      ctx.strokeStyle = '#564934'
+      ctx.lineWidth = 3
+      for (let y = 10; y < 300; y += 16) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke()
+      }
+      ctx.fillStyle = '#352e25'
+      ctx.fillRect(190, 0, 2, 328)
+    }
+    speckle(ctx, 256, random(903 + variant), 180, 0x392a1a, 0.09, 2)
+    return canvas
+  })
+}
+
 export function drawChecker() {
   return cached('checker', () => {
     const size = 512
