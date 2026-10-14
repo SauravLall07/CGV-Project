@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { TRACK_LEVEL } from '../entities/train.js'
+import { TRACK_LEVEL, TRACK_X, RAIL_OFFSET, TRAIN_LENGTH, TRAIN_Z } from '../entities/train.js'
 import { LANDING_CLEAR } from './landing/layout.js'
 import pineAUrl from '../assets/textures/backdrop/pine-card-a.png?url'
 import pineBUrl from '../assets/textures/backdrop/pine-card-b.png?url'
@@ -8,6 +8,7 @@ import broadleafUrl from '../assets/textures/backdrop/broadleaf-card.png?url'
 // Boarding-only scenery: three instanced crossed-card batches and one ground
 // mesh. It has no colliders, interaction blockers, real lights or shadows.
 const GROUND_Y = TRACK_LEVEL - 0.5 // Match the track's ballast ground, not rail head.
+const TREE_MOONLIT_TINT = 0x5f7a78
 const EYE_Y = 1.7
 const TOP_ANGLE = THREE.MathUtils.degToRad(7.9) // Margin under the requested 8 degrees.
 const ROWS = [
@@ -44,14 +45,84 @@ function crossedQuads() {
 }
 
 function fieldGeometry() {
-  // One flat field, x=9..400 and z=-400..400. At y=-1.5 it lies BELOW
-  // the retained forecourt (y=0.05), never covering its surface. Keeping the
-  // ground underneath avoids a sky hole when the landing is hidden from P4.
-  // The entire mesh is hidden on the forecourt/title screen by the zone swap.
-  const geometry = new THREE.PlaneGeometry(391, 800)
+  // Cover the platform edge and the entire railway corridor. Sleepers bottom
+  // out at TRACK_LEVEL-0.32; this surface is another 0.18 m below them.
+  // The hall/platform floors are y=0; the forecourt is y=0.05.
+  const geometry = new THREE.PlaneGeometry(460, 800, 46, 80)
   geometry.rotateX(-Math.PI / 2)
-  geometry.translate(204.5, GROUND_Y, 0)
+  geometry.translate(170, GROUND_Y, 0)
+  const position = geometry.attributes.position
+  const indices = []
+  // P3 and its return stairs lie at y=-4, x=-80.5..-51.7, z=-51.6..-21.8.
+  // Leave a grid-aligned notch under that enclosed footprint (including margin)
+  // rather than letting the higher field slice through its rooms or stairs.
+  for (let i = 0; i < geometry.index.count; i += 3) {
+    const a = geometry.index.getX(i)
+    const b = geometry.index.getX(i + 1)
+    const c = geometry.index.getX(i + 2)
+    const x = (position.getX(a) + position.getX(b) + position.getX(c)) / 3
+    const z = (position.getZ(a) + position.getZ(b) + position.getZ(c)) / 3
+    if (x < -50 && z > -60 && z < -20) continue
+    indices.push(a, b, c)
+  }
+  geometry.setIndex(indices)
+  // Slow, low-amplitude colour waves: ground texture without a downloaded map.
+  const colors = []
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i)
+    const z = position.getZ(i)
+    const tint = 0.88 + 0.07 * Math.sin(x * 0.027 + z * 0.018) +
+      0.05 * Math.cos(x * 0.011 - z * 0.023)
+    colors.push(tint, tint, tint)
+  }
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   return geometry
+}
+
+function addTrackContinuation(group) {
+  // Match createTrackBed's actual length; the four-car train makes it longer
+  // than the 72 m platform-based minimum. Keep the original track untouched.
+  const stationLength = Math.max(72, TRAIN_LENGTH + 48)
+  const start = TRAIN_Z - stationLength / 2
+  const end = TRAIN_Z + stationLength / 2
+  const railGeometry = new THREE.BoxGeometry(0.12, 0.18, 1)
+  const railMaterial = new THREE.MeshStandardMaterial({ color: 0x8d8a83, roughness: 0.78, metalness: 0.45 })
+  const rails = new THREE.InstancedMesh(railGeometry, railMaterial, 4)
+  rails.name = 'treeline-track-rails'
+  const dummy = new THREE.Object3D()
+  let index = 0
+  for (const [z0, z1] of [[-300, start], [end, 300]]) {
+    for (const offset of [-RAIL_OFFSET, RAIL_OFFSET]) {
+      dummy.position.set(TRACK_X + offset, TRACK_LEVEL - 0.09, (z0 + z1) / 2)
+      dummy.scale.set(1, 1, z1 - z0)
+      dummy.updateMatrix()
+      rails.setMatrixAt(index++, dummy.matrix)
+    }
+  }
+  const sleeperGeometry = new THREE.BoxGeometry(2.8, 0.14, 0.28)
+  const sleeperMaterial = new THREE.MeshStandardMaterial({ color: 0x35281c, roughness: 0.95 })
+  const existingCount = Math.floor(stationLength / 0.8)
+  const sleeperZ = []
+  // Continue the same 0.8 m lattice at both ends, with no duplicated sleepers.
+  for (let i = -1; start + i * 0.8 + 0.4 >= -300; i -= 1) sleeperZ.push(start + i * 0.8 + 0.4)
+  for (let i = existingCount; start + i * 0.8 + 0.4 <= 300; i += 1) sleeperZ.push(start + i * 0.8 + 0.4)
+  const sleepers = new THREE.InstancedMesh(sleeperGeometry, sleeperMaterial, sleeperZ.length)
+  sleepers.name = 'treeline-track-sleepers'
+  dummy.scale.set(1, 1, 1)
+  sleeperZ.forEach((z, i) => {
+    dummy.position.set(TRACK_X, TRACK_LEVEL - 0.25, z)
+    dummy.updateMatrix()
+    sleepers.setMatrixAt(i, dummy.matrix)
+  })
+  for (const mesh of [rails, sleepers]) {
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.computeBoundingSphere()
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+    mesh.raycast = () => {}
+    group.add(mesh)
+  }
+  return { geometries: [railGeometry, sleeperGeometry], materials: [railMaterial, sleeperMaterial] }
 }
 
 export function createTreeLine() {
@@ -108,10 +179,10 @@ export function createTreeLine() {
     const texture = loader.load(url)
     texture.colorSpace = THREE.SRGBColorSpace
     textures.push(texture)
-    // Unlit but fogged: mountain floods and warm station lamps cannot turn
-    // these intentionally near-black, cool silhouettes bright green.
-    const material = new THREE.MeshBasicMaterial({
-      map: texture, color: 0x142a2d, alphaTest: 0.5,
+    // Moonlight plus the existing hemisphere/ambient fill lights the cards;
+    // a single cool tint constant makes their silhouette brightness tunable.
+    const material = new THREE.MeshLambertMaterial({
+      map: texture, color: TREE_MOONLIT_TINT, alphaTest: 0.5,
       side: THREE.DoubleSide, fog: true
     })
     materials.push(material)
@@ -135,7 +206,7 @@ export function createTreeLine() {
   }
   const groundGeometry = fieldGeometry()
   const groundMaterial = new THREE.MeshStandardMaterial({
-    color: 0x091316, roughness: 1, metalness: 0, fog: true
+    color: 0x091316, roughness: 1, metalness: 0, fog: true, vertexColors: true
   })
   const ground = new THREE.Mesh(groundGeometry, groundMaterial)
   ground.name = 'treeline-dark-field'
@@ -143,6 +214,7 @@ export function createTreeLine() {
   ground.receiveShadow = false
   ground.raycast = () => {}
   group.add(ground)
+  const track = addTrackContinuation(group)
   group.userData.noCameraCollision = true
   group.userData.noInteractionBlocker = true
   group.userData.treeLineStats = { total, counts: trees.map((list) => list.length), maxElevationDegrees }
@@ -158,6 +230,8 @@ export function createTreeLine() {
       geometry.dispose()
       groundGeometry.dispose()
       groundMaterial.dispose()
+      track.geometries.forEach((geometry) => geometry.dispose())
+      track.materials.forEach((material) => material.dispose())
       materials.forEach((material) => material.dispose())
       textures.forEach((texture) => texture.dispose())
     }
