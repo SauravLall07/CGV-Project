@@ -6,9 +6,11 @@ import broadleafCardUrl from '../assets/textures/backdrop/broadleaf-card.png'
 const TREE_TINT = 0x6d8a86
 const FOREST_ROWS = [[16, 24, 8], [28, 36, 11], [42, 50, 14], [58, 70, 17]]
 const UPHILL_ROWS = [[80, 110, 50], [130, 180, 50], [210, 300, 50]]
-const DOWNSLOPE_ROWS = [[68, 82, 10], [82, 96, 10], [96, 110, 10]]
-const TREES_PER_CHUNK = 594
-const MOON_DIRECTION = new THREE.Vector3(0.49, 0.225, -0.844).normalize()
+const SHOULDER_ROWS = [[14, 40, 40]]
+const DOWNSLOPE_ROWS = [[40, 66, 40], [66, 94, 40], [94, 120, 40]]
+const VALLEY_ROWS = [[120, 210, 60]]
+const TREES_PER_CHUNK = 930
+const MOON_DIRECTION = new THREE.Vector3(0.478, 0.292, -0.828).normalize()
 
 // Fog alone leaves opaque silhouettes. Fade them out before chunk recycling,
 // including the shorter rear coverage, so they cannot mask the mountain ring.
@@ -87,10 +89,16 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
       return mesh
     })
     let ordinal = 0
-    function placeTree(x, localZ, height, belowRoof = false) {
+    function placeTree(x, localZ, height, belowRoof = false, shoulder = false) {
       const worldZ = chunk.index * CHUNK_LENGTH + localZ
       const base = surfaceHeightAt(chunk, x, worldZ) - 0.3
       if (belowRoof) height = Math.min(height, 3.8 - base)
+      if (shoulder) {
+        // Bound the closest card edge, for every Z during scrolling, not just
+        // the tree's initial angle to the viewer. Roof eye height is about 5 m.
+        const slope = Math.tan(10 * Math.PI / 180)
+        height = Math.min(height, (5 - base + Math.abs(x) * slope) / (1 + slope * 0.25))
+      }
       const width = height * 0.5
       x = Math.sign(x) * Math.max(Math.abs(x), 8 + width * 0.5)
       transform.position.set(x, surfaceHeightAt(chunk, x, worldZ) - 0.3, localZ)
@@ -105,13 +113,13 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
       mesh.setColorAt(instance, tint)
       ordinal += 1
     }
-    function rows(layout, side, minHeight, heightRange, belowRoof = false) {
+    function rows(layout, side, minHeight, heightRange, belowRoof = false, shoulder = false) {
       for (const row of layout) {
         for (let i = 0; i < row[2]; i += 1) {
           const height = minHeight + random() * heightRange
           const x = side * (row[0] + random() * (row[1] - row[0]))
           const localZ = ((i + 0.1 + random() * 0.8) / row[2]) * CHUNK_LENGTH
-          placeTree(x, localZ, height, belowRoof)
+          placeTree(x, localZ, height, belowRoof, shoulder)
         }
       }
     }
@@ -120,9 +128,10 @@ function createForest(chunks, onChunkRecycle, viewerZ) {
       ordinal = 0
       rows(FOREST_ROWS, -1, 20, 12)
       rows(UPHILL_ROWS, -1, 16, 10)
-      for (let i = 0; i < 4; i += 1) placeTree(16 + random() * 10, random() * CHUNK_LENGTH, 12 + random() * 6)
-      rows(DOWNSLOPE_ROWS, 1, 18, 10, true)
-      for (let i = 0; i < 300; i += 1) {
+      rows(SHOULDER_ROWS, 1, 10, 8, false, true)
+      rows(DOWNSLOPE_ROWS, 1, 16, 10)
+      rows(VALLEY_ROWS, 1, 16, 8)
+      for (let i = 0; i < 450; i += 1) {
         // Pick the steeper of two random sites to favour slopes without rows.
         let x = 220 + random() * 530
         let localZ = random() * CHUNK_LENGTH
@@ -240,7 +249,7 @@ function rebuildChunk(chunk, index) {
     const facingMoon = Math.max(0, (-dx * MOON_DIRECTION.x + MOON_DIRECTION.y - dz * MOON_DIRECTION.z) / length)
     const tint = THREE.MathUtils.clamp(0.43 + variation * 0.6, 0.35, 0.55) + facingMoon * 0.08
     const wet = x > 0 ? smooth(100, 120, x) * (1 - smooth(210, 240, x)) : 0
-    const ballast = 1 - smooth(3.5, 6, Math.abs(x))
+    const ballast = 1 - smooth(4, 6, Math.abs(x))
     const red = tint * (0.65 - wet * 0.15)
     const green = tint * (0.85 - wet * 0.25)
     const blue = tint * (0.62 + wet * 0.16)
@@ -281,18 +290,19 @@ function createMountainRing(hazeColor, getViewerZ) {
   const group = new THREE.Group()
   group.name = 'moonlit-mountain-ring'
   const haze = new THREE.Color(hazeColor ?? 0x142943)
-  const forest = new THREE.Color(0x0f2a2c)
   const tint = new THREE.Color()
+  const rim = new THREE.Color(0x9fb4d8)
   const normal = new THREE.Vector3()
   const moonAngle = Math.atan2(MOON_DIRECTION.x, MOON_DIRECTION.z)
   const moonElevation = Math.asin(MOON_DIRECTION.y)
-  const angular = 256
+  const angular = 1024
   const radial = 6
   const rings = [
-    { inner: 1050, outer: 1300, height: 95, amplitude: 55, topHaze: 0.55, baseHaze: 0.9 },
-    { inner: 1350, outer: 1700, height: 190, amplitude: 70, topHaze: 0.75, baseHaze: 0.95 }
+    { inner: 1050, outer: 1300, height: 210, amplitude: 90, color: 0x0b1a1f, topHaze: 0.15, baseHaze: 0.5, contrast: 0.65 },
+    { inner: 1350, outer: 1750, height: 350, amplitude: 100, color: 0x15263c, topHaze: 0.35, baseHaze: 0.7, contrast: 0.75 }
   ]
   rings.forEach((ring, ringIndex) => {
+    const forest = new THREE.Color(ring.color)
     const positions = new Float32Array((angular + 1) * (radial + 1) * 3)
     const colors = new Float32Array(positions.length)
     const indices = new Uint16Array(angular * radial * 6)
@@ -305,6 +315,11 @@ function createMountainRing(hazeColor, getViewerZ) {
         const wave = 0.5 * Math.sin(angle * 3 + ringIndex * 1.3) +
           0.3 * Math.sin(angle * 5 + 0.7) + 0.2 * Math.cos(angle * 9 - ringIndex)
         let height = -60 + rise * (ring.height + ring.amplitude * wave + 60)
+        if (j === radial / 2) {
+          const hash = Math.sin((i % angular) * 127.1 + ringIndex * 311.7 + 19.3) * 43758.5453
+          height += 4 + 8 * (hash - Math.floor(hash))
+          height = Math.min(height, ring.height + ring.amplitude)
+        }
         // A broad saddle under the moon guarantees >= 3 degrees of clearance.
         const moonSector = smooth(Math.cos(25 * Math.PI / 180), Math.cos(12 * Math.PI / 180), Math.cos(angle - moonAngle))
         const ceiling = 5 + radius * Math.tan(moonElevation - 3 * Math.PI / 180)
@@ -342,7 +357,11 @@ function createMountainRing(hazeColor, getViewerZ) {
         const facing = Math.max(0, normal.dot(MOON_DIRECTION))
         const speckle = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin((i % angular) * 127.1 + j * 311.7 + ringIndex))
         tint.copy(forest).multiplyScalar((0.3 + 0.7 * facing) * speckle).lerp(haze, mist)
-        tint.lerp(new THREE.Color(0x9fb4d8), facing * rise * 0.025)
+        tint.lerp(rim, facing * rise * 0.025)
+        // Preserve silhouette contrast even at the brightest moon-facing rim.
+        tint.r = Math.min(tint.r, haze.r * ring.contrast)
+        tint.g = Math.min(tint.g, haze.g * ring.contrast)
+        tint.b = Math.min(tint.b, haze.b * ring.contrast)
         colors[vertex * 3] = tint.r; colors[vertex * 3 + 1] = tint.g; colors[vertex * 3 + 2] = tint.b
       }
     }
@@ -370,7 +389,7 @@ function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
   const texture = new THREE.TextureLoader().load(broadleafCardUrl)
   texture.colorSpace = THREE.SRGBColorSpace
   const bushMaterial = new THREE.MeshLambertMaterial({ map: texture, color: 0x4a6058, alphaTest: 0.5, side: THREE.DoubleSide, fog: true })
-  const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x3a4046, flatShading: true, roughness: 1, fog: true })
+  const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2e31, flatShading: true, roughness: 1, fog: true })
   addSceneryFade(bushMaterial, viewerZ)
   addSceneryFade(rockMaterial, viewerZ)
   const bushGeometry = cardGeometry.clone()
@@ -401,7 +420,9 @@ function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
       for (let i = 0; i < 120; i += 1) {
         const height = 1.2 + random() * 2.3
         const width = height * 0.5
-        const x = (i % 2 ? 1 : -1) * (i < 60 ? 6 + random() * 34 : 40 + random() * 80)
+        const x = (i % 2 ? 1 : -1) * (i < 48
+          ? 4 + width * 0.5 + random() * (10 - width * 0.5)
+          : i < 72 ? 14 + random() * 26 : 40 + random() * 80)
         const z = random() * CHUNK_LENGTH
         transform.position.set(x, surfaceHeightAt(chunk, x, chunk.index * CHUNK_LENGTH + z) - 0.1, z)
         transform.rotation.set(0, random() * Math.PI * 2, 0)
@@ -411,12 +432,14 @@ function createGroundCover(chunks, onChunkRecycle, cardGeometry, viewerZ) {
       }
       for (let cluster = 0; cluster < 20; cluster += 1) {
         const side = cluster % 2 ? 1 : -1
-        const centreX = side * (9 + random() * 106)
+        // Only two small clusters close to the track; most rocks sit farther out.
+        const centreX = side * (cluster < 2 ? 12 + random() * 5 : 25 + random() * 90)
         const centreZ = 3 + random() * (CHUNK_LENGTH - 6)
         for (let k = 0; k < 3; k += 1) {
-          const size = 0.6 + random() * 1.9
+          const rawX = centreX + (random() - 0.5) * 6
+          const size = 0.4 + random() * (Math.abs(rawX) < 20 ? 1.2 : 1.8)
           const scaleY = size * (0.5 + random() * 0.3)
-          const x = side * THREE.MathUtils.clamp(Math.abs(centreX + (random() - 0.5) * 6), 5 + size, 120 - size)
+          const x = side * THREE.MathUtils.clamp(Math.abs(rawX), 5 + size, 120 - size)
           const z = THREE.MathUtils.clamp(centreZ + (random() - 0.5) * 6, 0, CHUNK_LENGTH)
           transform.position.set(x, surfaceHeightAt(chunk, x, chunk.index * CHUNK_LENGTH + z) + scaleY * 0.5, z)
           transform.rotation.set((random() - 0.5) * 0.1, random() * Math.PI * 2, (random() - 0.5) * 0.1)

@@ -8,6 +8,7 @@
 export const SKY_EVALUATE_GLSL = /* glsl */ `
   // Unbound consumers (the legacy lake) default to zero: retain the old size.
   uniform float uMoonSize;
+  uniform float uMoonSoftGlow;
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -140,7 +141,22 @@ export const SKY_EVALUATE_GLSL = /* glsl */ `
     // white and only a small halo blooms.
     float moonDisc = smoothstep(0.9998, 0.99992, moonFacing);
     float moonHalo = smoothstep(0.99955, 0.9998, moonFacing) * (1.0 - moonDisc);
-    skyColor += vec3(0.96, 0.97, 1.0) * (moonDisc * 1.28 + moonHalo * 0.2) * uMoonStrength;
+    if (uMoonSoftGlow > 0.5) {
+      vec3 moonRight = normalize(cross(vec3(0.0, 1.0, 0.0), moonDir));
+      vec3 moonUp = cross(moonDir, moonRight);
+      vec2 discLocal = vec2(dot(direction, moonRight), dot(direction, moonUp))
+        / (0.02 * max(uMoonSize, 1.0));
+      float patches = 0.65 * noise(discLocal * 2.4 + vec2(3.7, 8.1))
+        + 0.35 * noise(discLocal * 4.1 + vec2(11.3, 2.6));
+      float glow = 0.14 * exp(-2.5 * dot(discLocal, discLocal));
+      // The tangent projection also reaches zero opposite the moon: mask that
+      // hemisphere smoothly where the exponential is already negligible.
+      glow *= smoothstep(0.0, 0.5, dot(direction, moonDir));
+      skyColor += vec3(1.0, 0.97, 0.90)
+        * (moonDisc * 1.28 * (1.0 - patches * 0.12) + glow) * uMoonStrength;
+    } else {
+      skyColor += vec3(0.96, 0.97, 1.0) * (moonDisc * 1.28 + moonHalo * 0.2) * uMoonStrength;
+    }
 
     // Stars on a 3D grid of the view direction. The old atan2 cell
     // wrapped at one meridian and drew a vertical line of mismatched stars.
