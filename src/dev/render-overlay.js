@@ -12,7 +12,13 @@ const TRAIN_YAW = Math.PI / 2
 const UNLIT_FALLBACK = new THREE.Color(0x6a6f78)
 
 export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, post } = {}) {
+  let overlayVisible = false
+  let benchmarkActive = false
+  const measuring = () => overlayVisible || benchmarkActive
   const gpu = createGpuTimer(renderer.getContext())
+  const beginGpuQuery = gpu.begin
+  // Also gates bloom/final queries made by postprocessing through this timer.
+  gpu.begin = label => measuring() && beginGpuQuery(label)
   post?.setGpuTimer(gpu)
 
   // Shadow drawing happens inside renderer.render, before the colour pass.
@@ -68,6 +74,10 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
 
   window.requestAnimationFrame = function devOverlayFrame(callback) {
     return nativeRequestAnimationFrame(function (timestamp) {
+      if (!measuring()) {
+        previousFrameStart = 0
+        return callback(timestamp)
+      }
       const start = performance.now()
       const sample = {
         frame: previousFrameStart ? start - previousFrameStart : 0,
@@ -95,6 +105,12 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     if (!perspective && minimapOff && camera?.name === 'minimap') {
       if (activeFrame) activeFrame.minimap = 0
       minimapPass = { calls: 0, triangles: 0 }
+      return
+    }
+
+    if (perspective) worldScene = scene
+    if (!measuring()) {
+      render(scene, camera)
       return
     }
 
@@ -132,6 +148,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   const panel = document.createElement('div')
   panel.id = 'dev-render-overlay'
   Object.assign(panel.style, {
+    display: 'none',
     position: 'fixed',
     top: '8px',
     right: '8px',
@@ -147,6 +164,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   })
   panel.textContent = 'FPS …'
   document.body.appendChild(panel)
+  console.info('Dev overlay: press F9')
 
   let accum = 0
   let frames = 0
@@ -387,6 +405,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   }
 
   function paint() {
+    if (!measuring()) return
     const pass = mainPass ?? {
       calls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
@@ -428,8 +447,15 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   // event also reaches window (capture, then bubble). One handled event
   // must not flip the toggle again from the second listener.
   const handledKeys = new WeakSet()
-  let benchmarkActive = false
   const keyTargets = [window, document, renderer.domElement].filter(Boolean)
+
+  function syncVisibility() {
+    panel.style.display = measuring() ? 'block' : 'none'
+    accum = 0
+    frames = 0
+    previousFrameStart = 0
+    if (measuring()) paint()
+  }
 
   function measurementKey(event) {
     if (!event.shiftKey) return 0
@@ -482,7 +508,17 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   }
 
   function onKeyDown(event) {
-    if (benchmarkActive) return
+    if (event.code === 'F9') {
+      event.preventDefault()
+      // Do not let the benchmark's any-key handler cancel a run on F9.
+      event.stopImmediatePropagation()
+      if (handledKeys.has(event) || event.repeat) return
+      handledKeys.add(event)
+      overlayVisible = !overlayVisible
+      syncVisibility()
+      return
+    }
+    if (!overlayVisible || benchmarkActive) return
     if (handledKeys.has(event) || event.repeat) return
     const index = measurementKey(event)
     if (!index) return
@@ -529,7 +565,6 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       console.log(`[dev overlay] toggle 0 (unlit materials): ${unlit ? 'ON' : 'OFF'}`)
     }
 
-    event.preventDefault()
     event.stopImmediatePropagation()
     paint()
   }
@@ -602,6 +637,10 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     if (glowsHidden) syncGlows()
     if (unlit) syncUnlit()
 
+    // Auto quality has its own clock in main.js. Keep active overrides in
+    // effect above, but pause GPU queries, polling and text work when hidden.
+    // Any outstanding query results are drained on the next visible run.
+    if (!measuring()) return
     gpu.poll()
     accum += delta
     frames += 1
@@ -617,7 +656,10 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     captureToggles,
     applyToggles,
     teleport: devTeleport,
-    setBenchmarkActive(value) { benchmarkActive = Boolean(value) },
+    setBenchmarkActive(value) {
+      benchmarkActive = Boolean(value)
+      syncVisibility()
+    },
     sampleFrame() {
       return { frameMs: activeFrame?.frame ?? 0, cpuMs: activeFrame?.logic ?? 0,
         gpuSceneMs: gpu.supported ? gpu.average('scene') : null }
@@ -642,6 +684,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       syncGlows()
       syncUnlit()
       renderer.render = render
+      post?.setGpuTimer(null)
       panel.remove()
     }
   }
