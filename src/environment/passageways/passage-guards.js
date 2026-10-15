@@ -684,8 +684,11 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
       initialWaypoint: 1
     })
 
+    // Keep the camera body and its downward-tilted beam clear of the north
+    // wall/ceiling. The old 0.12 m wall offset buried the housing in the
+    // passage shell and let the visibility ray clip the cone immediately.
     stealth.addCamera({
-      position: new THREE.Vector3(worldX(-34.7), GUARD_PASSAGE_FLOOR_Y + 4.45, CORRIDOR_Z + MAIN_WIDTH / 2 - 0.12),
+      position: new THREE.Vector3(worldX(-34.7), GUARD_PASSAGE_FLOOR_Y + 3.85, CORRIDOR_Z + MAIN_WIDTH / 2 - 0.72),
       baseAngle: Math.PI,
       sweepRange: Math.PI / 4.7,
       sweepSpeed: 0.58,
