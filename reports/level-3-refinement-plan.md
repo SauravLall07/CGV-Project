@@ -19,7 +19,9 @@ and profiling remain pending (see results below). The latest request authorized
 R3 and R4 only; both implementations and automated/static checks are now complete.
 Their rendered/human/performance acceptance remains pending. The subsequent R5
 request authorized R5 only. R5 implementation and automated/static checks are now
-complete; rendered/human/runtime acceptance remains pending. R6 has not started.
+complete; rendered/human/runtime acceptance remains pending. The subsequent R6
+request authorized R6 only. R6 implementation and automated/static checks are now
+complete; rendered/audio/human/runtime acceptance remains pending. R7 has not started.
 Do not repeat completed upgrade mechanics or treat historical test counts as fresh verification.
 Implement only the requested batch, validate, update this handover, then stop.
 
@@ -321,7 +323,9 @@ playtest evidence is mandatory before declaring difficulty improved.
 
 ### R6 - Passenger pursuit and finale presentation/audio
 
-Status: NOT STARTED. Depends on R3, R5 and measured chase readability.
+Status: IMPLEMENTED; automated/static/audio-graph checks passed. Rendered/audible
+acceptance, human comprehension and actual timed chase/performance PENDING.
+Wave, energy, hazard, deceleration and reveal timing parameters are unchanged.
 
 Refine rack warning/landing footprint, keep-right then return-to-centre flow,
 floor crossing readability and brake identification. Preserve wave speed/lead and
@@ -375,7 +379,8 @@ credits identities and trailer are separate deferred deliverables unless request
 - [ ] R4 first-time human comprehension, rendered/retry review and difficulty acceptance.
 - [x] R5 Cargo/Relay/Security feedback implementation and automated/static checks.
 - [ ] R5 rendered camera/Freeze review, human comprehension and runtime budget acceptance.
-- [ ] R6 Passenger/finale/audio.
+- [x] R6 Passenger/finale/audio implementation and automated/static checks.
+- [ ] R6 rendered/audible review, human comprehension and actual timed chase/performance.
 - [ ] R7 production integration and final verification.
 
 At each batch end record changed files, decisions/tradeoffs, exact commands and
@@ -764,25 +769,140 @@ Pending acceptance and exact next steps:
    resources have unmeasured runtime cost; static budgets do not establish parity.
 5. Stop at R5. R6 requires the next request; R7 remains untouched.
 
+## R6 results (2026-10-15)
+
+Preserved the existing R5 working-tree changes and untracked `state/` at entry.
+HEAD progressed to `97f3d79` (R5) and then `6c1c3f0` (R6 source) during this pass;
+this agent performed no commits, staging, resets or operations on `state/`.
+At final review only this handover remains modified; tested source is committed.
+R6 only; R7 not started. No ability costs, energy recovery, wave speed/lead,
+hazard windows, support sizes/heights, collision, checkpoints, 2.5 s deceleration
+or 4.8 s reveal duration changed. Level 2's builders and gameplay are unchanged.
+
+Changed files and decisions:
+
+- `src/levels/timewreck-routes.js`: replaced the Passenger rack's filled amber
+  box with one merged corner-bracket batch. Its exact 3 x 1.1 m footprint and
+  position match the existing fall blocker; the safe wood floor is exposed.
+  Trigger, warning/fall durations, rack motion, history and collision unchanged.
+- `src/environment/passenger-guidance.js`, `timewreck.js`: one merged brass
+  chevron batch marks keep-right before the rack, a turn towards centre after it,
+  and centre approach to the frozen floor. Every vertex stays on solid floor
+  before the real hole; no mark bridges air or adds a support. Existing frozen
+  crossing caps/geometry remain. A procedural sign identifies the emergency brake;
+  another reads TRACK OUT / BRAKE in the cab, reinforcing the existing actual
+  broken bridge beyond it. Rack warning text now explains right-then-centre flow.
+- `src/cameras/wreck-stop-shot.js` and `player-view.js`: changed only the
+  L3-specific reveal shot. It now looks across the locomotive and both missing
+  track edges, rather than placing the gap behind the camera. It still uses the
+  existing cinematic ownership, timing, skip and normal camera recovery. Source
+  projection checks at FOV 55/60/95, aspects 4:3 and 16:9, and times 0/2.5/4.8 s
+  keep the actual boiler and near/far gap edges inside the view. This is camera
+  math, not proof of unobstructed pixels, composition, fog or human comprehension.
+- `src/systems/wreck-audio.js`: L3-owned procedural mechanical warning, low
+  rumble, brake clunk/squeal and single settling knock. Inspected existing
+  `core/audio.js`, door/ability SFX, level music and procedural music ownership.
+  No imported recording, dependency, attribution or credits change. All new
+  voices pass through the shared master/mute node. Stasis hush reduces only this
+  mechanical bed; warning transients bypass its gain. Existing music/ability audio
+  remains unchanged, so audible balance against those tracks requires review.
+- Brake squeal pitch/gain and rumble deceleration follow the existing simulated
+  brake clock, not a separate 2.5-second wall-clock sequence. Pausing gates the
+  local bus; the settling knock triggers once on stop. No wall-clock cleanup timers
+  or per-frame voice creation. Two continuous bed voices plus one braking voice
+  use existing Web Audio; short warning/clunk/settling voices disconnect on end.
+  Checkpoint reset, skip/natural completion, restart and teardown stop/disconnect
+  owned nodes. Completion guards prevent restarting the bed after a completed skip.
+- `src/core/level-manager.js` forwards an optional `setPresentationPaused` hook;
+  `src/main.js` calls it from existing input-state synchronization. L3 mutes its
+  bus during title/credits/pause/editor/transition/caught states and permits normal
+  play/cinematic audio. Other levels omit the hook, so this has no Level 2 effect.
+  The hook does not alter simulation, camera input or pause precedence.
+- `test/wreck-audio.test.mjs`, `tests/wreck-stop-shot.test.js`, existing camera/
+  escape tests: validate real master-setting routing with a fake Web Audio graph,
+  lazy/no-context behavior, warning-vs-bed routing, hush, pause, one-shot settling,
+  reset/disposal, shot coverage, exact marker bounds, solid-floor guidance and
+  optional manager pause forwarding. Existing minimum-energy repeated chase,
+  actual scenery stop, camera recovery, skip-once, restart/quit/stale callback and
+  full traversal tests remain passing. The first full run caught the old camera
+  test's literal X=10 expectation; updated it to the deliberate new X=19 at 2 s
+  and retained all first/third-person recovery assertions. Final suite passes.
+
+Static rendering budget: net +3 meshes/+3 geometries/+100 triangles, two sign
+materials and two 512 x 128 procedural canvas sources. Rack marker remains one
+mesh, with 96 triangles replacing 12; guidance adds 12 and signs add 4. No new
+lights, shadow casters, full-screen passes or external assets. New cues exclude
+camera collision and are removed through existing level disposal. The probe checks
+actual assembled resources/removal, not draw calls, shader compilation, GPU memory,
+cost parity or leaks over rendered restarts. Audio adds unmeasured CPU/mix work.
+
+Fresh final validation:
+
+| Command/check | Result |
+| --- | --- |
+| `node --import ./scripts/register-test-assets.mjs tests/timewreck-escape.test.js` | PASS: 23 tests before final added geometry/forwarding assertions; all included in final suite below |
+| Direct audio-graph and reveal-shot tests | PASS; also included in final suite |
+| `npm.cmd test` | PASS: 91 passed, 0 failed, 0 skipped; about 29.5 s |
+| `npm.cmd run build` | PASS; existing >500 kB chunk warning |
+| `node scripts/check-production.mjs` | PASS: 53 files, 72.63 MiB, 52 case-sensitive subdirectory asset references |
+| Actual-level cue inventory/disposal probe | PASS: net budget above, no new shadow/camera blockers, cue removal |
+| `git diff --check` | PASS |
+| Browser surface inventory | `apps: []`, `browsers: []`; no rendered/native-input/audio capture available |
+
+Full suite/build used approved child-process access. Ignored logs:
+`reports/refinement-r6-{targeted,tests,build,production,geometry}.log`.
+Existing non-indexed-geometry and headless audio timer warnings persist.
+
+Pending acceptance and exact next steps:
+
+1. **R1 remains pending in full:** both-camera doorway/open-side/hole/boundary
+   visibility, shadows/minimap/editor/exterior/finale, root shake/detachment,
+   culling CPU/GPU/frame distributions/draw calls/resources/heap, controlled
+   12-vs-8 pooled lights, exterior/transparency/post attribution and actual full
+   production route. No measured speedup is claimed. R2-R5 rendered/human/runtime
+   acceptance remains pending as recorded above.
+2. In a real browser, review Mechanical first, then capture Passenger approach,
+   rack warning/fall footprint, right-to-centre transition, frozen crossing,
+   locomotive/brake approach and reveal in both views. Confirm the real missing
+   span is visible before the brake and the new reveal avoids obstruction/fog/cuts;
+   projected landmark positions do not establish this. Confirm exterior/debris
+   stasis while player retains control and actual stopped motion at 2.5 s.
+3. Listen on representative speakers/headphones: confirm mechanical warning is
+   audible against level music/ability sounds, local stasis hush communicates
+   stopped machinery, brake squeal decays naturally and settling knock is clear.
+   Test master volume/mute before unlock and during play, pause/resume/editor,
+   repeated deaths/checkpoints, restart, quit and skip. Fake graph tests do not
+   establish browser unlock behavior, audible quality or actual device cleanup.
+4. Run an actual timed minimum-energy chase and human first-time comprehension
+   pass in both views, including rebindings/depletion/alternatives/interruptions.
+   Automated 30/60/144/variable-rate routes are not human difficulty approval.
+   Wave/energy/window values remain unchanged pending that evidence.
+5. Compare identical production poses/settings and full-run/restarter resource
+   traces against R1. No FPS/memory/performance parity claim follows from static
+   counts or build/tests. Stop here; R7 requires the next request and browser access
+   for its full completion. Remote hosting, credits identities and trailer deferred.
+
 ## Exact next-batch prompt
 
 ```text
-Use Game Studio. Complete R6 of the Level 3 refinement pass described in
+Use Game Studio. Complete R7 of the Level 3 refinement pass described in
 reports/level-3-refinement-plan.md.
 
 Read the plan and relevant current source first. Preserve existing user changes,
 completed upgrades, Level 2 behaviour, and current gameplay/ability parameters.
-Refine Passenger pursuit and finale presentation/audio as described in R6.
-Keep R1's pending rendered visibility/performance checks and R2-R5's pending
-rendered/human/runtime acceptance explicit. Preserve wave speed/lead, energy,
-timing, floor/support geometry, existing stasis and brake/reveal/skip lifecycle.
-Inspect current audio/settings and attribution before adding anything. No roof
-traversal or unmeasured full-screen effects; human chase evidence is required
-before difficulty/window tuning. Do not claim an unrendered finale is approved.
+Perform R7 production integration and final verification. Keep R1's pending
+rendered visibility/performance checks and R2-R6's rendered/audio/human/runtime
+acceptance explicit until actually verified. Run the freshly built production
+route New Game -> L1 -> L2 -> L3 -> victory without shortcuts, with both views,
+retries/depletion/rebindings/alternatives and finale interruptions. Capture pixels,
+audio behavior and runtime performance/resources on identified hardware/settings.
+Resolve demonstrated regressions while preserving gameplay parameters.
 
 Run appropriate regression/build/packaging checks and rendered verification where
 available. If browser access is unavailable, continue independently checkable work
 and record precisely which visual/performance acceptance criteria remain pending.
 Update the plan with changes, decisions, fresh validation and exact next steps.
-Complete R6 only; do not begin R7. Finish with a concise handover and next prompt.
+Complete R7 only. If browser access remains unavailable, complete feasible checks
+and record the precise blocker; do not mark full integration/visual/performance
+acceptance complete or imply publication. Finish with an honest final handover.
 ```
