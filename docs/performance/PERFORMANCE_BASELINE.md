@@ -264,3 +264,106 @@ For a normal future deployment validation, `npm.cmd run build` then `node script
 | Extended session | 30-minute repeatable route including ability use and repeated failures | Memory plateau, GC events, heat/throttling, frame-time drift |
 
 Existing dev diagnostics: `npm.cmd run dev -- --host 127.0.0.1`; open `/?bench=platform` for the auto-start fixed-camera sweep, or `/?start=level2`, `/?start=level3`, `/?start=roof`, `/?start=vault`, and named Level 3 starts from `src/main.js:642` for manual tests (click New Game on non-benchmark starts). F9 shows the render overlay; Shift+1..0 provide isolated diagnostic toggles/teleports. `?bench=<nonempty>` enables the benchmark; only `platform` supplies its special preparation. The sweep uses 3 s warmup + 4 s measurement per condition, 100% baseline, and continues level simulation with a held camera. It is a diagnostic, not a deterministic gameplay replay or substitute for the production protocol. Its current GPU averages/metric gaps are P19 in the audit. Restore all toggles and record whether counters include shadows/post/minimap before comparing runs.
+
+## Phase A session evidence - 15 October 2026
+
+This append preserves the original audit above. Session source revision:
+`26e415ebf9a9c5efcea4bc621d5e5748119d44a7`; the initial working tree was clean.
+Phase A is **BLOCKED**, with partial A0 diagnostic work only. See
+[the implementation progress tracker](PERFORMANCE_IMPLEMENTATION_PROGRESS.md).
+No A1-A4 optimization or later phase was implemented.
+
+### Reconfirmed source baseline
+
+The audit commit `d00a6c6` precedes the current merge. Comparing it to HEAD shows
+Level 3 audio, camera, escape/guidance and associated test changes. Before any
+session edits, there were 91 passing tests, not the audit's 89, and production
+output was 3,000 bytes larger. These existing committed changes were preserved.
+The historical measurements above are not the before values for this session.
+
+Both byte measurements below used the same Vite JS API with `build.write=false`,
+Node Buffer byte counts and default `gzipSync`, on installed dependencies.
+The after production CLI build was also written to ignored `dist/` and checked
+with `scripts/check-production.mjs`. File names/hashes changed with the entry.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| Total production output, 53 files | 76,157,769 B | 76,157,905 B | None; +136 B |
+| Entry JavaScript | 1,514,152 B | 1,514,288 B | None; +136 B |
+| Entry JavaScript, local gzip | 444,859 B | 444,921 B | None; +62 B |
+
+This is instrumentation preparation, not a demonstrated speedup. The dormant
+optional loop boundaries account for the small entry increase. Emitted JS was
+checked for absence of `chrono-express-benchmark/v1`, `chronoBenchmark`,
+`dev-render-overlay` and `onePercentLowFps`. No production capture switch was
+added; the revised diagnostic tools remain DEV-only.
+
+### Runtime measurement blocker
+
+The fresh `cua.getState()` result was again `apps: []`, `browsers: []`.
+There was no accessible browser tab or graphics context for the game.
+Average FPS, 1% low FPS, browser frame times, startup times, heap/GC, GPU pass
+times, screenshot parity and instrumentation overhead were **not measured**.
+Synthetic test values validate arithmetic and boundaries only; they are not
+game performance measurements. No browser or dependency was installed.
+
+The plan explicitly requires a real-browser baseline before the first
+optimization. A1-A4 therefore remain pending. Collect the production baseline
+using the unchanged protocol above, with the source revision and fixed quality
+recorded. Complete A0 production/startup capture and HUD counter work, then
+compare capture overhead and collect three 60 s runs per scenario before
+claiming any runtime benefit or continuing the gated optimization work.
+
+### Revised development diagnostic interpretation
+
+The sweep remains 3 s warmup + 4 s per condition, with live simulation and a
+held camera. It now retains uncapped rAF timestamps and raw frame IDs; exports
+include mean FPS, 1% low, P50/P95/P99/max, threshold counts and raw CPU/GPU data.
+Visible slow intervals, including gaps over 500 ms, stay in the sample.
+Hidden-tab and visibility-transition frames are labeled and excluded;
+interrupted measurement attempts remain in the export and restart warmup.
+This also handles a hidden interval during which the browser ran no rAF.
+
+After completion or cancellation, use DevTools to save:
+
+```js
+copy(JSON.stringify(window.chronoBenchmark.exportResults(), null, 2))
+```
+
+`copy()` is the browser DevTools helper. Dismissing results leaves the export
+available; disposing the benchmark removes it. It contains the browser user
+agent, viewport, DPR, diagnostic toggles and render scale. Record source
+revision, GPU/driver, refresh rate, power mode, complete game settings, route
+and procedural-randomness limitations alongside the JSON; those are not
+automatically detected.
+
+CPU update is bounded by the actual loop callbacks. Scene CPU includes Three
+traversal, visibility hooks, shadow work and submission. Draw CPU includes
+viewport/clear/composer work and overlaps scene CPU; **do not add them**.
+Minimap CPU/counters include only the named icon camera, not bloom/output quads.
+Individual post CPU spans and startup readiness/compile/upload markers remain
+unimplemented A0 work. The in-game HUD FPS counter is still unchanged and uses
+simulation delta; do not use it as a baseline measurement yet.
+
+GPU samples retain unique query IDs, originating frame IDs and completion frame
+IDs. They are consumed once, with warmup/previous-condition queries deleted at
+measurement boundaries. Disjoint events invalidate the measurement attempt's
+GPU data, including already drained samples. Unsupported/missing/invalid GPU
+data is unavailable. A completed pass mean is not total frame GPU time. Query
+results still pending at condition end are counted but not waited for or
+estimated, so pass coverage can be incomplete. The pending queue is bounded;
+skipped queries and dropped results are reported in the export.
+
+### Validation evidence
+
+- Before: `npm.cmd test`: 91 passed, 0 failed/skipped/cancelled.
+- After: `npm.cmd test`: 98 passed, 0 failed/skipped/cancelled (seven new
+  diagnostic contract tests); final suite duration 33,560.5709 ms, not a benchmark.
+- `node --check`: all 126 current `src/**/*.js` modules and the new test passed.
+- `npm.cmd run build`: passed; existing large-entry chunk warning remains.
+- `node scripts/check-production.mjs`: passed, 53 files / 52 references under
+  the case-sensitive local HTTP subdirectory check. No deployment occurred.
+- No repository type-check or lint script/configuration is available. Syntax
+  checking and `git diff --check` are not substitutes for those tools.
+- Browser integration, real GPU queries, visual checks and manual user testing
+  remain pending. The new graphics/DOM tests use controlled test doubles.

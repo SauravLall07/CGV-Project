@@ -720,6 +720,7 @@ const loop = createLoop({
   scene,
   camera,
   clock,
+  instrumentation: renderOverlay,
   render(world, view) {
     benchmark?.beforeRender()
     post.render(world, view)

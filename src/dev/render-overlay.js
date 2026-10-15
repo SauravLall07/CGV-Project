@@ -18,49 +18,57 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   const gpu = createGpuTimer(renderer.getContext())
   const beginGpuQuery = gpu.begin
   // Also gates bloom/final queries made by postprocessing through this timer.
-  gpu.begin = label => measuring() && beginGpuQuery(label)
+  gpu.begin = label => measuring() && activeFrame && !activeFrame.exclusion && beginGpuQuery(label, activeFrame.frameId)
   post?.setGpuTimer(gpu)
 
   // Shadow drawing happens inside renderer.render, before the colour pass.
   // The scene query stays open until that render() returns. Post passes use
   // an orthographic camera, so they are not counted as the main view.
-  const shadowRender = renderer.shadowMap.render.bind(renderer.shadowMap)
+  const shadowRender = renderer.shadowMap.render
   renderer.shadowMap.render = function timedShadow(shadows, scene, camera) {
     const started = Boolean(camera?.isPerspectiveCamera) && gpu.begin('shadow')
-    shadowRender(shadows, scene, camera)
+    try {
+      shadowRender.call(this, shadows, scene, camera)
+    } finally {
+      if (started) gpu.endIf('shadow')
+    }
     if (!started) return
-    gpu.end()
     gpu.begin('scene')
   }
   // The minimap renders its own icon scene with an orthographic camera after
   // the main view. That pass replaces renderer.info, and it used to replace
   // the scene the light and scenery toggles walk — the icon scene has neither
   // the station lights nor `outdoor-environment`, so both toggles reported 0.
-  const render = renderer.render.bind(renderer)
+  const render = renderer.render
   let mainPass = null
   let minimapPass = { calls: 0, triangles: 0 }
   let worldScene = null
   let minimapOff = false
 
-  // One sample per animation frame that actually draws the main view.
-  // `frame` is the gap since the previous such frame. `logic` is from the
-  // callback start until the main renderer.render() begins (the loop's
-  // update callbacks, then the viewport/clear just before that call).
-  const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window)
+  // Explicit loop boundaries avoid counting loading/UI rAF callbacks as game
+  // frames. Keep the overlay's rolling display; benchmark exports raw samples.
   const frameTimes = new Float64Array(TIMING_WINDOW)
   const logicTimes = new Float64Array(TIMING_WINDOW)
   const mainTimes = new Float64Array(TIMING_WINDOW)
   const minimapTimes = new Float64Array(TIMING_WINDOW)
   let timingCount = 0
-  let previousFrameStart = 0
+  let previousTimestamp = null
   let activeFrame = null
+  let frameId = 0
+  let previousHidden = false
+  let visibilityChanged = false
+  let updateStarted = 0
+  let drawStarted = 0
+
+  function onVisibilityChange() { visibilityChanged = true }
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
   function recordFrame(sample) {
     const slot = timingCount % TIMING_WINDOW
-    frameTimes[slot] = sample.frame
-    logicTimes[slot] = sample.logic
-    mainTimes[slot] = sample.main
-    minimapTimes[slot] = sample.minimap
+    frameTimes[slot] = sample.frameMs
+    logicTimes[slot] = sample.updateCpuMs
+    mainTimes[slot] = sample.sceneCpuMs
+    minimapTimes[slot] = sample.minimapCpuMs
     timingCount += 1
   }
 
@@ -72,30 +80,33 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     return sum / n
   }
 
-  window.requestAnimationFrame = function devOverlayFrame(callback) {
-    return nativeRequestAnimationFrame(function (timestamp) {
-      if (!measuring()) {
-        previousFrameStart = 0
-        return callback(timestamp)
-      }
-      const start = performance.now()
-      const sample = {
-        frame: previousFrameStart ? start - previousFrameStart : 0,
-        logic: 0,
-        main: 0,
-        minimap: 0,
-        start,
-        sawMain: false
-      }
-      activeFrame = sample
-      try {
-        return callback(timestamp)
-      } finally {
-        if (sample.sawMain && previousFrameStart) recordFrame(sample)
-        if (sample.sawMain) previousFrameStart = start
-        if (activeFrame === sample) activeFrame = null
-      }
-    })
+  function beginFrame(timestamp) {
+    if (!measuring()) {
+      previousTimestamp = null
+      activeFrame = null
+      return
+    }
+    const hidden = document.hidden
+    const exclusion = hidden ? 'hidden' : previousHidden || visibilityChanged ? 'visibility-transition' : null
+    activeFrame = {
+      frameId: ++frameId, timestampMs: timestamp,
+      frameMs: previousTimestamp == null ? 0 : timestamp - previousTimestamp,
+      updateCpuMs: 0, sceneCpuMs: 0, drawCpuMs: 0, minimapCpuMs: 0,
+      hidden, exclusion, sawMain: false
+    }
+    previousTimestamp = timestamp
+    previousHidden = hidden
+    visibilityChanged = false
+  }
+
+  function resetMeasurements() {
+    gpu.reset()
+    timingCount = 0
+    previousTimestamp = null
+    activeFrame = null
+    accum = 0
+    frames = 0
+    fps = 0
   }
 
   renderer.render = function (scene, camera) {
@@ -103,30 +114,32 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     // Only the inset map is optional. Bloom and the grade draw with
     // orthographic quads; skipping every non-perspective camera kills them.
     if (!perspective && minimapOff && camera?.name === 'minimap') {
-      if (activeFrame) activeFrame.minimap = 0
+      if (activeFrame) activeFrame.minimapCpuMs = 0
       minimapPass = { calls: 0, triangles: 0 }
       return
     }
 
     if (perspective) worldScene = scene
     if (!measuring()) {
-      render(scene, camera)
+      render.call(this, scene, camera)
       return
     }
 
-    if (perspective && activeFrame && !activeFrame.sawMain) {
-      activeFrame.logic = performance.now() - activeFrame.start
-    }
-
+    const isMinimap = camera?.name === 'minimap'
+    const mapQuery = isMinimap && gpu.begin('minimap')
     const started = performance.now()
-    render(scene, camera)
-    if (perspective) gpu.endIf('scene')
+    try {
+      render.call(this, scene, camera)
+    } finally {
+      if (perspective) gpu.endIf('scene')
+      if (mapQuery) gpu.endIf('minimap')
+    }
     const elapsed = performance.now() - started
 
     if (perspective) {
       worldScene = scene
       if (activeFrame) {
-        activeFrame.main = elapsed
+        activeFrame.sceneCpuMs += elapsed
         activeFrame.sawMain = true
       }
       mainPass = {
@@ -138,7 +151,10 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       return
     }
 
-    if (activeFrame) activeFrame.minimap = elapsed
+    // Postprocessing also uses orthographic cameras. Only the named icon
+    // camera belongs in minimap CPU/counters.
+    if (!isMinimap) return
+    if (activeFrame) activeFrame.minimapCpuMs += elapsed
     minimapPass = {
       calls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles
@@ -427,12 +443,13 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       `render scale ${Math.round(ratio / Math.min(window.devicePixelRatio, 1.25) * 100)}%`,
       `frame    ${ms(frameTimes)}`,
       `update   ${ms(logicTimes)}`,
-      `render   ${ms(mainTimes)}`,
+      `scene CPU (traversal + shadow + submission) ${ms(mainTimes)}`,
       `minimap  ${ms(minimapTimes)}`,
       `gpu shadow  ${gpuMs('shadow')}`,
       `gpu scene   ${gpuMs('scene')}`,
       `gpu bloom   ${gpuMs('bloom')}`,
       `gpu final   ${gpuMs('final')}`,
+      `gpu minimap ${gpuMs('minimap')}`,
       `draw calls  ${pass.calls}`,
       `triangles   ${pass.triangles}`,
       `geometries  ${pass.geometries}`,
@@ -453,7 +470,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     panel.style.display = measuring() ? 'block' : 'none'
     accum = 0
     frames = 0
-    previousFrameStart = 0
+    previousTimestamp = null
     if (measuring()) paint()
   }
 
@@ -641,8 +658,9 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     // effect above, but pause GPU queries, polling and text work when hidden.
     // Any outstanding query results are drained on the next visible run.
     if (!measuring()) return
-    gpu.poll()
-    accum += delta
+    gpu.poll(activeFrame?.frameId ?? null)
+    if (!activeFrame || activeFrame.exclusion || activeFrame.frameMs <= 0) return
+    accum += activeFrame.frameMs / 1000
     frames += 1
     if (accum < 0.5) return
     fps = Math.round(frames / accum)
@@ -652,6 +670,21 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   }
 
   return {
+    beginFrame,
+    beginUpdate() { if (activeFrame) updateStarted = performance.now() },
+    endUpdate() { if (activeFrame) activeFrame.updateCpuMs = performance.now() - updateStarted },
+    beginDraw() { if (activeFrame) drawStarted = performance.now() },
+    endDraw() { if (activeFrame) activeFrame.drawCpuMs = performance.now() - drawStarted },
+    endFrame() {
+      if (activeFrame?.sawMain && !activeFrame.exclusion && activeFrame.frameMs > 0) recordFrame(activeFrame)
+      activeFrame = null
+    },
+    resetMeasurements,
+    takeGpuSamples() {
+      gpu.poll(activeFrame?.frameId ?? null)
+      return gpu.drain()
+    },
+    gpuStatus: gpu.status,
     update,
     captureToggles,
     applyToggles,
@@ -661,13 +694,12 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       syncVisibility()
     },
     sampleFrame() {
-      return { frameMs: activeFrame?.frame ?? 0, cpuMs: activeFrame?.logic ?? 0,
-        gpuSceneMs: gpu.supported ? gpu.average('scene') : null }
+      return activeFrame ? { ...activeFrame } : null
     },
     dispose() {
       for (const target of keyTargets) target.removeEventListener('keydown', onKeyDown, true)
       if (window.devTeleport === devTeleport) delete window.devTeleport
-      window.requestAnimationFrame = nativeRequestAnimationFrame
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       const restoreRatio = pixelRatioForced
       const restoreShadows = shadowsOff
       pixelRatioForced = false
@@ -684,7 +716,9 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       syncGlows()
       syncUnlit()
       renderer.render = render
+      renderer.shadowMap.render = shadowRender
       post?.setGpuTimer(null)
+      gpu.dispose()
       panel.remove()
     }
   }
