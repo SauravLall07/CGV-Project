@@ -6,10 +6,12 @@
 // deck. The optional FPS counter is driven from the same settings store.
 
 import { bindingLabel, settings } from '../core/settings.js'
+import { createCinematicSkip } from './cinematic-skip.js'
 
 export function createHud() {
   const root = document.createElement('div')
   root.id = 'hud'
+  const cinematicSkip = createCinematicSkip(root)
   Object.assign(root.style, {
     position: 'fixed',
     inset: '0',
@@ -1116,6 +1118,7 @@ export function createHud() {
   }
 
   function dispose() {
+    cinematicSkip.dispose()
     clearTimeout(toastTimer)
     clearTimeout(briefingTimer)
     hideTutorial({ clearQueue: true })
@@ -1129,6 +1132,8 @@ export function createHud() {
   // main.js having to mirror the same values a second time.
   return {
     root,
+    showCinematicSkip: cinematicSkip.show,
+    hideCinematicSkip: cinematicSkip.hide,
     setObjective,
     showToast,
     showBriefing,

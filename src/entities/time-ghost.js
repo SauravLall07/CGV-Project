@@ -210,6 +210,10 @@ export function createTimeGhost() {
     update,
     isOccupying,
     isPlaying: () => isPlaying,
+    // Read-only presentation data: use the replay's real clock rather than a
+    // second countdown that can drift through pause, cancellation or reset.
+    getRemainingSeconds: () => !isPlaying || trajectory.length < 2 ? 0 : Math.max(0,
+      Math.max(0, trajectory[trajectory.length - 1].time - trajectory[0].time) + HOLD_SECONDS - playbackTime),
     getPosition: () => group.position,
     dispose
   }
