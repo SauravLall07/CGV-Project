@@ -238,6 +238,8 @@ export function createThirdPersonCamera(camera, domElement) {
     // look angles in both views, so switching never changes where you face.
     getYaw: () => yaw,
     getPitch: () => pitch,
+    // Actual wall-clamped orbit distance for close-range avatar visibility.
+    getDistance: () => distance,
     get isEnabled() { return enabled }
   }
 }

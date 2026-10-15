@@ -17,8 +17,24 @@ export function createLandingScene() {
   const facadeColliders = buildFacade(group, materials, stats)
   const forecourt = buildForecourt(group, materials, stats)
 
+  // Keep tiny forecourt details out of the camera obstruction test, but do
+  // NOT ignore the station's physical façade. Previously every façade mesh
+  // was exempt, allowing the orbit camera to pass through walls and doors
+  // and reveal the station interior from the street.
+  const facadeCameraObstacles = new Set([
+    'landing-brick',
+    'landing-stone',
+    'landing-stone-trim',
+    'landing-roof',
+    'landing-doors',
+    'landing-door-glass',
+    'landing-arch-glass',
+    'landing-hall-glow',
+    'landing-canopy',
+    'landing-canopy-pier'
+  ])
   group.traverse((node) => {
-    node.userData.noCameraCollision = true
+    node.userData.noCameraCollision = !facadeCameraObstacles.has(node.name)
     if (node.isLight) node.castShadow = false
   })
 
