@@ -59,6 +59,19 @@ Validate live state/reset/cancellation/expiry and geometry alignment plus existi
 traversal/retry/alternate solutions. Keep R1 and R2-R4 rendered/performance/human
 acceptance pending. Do not begin R6 or claim difficulty improved without playtests.
 
+## R6 scope (2026-10-15, recorded before editing)
+
+Authorized R6 only. Preserve the uncommitted R5 source/tests/handover and untracked
+`state/` directory. Refine rack footprint and right-to-centre floor guidance,
+identify the brake/track danger, and frame locomotive plus both broken-span edges
+in the existing reveal. Preserve 6.2 m/s wave, 12 m lead, all energy/gameplay
+parameters, 2.5 s deceleration and 4.8 s reveal. Add L3-owned procedural mechanical
+warning, rumble/stasis hush and brake/settling audio through existing master gain;
+inspect/reuse existing audio conventions, with no external asset/credit changes.
+Use optional presentation-pause forwarding for lifecycle safety, without changing
+Level 2. No roof traversal, new effects/lights or R7 integration. Browser inventory
+is still empty; R1 and R2-R5 rendered/performance/human checks remain pending.
+
 ## Intended experience
 
 Level 2 teaches time manipulation. Level 3 tests recognition, preparation,

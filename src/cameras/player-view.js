@@ -14,6 +14,7 @@
 
 import { createThirdPersonCamera } from './third-person-camera.js'
 import { createFirstPersonCamera } from './first-person-camera.js'
+import { setWreckStopShot } from './wreck-stop-shot.js'
 
 export const VIEW_MODES = { THIRD: 'third', FIRST: 'first' }
 
@@ -82,8 +83,7 @@ export function createPlayerView({ camera, domElement, player, hud }) {
     // Level owns the brake reveal only while input/follow are suspended.
     showWreckStop(target, seconds) {
       player.mesh.visible = true
-      camera.position.set(10, 6, target.z - 13 - Math.min(seconds, 3))
-      camera.lookAt(target.x, 0.8, target.z - 5)
+      setWreckStopShot(camera, target, seconds)
     },
     snap,
     reset,

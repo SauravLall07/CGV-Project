@@ -508,7 +508,9 @@ function getInputState() {
 }
 
 function syncInputState() {
-  const enabled = getInputState() === 'PLAYING' && !benchmark?.isHolding()
+  const state = getInputState()
+  levelManager.setPresentationPaused(state !== 'PLAYING' && state !== 'CINEMATIC')
+  const enabled = state === 'PLAYING' && !benchmark?.isHolding()
   keyboard.setEnabled(enabled)
   interaction.setEnabled(enabled)
   playerView.setEnabled(enabled)
