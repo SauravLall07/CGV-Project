@@ -374,9 +374,8 @@ export function dressBridgePassage(group, colliders) {
   d.lantern(rSouth, -71.4)
   d.sign(rSouth, -71.4, 3.7, 'PLATFORMS  \u2192', 1.4)
 
-  // The laser passage (reference 03): caged bulkheads, pipes, the window
-  // onto the platform. Its floor is all laser rows, so the stencilled
-  // crates and the loaded trolley stand in the rooms at either end.
+  // The former laser-floor passage: caged bulkheads, pipes, and the window
+  // onto the platform. The corridor remains open for normal traversal.
   d.room('Passageway 3 laser passage')
   const hSouth = wall('x', -51.28, 1, floor)
   const hNorth = wall('x', -46.72, -1, floor)
