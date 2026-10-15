@@ -4,14 +4,26 @@ import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
 import { createLightPool } from '../core/light-pool.js'
+import { createWreckVisibility, installWreckVisibility } from '../environment/wreck-visibility.js'
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
+import { createWreckRoutes, createPassengerRack } from './timewreck-routes.js'
+import { createWreckSpatial } from './timewreck-spatial.js'
+import { createWreckConnector } from './timewreck-connector.js'
+import { createWreckFeedback } from './timewreck-feedback.js'
+import { createSecurityCrossing } from './timewreck-security.js'
+import { createRelayFeedback } from './timewreck-relay-feedback.js'
+import { createWreckAudio } from '../systems/wreck-audio.js'
+import { createWreckHazardAudio } from '../systems/wreck-hazard-audio.js'
+import { createExpansionHazards } from './timewreck-expansion-hazards.js'
+import { signMaterial } from '../environment/textures.js'
+import { addPassengerGuidance } from '../environment/passenger-guidance.js'
+import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
 import {
-  DASH_DOOR_TIMING,
   createCarriageShake,
   createStormDebris,
   createLampMotion,
@@ -103,6 +115,13 @@ function createEmergencyBrake() {
   )
   plate.position.set(0, 0.86, 0.22)
   brake.add(plate)
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.28), signMaterial({
+    text: 'EMERGENCY BRAKE', emissiveIntensity: 0.25
+  }))
+  label.name = 'emergency-brake-sign'
+  label.position.set(0, 1.95, 0.24)
+  label.userData.noCameraCollision = true
+  brake.add(label)
 
   const pivot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.22, 12), steelMat)
   pivot.rotation.z = Math.PI / 2
@@ -150,7 +169,7 @@ function createEmergencyBrake() {
 }
 
 export function createTimewreckLevel({
-  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic
+  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic, startCarriage = null
 }) {
   // Level 3 is the "unstable" end of the scale — the shaders read this.
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.8)
@@ -207,13 +226,15 @@ export function createTimewreckLevel({
   })
 
   const unregisters = []
+  const wreckAudio = createWreckAudio()
+  const hazardAudio = createWreckHazardAudio()
   unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds }
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
 
   let failCooldown = 0
   const LEVEL_OBJECTIVE = 'The Chrono Core is tearing the train apart — escape to the locomotive'
-  const COLLAPSE_HINT = 'Freeze the tile — then hold W + Shift'
+  const COLLAPSE_HINT = `Freeze the marked floor with ${bindingLabel(settings.getBinding('freeze'))}, then sprint across its centre`
   const COLLAPSE_HINT_S = 4.6
   let collapseHintHoldUntil = -1
   let pendingToast = null
@@ -288,6 +309,9 @@ export function createTimewreckLevel({
     const floorStrip = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.03, 0.42), vaultPlateMat)
     floorStrip.position.set(0, 0.02, 0)
     group.add(floorStrip)
+    const signal = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.08), new THREE.MeshBasicMaterial({ color: 0xe49a30 }))
+    signal.name = 'vault-clearance-signal'
+    signal.position.set(1.9, 2.6, 0.15); group.add(signal)
     const beams = VAULT_BEAM_BASES.map((baseY) => {
       const mesh = new THREE.Mesh(
         new THREE.CylinderGeometry(VAULT_BEAM_RADIUS, VAULT_BEAM_RADIUS, VAULT_BEAM_LENGTH, 12),
@@ -316,7 +340,7 @@ export function createTimewreckLevel({
     group.add(wash)
     group.traverse((node) => { node.userData.noCameraCollision = true })
     root.add(group)
-    return { z, phase, speed, laserMat, beams, wash, plateMat: vaultPlateMat }
+    return { z, phase, speed, laserMat, beams, wash, signal, plateMat: vaultPlateMat }
   }
 
   const vaultGates = [
@@ -329,6 +353,12 @@ export function createTimewreckLevel({
     for (const gate of vaultGates) {
       const lift = (0.5 + 0.5 * Math.sin(vaultGateT * gate.speed + gate.phase)) * VAULT_BEAM_LIFT
       if (gate.laserMat.customUniforms) gate.laserMat.customUniforms.uTime.value += dt
+      const standingClear = VAULT_BEAM_BASES[0] + lift - VAULT_HIT_HALF_Y > VAULT_BODY_HEIGHT
+      gate.signal.material.color.setHex(standingClear ? 0x42dfad : 0xe49a30)
+      // Same lamp/mesh: horizontal bar = standing clearance, upright = wait.
+      // Shape remains readable when colour is hard to distinguish; Freeze
+      // preserves the actual clearance pose rather than disabling damage.
+      gate.signal.scale.set(standingClear ? 1.7 : 0.55, standingClear ? 0.55 : 1.7, 1)
       const openAmt = lift / VAULT_BEAM_LIFT
       gate.wash.intensity = 0.7 + (1 - openAmt) * 2.4
       vaultPostMat.emissiveIntensity = 0.18 + (1 - openAmt) * 0.35
@@ -341,7 +371,7 @@ export function createTimewreckLevel({
         for (const emitter of beam.emitters) emitter.position.y = y
         if (!playerPos) continue
         const overlapsBody = (y + VAULT_HIT_HALF_Y) > playerPos.y
-          && (y - VAULT_HIT_HALF_Y) < playerPos.y + VAULT_BODY_HEIGHT
+          && (y - VAULT_HIT_HALF_Y) < playerPos.y + (player.isCrouching() ? 1.15 : VAULT_BODY_HEIGHT)
         const inSlice = Math.abs(playerPos.z - gate.z) <= VAULT_HIT_HALF_Z
         const inWidth = Math.abs(playerPos.x) <= VAULT_BEAM_LENGTH / 2
         if (overlapsBody && inSlice && inWidth) {
@@ -349,6 +379,12 @@ export function createTimewreckLevel({
         }
       }
     }
+  }
+
+  // Brass observation spots are outside both laser body slices.
+  for (const z of [spans.vault.center + 0.8, spans.vault.center - 2.9]) {
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.015, 0.9), new THREE.MeshStandardMaterial({ color: 0x315954, emissive: 0x296458, emissiveIntensity: 0.4 }))
+    pad.name = 'vault-safe-observation'; pad.position.set(0, 0.01, z); root.add(pad)
   }
 
   // Convergence — electrical surges across the aisle. The ladder is at this
@@ -582,7 +618,7 @@ export function createTimewreckLevel({
     root.add(group)
 
     const surge = {
-      z, side, offset, period, danger,
+      group, z, side, offset, period, danger,
       panelMat, light, panelLight, glowMat, coreMat, hazeMat, sparkMat, sparkPos, sparks,
       coreSegs, glowSegs,
       boltSeed: -1, boltMode: ''
@@ -591,13 +627,11 @@ export function createTimewreckLevel({
     return surge
   }
 
-  // ~30% faster cycles; offsets keep the three arcs out of phase so a single
-  // Slow burst rarely clears the whole car.
-  const electricalSurges = [
-    createElectricalSurge(spans.convergence.center + 8, 1, 0, 3.2, 1.85),
-    createElectricalSurge(spans.convergence.center - 4, -1, 1.05, 3.15, 2.05),
-    createElectricalSurge(spans.convergence.center - 14, 1, 2.0, 3.05, 2.2)
-  ]
+  // One short fork: a close direct surge window or a shielded shutter passage.
+  const electricalSurges = [createElectricalSurge(spans.convergence.center + 4, -1, 0, 3.6, 2.05)]
+  // Only the direct aisle is electrified; the brass partition shields maintenance.
+  electricalSurges[0].group.scale.x = 0.59
+  electricalSurges[0].group.position.x = -0.72
 
   function updateSurgeSparks(surge, seed, active, strong) {
     const arr = surge.sparkPos
@@ -664,35 +698,20 @@ export function createTimewreckLevel({
       if (!dangerous || !playerPos) continue
       const overlapsBody = playerPos.y < 1.67 && playerPos.y + 1.85 > 0.43
       const inSlice = Math.abs(playerPos.z - surge.z) <= SURGE_HIT_HALF_Z
-      const inWidth = Math.abs(playerPos.x) <= 2.1
+      const inWidth = playerPos.x < 0.78 && playerPos.x > -2.6
       if (overlapsBody && inSlice && inWidth) {
         failSoft('An electrical surge caught you!')
       }
     }
   }
 
-  // Relay blast doors. The clock uses envDt, so Slow, Freeze and Rewind
-  // move the whole cycle — leaves and warning light — together. Close is a
-  // fast slam after a long readable warning so Freeze is the reliable cross.
-  // Short open + clear warning, then a hard slam. Freeze during the open/warn
-  // window is the reliable cross; waiting it out is tight.
-  //
-  // Open-hold only — independent of atmosphere shake/debris/lights/handles.
-  // Disable via DASH_DOOR_TIMING.enabled in timewreck-atmosphere.js (reverts to 0.28).
-  const BLAST_OPEN_S = DASH_DOOR_TIMING.enabled ? DASH_DOOR_TIMING.openHoldSeconds : 0.28
-  const BLAST_WARN_S = 0.4
-  // Slam duration — shorter = door closes faster (challenge bump).
-  const BLAST_CLOSE_S = 0.11
-  const BLAST_SHUT_S = 0.3
-  const BLAST_REOPEN_S = 0.55
-  const BLAST_CYCLE_S = BLAST_OPEN_S + BLAST_WARN_S + BLAST_CLOSE_S + BLAST_SHUT_S + BLAST_REOPEN_S
-  const BLAST_LEAF_HALF_X = 0.75
-  const BLAST_LEAF_HALF_Z = 0.18
-  const BLAST_LEAF_TOP = 2.8
+  // Relay spring release follows Ghost's real-time clock, independently of shared modes.
   const doorZ = spans.relay.center - 2.6
-  let blastT = 0
+  const releasePos = new THREE.Vector3(0, 0.03, doorZ + 4.6)
+  const catchZ = doorZ - 1.8
+  let relayLatched = false
+  let relayOpen = 0
   let blastSlam = 0
-  let blastWasClosing = false
 
   // Vintage teal/brass door leaves — same leaf dims / motion / hits as before.
   // Warm amber warning accents (readable) replace flat industrial red.
@@ -785,94 +804,112 @@ export function createTimewreckLevel({
   blastDoors.traverse((node) => { node.userData.noCameraCollision = true })
   root.add(blastDoors)
 
+  // Low brass/teal operator platform reuses L2's footprint and occupancy height.
+  const releasePlatform = new THREE.Group()
+  releasePlatform.name = 'relay-emergency-platform'
+  releasePlatform.position.copy(releasePos)
+  blastBox(releasePlatform, 1.22, 0.04, 1.22, blastSteel, 0, -0.02, 0)
+  const releaseDeck = blastBox(releasePlatform, 1.08, 0.02, 1.08, blastPlate, 0, 0, 0)
+  for (const x of [-0.46, 0.46]) {
+    blastBox(releasePlatform, 0.06, 0.025, 0.9, blastScar, x, 0.02, 0)
+    for (const y of [0.01, 0.04, 0.07]) {
+      const spring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.018, 6, 12), blastSteel)
+      spring.rotation.x = Math.PI / 2
+      spring.position.set(x * 1.4, y, 0)
+      releasePlatform.add(spring)
+    }
+  }
+  root.add(releasePlatform)
+  const releaseLinkage = blastBox(blastDoors, 0.045, 0.045, 4.6, blastSteel, -0.69, 0.04, doorZ + 2.3)
+  unregisters.push(timeSystem.registerGhostPad(releasePos, 0.56))
+
+  const manualCatch = new THREE.Group()
+  manualCatch.name = 'relay-manual-catch'
+  manualCatch.position.set(0.8, 1.05, catchZ)
+  blastBox(manualCatch, 0.38, 0.48, 0.22, blastPlate, 0, 0, 0)
+  const catchHandle = blastBox(manualCatch, 0.3, 0.07, 0.12, blastSteel, 0, 0.12, 0.18)
+  root.add(manualCatch)
+  const relayFeedback = createRelayFeedback({ doors: blastDoors, linkage: releaseLinkage,
+    doorZ, catchZ, brass: blastSteel })
+  let relayHeld = false
+  let relayEchoRemaining = 0
   const blastObstacles = [
-    { minX: -2.6, maxX: -1.1, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
-    { minX: 1.1, maxX: 2.6, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 }
+    { minX: -INTERIOR_HALF_WIDTH, maxX: -1.1, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
+    { minX: 1.1, maxX: INTERIOR_HALF_WIDTH, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
+    { minX: 0, maxX: 0, minZ: doorZ - 0.18, maxZ: doorZ + 0.18 },
+    { minX: 0, maxX: 0, minZ: doorZ - 0.18, maxZ: doorZ + 0.18 }
   ]
 
-  function updateBlastDoors(dt, playerPos) {
-    blastT = ((blastT + dt) % BLAST_CYCLE_S + BLAST_CYCLE_S) % BLAST_CYCLE_S
-    let closeAmount = 0
-    let lampEi = 0.12
-    let lightI = 0.45
-    let fillI = 0.15
-    const warnStart = BLAST_OPEN_S
-    const closeStart = warnStart + BLAST_WARN_S
-    const shutStart = closeStart + BLAST_CLOSE_S
-    const reopenStart = shutStart + BLAST_SHUT_S
-    const closing = blastT >= closeStart && blastT < shutStart
-    if (blastT < warnStart) {
-      closeAmount = 0
-    } else if (blastT < closeStart) {
-      closeAmount = 0
-      const flick = 0.5 + 0.5 * Math.sin(blastT * 18 * Math.PI)
-      lampEi = 0.45 + flick * 2.6
-      lightI = 1.2 + flick * 14
-      fillI = 0.8 + flick * 4
-    } else if (blastT < shutStart) {
-      // Ease-in slam: slow start, then hard close into the centre.
-      const u = (blastT - closeStart) / BLAST_CLOSE_S
-      closeAmount = u * u * u
-      const pulse = 0.5 + 0.5 * Math.sin(blastT * 14 * Math.PI)
-      lampEi = 2.0 + pulse * 0.8
-      lightI = 8 + pulse * 6
-      fillI = 4 + pulse * 3
-    } else if (blastT < reopenStart) {
-      closeAmount = 1
-      const pulse = 0.5 + 0.5 * Math.sin(blastT * 4 * Math.PI)
-      lampEi = 1.7 + pulse * 0.35
-      lightI = 8 + pulse * 2
-      fillI = 2.5
-    } else {
-      const u = (blastT - reopenStart) / BLAST_REOPEN_S
-      const eased = u * u * (3 - 2 * u)
-      closeAmount = 1 - eased
-      const pulse = 0.5 + 0.5 * Math.sin(blastT * 8 * Math.PI)
-      const urgency = 1 - eased
-      lampEi = 0.12 + urgency * (1.4 + pulse * 0.6)
-      lightI = 0.45 + urgency * (6 + pulse * 3)
-      fillI = 0.15 + urgency * 2
+  function applyRelay() {
+    const close = 1 - relayOpen
+    blastLeft.position.x = -1.85 + 1.1 * close
+    blastRight.position.x = 1.85 - 1.1 * close
+    for (const [i, leaf] of [blastLeft, blastRight].entries()) {
+      Object.assign(blastObstacles[i + 2], {
+        minX: leaf.position.x - 0.75, maxX: leaf.position.x + 0.75
+      })
     }
-    if (blastWasClosing && !closing && closeAmount >= 0.99) {
-      blastSlam = 1
-      slamSparks.material.opacity = 0.85
-    }
-    blastWasClosing = closing
-
-    blastSparkMat.emissiveIntensity = lampEi > 0.4 ? lampEi * 0.85 : 0.15
-    blastLampMat.emissiveIntensity = lampEi
-    blastSteel.emissiveIntensity = 0.12 + Math.min(0.45, lightI * 0.04)
-    blastLight.intensity = lightI
-    blastFillL.intensity = fillI
-    blastFillR.intensity = fillI
-    blastLamp.scale.setScalar(1 + Math.min(0.35, lampEi * 0.08))
-
-    const leftX = -1.85 + 1.1 * closeAmount
-    const rightX = 1.85 - 1.1 * closeAmount
-    blastLeft.position.x = leftX
-    blastRight.position.x = rightX
-    // Slight Z shudder during the slam window.
-    const shudder = closing ? Math.sin(blastT * 80) * 0.012 * closeAmount : 0
-    blastLeft.position.z = doorZ + shudder
-    blastRight.position.z = doorZ - shudder
-    for (const ram of blastRams) {
-      ram.mesh.position.x = ram.side * (1.55 - closeAmount * 0.35)
-    }
-
-    if (!playerPos) return
-    const bodyTop = playerPos.y + 1.85
-    const bodyBottom = playerPos.y
-    const pad = 0.18
-    const inSlab = Math.abs(playerPos.z - doorZ) < BLAST_LEAF_HALF_Z + pad
-      && bodyTop > 0 && bodyBottom < BLAST_LEAF_TOP
-    const hitLeft = Math.abs(playerPos.x - leftX) < BLAST_LEAF_HALF_X + pad
-    const hitRight = Math.abs(playerPos.x - rightX) < BLAST_LEAF_HALF_X + pad
-    if (inSlab && (hitLeft || hitRight)) failSoft('The blast doors caught you!')
+    for (const ram of blastRams) ram.mesh.position.x = ram.side * (1.55 - close * 0.35)
+    catchHandle.rotation.z = relayLatched ? -0.8 : 0
+    relayFeedback.update(relayHeld, relayEchoRemaining, relayLatched)
+    blastLampMat.emissive.setHex(relayLatched ? 0x55ff99 : relayOpen > 0.9 ? 0x38bdf8 : 0xffb060)
+    blastLampMat.emissiveIntensity = relayLatched ? 1.2 : 0.5 + relayOpen
+    blastLight.intensity = 0.6 + relayOpen * 1.2
+    blastFillL.intensity = blastFillR.intensity = 0.3
   }
 
+  unregisters.push(interaction.register(manualCatch, {
+    prompt: 'Latch emergency fire door open',
+    range: 1.6,
+    isEligible: () => !relayLatched && player.mesh.position.z < doorZ - 0.55 &&
+      Math.abs(player.mesh.position.y) < 0.25,
+    onInteract() {
+      if (relayLatched || player.mesh.position.z >= doorZ - 0.55 ||
+          Math.abs(player.mesh.position.y) >= 0.25 ||
+          Math.hypot(player.mesh.position.x - 0.8, player.mesh.position.z - catchZ) > 1.6) return
+      // The manual catch can recover an expired echo after the player crosses.
+      relayLatched = true
+      relayOpen = 1
+      applyRelay()
+      lastCheckpointZ = Math.min(lastCheckpointZ, catchZ)
+      respawn.setCheckpoint(new THREE.Vector3(0, 0, catchZ), Math.PI, {
+        restore: captureCheckpointRestore(catchZ)
+      })
+      hud.showToast('FIRE DOOR LATCHED - passage secured. Checkpoint saved.', 3000)
+    }
+  }))
+
+  function updateBlastDoors(dt, playerPos) {
+    const playerOnRelease = Math.abs(playerPos.y - releasePos.y) < 0.25 &&
+      Math.abs(playerPos.x - releasePos.x) < 0.56 && Math.abs(playerPos.z - releasePos.z) < 0.56
+    const ghost = timeSystem.getGhost()
+    const echoOnRelease = ghost.isOccupying(releasePos, 0.56)
+    const held = playerOnRelease || echoOnRelease
+    relayHeld = held
+    relayEchoRemaining = echoOnRelease && !playerOnRelease ? ghost.getRemainingSeconds() : 0
+    const target = relayLatched || held ? 1 : 0
+    // A closing door waits at its current pose while a body clears the seam.
+    // It never opens a shut door merely because someone approaches it.
+    const inSeam = Math.abs(playerPos.z - doorZ) < 0.55
+    if (target || !inSeam) {
+      relayOpen = THREE.MathUtils.clamp(relayOpen + (target ? dt / 0.4 : -dt / 0.45), 0, 1)
+    }
+    releaseDeck.position.y = held ? -0.015 : 0
+    applyRelay()
+  }
+  applyRelay()
+
   const checkpointZs = [
-    spans.mechanical.maxZ - 1.5,
+    spans.convergence.center + 11,
+    spans.convergence.center - 3,
+    spans.convergence.minZ + 3,
+    spans.mechanical.maxZ - 2.5,
+    spans.mechanical.center + 2.7,
+    spans.mechanical.center - 2,
     spans.cargo.maxZ - 1.5,
+    spans.cargo.center - 4.2,
+    spans.cargo.minZ + 1.5,
+    spans.relay.maxZ - 1.5,
     spans.security.maxZ - 1.5,
     spans.passenger.maxZ - 1.5
   ]
@@ -974,8 +1011,8 @@ export function createTimewreckLevel({
     return head
   }
 
-  // Offsets from the Mechanical car's centre, keeping the original spacing.
-  for (const [dz, phase] of [[3, 0], [-1, 2.1], [-5, 4.2]]) {
+  // Leave protected switching floor between the first bank and the shutter.
+  for (const [dz, phase] of [[7, 0], [-6, 2.1], [-10, 4.2]]) {
     const z = spans.mechanical.center + dz
     const rail = new THREE.Mesh(
       new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2, 0.1, 0.16),
@@ -990,7 +1027,7 @@ export function createTimewreckLevel({
     rams.push({ head, phase, z })
   }
 
-  // Retune existing Mechanical fills: warm amber aisle + one violet storm accent.
+  // Existing Mechanical fills: warm practical aisle + cool exterior at damage.
   // Same light count — no new PointLights.
   for (const [dz, intensity] of [[6, 5.5], [0, 7.2], [-6, 5.5]]) {
     const mechFill = new THREE.PointLight(0xffc090, intensity, 11, 2)
@@ -998,8 +1035,8 @@ export function createTimewreckLevel({
     mechFill.userData.noCameraCollision = true
     root.add(mechFill)
   }
-  const mechAccent = new THREE.PointLight(0xa78bfa, 3.8, 9, 2)
-  mechAccent.position.set(1.2, 1.8, spans.mechanical.center - 2)
+  const mechAccent = new THREE.PointLight(0x9bb9cf, 3.8, 9, 2)
+  mechAccent.position.set(-2.25, 2.6, spans.mechanical.center + 3.4)
   mechAccent.userData.noCameraCollision = true
   root.add(mechAccent)
   root.add(ramBank)
@@ -1020,15 +1057,28 @@ export function createTimewreckLevel({
     restoreSnapshot: (s) => { ramT = s.ramT; applyRams() }
   }))
 
+  const connector = createWreckConnector({ root, spans, player, timeSystem, unregisters,
+    warn() {
+      wreckAudio.snap()
+      hud.showToast(`Connector hinges are buckling. Cross now, or retreat and ${bindingLabel(settings.getBinding('rewind'))} repair, then ${bindingLabel(settings.getBinding('freeze'))} hold the flat deck.`, 5000)
+    }
+  })
+  const spatial = createWreckSpatial({ root, spans, player, obstacles: blastObstacles })
+  // N4's intact Convergence floor support must stop at the new real lip.
+  spatial.supports.find(s => s.minZ === spans.convergence.minZ).minZ = connector.gap.maxZ
+  const wreckRoutes = createWreckRoutes({ root, spans, player, timeSystem, unregisters, obstacles: blastObstacles })
+
   // ============================================================
   // CARGO — TIME-LOOP CAR: a scripted open/close/fall/rewind cycle
   // ============================================================
   const LOOP_PERIOD = 9
   const loopDoorZ = spans.cargo.center + 2
   const loopBeamZ = spans.cargo.center - 2
+  const cargoGap = cargoGangwayLayout(spans.cargo.center, WRECK_WALL_X)
+  cutCargoGangwayFloor(root.getObjectByName('floor-cargo'), spans.cargo, cargoGap)
 
-  // Cargo walkway: same footprint as the old rail bed — restyled as broken wood
-  // planks with brass trim and cyan fracture edges (collision/layout unchanged).
+  // Retain the wood/brass dressing on the intact approach and landing, but
+  // split every deck layer at the gangway opening so the void is visible.
   const cargoTrackLen = spans.cargo.maxZ - spans.cargo.minZ - 0.8
   const cargoTrackZ0 = spans.cargo.center
   const cargoTracks = new THREE.Group()
@@ -1048,41 +1098,72 @@ export function createTimewreckLevel({
     color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
   })
 
-  const deck = new THREE.Mesh(
-    new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2 - 0.35, cargoTrackLen),
-    plankMat
-  )
-  deck.name = 'cargo-wood-deck'
-  deck.rotation.x = -Math.PI / 2
-  deck.position.y = 0.02
-  deck.receiveShadow = true
-  cargoTracks.add(deck)
+  const cargoDeckSegments = [
+    [-cargoTrackLen / 2, cargoGap.minZ - cargoTrackZ0],
+    [cargoGap.maxZ - cargoTrackZ0, cargoTrackLen / 2]
+  ]
+  for (const [from, to] of cargoDeckSegments) {
+    const deck = new THREE.Mesh(
+      new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2 - 0.35, to - from), plankMat
+    )
+    deck.name = 'cargo-wood-deck'
+    deck.rotation.x = -Math.PI / 2
+    deck.position.set(0, 0.02, (from + to) / 2)
+    deck.receiveShadow = true
+    cargoTracks.add(deck)
+  }
 
   const sleeperStep = 0.72
   const halfLen = cargoTrackLen * 0.5
   for (let z = -halfLen + 0.4; z <= halfLen - 0.4; z += sleeperStep) {
+    if (z + cargoTrackZ0 + 0.28 > cargoGap.minZ && z + cargoTrackZ0 - 0.28 < cargoGap.maxZ) continue
     const plank = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.5, 0.06, 0.55), plankDarkMat)
     plank.position.set(0, 0.05, z)
     plank.receiveShadow = true
     cargoTracks.add(plank)
   }
-  // Brass side rails + cyan broken-edge cues (2 long strips — cheap).
+  // Brass side rails + cyan broken-edge cues, interrupted at the opening.
   for (const side of [-1, 1]) {
-    const brass = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.05, cargoTrackLen - 0.3),
-      plankBrassMat
-    )
-    brass.position.set(side * (INTERIOR_HALF_WIDTH - 0.35), 0.07, 0)
-    cargoTracks.add(brass)
-    const cyan = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.03, cargoTrackLen - 0.5),
-      plankCyanMat
-    )
-    cyan.position.set(side * (INTERIOR_HALF_WIDTH - 0.42), 0.09, 0)
-    cargoTracks.add(cyan)
+    for (const [from, to] of cargoDeckSegments) {
+      const brass = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.05, to - from), plankBrassMat
+      )
+      brass.position.set(side * (INTERIOR_HALF_WIDTH - 0.35), 0.07, (from + to) / 2)
+      cargoTracks.add(brass)
+      const cyan = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.03, to - from), plankCyanMat
+      )
+      cyan.position.set(side * (INTERIOR_HALF_WIDTH - 0.42), 0.09, (from + to) / 2)
+      cargoTracks.add(cyan)
+    }
   }
   cargoTracks.traverse((node) => { node.userData.noCameraCollision = true })
   root.add(cargoTracks)
+
+  const cargoGangway = createCargoGangway({ root, layout: cargoGap,
+    wood: plankMat, brass: plankBrassMat, cyan: plankCyanMat })
+  unregisters.push(timeSystem.register(cargoGangway.group, {
+    recordWhen: () => cargoGangway.state.recording,
+    onUpdate(dt) {
+      const z = player.mesh.position.z
+      cargoGangway.state.step(dt, z <= cargoGap.triggerZ && z > cargoGap.minZ)
+      cargoGangway.apply()
+    },
+    getSnapshot: () => cargoGangway.state.snapshot(),
+    restoreSnapshot(snapshot) { cargoGangway.state.restore(snapshot); cargoGangway.apply() }
+  }))
+
+  // Brass-edged, intact landing between gangway and door. The shell remains
+  // solid here so the player can release Freeze and wait for the next cycle.
+  const cargoLanding = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.1, 1.1), plankMat)
+  cargoLanding.name = 'cargo-safe-landing'
+  cargoLanding.position.set(0, 0.025, spans.cargo.center + 3.15)
+  root.add(cargoLanding)
+  for (const x of [-0.8, 0.8]) {
+    const rim = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 1.1), plankBrassMat)
+    rim.position.set(x, 0.07, 0)
+    cargoLanding.add(rim)
+  }
 
   // Cargo loop door — aisle-wide so it fully blocks when closed (motion/hits unchanged).
   const LOOP_DOOR_W = INTERIOR_HALF_WIDTH * 2 - 0.15
@@ -1180,21 +1261,12 @@ export function createTimewreckLevel({
   let loopBeamDown = 0
   // Cleared each level frame; when false, clock still advances for Rewind.
   let cargoVisualsActive = true
+  const loopPose = {}
   function applyLoop() {
-    const phase = ((loopT % LOOP_PERIOD) + LOOP_PERIOD) % LOOP_PERIOD
-    let colour = 0x10b981 // open — go
-    if (phase < 2.5) { loopDoorOpen = 1; loopBeamDown = 0 }
-    else if (phase < 3.7) { loopDoorOpen = 1 - (phase - 2.5) / 1.2; loopBeamDown = 0; colour = 0xf59e0b }
-    else if (phase < 5.0) { loopDoorOpen = 0; loopBeamDown = 0; colour = 0xef4444 }
-    else if (phase < 6.0) { loopDoorOpen = 0; loopBeamDown = phase - 5.0; colour = 0xef4444 }
-    else if (phase < 7.5) { loopDoorOpen = 0; loopBeamDown = 1; colour = 0xef4444 }
-    else {
-      // The loop snaps backwards to intact — the concept doc's "rewind" beat.
-      const t = (phase - 7.5) / 1.5
-      loopDoorOpen = t
-      loopBeamDown = 1 - t
-      colour = 0xa855f7
-    }
+    const pose = cargoLoopPose(loopT, loopPose)
+    loopDoorOpen = pose.door
+    loopBeamDown = pose.beam
+    const colour = pose.colour
     loopDoor.position.y = 1.15 + loopDoorOpen * 2.35
     loopBeam.position.y = 2.25 - loopBeamDown * 1.85
     loopRingMat.color.setHex(colour)
@@ -1214,117 +1286,17 @@ export function createTimewreckLevel({
   // ============================================================
   // SECURITY — FROZEN CAR: suspended wreckage becomes a walkway
   // ============================================================
-  const gapMinZ = spans.security.center - 3
-  const gapMaxZ = spans.security.center + 3
-
-  // Deep purple well suggests the temporal void under the gap (visual only).
-  const voidBox = new THREE.Mesh(
-    new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.3, 3.4, gapMaxZ - gapMinZ),
-    new THREE.MeshStandardMaterial({
-      color: 0x1a0a28, roughness: 1, metalness: 0,
-      emissive: 0x4c1d95, emissiveIntensity: 0.35
-    })
-  )
-  voidBox.position.set(0, -1.68, (gapMinZ + gapMaxZ) / 2)
-  voidBox.userData.noCameraCollision = true
-  root.add(voidBox)
-
-  // Torn floor lips — wood + cyan fracture (same footprint / placement).
-  const lipWood = new THREE.MeshStandardMaterial({
-    color: 0x5a3a22, roughness: 0.62, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.08
-  })
-  const lipCyan = new THREE.MeshStandardMaterial({
-    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
-  })
-  const lipBrass = new THREE.MeshStandardMaterial({
-    color: 0xc4a052, metalness: 0.88, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.12
-  })
-  for (const z of [gapMinZ, gapMaxZ]) {
-    const lip = new THREE.Group()
-    const board = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.2, 0.12, 0.35), lipWood)
-    lip.add(board)
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.15, 0.03, 0.05), lipCyan)
-    edge.position.set(0, 0.06, (z === gapMinZ ? 1 : -1) * 0.14)
-    lip.add(edge)
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.18, 0.02, 0.06), lipBrass)
-    trim.position.set(0, 0.04, 0)
-    lip.add(trim)
-    lip.position.set(0, 0.02, z)
-    lip.rotation.x = (z === gapMinZ ? 1 : -1) * 0.18
-    lip.traverse((o) => { o.userData.noCameraCollision = true })
-    root.add(lip)
-  }
-
-  // Chrono field kept under wood dress so FREEZE intensity feedback stays wired.
-  const slabMat = createChronoFieldMaterial({
-    baseColor: 0x4a3424, glowColor: 0x38bdf8, opacity: 0.92, doubleSided: true
-  })
-  const SLAB_HALF_X = 1.15 / 2
-  const SLAB_HALF_Y = 0.16 / 2
-  const SLAB_HALF_Z = 1.05 / 2
-  const slabWood = new THREE.MeshStandardMaterial({
-    color: 0x5a3a22, roughness: 0.58, metalness: 0.06, emissive: 0x1a1008, emissiveIntensity: 0.1
-  })
-  const slabBrass = new THREE.MeshStandardMaterial({
-    color: 0xc4a052, metalness: 0.88, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.12
-  })
-  const slabCyan = new THREE.MeshStandardMaterial({
-    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.7, roughness: 0.35
-  })
-  const slabRug = new THREE.MeshStandardMaterial({
-    color: 0x6a1824, roughness: 0.92, metalness: 0, emissive: 0x1a0608, emissiveIntensity: 0.08
-  })
-  const slabs = []
-  const slabSupports = []
-  const gapVoids = [{ minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: gapMinZ, maxZ: gapMaxZ }]
-  for (let i = 0; i < 5; i++) {
-    const slab = new THREE.Group()
-    slab.name = `security-freeze-tile-${i}`
-    // Core deck — exact 1.15 × 0.16 × 1.05 collision footprint (chrono feedback).
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
-    deck.castShadow = true
-    slab.add(deck)
-    // Wood plank strips on top (decorative — follow the tile).
-    for (const x of [-0.42, -0.14, 0.14, 0.42]) {
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.03, 0.98), slabWood)
-      plank.position.set(x, 0.09, 0)
-      slab.add(plank)
-    }
-    // Brass edging + cyan fracture rim.
-    const brassFrame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.04, 1.1), slabBrass)
-    brassFrame.position.set(0, -0.08, 0)
-    slab.add(brassFrame)
-    for (const [w, d, x, z] of [
-      [1.18, 0.04, 0, -0.52], [1.18, 0.04, 0, 0.52],
-      [0.04, 1.02, -0.58, 0], [0.04, 1.02, 0.58, 0]
-    ]) {
-      const rim = new THREE.Mesh(new THREE.BoxGeometry(w, 0.025, d), slabCyan)
-      rim.position.set(x, 0.1, z)
-      slab.add(rim)
-    }
-    const joist = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 1.0), slabBrass)
-    joist.position.set(i % 2 ? -0.38 : 0.38, -0.12, 0)
-    slab.add(joist)
-    // Occasional small rug accent (reference detail — every other tile).
-    if (i % 2 === 0) {
-      const rug = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.02, 0.45), slabRug)
-      rug.position.set(0, 0.11, 0)
-      slab.add(rug)
-    }
-    slab.userData.seed = i * 1.7
-    slab.traverse((o) => { o.userData.noCameraCollision = true })
-    slab.position.set(0, 0.06, gapMinZ + 0.6 + i * 1.2)
-    slab.userData.restZ = slab.position.z
-    root.add(slab)
-    slabs.push(slab)
-  }
-
-  let slabDriftT = 0
+  const securityCrossing = createSecurityCrossing({ root, carriage: carriages.security,
+    span: spans.security, halfWidth: WRECK_WALL_X })
+  const { minZ: gapMinZ, maxZ: gapMaxZ } = securityCrossing.layout
+  const slabMat = securityCrossing.material
+  const slabSupports = [...spatial.supports, ...connector.supports, ...cargoGangway.supports]
+  const gapVoids = [connector.gap, cargoGap, ...securityCrossing.layout.holes]
   let slabSettle = 0
-  unregisters.push(timeSystem.register(slabs[0], {
-    onUpdate(scaledDelta) { slabDriftT += scaledDelta },
-    getSnapshot: () => ({ slabDriftT }),
-    restoreSnapshot: (s) => { slabDriftT = s.slabDriftT }
+  unregisters.push(timeSystem.register(securityCrossing.group, {
+    onUpdate: dt => securityCrossing.stepClock(dt),
+    getSnapshot: securityCrossing.snapshot,
+    restoreSnapshot: securityCrossing.restore
   }))
 
   const walkwayGlow = new THREE.PointLight(0x7dd3fc, 0, 9, 2)
@@ -1337,10 +1309,23 @@ export function createTimewreckLevel({
   // ============================================================
   // Player travels −Z. Security ends at passenger.maxZ; Core depletion is
   // passenger.center. This hole sits between the fail-burst and that beat.
-  const collapseMaxZ = spans.passenger.maxZ - 2.4
-  const collapseMinZ = spans.passenger.center + 0.15
-  const collapseTriggerZ = collapseMaxZ + 1.15
-  const collapseVoid = { minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: collapseMinZ, maxZ: collapseMaxZ }
+  const collapseMaxZ = spans.passenger.center + 1.4
+  const collapseMinZ = spans.passenger.center - 3
+  const collapseTriggerZ = collapseMaxZ + 2.0
+  const collapseVoid = { minX: -WRECK_WALL_X, maxX: WRECK_WALL_X, minZ: collapseMinZ, maxZ: collapseMaxZ }
+
+  cutCargoGangwayFloor(root.getObjectByName('floor-passenger'), spans.passenger, collapseVoid)
+  // Split decorative runners too; none may conceal the opening.
+  const passengerStrips = []
+  carriages.passenger.traverse(n => { if (['passenger-floor-edge', 'passenger-floor-cyan'].includes(n.name)) passengerStrips.push(n) })
+  for (const strip of passengerStrips) {
+    for (const [a, b] of [[spans.passenger.minZ + 1.2, collapseMinZ], [collapseMaxZ, spans.passenger.maxZ - 1.2]]) {
+      const piece = new THREE.Mesh(new THREE.BoxGeometry(strip.geometry.parameters.width, strip.geometry.parameters.height, b - a), strip.material)
+      piece.position.set(strip.position.x, strip.position.y, (a + b) / 2 - spans.passenger.center)
+      piece.name = strip.name; carriages.passenger.add(piece)
+    }
+    strip.removeFromParent(); strip.geometry.dispose()
+  }
 
   // Purple temporal well under the collapse gap (visual only — void logic unchanged).
   const collapsePit = new THREE.Mesh(
@@ -1481,12 +1466,12 @@ export function createTimewreckLevel({
     return markNoCam(g)
   }
 
-  const COLLAPSE_PAD_X = 0.42
-  const COLLAPSE_PAD_Z = 0.4
+  const COLLAPSE_PAD_X = 0
+  const COLLAPSE_PAD_Z = 0
   const collapsePieces = [
     {
       mesh: makeCollapseDeck(),
-      restX: 0, restY: 0.05, restZ: collapseMaxZ - 0.82,
+      restX: 0, restY: 0.05, restZ: collapseMaxZ - 0.74,
       hx: 1.36 / 2, hy: 0.1 / 2, hz: 1.52 / 2,
       phase: 0.2, spin: 0.55
     },
@@ -1498,12 +1483,17 @@ export function createTimewreckLevel({
     },
     {
       mesh: makeCollapsePanel(),
-      restX: 0, restY: 0.05, restZ: collapseMinZ + 0.82,
+      restX: 0, restY: 0.05, restZ: collapseMinZ + 0.74,
       hx: 1.34 / 2, hy: 0.09 / 2, hz: 1.5 / 2,
       phase: 2.5, spin: 0.7
     }
   ]
   for (const p of collapsePieces) {
+    // Flat wood caps give collision an exact, visible top across each piece.
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(p.hx * 2, 0.03, p.hz * 2), collapseWood)
+    cap.name = 'passenger-support-top'
+    cap.position.y = 0.165
+    p.mesh.add(cap)
     p.mesh.position.set(p.restX, 0.04, p.restZ)
     p.mesh.visible = false
     root.add(p.mesh)
@@ -1565,7 +1555,7 @@ export function createTimewreckLevel({
     collapseFloor.rotation.x = collapseFloorT * 1.15
     collapseFloor.position.y = 0.02 - collapseFloorT * 1.35
     collapseFloor.visible = collapseFloorT < 1.05
-    collapsePit.visible = collapseLive
+    collapsePit.visible = false
     for (const lip of collapseLips) lip.visible = collapseLive
 
     const sparkLife = collapseLive && collapseFloorT < 0.85
@@ -1892,6 +1882,7 @@ export function createTimewreckLevel({
   // Slow runs the world at 0.2x; meshes copy rigid-body pose each tick.
   unregisters.push(timeSystem.register(chunkGroup, {
     onUpdate(scaledDelta) {
+      if (braking) scaledDelta *= Math.max(0, 1 - brakeT / 2.5)
       const burstSim = failBurstT >= 0 && !failBurstSettled
       const stormActive = breakupT >= 0 && breakupT < DEBRIS_STORM_S
       if (breakupT < 0 && !burstSim) return
@@ -2178,17 +2169,58 @@ export function createTimewreckLevel({
   let finalePulseT = -1
   let resumeFlashT = -1
 
-  const DEPLETE_Z = spans.passenger.center
-  const WAVE_SPEED = 6.2 // just under the player's 7.2 m/s sprint
-  const WAVE_LEAD = 6
+  const DEPLETE_Z = spans.passenger.maxZ - 1.8
+  const WAVE_SPEED = 6.2 // below the actual 6.8 m/s sprint
+  const WAVE_LEAD = 12
+  const sprintObjective = () => `Sprint to the locomotive (${bindingLabel(settings.getBinding('run'))}) — pull the emergency brake!`
 
   let depleted = false
   let waveZ = 0
   let braking = false
+  let brakeComplete = false
+  let disposed = false
   let brakeT = 0
+
+  const bridge = new THREE.Group()
+  bridge.name = 'broken-bridge-ahead'
+  const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x796b53, roughness: 0.8 })
+  for (const [a, b] of [[spans.cab.minZ - 5, spans.cab.minZ + 5], [spans.cab.minZ - 35, spans.cab.minZ - 20]]) {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.6, b - a), bridgeMat)
+    deck.position.set(0, -0.7, (a + b) / 2); bridge.add(deck)
+    for (const x of [-0.8, 0.8]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, b - a), bridgeMat)
+      rail.position.set(x, -0.33, (a + b) / 2); bridge.add(rail)
+    }
+  }
+  root.add(bridge)
+  // Exterior locomotive silhouette for the stop reveal, ahead of the existing cab.
+  const locomotive = new THREE.Group()
+  locomotive.name = 'finale-locomotive'
+  const engineMetal = new THREE.MeshStandardMaterial({ color: 0x24413e, metalness: 0.65, roughness: 0.4 })
+  const engineBrass = new THREE.MeshStandardMaterial({ color: 0xc4a052, metalness: 0.85, roughness: 0.35 })
+  const boiler = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 3.4, 20), engineMetal)
+  boiler.rotation.x = Math.PI / 2
+  boiler.position.set(0, 0.9, spans.cab.minZ - 1.7); locomotive.add(boiler)
+  const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.18, 1.0, 12), engineBrass)
+  chimney.position.set(0, 2.2, spans.cab.minZ - 2.7); locomotive.add(chimney)
+  for (const z of [spans.cab.minZ - 0.6, spans.cab.minZ - 2.6]) {
+    for (const x of [-1.05, 1.05]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.14, 16), engineBrass)
+      wheel.rotation.z = Math.PI / 2; wheel.position.set(x, 0, z); locomotive.add(wheel)
+    }
+  }
+  root.add(locomotive)
 
   const brake = createEmergencyBrake()
   addProp(brake, spans.cab.center - 1.5)
+  addPassengerGuidance(root, spans.passenger.center, collapseBrass)
+  const trackWarning = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.26), signMaterial({
+    text: 'TRACK OUT / BRAKE', emissiveIntensity: 0.25
+  }))
+  trackWarning.name = 'cab-broken-track-warning'
+  trackWarning.position.set(0, 2.35, spans.cab.minZ + 0.5)
+  trackWarning.userData.noCameraCollision = true
+  root.add(trackWarning)
 
   // Celebratory exit aperture — decorative only; opens during the brake cinematic.
   const exitPath = new THREE.Group()
@@ -2233,16 +2265,33 @@ export function createTimewreckLevel({
   unregisters.push(interaction.register(brake, {
     prompt: 'Pull the emergency brake',
     onInteract: () => {
-      if (braking) return
+      if (disposed || braking || brakeComplete || !depleted || Math.abs(player.mesh.position.z - brake.position.z) > 2.5) return
       braking = true
+      wreckAudio.brake()
+      timeSystem.setMode('NORMAL')
+      timeSystem.resetGhost()
       beginCinematic?.()
       // The run is over — hand the full kit back before the next level.
       timeSystem.setAbilityAvailability({})
       interaction.flashPrompt('The Chrono Express grinds to a halt…', 3000)
       hud.setObjective('The train stops on the bridge. You made it.')
       exitPath.visible = true
+      hud.showCinematicSkip?.(finishBraking)
     }
   }))
+
+  function finishBraking() {
+    if (disposed || !braking || brakeComplete) return
+    brakeComplete = true
+    feedback.stop()
+    braking = false
+    wreckAudio.reset()
+    hazardAudio.reset()
+    hud.hideCinematicSkip?.()
+    root.rotation.z = 0
+    root.position.set(0, 0, 0)
+    advance()
+  }
 
   // ============================================================
   // Particles: rising embers and falling sparks through the whole wreck
@@ -2291,7 +2340,8 @@ export function createTimewreckLevel({
   })
   root.add(embers.points, sparks.points, openingWind.points, openingSparks.points, chronoMotes.points)
 
-  // Same forward-light budget as Level 2. Built only after every L3 PointLight
+  // L3 keeps 12 points (Level 2 uses 8); any reduction needs rendered profiling.
+  // Built only after every L3 PointLight
   // (carriage lamps, hazard washes, Freeze glows, finale wave/stasis) is on
   // `root`. Sources stay in the graph for flicker/intensity animation; a fixed
   // set of 12 real lights is what the renderer sees.
@@ -2309,12 +2359,32 @@ export function createTimewreckLevel({
   const lever = brake.getObjectByName('brake-lever')
   let elapsed = 0
 
+  const passengerRack = createPassengerRack({ root, span: spans.passenger, player, timeSystem, unregisters, obstacles: blastObstacles,
+    warn: () => {
+      wreckAudio.warning()
+      showLevelToast('Rack bolts snapping! Amber brackets mark the fall zone — keep RIGHT, then return to CENTRE for the floor crossing.', 3200)
+    } })
+
+  const expansionHazards = createExpansionHazards({ root, spans, player, timeSystem, unregisters,
+    fail: message => failSoft(message), audio: hazardAudio,
+    warn: kind => {
+      wreckAudio.warning()
+      if (kind === 'freight') showLevelToast(`Freight straps creaking! Wait for the case to swing aside; ${bindingLabel(settings.getBinding('slow'))} Slow or ${bindingLabel(settings.getBinding('freeze'))} Freeze can hold a clear route.`, 4500)
+    } })
+
+  const feedback = createWreckFeedback({ root, spans, player, timeSystem, unregisters,
+    cue: kind => wreckAudio.debris(kind),
+    playbackScale: () => braking ? Math.max(0, 1 - brakeT / 2.5) : 1
+  })
+
   // Capture the collapse at each checkpoint, then restore moving hazards to a
   // predictable phase. The final checkpoint also puts the pursuing wave far
   // enough behind the player for repeated deaths to remain recoverable.
   function captureCheckpointRestore(checkpointZ) {
     const saved = {
+      feedback: feedback.capture(),
       depleted,
+      relayLatched,
       breakupT,
       lastCheckpointZ,
       collapseArmed,
@@ -2342,12 +2412,33 @@ export function createTimewreckLevel({
         group.visible = true
       }
 
+      relayLatched = saved.relayLatched
+      relayOpen = relayLatched ? 1 : 0
+      relayHeld = false
+      relayEchoRemaining = 0
+      releaseDeck.position.y = 0
+      applyRelay()
+      wreckRoutes.reset()
+      passengerRack.reset()
+      failBurstArmed = true
+      failBurstT = -1
+      failBurstSettled = false
+      applyFailBurst()
+      vaultGateT = 0
+      updateVaultGates(0, null)
+      surgeT = 0
+      updateElectricalSurges(0, null)
       ramT = 0
       applyRams()
       loopT = 0
       applyLoop()
-      slabDriftT = 0
+      connector.reset()
+      cargoGangway.state.reset()
+      cargoGangway.apply()
+      securityCrossing.reset()
       slabSettle = 0
+      slabSupports.length = 0
+      slabSupports.push(...spatial.supports, ...connector.supports, ...cargoGangway.supports, ...securityCrossing.supports)
       collapseArmed = saved.collapseArmed
       collapseLive = saved.collapseLive
       collapseFallT = 0
@@ -2356,6 +2447,10 @@ export function createTimewreckLevel({
       setCollapseVoid(collapseLive)
       applyCollapseMotion()
       env.restorePassengerLights?.(collapseLive)
+      collapseHintHoldUntil = -1
+      pendingToast = null
+      hintsShown.clear()
+      hud.setObjective(depleted ? sprintObjective() : LEVEL_OBJECTIVE)
       fractureArmed = saved.fractureArmed
       fractureT = saved.fractureT
       applyVaultFracture(0)
@@ -2364,6 +2459,12 @@ export function createTimewreckLevel({
       fractureMat.customUniforms.uOpacity.value = 0
       failCooldown = 0
       braking = false
+      wreckAudio.reset()
+      hazardAudio.reset()
+      expansionHazards.reset()
+      feedback.restore(saved.feedback)
+      brakeComplete = false
+      hud.hideCinematicSkip?.()
       brakeT = 0
       exitPath.visible = false
       exitLeft.rotation.y = 0
@@ -2407,7 +2508,7 @@ export function createTimewreckLevel({
       luggageMat.emissive.setHex(0x1a1008)
       luggageMat.emissiveIntensity = 0.08
 
-      waveZ = depleted ? DEPLETE_Z + WAVE_LEAD : 0
+      waveZ = depleted ? checkpointZ + WAVE_LEAD : 0
       wave.position.z = waveZ
       wave.scale.set(1, 1, 1)
       wave.visible = depleted
@@ -2416,12 +2517,19 @@ export function createTimewreckLevel({
     }
   }
 
+  const initialZ = ['convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger'].includes(startCarriage)
+    ? spans[startCarriage].maxZ - (startCarriage === 'mechanical' ? 2.5 : 1.5) : spans.vault.center + 3
+  const visibility = createWreckVisibility({ root, carriages, spans,
+    wallX: WRECK_WALL_X, ceilingY: CARRIAGE_CEILING_Y,
+    enabled: () => !disposed && !braking })
+  const removeVisibility = installWreckVisibility(scene, visibility)
   return {
+    getVisibilityStats: visibility.getStats,
     objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
     checkpoint: {
-      position: new THREE.Vector3(0, 0, spans.vault.center + 3),
+      position: new THREE.Vector3(0, 0, initialZ),
       yaw: Math.PI,
-      restore: captureCheckpointRestore(spans.vault.center + 3)
+      restore: captureCheckpointRestore(initialZ)
     },
     bounds,
     obstacles: blastObstacles,
@@ -2429,8 +2537,11 @@ export function createTimewreckLevel({
     voids: gapVoids,
     getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return braking },
+    setPresentationPaused(value) { wreckAudio.setPaused(value); hazardAudio.setPaused(value); feedback.setPaused(value) },
 
     update(delta) {
+      // Recover temporary render visibility even if a prior render was aborted.
+      visibility.afterRender()
       const mode = timeSystem.getMode()
       const finaleFreeze = depleted && mode === 'FREEZE' && !braking
       if (finaleFreeze && !wasFinaleFreeze) {
@@ -2452,10 +2563,11 @@ export function createTimewreckLevel({
       if (mode === 'SLOW') motionScale = 0.2
       else if (mode === 'FREEZE') motionScale = 0
       else if (mode === 'REWIND') motionScale = -1.25
-      const envDt = motionScale * delta
+      const envDt = (braking ? Math.max(0, 1 - brakeT / 2.5) : motionScale) * delta
       const exteriorScale = braking
         ? Math.max(0, 1 - brakeT / 2.5)
         : mode === 'FREEZE' ? 0 : resumeBoost * (mode === 'SLOW' ? 0.2 : 1)
+      wreckAudio.update(depleted && !brakeComplete, finaleFreeze, braking ? brakeT : null)
       outdoorEnv.update(envDt)
       wreckExterior.update(delta, exteriorScale)
       env.update(envDt)
@@ -2476,7 +2588,7 @@ export function createTimewreckLevel({
         collapseHintHoldUntil = -1
         if (!braking && hud.getObjective() === COLLAPSE_HINT) {
           hud.setObjective(depleted
-            ? 'Sprint to the locomotive (hold Shift) — pull the emergency brake!'
+            ? sprintObjective()
             : LEVEL_OBJECTIVE)
         }
         if (pendingToast) {
@@ -2504,9 +2616,17 @@ export function createTimewreckLevel({
       if (mechHazardActive) applyRams()
       if (cargoHazardActive) applyLoop()
 
-      if (vaultActive) updateVaultGates(envDt, pp)
+      wreckRoutes.update()
+      passengerRack.update()
+      expansionHazards.update(!braking && !respawn.isFailing())
+      connector.update(!braking && !respawn.isFailing())
+      feedback.update(!braking && !brakeComplete && !respawn.isFailing())
+      if (pp.z > connector.gap.minZ && pp.z < connector.gap.maxZ && pp.y < -0.65) {
+        failSoft('The connector folded. Rewind from solid floor, then Freeze its flat hinges.', 'fell')
+      }
+      if (vaultActive && !braking) updateVaultGates(envDt, pp)
       if (surgeActive) updateElectricalSurges(envDt, pp)
-      if (blastActive) updateBlastDoors(envDt, pp)
+      if (blastActive) updateBlastDoors(delta, pp)
       const modeInt = MODE_INT[mode] ?? 0
 
       if (fractureArmed && pp.z > FRACTURE_Z) {
@@ -2643,6 +2763,7 @@ export function createTimewreckLevel({
       // --- Brake pulled: celebratory stop — heavy shake, exit path opens ---
       if (braking) {
         brakeT += delta
+        lever.rotation.x = -0.4 + Math.min(1, brakeT / 0.4) * 1.1
         // Early punch that settles into a fading rumble (celebratory, not subtle).
         const punch = Math.exp(-brakeT * 1.55)
         const rumble = Math.max(0, 1 - brakeT / 2.8)
@@ -2655,6 +2776,7 @@ export function createTimewreckLevel({
           Math.sin(brakeT * 47) * shakeAmp * 0.35
         root.position.x = Math.sin(brakeT * 39) * shakeAmp * 0.4
 
+        camera.showWreckStop?.(new THREE.Vector3(0, 0, spans.cab.center), brakeT)
         // Doors swing open and warm light floods the escape path.
         const open = Math.min(1, brakeT / 1.15)
         const eased = open * open * (3 - 2 * open)
@@ -2681,11 +2803,7 @@ export function createTimewreckLevel({
         scene.fog.far = 40 + dawn * 70
 
         if (brakeT > 4.8) {
-          braking = false
-          root.rotation.z = 0
-          root.position.y = 0
-          root.position.x = 0
-          advance()
+          finishBraking()
         }
         return
       }
@@ -2718,8 +2836,24 @@ export function createTimewreckLevel({
         shakeY: root.position.y
       })
 
+      if (!player.isAirborne() && Math.abs(pp.y) < 0.25) {
+        const islandZ = spans.security.center
+        const onIsland = pp.z > islandZ - 1 && pp.z < islandZ + 1
+        const exitZ = gapMinZ - 0.8
+        const atExit = pp.z < exitZ && pp.z > spans.security.minZ
+        const safeZ = onIsland ? islandZ : atExit ? exitZ : null
+        if (safeZ !== null && safeZ < lastCheckpointZ) {
+          lastCheckpointZ = safeZ
+          respawn.setCheckpoint(new THREE.Vector3(0, 0, safeZ), Math.PI, {
+            restore: captureCheckpointRestore(safeZ)
+          })
+        }
+      }
+
       // --- Rolling checkpoints (descending z) -----------------------------
       for (const z of checkpointZs) {
+        const connectorCheckpoint = z === spans.convergence.minZ + 3 || z === spans.mechanical.maxZ - 2.5
+        if (connectorCheckpoint && (player.isAirborne() || Math.abs(pp.y) > 0.06)) continue
         if (pp.z < z && z < lastCheckpointZ) {
           lastCheckpointZ = z
           respawn.setCheckpoint(new THREE.Vector3(0, 0, z), Math.PI, {
@@ -2729,27 +2863,45 @@ export function createTimewreckLevel({
       }
 
       hint('vault-lasers', pp.z, spans.vault.center + 0.6,
-        `Use ${bindingLabel(settings.getBinding('slow'))} to Slow the security lasers`)
-      hint('convergence-surges', pp.z, electricalSurges[0].z + 4.5,
-        `Use ${bindingLabel(settings.getBinding('slow'))} to slow the electrical surges`,
-        4800)
-      hint('mechanical', pp.z, spans.mechanical.maxZ,
-        'Mechanical car — the pistons are running at wrecked speed. [1]/Q SLOW is the only way through.')
+        `Teal pads are safe to observe. A horizontal green lamp means standing clearance; upright amber means wait. ${bindingLabel(settings.getBinding('slow'))} slows the racks; ${bindingLabel(settings.getBinding('freeze'))} holds their current pose.`, 5500)
+      hint('vault-reassess', pp.z, spans.vault.center - 2.7,
+        `Reassess the SECOND rack from this pad. Freeze holds dangerous beams too. Wait for its horizontal lamp, or watch clearance while using ${bindingLabel(settings.getBinding('duck'))} to crouch.`, 5000)
+      hint('convergence-threshold', pp.z, spans.convergence.center + 16.5,
+        `Broken threshold: ${bindingLabel(settings.getBinding('jump'))} jump the low brass edge. Pass the open right end of the trolley, then choose either aisle.`, 4500)
+      hint('convergence-surges', pp.z, spans.convergence.center + 11.5,
+        `Choose before the split: brass DIRECT is fast but exposed to surges. Cyan MAINTENANCE is sheltered but slower: ${bindingLabel(settings.getBinding('duck'))} crouch, ${bindingLabel(settings.getBinding('rewind'))} repair the shutter, then ${bindingLabel(settings.getBinding('freeze'))} hold it open.`,
+        6000)
+      hint('mechanical', pp.z, spans.mechanical.center + 9.3,
+        `${bindingLabel(settings.getBinding('slow'))} Slow the first luggage bank. Stop inside the teal brackets on solid floor; release time control to recharge. Then ${bindingLabel(settings.getBinding('rewind'))} repair the shutter and ${bindingLabel(settings.getBinding('freeze'))} hold it open. Another bank follows.`, 6500)
+      if (pp.z > spans.mechanical.center + 9 && pp.z < spans.mechanical.maxZ) {
+        hint('mechanical-steam', pp.z, spans.mechanical.center + 13.2,
+          `Steam crossing: upright amber means warning or a live jet. Wait here for the horizontal green bar; ${bindingLabel(settings.getBinding('freeze'))} holds the current state, including dangerous steam. Recharge beyond the pipe before the luggage bank.`, 6000)
+      }
+      if (Math.abs(pp.x - 1.75) < 0.55 && Math.abs(pp.z - wreckRoutes.recessZ) < 0.8) {
+        hint('mechanical-recess', pp.z, Infinity,
+          `Safe switching recess: release time control to recharge. ${bindingLabel(settings.getBinding('rewind'))} restores the shutter; switch to ${bindingLabel(settings.getBinding('freeze'))} while it is open.`, 4500)
+      }
       hint('cargo', pp.z, spans.cargo.maxZ,
-        'Cargo car — this bulkhead is stuck in a time loop. Watch the ring and move on green.')
-      hint('relay-blast-doors', pp.z, doorZ + 4.2,
-        `Use ${bindingLabel(settings.getBinding('slow'))} or ${bindingLabel(settings.getBinding('freeze'))} to pass the blast doors`)
-      hint('security', pp.z, spans.security.maxZ,
-        'Security car — the floor is gone. [2]/F FREEZE the suspended wreckage into a walkway.')
+        'Cargo — the gangway is buckling. Its pale frame shows the earlier pose; moving brass rails meet the fixed hinge stops when restored.', 4400)
+      hint('cargo-gangway', pp.z, cargoGap.maxZ + 1.3,
+        `${bindingLabel(settings.getBinding('rewind'))} restores the gangway: align the brass rails with the fixed stops, then ${bindingLabel(settings.getBinding('freeze'))} hold it. Early Freeze can also save the intact deck. Rest on the landing before the bulkhead.`, 6500)
+      hint('cargo-landing', pp.z, cargoGap.minZ - 0.25,
+        'Intact landing — recharge here. Watch the bulkhead ring; green means the door and overhead load are clear.', 4800)
+      hint('relay-emergency-release', pp.z, releasePos.z + 2,
+        `Weight the brass platform to pull the door linkage. Summon ${bindingLabel(settings.getBinding('ghost'))} Ghost: the eight bars drain with its hold. Walk right around the cabinet, return to the centre seam, then ${bindingLabel(settings.getBinding('interact'))} latch the far-side catch; it works even after the echo fades.`, 6500)
+      hint('security', pp.z, gapMaxZ + 3,
+        `${bindingLabel(settings.getBinding('freeze'))} settles the broad debris decks. Enter on the left, follow brass chevrons to the right, then reach the intact recharge island. Pale outlines alone cannot support you.`, 5500)
+      hint('security-island', pp.z, spans.security.center + 0.8,
+        `Safe island: release Freeze and recharge; assess the right-hand path. ${bindingLabel(settings.getBinding('freeze'))} settles it. Paired brass bars mark takeoff and landing: ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across the break.`, 6000)
       hint('passenger', pp.z, spans.passenger.maxZ,
-        'The train is coming apart behind you — do not stop.')
+        `Falling rack ahead: amber marks its landing. Keep right, then centre for the broken floor. ${bindingLabel(settings.getBinding('freeze'))} holds obstacles AND the pursuing wave.`, 6500)
 
       if (failBurstArmed && pp.z < FAIL_BURST_TRIGGER_Z) startFailBurst()
 
       // --- FAST-TIME CAR: runaway pistons ---------------------------------
-      if (mechHazardActive) {
+      if (mechHazardActive && !braking) {
         for (const r of rams) {
-          if (Math.abs(pp.z - r.z) < 0.55 && Math.abs(pp.x - r.head.position.x) < 0.5) {
+          if (Math.abs(pp.z - r.z) < 0.55 && Math.abs(pp.x - r.head.position.x) < 0.5 && pp.y < 1.8 && pp.y + (player.isCrouching() ? 1.15 : 1.85) > 0.025) {
             failSoft('Crushed by a runaway piston!')
             break
           }
@@ -2758,49 +2910,38 @@ export function createTimewreckLevel({
 
       // --- TIME-LOOP CAR: crushing bulkhead and falling girder -------------
       if (cargoHazardActive) {
-        if (loopDoorOpen < 0.35 && Math.abs(pp.z - loopDoorZ) < 0.5) {
+        const bodyTop = pp.y + (player.isCrouching?.() ? 1.15 : 1.85)
+        if (pp.z > cargoGap.minZ && pp.z < cargoGap.maxZ && pp.y < -0.5) {
+          failSoft('The gangway buckled — rewind its pale frame, then freeze the restored deck.', 'fell')
+        }
+        if (loopDoor.position.y - LOOP_DOOR_H / 2 < bodyTop &&
+            loopDoor.position.y + LOOP_DOOR_H / 2 > pp.y && Math.abs(pp.z - loopDoorZ) < 0.3) {
           failSoft('The bulkhead slammed shut on you!')
         }
-        if (loopBeamDown > 0.55 && Math.abs(pp.z - loopBeamZ) < 0.65) {
+        if (loopBeam.position.y - 0.16 < bodyTop && loopBeam.position.y + 0.21 > pp.y &&
+            Math.abs(pp.x) < 1.5 && Math.abs(pp.z - loopBeamZ) < 0.4) {
           failSoft('Crushed by the falling girder!')
         }
       }
 
       // --- FROZEN CAR: suspended wreckage as a walkway ---------------------
       const frozen = mode === 'FREEZE'
+      securityCrossing.update(delta, frozen)
+      slabSettle = securityCrossing.settle
       slabSupports.length = 0
-      if (walkwayActive) {
-        slabSettle += ((frozen ? 1 : 0) - slabSettle) * Math.min(1, delta * 7)
-        for (const slab of slabs) {
-          const seed = slab.userData.seed
-          const driftY = 0.8 + Math.sin(slabDriftT * 1.2 + seed) * 0.32
-          const driftX = Math.sin(slabDriftT * 0.8 + seed) * 0.5
-          slab.position.y = THREE.MathUtils.lerp(driftY, 0.06, slabSettle)
-          slab.position.x = THREE.MathUtils.lerp(driftX, 0, slabSettle)
-          slab.rotation.z = THREE.MathUtils.lerp(Math.sin(slabDriftT + seed) * 0.5, 0, slabSettle)
-          slab.rotation.x = THREE.MathUtils.lerp(Math.cos(slabDriftT * 0.9 + seed) * 0.4, 0, slabSettle)
-        }
-        if (frozen) {
-          for (const slab of slabs) {
-            slabSupports.push({
-              minX: slab.position.x - SLAB_HALF_X - 0.3,
-              maxX: slab.position.x + SLAB_HALF_X + 0.3,
-              minZ: slab.position.z - SLAB_HALF_Z - 0.12,
-              maxZ: slab.position.z + SLAB_HALF_Z + 0.12,
-              y: slab.position.y + SLAB_HALF_Y
-            })
-          }
-        }
-        if (pp.z > gapMinZ && pp.z < gapMaxZ && !frozen) {
-          failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
-        } else if (pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.3) {
-          failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
-        }
+      slabSupports.push(...spatial.supports, ...connector.supports, ...cargoGangway.supports, ...securityCrossing.supports)
+      // Test actual falling rather than killing every non-Freeze body in a Z
+      // interval. The island is safe, and reasonable jumps remain possible.
+      if (walkwayActive && pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.65) {
+        failSoft('Freeze the marked debris; recharge on the intact island before the second crossing.', 'fell')
       }
 
+      // Shell floor is cut; the visible intact slab supports only before failure.
+      if (!collapseLive) slabSupports.push({ ...collapseVoid, y: 0.06 })
+      for (const [a, b] of [[spans.passenger.minZ, collapseMinZ], [collapseMaxZ, spans.passenger.maxZ]]) slabSupports.push({ minX: -2.6, maxX: 2.6, minZ: a, maxZ: b, y: 0 })
       // --- PASSENGER collapse: Freeze stepping-stones across the hole ------
       if (collapseArmed && pp.z < collapseTriggerZ) startCollapse()
-      collapseSettle += ((frozen && collapseLive ? 1 : 0) - collapseSettle) * Math.min(1, delta * 9)
+      collapseSettle = THREE.MathUtils.clamp(collapseSettle + (frozen && collapseLive ? 1 : -1) * delta / 0.2, 0, 1)
       const nearCollapse = pp.z > collapseMinZ - HAZARD_PAD && pp.z < collapseMaxZ + HAZARD_PAD
       const collapseFxLive = collapseLive && (nearCollapse || collapseMotionNeedsUpdate(frozen))
       if (collapseFxLive) applyCollapseMotion()
@@ -2812,28 +2953,27 @@ export function createTimewreckLevel({
         collapseWood.emissiveIntensity = frozen ? 0.85 : 0.1
         collapseCyan.emissiveIntensity = frozen ? 1.25 : 0.65
       }
-      if (frozen && collapseLive) {
+      if (frozen && collapseLive && collapseSettle > 0.98) {
         for (const p of collapsePieces) {
           slabSupports.push({
             minX: p.mesh.position.x - p.hx - COLLAPSE_PAD_X,
             maxX: p.mesh.position.x + p.hx + COLLAPSE_PAD_X,
             minZ: p.mesh.position.z - p.hz - COLLAPSE_PAD_Z,
             maxZ: p.mesh.position.z + p.hz + COLLAPSE_PAD_Z,
-            y: p.mesh.position.y + p.hy + 0.02
+            y: p.mesh.position.y + 0.18
           })
         }
       }
       const inCollapse = collapseLive && pp.z > collapseMinZ && pp.z < collapseMaxZ
-      const onFarLip = pp.z <= collapseMinZ + 1.9
       let onCollapseSupport = false
-      if (frozen && collapseLive) {
+      if (frozen && collapseLive && collapseSettle > 0.98) {
         for (const p of collapsePieces) {
           if (
             pp.x >= p.mesh.position.x - p.hx - COLLAPSE_PAD_X &&
             pp.x <= p.mesh.position.x + p.hx + COLLAPSE_PAD_X &&
             pp.z >= p.mesh.position.z - p.hz - COLLAPSE_PAD_Z &&
             pp.z <= p.mesh.position.z + p.hz + COLLAPSE_PAD_Z &&
-            pp.y >= p.mesh.position.y + p.hy - 1.0
+            pp.y >= p.mesh.position.y + 0.18 - 0.25
           ) {
             onCollapseSupport = true
             break
@@ -2844,8 +2984,7 @@ export function createTimewreckLevel({
         // Landing on/over an active Freeze pad — do not treat the void as a fail.
       } else if (inCollapse && pp.y < -0.3) {
         failSoft('The floor collapsed — FREEZE the wreckage and cross!', 'fell')
-      } else if (inCollapse && !frozen && !onFarLip && collapseSettle < 0.18) {
-        failSoft('The floor collapsed — FREEZE the wreckage and cross!', 'fell')
+
       }
 
       // --- BREAKING TRAIN --------------------------------------------------
@@ -2865,7 +3004,12 @@ export function createTimewreckLevel({
         // The floor behind goes with them — no walking back into the void.
         // Never clamp ahead of where the player actually is, or the collapse
         // would yank them forward instead of closing off behind them.
-        if (breakupT > 1.0) bounds.maxZ = Math.min(bounds.maxZ, spans.passenger.maxZ - 0.5)
+        if (breakupT > 1.0) {
+          bounds.maxZ = Math.min(bounds.maxZ, spans.passenger.maxZ - 0.5)
+          // Retire the inaccessible connector before Mechanical detaches; its
+          // root-owned hinges must not float beside a departing carriage.
+          connector.group.visible = false
+        }
         if (breakupT > 3.2) {
           bounds.maxZ = Math.min(
             bounds.maxZ,
@@ -2885,7 +3029,7 @@ export function createTimewreckLevel({
           restore: captureCheckpointRestore(DEPLETE_Z)
         })
         showLevelToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
-        hud.setObjective('Sprint to the locomotive (hold Shift) — pull the emergency brake!')
+        hud.setObjective(sprintObjective())
       }
 
       if (depleted) {
@@ -2912,6 +3056,19 @@ export function createTimewreckLevel({
     },
 
     dispose() {
+      disposed = true
+      feedback.stop()
+      spatial.dispose(slabSupports)
+      for (let i = slabSupports.length - 1; i >= 0; i--) if (connector.supports.includes(slabSupports[i])) slabSupports.splice(i, 1)
+      const connectorVoidIndex = gapVoids.indexOf(connector.gap)
+      if (connectorVoidIndex >= 0) gapVoids.splice(connectorVoidIndex, 1)
+      wreckAudio.dispose()
+      hazardAudio.dispose()
+      removeVisibility()
+      hud.hideCinematicSkip?.()
+      player.mesh.userData.tightCrouchCamera = false
+      player.mesh.userData.wreckLowCeiling = false
+      timeSystem.resetGhost()
       unregisters.forEach((fn) => fn())
       stormDebris.dispose()
       grabHandles.dispose()

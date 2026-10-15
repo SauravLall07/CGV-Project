@@ -7,7 +7,8 @@ import { getContext, getMasterGain } from '../core/audio.js'
 // (vite base: './', subdirectory-safe).
 //
 // Only one LevelMusicPlayer is ever audible: startLevelMusic() disposes the
-// previous player (and cancels an in-flight load) before starting the next.
+// previous player (and cancels its playback intent) before starting the next.
+// Shared in-flight loads may finish for another player or the decoded cache.
 
 // Static URLs so Vite's `new URL` analysis actually emits the files into dist.
 // loadTrack() looks the filename up in this catalog.
@@ -28,6 +29,7 @@ export function loadTrack(relativePath) {
 }
 
 const bufferCache = new Map()
+const pendingBuffers = new Map()
 let nextPlayerId = 1
 let livePlayers = 0
 let liveSources = 0
@@ -41,6 +43,40 @@ function decodeAudioData(ctx, data) {
     const result = ctx.decodeAudioData(data, resolve, reject)
     if (result && typeof result.then === 'function') result.then(resolve, reject)
   })
+}
+
+function loadBuffer(url) {
+  const key = String(url)
+  if (bufferCache.has(key)) return Promise.resolve(bufferCache.get(key))
+  if (pendingBuffers.has(key)) return pendingBuffers.get(key)
+  const ctx = getContext()
+  if (!ctx) return Promise.reject(new Error('[level-music] initialize AudioContext before loading music'))
+
+  const pending = (async () => {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`[level-music] failed to fetch ${url} (${response.status})`)
+    const buffer = await decodeAudioData(ctx, await response.arrayBuffer())
+    bufferCache.set(key, buffer)
+    return buffer
+  })().finally(() => {
+    // Failures are retryable. Disposing one playback owner never cancels a
+    // shared fetch/decode still needed by another owner.
+    if (pendingBuffers.get(key) === pending) pendingBuffers.delete(key)
+  })
+  pendingBuffers.set(key, pending)
+  return pending
+}
+
+// On-demand diagnostic snapshot. No AudioBuffer/node references escape and
+// no per-frame work is added. PCM bytes describe decoded samples, not MP3 size.
+export function getMusicCacheInfo() {
+  const tracks = [...bufferCache].map(([url, buffer]) => ({
+    url, duration: buffer.duration, sampleRate: buffer.sampleRate,
+    channels: buffer.numberOfChannels, length: buffer.length,
+    pcmBytes: buffer.length * buffer.numberOfChannels * Float32Array.BYTES_PER_ELEMENT
+  }))
+  return { tracks, pendingUrls: [...pendingBuffers.keys()],
+    totalPcmBytes: tracks.reduce((sum, track) => sum + track.pcmBytes, 0) }
 }
 
 export class LevelMusicPlayer {
@@ -58,23 +94,12 @@ export class LevelMusicPlayer {
   }
 
   async load() {
+    if (this._disposed) return null
     if (this.buffer) return this.buffer
-
-    const key = String(this.url)
-    if (bufferCache.has(key)) {
-      this.buffer = bufferCache.get(key)
-      return this.buffer
-    }
-
-    const ctx = getContext()
-    const response = await fetch(this.url)
-    if (!response.ok) {
-      throw new Error(`[level-music] failed to fetch ${this.url} (${response.status})`)
-    }
-    const data = await response.arrayBuffer()
-    this.buffer = await decodeAudioData(ctx, data)
-    bufferCache.set(key, this.buffer)
-    return this.buffer
+    const buffer = await loadBuffer(this.url)
+    // A superseded player must not reacquire a buffer after dispose cleared it.
+    if (!this._disposed) this.buffer = buffer
+    return buffer
   }
 
   // Always wait for decode before starting playback. play() itself is a

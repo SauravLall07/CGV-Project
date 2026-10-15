@@ -1,5 +1,8 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { addMechanicalReference } from './mechanical-reference.js'
+import { refineWreckLandmark } from './wreck-landmarks.js'
+import { addCargoWreckBenchmark } from './cargo-wreck-benchmark.js'
 import {
   carpetMaterial,
   metalMaterial,
@@ -305,6 +308,8 @@ function addBulkhead(group, z, shared, sealed = false, damaged = false) {
     )
     panel.position.set(s * (DOOR_W / 2 + sideW / 2), CARRIAGE_CEILING_Y / 2, z)
     panel.receiveShadow = true
+    // L3 visibility uses only these complete solid boxes, never damaged walls.
+    if (damaged) panel.userData.wreckOccluder = true
     group.add(panel)
   }
   const lintel = new THREE.Mesh(
@@ -312,6 +317,7 @@ function addBulkhead(group, z, shared, sealed = false, damaged = false) {
     panelMat
   )
   lintel.position.set(0, DOOR_H + (CARRIAGE_CEILING_Y - DOOR_H) / 2, z)
+  if (damaged) lintel.userData.wreckOccluder = true
   group.add(lintel)
 
   const surround = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W + 0.12, DOOR_H + 0.06, 0.05), shared.brass)
@@ -881,6 +887,7 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
   const trunkLeather = new THREE.MeshStandardMaterial({
     color: 0x3a2818, roughness: 0.88, metalness: 0.04, emissive: 0x120c08, emissiveIntensity: 0.06
   })
+  addCargoWreckBenchmark(g, { wood: trunkWood, leather: trunkLeather, brass: shared.brass })
   const spots = []
   for (let z = -half + 2.4; z <= half - 2.4; z += 2.8) {
     spots.push([-(WALL_X - 0.5), 0.42, z, 0])
@@ -1818,15 +1825,24 @@ function addHandrail(g, half, shared) {
 
 // Hanging lanterns down the centreline: brass canopy, rod, glass and cap.
 function addLanterns(g, half, shared, fx, glassMat, spacing = 4) {
+  // Geometry stays immutable and belongs to this carriage's fixture set.
+  // Keep separate meshes/transforms so visibility and raycasts are unchanged.
+  let geometries = null
   for (let z = -half + 2.5; z <= half - 2; z += spacing) {
+    geometries ??= {
+      rod: new THREE.CylinderGeometry(0.012, 0.012, 0.35, 6),
+      cap: new THREE.CylinderGeometry(0.06, 0.16, 0.08, 8),
+      glass: new THREE.CylinderGeometry(0.13, 0.1, 0.26, 8),
+      base: new THREE.CylinderGeometry(0.11, 0.07, 0.05, 8)
+    }
     const lantern = new THREE.Group()
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.35, 6), shared.brass)
+    const rod = new THREE.Mesh(geometries.rod, shared.brass)
     rod.position.y = -0.18
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.16, 0.08, 8), shared.brass)
+    const cap = new THREE.Mesh(geometries.cap, shared.brass)
     cap.position.y = -0.38
-    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.26, 8), glassMat)
+    const glass = new THREE.Mesh(geometries.glass, glassMat)
     glass.position.y = -0.55
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.07, 0.05, 8), shared.brass)
+    const base = new THREE.Mesh(geometries.base, shared.brass)
     base.position.y = -0.7
     lantern.add(rod, cap, glass, base)
     lantern.position.set(0, CARRIAGE_CEILING_Y, z)
@@ -1839,11 +1855,22 @@ function addLanterns(g, half, shared, fx, glassMat, spacing = 4) {
 }
 
 // Wall sconce: brass back plate with a small shaded lamp.
+// A weak carriage key prevents sharing disposed geometry with another level
+// or retaining an old level. disposeObject deduplicates these at teardown.
+const sconceGeometries = new WeakMap()
 function addSconce(g, s, z, shared, glassMat, y = 1.95) {
+  let geometries = sconceGeometries.get(g)
+  if (!geometries) {
+    geometries = {
+      plate: new THREE.BoxGeometry(0.03, 0.22, 0.12),
+      shade: new THREE.CylinderGeometry(0.06, 0.09, 0.16, 8)
+    }
+    sconceGeometries.set(g, geometries)
+  }
   const x = s * WALL_X
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.22, 0.12), shared.brass)
+  const plate = new THREE.Mesh(geometries.plate, shared.brass)
   plate.position.set(x - s * 0.02, y, z)
-  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.16, 8), glassMat)
+  const shade = new THREE.Mesh(geometries.shade, glassMat)
   shade.position.set(x - s * 0.16, y + 0.1, z)
   noCam(shade)
   g.add(plate, shade)
@@ -2249,15 +2276,7 @@ function dressDamagedMechanicalLuxury(g, half, shared, fx) {
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
 
-  const rupture = new THREE.Mesh(
-    new THREE.BoxGeometry(0.22, 0.04, half * 0.9),
-    new THREE.MeshStandardMaterial({
-      color: 0x2a1848, emissive: 0x7c3aed, emissiveIntensity: 1.15, roughness: 0.4
-    })
-  )
-  rupture.name = 'mechanical-rupture-strip'
-  rupture.position.set(0, CARRIAGE_CEILING_Y - 0.05, -half * 0.1)
-  g.add(rupture)
+  addMechanicalReference(g, { wallX: WALL_X, brass: shared.brass, darkSteel: shared.darkSteel })
 
   for (const s of [-1, 1]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
@@ -2308,11 +2327,13 @@ function dressDamagedMechanicalLuxury(g, half, shared, fx) {
   }
 
   const glassMat = new THREE.MeshStandardMaterial({
-    color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.35, roughness: 0.35
+    color: 0xffdeb0, emissive: 0xffc27a, emissiveIntensity: 0.95, roughness: 0.48
   })
   for (const z of [-half + 5, half - 5]) {
     for (const s of [-1, 1]) {
-      const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
+      // Rectangular lantern glass recalls L2's practical fixtures. Replaces
+      // cylinder shades, retaining four fixtures with fewer static triangles.
+      const shade = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.16), glassMat)
       shade.name = 'mechanical-sconce'
       shade.position.set(s * (WALL_X - 0.35), 2.05, z)
       noCam(shade)
@@ -2327,19 +2348,6 @@ function dressDamagedMechanicalLuxury(g, half, shared, fx) {
   const ceil = new THREE.PointLight(0xffc090, 8, 9, 2)
   ceil.position.set(0, CARRIAGE_CEILING_Y - 0.3, -half * 0.35)
   addLight(g, fx, ceil, true)
-
-  // Soft cyan fracture cue on torn lining (emissive only — no PointLight).
-  const cyanTear = new THREE.MeshStandardMaterial({
-    color: 0x1e293b, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4
-  })
-  for (const c of damageSites(half)) {
-    const tear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.1, 0.7), cyanTear)
-    tear.name = 'mechanical-chrono-tear'
-    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z)
-    tear.rotation.z = c.side * 0.1
-    noCam(tear)
-    g.add(tear)
-  }
 
   return addRoofAccess(g, half - 2.5, shared)
 }
@@ -3505,7 +3513,10 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     else if (cfg.key === 'vault' && !damaged) dressVintageVault(group, half, shared, fx)
     else if (cfg.key === 'vault') parts.vault = dressVault(group, half, shared, damaged, fx)
 
-    if (damaged) addWreckage(group, half, shared, fx, cfg.key)
+    if (damaged) {
+      addWreckage(group, half, shared, fx, cfg.key)
+      refineWreckLandmark(group, cfg.key, half, WALL_X)
+    }
 
     cursor += cfg.length
   })

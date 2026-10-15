@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { disposeObject } from '../core/dispose.js'
 import { CARRIAGE_CEILING_Y } from '../environment/carriages.js'
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 
@@ -259,9 +260,9 @@ export function createStormDebris(root, spans, config = STORM_DEBRIS) {
 
   function dispose() {
     root.remove(group)
-    group.traverse((o) => {
-      if (o.geometry) o.geometry.dispose()
-    })
+    // This branch is detached before the level root's teardown. Release its
+    // shared luggage materials as well as geometry here.
+    disposeObject(group)
   }
 
   return { update, reset, dispose, config }

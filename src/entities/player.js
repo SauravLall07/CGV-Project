@@ -586,7 +586,7 @@ export function createPlayer() {
       }
     }
 
-    crouching = (holdToCrouch ? Boolean(keyboard.duck) : crouchToggled) && !airborne
+    crouching = ((holdToCrouch ? Boolean(keyboard.duck) : crouchToggled) || Boolean(group.userData.wreckLowCeiling)) && !airborne
     const deepVentCrouch = crouching && Boolean(group.userData.tightCrouchCamera)
     running = Boolean(keyboard.run) && moving && !crouching
 

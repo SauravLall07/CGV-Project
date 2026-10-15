@@ -111,7 +111,12 @@ function installCanvasStub() {
     createLinearGradient: () => ({ addColorStop() {} }),
     createRadialGradient: () => ({ addColorStop() {} })
   }, { get: (target, key) => target[key] ?? (() => {}) })
-  globalThis.document = { createElement: () => ({ getContext: () => context }) }
+  globalThis.document = {
+    createElement: () => ({ getContext: () => context }),
+    // L2's moonlit backdrop now loads image textures. These simulation tests
+    // need the ImageLoader interface, not image decoding or raster output.
+    createElementNS: () => ({ addEventListener() {}, removeEventListener() {} })
+  }
   globalThis.window = { devicePixelRatio: 1, innerWidth: 1280 }
 }
 

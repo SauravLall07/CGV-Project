@@ -10,6 +10,8 @@ import * as THREE from 'three'
 // A level factory receives ctx and returns:
 //   { objective, checkpoint: { position, yaw }, bounds?, update?(delta), dispose() }
 // dispose() is mandatory and must undo everything the factory added.
+// A descriptor may instead provide load(): Promise<factory>. Only module/factory
+// resolution is asynchronous: canceled loads must never construct a scene.
 //
 // enter() defers the actual build by two animation frames so the loading
 // screen is on screen before the (synchronous) build blocks — see the comment
@@ -24,6 +26,8 @@ export function createLevelManager({
 }) {
   const sequence = levels.map((l) => l.state)
   const factories = new Map(levels.map((l) => [l.state, l.create]))
+  const loaders = new Map(levels.map((l) => [l.state, l.load]))
+  const pendingLoads = new Map()
   const keepPrevious = new Set(levels.filter((l) => l.keepPrevious).map((l) => l.state))
 
   let current = null
@@ -107,6 +111,27 @@ export function createLevelManager({
     onInputStateChange?.()
   }
 
+  function loadFactory(state) {
+    if (factories.get(state)) return Promise.resolve(factories.get(state))
+    if (!pendingLoads.has(state)) {
+      const promise = Promise.resolve().then(() => loaders.get(state)()).then(factory => {
+        if (typeof factory !== 'function') throw new Error(`level-manager: invalid factory for "${state}"`)
+        factories.set(state, factory)
+        return factory
+      }).finally(() => pendingLoads.delete(state))
+      pendingLoads.set(state, promise)
+    }
+    return pendingLoads.get(state)
+  }
+
+  function prefetch(state) {
+    if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
+    return loadFactory(state).catch(error => {
+      console.warn(`[level-manager] prefetch failed for "${state}"; transition will retry`, error)
+      return null
+    })
+  }
+
   // The title screen already built Boarding. Adopting it keeps that scene in
   // place so New Game can glide the camera instead of flashing a reload.
   // The checkpoint and objective are applied; the camera is left where it is.
@@ -134,12 +159,42 @@ export function createLevelManager({
     setTransitioning(true)
     respawn.reset()
 
+    function fail(error) {
+      if (token !== pendingToken) return
+      loadingScreen.show()
+      loadingScreen.setError?.()
+      console.error(`[level-manager] failed to enter "${state}"`, error)
+      // Keep the outgoing scene and input frozen. Reload is the visible recovery
+      // path; a later enter/unload also invalidates this transition normally.
+    }
+
+    function prepare(preservePresentation) {
+      function construct() {
+        if (token !== pendingToken) return
+        try {
+          build(state, preserveEnergy, levelOptions)
+          if (preservePresentation) {
+            loadingScreen.hide()
+            setTransitioning(false)
+            return
+          }
+          // Preserve the extra presentation frame and guard its completion too.
+          requestAnimationFrame(() => {
+            if (token !== pendingToken) return
+            loadingScreen.hide()
+            setTransitioning(false)
+            if (!onInputStateChange) interaction.setEnabled(true)
+          })
+        } catch (error) { fail(error) }
+      }
+      if (factories.get(state)) construct()
+      else loadFactory(state).then(construct, fail)
+    }
+
     // Keep-previous states (Complete / credits) must not flash the loading
     // screen or dispose the outgoing level — the last frame stays up.
     if (keepPrevious.has(state) && current) {
-      build(state, preserveEnergy, levelOptions)
-      loadingScreen.hide()
-      setTransitioning(false)
+      prepare(true)
       return
     }
 
@@ -157,16 +212,7 @@ export function createLevelManager({
     // The first frame lets the loading screen paint; the second does the work.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (token !== pendingToken) return
-      build(state, preserveEnergy, levelOptions)
-
-      // And one more so the built level has rendered behind the overlay
-      // before it fades away.
-      requestAnimationFrame(() => {
-        if (token !== pendingToken) return
-        loadingScreen.hide()
-        setTransitioning(false)
-        if (!onInputStateChange) interaction.setEnabled(true)
-      })
+      prepare(false)
     }))
   }
 
@@ -219,12 +265,14 @@ export function createLevelManager({
 
   return {
     enter,
+    prefetch,
     adopt,
     restart,
     unload,
     advance,
     update,
     handleAction,
+    setPresentationPaused: value => current?.setPresentationPaused?.(value),
     dispose,
     getState: () => currentState,
     isTransitioning: () => transitioning,

@@ -1,13 +1,12 @@
-// Loading screen with a real progress bar (Phase 1 foundation). The brief
-// calls loading screens out as worth Polish marks and as a hedge against "a
-// slow first load looking like a crash" — so this is driven by the asset
-// loader's actual onProgress fraction, not a fake timer.
+// Startup counts required asset/build/presentation steps, not elapsed time.
+// Later transitions can still report actual asset-manager progress. Only the
+// composition/level owner knows when construction and presentation are ready.
 //
 // It's also shown during every level transition: the level manager calls
 // show() before tearing down and hide() once the next level is built, so a
 // slow future level load never shows a frozen old scene.
 
-export function createLoadingScreen(assets) {
+export function createLoadingScreen(assets, { tasks = null } = {}) {
   const root = document.createElement('div')
   root.id = 'loading-screen'
   Object.assign(root.style, {
@@ -70,6 +69,7 @@ export function createLoadingScreen(assets) {
   function show() {
     visible = true
     clearTimeout(hideTimer)
+    setProgress(0)
     root.style.display = 'flex'
     // Force reflow so the opacity transition replays after display change.
     void root.offsetWidth
@@ -78,6 +78,7 @@ export function createLoadingScreen(assets) {
 
   function hide() {
     if (!visible) return
+    setProgress(1)
     visible = false
     root.style.opacity = '0'
     hideTimer = setTimeout(() => {
@@ -85,16 +86,30 @@ export function createLoadingScreen(assets) {
     }, 300)
   }
 
-  // React to real asset progress when a level actually queues loads.
-  const offProgress = assets.onProgress((fraction) => setProgress(fraction))
-  const offLoad = assets.onLoad(() => { setProgress(1); hide() })
+  function setError() {
+    label.textContent = 'Unable to load. Reload to try again.'
+  }
+
+  // A manager can empty while nature/build/warmup is still pending. It may
+  // report asset progress after startup, but must never dismiss the overlay.
+  const offProgress = assets.onProgress(fraction => {
+    if (!tasks || tasks.ready) setProgress(fraction)
+  })
+  const offLoad = assets.onLoad(() => {
+    if (!tasks || tasks.ready) setProgress(1)
+  })
+  const offTasks = tasks?.subscribe(state => {
+    if (state.failed) setError()
+    else setProgress(state.progress)
+  })
 
   function dispose() {
     offProgress()
     offLoad()
+    offTasks?.()
     clearTimeout(hideTimer)
     root.remove()
   }
 
-  return { show, hide, setProgress, dispose }
+  return { show, hide, setProgress, setError, dispose }
 }

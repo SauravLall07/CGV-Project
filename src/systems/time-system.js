@@ -50,13 +50,13 @@ const MAX_SNAPSHOT_HISTORY = 10.0
 // Which abilities the player currently has. Level 3's scripted Chrono Core
 // depletion locks everything but Freeze, which is why this lives here rather
 // than in a level: the key bindings in main.js and the HUD both read it.
-const ALL_ABILITIES = { SLOW: true, FREEZE: true, REWIND: true, GHOST: true }
+const ALL_ABILITIES = Object.freeze({ SLOW: true, FREEZE: true, REWIND: true, GHOST: true })
 
 export function createTimeSystem({ scene, player, hud, onTimeScale }) {
   let mode = TIME_MODES.NORMAL
   let energy = MAX_ENERGY
   let ghost = createTimeGhost()
-  let availability = { ...ALL_ABILITIES }
+  let availability = ALL_ABILITIES
   scene.add(ghost.mesh)
 
   // Rolling history of player transforms for Time Ghost
@@ -162,13 +162,15 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
   // Anything omitted is re-enabled, so `setAbilityAvailability({})` restores
   // the full kit — which is what level teardown does.
   function setAbilityAvailability(map = {}) {
-    availability = { ...ALL_ABILITIES, ...map }
+    availability = Object.freeze({ ...ALL_ABILITIES, ...map })
     // If the ability currently running just went offline, drop to normal time.
     if (mode !== TIME_MODES.NORMAL && !availability[mode]) setMode(TIME_MODES.NORMAL)
   }
 
   function getAbilityAvailability() {
-    return { ...availability }
+    // Immutable point-in-time view: HUD reads need no per-frame clone, while
+    // callers cannot mutate live ability state or an earlier returned view.
+    return availability
   }
 
   function resetGhost() {
@@ -412,10 +414,13 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
       snapshotTimer = 0
       // Scripted repairs (such as the already-fallen Mechanical plank) have
       // no snapshots and must keep receiving reverse updates after buffers end.
-      const proceduralRewind = [...registered].some((entry) =>
-        entry.snapshots.length === 0 && entry.options.onUpdate)
-      const historyTime = Math.max(0, ...[...registered].map((entry) =>
-        (entry.snapshots.length - 1) * SNAPSHOT_INTERVAL))
+      let proceduralRewind = false
+      let historyTime = 0
+      for (const entry of registered) {
+        const count = entry.snapshots.length
+        if (count === 0 && entry.options.onUpdate) proceduralRewind = true
+        historyTime = Math.max(historyTime, (count - 1) * SNAPSHOT_INTERVAL)
+      }
       const remainingTime = proceduralRewind ? Infinity :
         Math.max(0, historyTime - rewindPlaybackTime) / REWIND_SPEED
       const ghostDrainRate = ghost.isPlaying() ? DRAIN_RATES.GHOST : 0
@@ -522,7 +527,7 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     ghostPads.clear()
     setStrainEnabled(false)
     levelMultiplier = 1.0
-    availability = { ...ALL_ABILITIES }
+    availability = ALL_ABILITIES
 
     energy = preserveEnergy
       ? Math.max(energy, CHECKPOINT_ENERGY_FLOOR)
@@ -559,7 +564,7 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     strain = 0
     freezeLockout = 0
     energy = Math.max(snapshot?.energy ?? energy, CHECKPOINT_ENERGY_FLOOR)
-    availability = snapshot?.availability ? { ...snapshot.availability } : { ...availability }
+    availability = Object.freeze(snapshot?.availability ? { ...snapshot.availability } : { ...availability })
     levelMultiplier = snapshot?.levelMultiplier ?? levelMultiplier
     for (const entry of registered) {
       entry.snapshots?.splice?.(0)

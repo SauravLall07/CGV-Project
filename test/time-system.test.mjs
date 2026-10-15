@@ -145,3 +145,87 @@ test('Ghost recording uses active simulation time rather than wall-clock timesta
   assert.equal(timeSystem.getGhost().isPlaying(), false)
   timeSystem.dispose()
 })
+
+test('ability availability is a stable immutable view and old views survive state changes', () => {
+  const { timeSystem } = createHarness()
+  try {
+    const initial = timeSystem.getAbilityAvailability()
+    runFor(timeSystem, 1, [1 / 60])
+    assert.equal(timeSystem.getAbilityAvailability(), initial)
+    assert.throws(() => { initial.SLOW = false }, TypeError)
+    assert.equal(timeSystem.getAbilityAvailability().SLOW, true)
+
+    timeSystem.triggerSlow()
+    timeSystem.setAbilityAvailability({ SLOW: false })
+    const offline = timeSystem.getAbilityAvailability()
+    assert.notEqual(offline, initial)
+    assert.equal(offline.SLOW, false)
+    assert.equal(initial.SLOW, true)
+    assert.equal(timeSystem.getMode(), TIME_MODES.NORMAL, 'disabling the active ability still exits it')
+    assert.equal(offline.FREEZE, true, 'omitted abilities retain the original enabled default')
+
+    const checkpoint = timeSystem.captureCheckpointState()
+    assert.notEqual(checkpoint.availability, offline, 'checkpoint data remains independently editable')
+    checkpoint.availability.GHOST = false
+    timeSystem.resetForCheckpoint(checkpoint)
+    const restored = timeSystem.getAbilityAvailability()
+    assert.equal(restored.GHOST, false)
+    assert.equal(offline.GHOST, true)
+    checkpoint.availability.GHOST = true
+    assert.equal(restored.GHOST, false, 'later checkpoint edits cannot mutate the restored view')
+    assert.throws(() => { restored.REWIND = false }, TypeError)
+
+    timeSystem.resetForLevel()
+    assert.deepEqual(timeSystem.getAbilityAvailability(), { SLOW: true, FREEZE: true, REWIND: true, GHOST: true })
+    assert.equal(offline.SLOW, false)
+    timeSystem.setAbilityAvailability({ REWIND: false })
+    timeSystem.resetForRun()
+    assert.equal(timeSystem.getAbilityAvailability().REWIND, true)
+  } finally { timeSystem.dispose() }
+})
+
+test('rewind retains procedural reverse updates when a mixed snapshot set is exhausted', () => {
+  const { timeSystem } = createHarness()
+  const object = new THREE.Group()
+  let backwardsObjectUpdates = 0, proceduralReverse = 0
+  timeSystem.register(object, { onUpdate(dt) {
+    if (dt < 0) backwardsObjectUpdates++
+    object.position.x += dt
+  } })
+  const unregister = timeSystem.register(null, {
+    getSnapshot: () => null,
+    onUpdate(dt) { if (dt < 0) proceduralReverse += dt }
+  })
+  try {
+    runFor(timeSystem, 0.1, [1 / 60])
+    timeSystem.triggerRewind()
+    timeSystem.update(1)
+    assert.equal(timeSystem.getMode(), TIME_MODES.REWIND)
+    assert.equal(timeSystem.getEnergy(), 68)
+    assert.equal(proceduralReverse, -2.5)
+    assert.equal(object.position.x, 0)
+    assert.equal(backwardsObjectUpdates, 0)
+    unregister()
+    timeSystem.update(1)
+    assert.equal(timeSystem.getMode(), TIME_MODES.NORMAL)
+    assert.equal(timeSystem.getEnergy(), 68, 'exhausted snapshot history charges no additional rewind time')
+  } finally { timeSystem.dispose() }
+})
+
+test('rewind uses the longest registered history when earlier entries retain only a baseline', () => {
+  const { timeSystem } = createHarness()
+  const object = new THREE.Group()
+  timeSystem.register(new THREE.Group(), { recordWhen: () => false })
+  timeSystem.register(object, { onUpdate(dt) { object.position.x += dt } })
+  try {
+    runFor(timeSystem, 0.5, [1 / 60])
+    timeSystem.triggerRewind()
+    timeSystem.update(0.1)
+    assert.equal(timeSystem.getMode(), TIME_MODES.REWIND)
+    assert.ok(Math.abs(object.position.x - 0.25) < 1e-9)
+    timeSystem.update(1)
+    assert.equal(timeSystem.getMode(), TIME_MODES.NORMAL)
+    assert.equal(object.position.x, 0)
+    assert.ok(Math.abs(timeSystem.getEnergy() - 93.6) < 1e-9)
+  } finally { timeSystem.dispose() }
+})

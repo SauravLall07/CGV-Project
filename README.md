@@ -5,19 +5,19 @@ graphics course. The player sneaks through the train's carriages, evading
 guards, using a time-manipulation ability (slow/freeze/rewind/"time ghost")
 to get past obstacles across three levels.
 
-This repo holds the Alpha blockout plus **Phase 1 core systems**: a greyboxed
-slice of Level 1 (the boarding station), a walkable blocky humanoid player, a
-third-person camera, the train's parent-child hierarchy, and the shared
-plumbing the rest of the game builds on — an interaction system, a
-state-machine level manager (with dispose-based teardown and
-restart-without-refresh), a checkpoint/respawn system, an asset-loading
-pipeline with a progress-bar loading screen, and a HUD scaffold. All three
-levels are now playable start to finish — Level 1 stealth infiltration, Level 2
-five-carriage time-manipulation traversal, and Level 3's escape run back down
-the wrecked train. Every asset is built from Three.js primitives and
-procedurally generated textures — nothing is modelled or downloaded. See
-[Roadmap](#roadmap) below for exactly what's implemented versus what's still to
-come.
+All three levels are implemented: station stealth and boarding, time-powered
+carriage and roof traversal, and the wrecked-train escape to the emergency brake.
+The environment combines procedural Three.js geometry/textures with imported
+character and nature assets, animations, music and sound effects. See the in-game
+credits for the recorded sources; team identities and provenance confirmation
+remain outstanding.
+
+Level 3's N1-N8 expansion is implemented, including Cargo's static wreck benchmark.
+Automated traversal covers both Convergence routes, retries and lifecycle checks.
+The production New Game-to-victory run, rendered/audio checks, human difficulty
+and measured performance remain pending because no browser surface is available.
+See the [current completion handover](reports/level-3-expansion-plan.md#n1-completion-and-final-verification-2026-10-15)
+for evidence and the remaining acceptance work.
 
 ## Controls
 
@@ -53,7 +53,8 @@ survives a reload.
 | Tab | What it holds |
 |---|---|
 | Display | Brightness (tone-mapping exposure), field of view, render resolution scale, shadows on/off, soft vs hard shadows, FPS counter |
-| Gameplay | Mouse sensitivity, invert vertical look, third-person camera distance |
+| Gameplay | Mouse sensitivity, invert vertical look, third-person camera distance, hold/toggle crouch |
+| Audio | Master volume and mute |
 | Controls | Two rebindable slots per action — movement, run, jump, crouch, interact, view switch, the four time abilities and restart — with conflict handling that unbinds the key from whatever held it |
 
 ## Tech stack
@@ -63,6 +64,7 @@ survives a reload.
 | Graphics library | [three](https://threejs.org/) | Required by the brief |
 | Build tool | [Vite](https://vite.dev/) | Bundles to a plain static `dist/` folder, deployable as-is to the LAMP server |
 | Language | Plain JavaScript (ES modules) | Keeps the code simple; revisit for TypeScript later if wanted |
+| Decorative physics | Cannon-es | Loose debris; player collision and support queries use the existing custom system |
 | Dev-only camera controls | `three/examples/jsm/controls/OrbitControls.js` | Kept in the repo for debugging other scenes; not used by the active scene now that the real third-person camera exists |
 
 ## Project structure
@@ -199,115 +201,37 @@ top level of the archive, not nested).
 
 ## Roadmap
 
-### Done
+### Implemented
 
-- Three.js/Vite scaffold: renderer, scene, camera, clock, render loop
-- `Train` hierarchy: a parent group with named `carriage-0`..`carriage-4`
-  children (passenger → security → cargo → mechanical → vault), correctly
-  spaced with coupling gaps — moving/rotating `train` moves every carriage
-  with it, and each carriage can move independently of its siblings
-- Level 1 station greybox: platform, structural placeholders (wall, pillars,
-  platform edge), static non-functional guard/camera placeholders, warm
-  station lighting with shadows
-- Placeholder player (blocky humanoid) with WASD movement, frame-rate-
-  independent via delta time, bounded per level
-- Third-person camera: smoothed follow + mouse-look orbit via Pointer Lock
-- **Phase 1 core systems** — the shared foundation for all three levels:
-  - Interaction system: one raycast per frame from the player along the
-    camera yaw against a `register()`-ed set, a contextual prompt, E to fire
-    the callback
-  - Level manager: explicit `Boarding → MovingHeist → Timewreck → Complete`
-    state machine; each transition disposes the old level's
-    geometry/materials/textures and builds the next; `advance()` on level
-    completion, `restart()` with no page refresh
-  - Checkpoint / respawn: one active checkpoint per level, generic `fail()`
-    that returns the player to it (fall-out-of-bounds wired; guard/hazard
-    hooks land in Phases 2 and 4)
-  - Asset pipeline: shared `LoadingManager` + `GLTFLoader` (Draco lazy), and
-    a loading screen with a real `onProgress`-driven progress bar
-  - HUD scaffold: objective line + transient toast (full HUD is Phase 8)
-  - Menus: title screen, pause menu (Esc) with live run status, and a shared
-    settings screen covering display, camera/gameplay and key rebinding,
-    persisted to `localStorage`
-- Levels 2 and 3 exist as gameplay **stubs** — own lighting, checkpoint and
-  one interactable each, enough to exercise the state machine
-- **Art pass** (pulls Phase 7 material work forward so the game stops reading
-  as greybox):
-  - Procedural texture library: wood, marble, carpet, brushed metal, plaster,
-    lit-window strips and signage, all generated into `<canvas>` at runtime
-    with **normal maps derived from each colour map** — no downloaded or
-    modelled assets anywhere, and every map is power-of-two
-  - Station: marble concourse, coping and safety line, track bed with ballast,
-    sleepers and rails, panelled rear wall with lit arched windows, cast-iron
-    columns, train shed with lattice trusses and skylights, pendant gas lamps,
-    benches, departure board, clock, porter's trolley
-  - Train: locomotive (boiler, cab, chimney, plough, driving wheels, headlamp)
-    plus five carriages with barrel roofs, brass trim, per-type liveries,
-    textured window strips, doors, bogies and gangways
-  - Carriage interior: panelled walls, brass-framed windows onto a passing
-    night, seat bays with tables and lamps, luggage racks, coved ceiling
-  - Player is a proportioned figure (coat, cap, boots) with a walk cycle —
-    limb swing, torso bob, and a lean into a run
-  - ACES filmic tone mapping and soft shadow maps
-- **Phase 2 stealth & infiltration systems** (`src/systems/stealth.js`, `src/levels/boarding.js`):
-  - Deterministic guard patrol AI (`Patrol → Investigate → Alert`) with waypoint cycles and walk animations
-  - Dynamic 3D vision cones with obstacle line-of-sight raycasting / occlusion checks
-  - Sweeping wall-mounted security cameras with ground projection cones
-  - Security laser grids and interactive terminal bypass switches
-  - Shared Suspicion/Alert meter with color transitions and checkpoint fail-state
-  - Cinematic boarding & train departure sequence
-- **Phase 3 time-manipulation core engine** (`src/systems/time-system.js`):
-  - Slow (`1` / `Q`): per-object 0.2x time scale
-  - Freeze (`2` / `F`): per-object 0.0x time scale
-  - Rewind (`3` / `C`): 6-second circular transform buffer replay
-  - Time Ghost (`4` / `G`): holographic avatar (`src/entities/time-ghost.js`) that replays player trajectory and triggers pressure plates
-  - Chrono Core energy meter & ability HUD deck with temporal vignette (`src/ui/hud.js`)
-- **Phase 3 Level 2 — "The Moving Heist"** (`src/environment/carriages.js`, `src/levels/moving-heist.js`):
-  - Five distinct carriage interiors (passenger → security → cargo → mechanical
-    → vault) built end to end as one parent-child hierarchy, each with its own
-    geometry, props and lighting
-  - One signature time ability per car: Slow (swinging lamp), Freeze (sweeping
-    scanner), Rewind (collapsing walkway), Ghost (a Time Ghost holds a pressure
-    plate open while the player climbs)
-  - Roof-traversal set piece — an exterior catwalk crossing against a slipstream
-    wind hazard, solvable by slowing time
-  - Vault break-in: freeze the spinning lock ring, breach the cage, take the
-    Chrono Core — which fires the destabilisation cinematic into Level 3
-  - Per-section player bounds, rolling corridor checkpoints, contextual hints
-- **Phase 4 Level 3 — "The Timewreck"** (`src/levels/timewreck.js`):
-  - Built by re-dressing Phase 3's carriage builders with `damaged: true`
-    (scorched materials, flickering red emergency lighting, floor debris, torn
-    ceilings, sparking cables) rather than modelling new carriages — the
-    concept doc's stated scope strategy
-  - **Fast-time carriage** — runaway pistons where Slow is mandatory, not optional
-  - **Time-loop carriage** — a bulkhead stuck in an open → close → girder-fall →
-    rewind cycle, with a wall indicator so the loop is learnable
-  - **Frozen carriage** — the floor is gone; Freeze locks the suspended
-    wreckage into a solid walkway to cross on
-  - **Breaking train** — carriages yaw, roll and drop away independently of
-    their siblings, thrown debris streaks past, and the floor behind closes off
-  - **Final sequence** — scripted Chrono Core depletion locks every ability but
-    Freeze, then a timed sprint with a temporal wave catching up from behind
-    (Freeze holds it off), to the emergency brake and a stop-on-the-bridge beat
-  - Ember/spark particle fields, and ability lock-out plumbed through the time
-    system into the HUD (`setAbilityAvailability`)
+- Three levels with checkpoints, failure/retry, restart and completion transitions.
+- Station guards, cameras, lasers, suspicion and the boarding sequence.
+- Shared Slow/Freeze/Rewind over registered objects, plus the separate Time Ghost.
+- Level 2 carriage puzzles, roof traversal and the Chrono Core theft.
+- Level 3 Vault escape, two Convergence branches, Mechanical steam/luggage/shutter,
+  repairable Cargo gangway and freight, Relay Ghost release/catch, Security
+  crossings/island, Passenger seat weave/rack/chase and the buckling connector.
+- Carriage-specific wreck dressing, snapshot-driven repair fragments and background
+  destruction; Cargo's larger folded framing and broken freight composition.
+- Finale stasis, exterior deceleration, broken bridge/locomotive reveal and skip.
+- Custom player collision/supports and Cannon-es decorative debris physics.
+- First/third-person cameras, key rebinding, hold/toggle crouch, menus, settings,
+  minimap, styled HUD, loading feedback, music/SFX, master/mute and credits UI.
+- Shaders, post-processing, pooled lighting, conservative L3 visibility and developer
+  diagnostics. Their runtime cost still needs measured browser validation.
 
-### Next up: Physics (Phase 6) & Effects/Polish (Phases 7–8), for graded Beta
+### Acceptance still open
 
-- Lightweight physics library for loose cargo crates and timewreck debris
-  (the Level 3 debris integrator is already isolated to one callback)
-- Skybox, material pass, deliberate shadow strategy (Phase 7)
-- Audio, credits screen, full HUD, performance pass (Phase 8) — the menus and
-  settings screen from that phase are in
+- A production New Game -> Level 1 -> Level 2 -> Level 3 -> victory run without shortcuts.
+- Both views and fork branches; native pointer lock/rebindings, alternate powers,
+  Ghost expiry/cancel, minimum-energy retries and menu/finale interruptions.
+- Visual/shader/minimap/culling checks, audible balance and identified-hardware
+  frame-time/resource/heap measurements across play and repeated restarts.
+- First-time human comprehension and Passenger difficulty: the automated route
+  briefly reaches about 2 energy, so it does not establish a comfortable margin.
+- Exact team names/roles, asset attribution/provenance confirmation, trailer and
+  hosted deployment verification. No remote publication is recorded.
 
-### Still out of scope beyond that
-
-- Physics beyond basic ground/wall blocking (debris is scripted ballistics)
-- Credits screen, audio, the full styled HUD
-- Skybox and the wider material/shadow pass
-
-### Things to revisit once real implementation starts
-
-- Whether to move from plain JS to TypeScript
-- Audio settings (a volume tab is worth adding the moment there is sound to
-  mix)
+The [expansion ledger](reports/level-3-expansion-plan.md#carried-acceptance-ledger-still-open-at-n0)
+tracks A1-A9. Older upgrade Batch 6 and refinement R7 acceptance remain open;
+completed mechanics do not need rebuilding. Historical plans and audits describe
+past baselines; use their latest handovers for current status.
