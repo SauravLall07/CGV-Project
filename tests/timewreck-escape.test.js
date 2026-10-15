@@ -501,6 +501,19 @@ test('Passenger: rendered full-width hole and flat caps match exact support surf
     pose(h, 0, h.center + 2.8)
     h.tick(0.1); h.time.triggerFreeze(); h.tick(0.25)
     const floor = h.scene.getObjectByName('floor-passenger')
+    const footprint = h.scene.getObjectByName('passenger-rack-fall-footprint')
+    footprint.geometry.computeBoundingBox()
+    assert.ok(Math.abs(footprint.geometry.boundingBox.min.x + 1.5) < 1e-6)
+    assert.ok(Math.abs(footprint.geometry.boundingBox.max.x - 1.5) < 1e-6)
+    assert.ok(Math.abs(footprint.geometry.boundingBox.min.z + 0.55) < 1e-6)
+    assert.ok(Math.abs(footprint.geometry.boundingBox.max.z - 0.55) < 1e-6)
+    const directions = h.scene.getObjectByName('passenger-right-then-centre-guidance')
+    const vertices = directions.geometry.attributes.position
+    for (let i = 0; i < vertices.count; i++) {
+      assert.ok(vertices.getZ(i) > h.center + 1.4, 'floor directions stop before the hole')
+    }
+    assert.ok(h.scene.getObjectByName('emergency-brake-sign'))
+    assert.ok(h.scene.getObjectByName('cab-broken-track-warning'))
     const root = floor.parent.parent
     h.scene.updateMatrixWorld(true)
     for (const x of [-2.4, 0, 2.4]) {
@@ -573,6 +586,11 @@ test('Finale: real level manager restart/quit cancels reveal and stale completio
     }
     try {
       manager.adopt('Timewreck', h.level)
+      const pausedPresentation = []
+      const setPresentationPaused = h.level.setPresentationPaused
+      h.level.setPresentationPaused = value => { pausedPresentation.push(value); setPresentationPaused(value) }
+      manager.setPresentationPaused(true); manager.setPresentationPaused(false)
+      assert.deepEqual(pausedPresentation, [true, false], 'manager forwards presentation pause without advancing simulation')
       // Adopt the real level to test teardown while the reveal owns input.
       startFinale(h)
       const staleSkip = h.skipFinale

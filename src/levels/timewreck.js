@@ -14,6 +14,9 @@ import { bindingLabel, settings } from '../core/settings.js'
 import { createWreckRoutes, createPassengerRack } from './timewreck-routes.js'
 import { createSecurityCrossing } from './timewreck-security.js'
 import { createRelayFeedback } from './timewreck-relay-feedback.js'
+import { createWreckAudio } from '../systems/wreck-audio.js'
+import { signMaterial } from '../environment/textures.js'
+import { addPassengerGuidance } from '../environment/passenger-guidance.js'
 import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
 import {
   createCarriageShake,
@@ -107,6 +110,13 @@ function createEmergencyBrake() {
   )
   plate.position.set(0, 0.86, 0.22)
   brake.add(plate)
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.28), signMaterial({
+    text: 'EMERGENCY BRAKE', emissiveIntensity: 0.25
+  }))
+  label.name = 'emergency-brake-sign'
+  label.position.set(0, 1.95, 0.24)
+  label.userData.noCameraCollision = true
+  brake.add(label)
 
   const pivot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.22, 12), steelMat)
   pivot.rotation.z = Math.PI / 2
@@ -211,6 +221,7 @@ export function createTimewreckLevel({
   })
 
   const unregisters = []
+  const wreckAudio = createWreckAudio()
   unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds }
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
@@ -2185,6 +2196,14 @@ export function createTimewreckLevel({
 
   const brake = createEmergencyBrake()
   addProp(brake, spans.cab.center - 1.5)
+  addPassengerGuidance(root, spans.passenger.center, collapseBrass)
+  const trackWarning = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.26), signMaterial({
+    text: 'TRACK OUT / BRAKE', emissiveIntensity: 0.25
+  }))
+  trackWarning.name = 'cab-broken-track-warning'
+  trackWarning.position.set(0, 2.35, spans.cab.minZ + 0.5)
+  trackWarning.userData.noCameraCollision = true
+  root.add(trackWarning)
 
   // Celebratory exit aperture — decorative only; opens during the brake cinematic.
   const exitPath = new THREE.Group()
@@ -2231,6 +2250,7 @@ export function createTimewreckLevel({
     onInteract: () => {
       if (disposed || braking || brakeComplete || !depleted || Math.abs(player.mesh.position.z - brake.position.z) > 2.5) return
       braking = true
+      wreckAudio.brake()
       timeSystem.setMode('NORMAL')
       timeSystem.resetGhost()
       beginCinematic?.()
@@ -2247,6 +2267,7 @@ export function createTimewreckLevel({
     if (disposed || !braking || brakeComplete) return
     brakeComplete = true
     braking = false
+    wreckAudio.reset()
     hud.hideCinematicSkip?.()
     root.rotation.z = 0
     root.position.set(0, 0, 0)
@@ -2320,7 +2341,10 @@ export function createTimewreckLevel({
   let elapsed = 0
 
   const passengerRack = createPassengerRack({ root, span: spans.passenger, player, timeSystem, unregisters, obstacles: blastObstacles,
-    warn: () => showLevelToast('Rack bolts snapping! Amber is the fall zone — keep RIGHT or Freeze.', 3200) })
+    warn: () => {
+      wreckAudio.warning()
+      showLevelToast('Rack bolts snapping! Amber brackets mark the fall zone — keep RIGHT, then return to CENTRE for the floor crossing.', 3200)
+    } })
 
   // Capture the collapse at each checkpoint, then restore moving hazards to a
   // predictable phase. The final checkpoint also puts the pursuing wave far
@@ -2402,6 +2426,7 @@ export function createTimewreckLevel({
       fractureMat.customUniforms.uOpacity.value = 0
       failCooldown = 0
       braking = false
+      wreckAudio.reset()
       brakeComplete = false
       hud.hideCinematicSkip?.()
       brakeT = 0
@@ -2476,6 +2501,7 @@ export function createTimewreckLevel({
     voids: gapVoids,
     getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return braking },
+    setPresentationPaused: value => wreckAudio.setPaused(value),
 
     update(delta) {
       // Recover temporary render visibility even if a prior render was aborted.
@@ -2505,6 +2531,7 @@ export function createTimewreckLevel({
       const exteriorScale = braking
         ? Math.max(0, 1 - brakeT / 2.5)
         : mode === 'FREEZE' ? 0 : resumeBoost * (mode === 'SLOW' ? 0.2 : 1)
+      wreckAudio.update(depleted && !brakeComplete, finaleFreeze, braking ? brakeT : null)
       outdoorEnv.update(envDt)
       wreckExterior.update(delta, exteriorScale)
       env.update(envDt)
@@ -2975,6 +3002,7 @@ export function createTimewreckLevel({
 
     dispose() {
       disposed = true
+      wreckAudio.dispose()
       removeVisibility()
       hud.hideCinematicSkip?.()
       player.mesh.userData.tightCrouchCamera = false
