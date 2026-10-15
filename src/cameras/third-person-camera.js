@@ -18,6 +18,7 @@ import { createNearRaycastSet } from '../core/near-raycast.js'
 const MIN_DISTANCE = 1.2
 const PIVOT_HEIGHT = 1.5 // roughly head height on the 1.85 m figure
 const COLLISION_PADDING = 0.25
+const CAMERA_SURFACE_MIN_DISTANCE = 0.08 // a close wall must beat the preferred minimum follow distance
 const CROUCH_PIVOT_HEIGHT = 0.92
 const CROUCH_MIN_DISTANCE = 0.12
 const CROUCH_MAX_DISTANCE = 2.35
@@ -92,6 +93,9 @@ export function createThirdPersonCamera(camera, domElement) {
   const smoothedPivot = new THREE.Vector3()
   const offset = new THREE.Vector3()
   const raycaster = new THREE.Raycaster()
+  const reverseRaycaster = new THREE.Raycaster()
+  const desiredCameraPosition = new THREE.Vector3()
+  const reverseDirection = new THREE.Vector3()
   // Only geometry within reach of the pivot is tested; see core/near-raycast.js.
   const nearby = createNearRaycastSet()
 
@@ -135,23 +139,33 @@ export function createThirdPersonCamera(camera, domElement) {
       raycaster.set(smoothedPivot, offset)
       raycaster.far = maxDistance
       const nearbyCollidables = nearby.get(collidables, smoothedPivot, maxDistance, playerMesh)
+      // Most station walls use FrontSide materials. A ray cast from the
+      // player's side can miss their back faces, allowing the camera to pop
+      // through them. Cast from the intended camera position as well so both
+      // orientations are blocked without changing any material or wall.
+      desiredCameraPosition.copy(smoothedPivot).addScaledVector(offset, maxDistance)
+      reverseDirection.copy(offset).negate()
+      reverseRaycaster.set(desiredCameraPosition, reverseDirection)
+      reverseRaycaster.far = maxDistance
+
+      const isCameraObstacle = (hit) =>
+        !isDescendantOf(hit.object, playerMesh) && !hit.object.userData.noCameraCollision
+
       const hits = raycaster.intersectObjects(nearbyCollidables, false)
-      for (const hit of hits) {
-        if (isDescendantOf(hit.object, playerMesh)) continue
-        if (hit.object.userData.noCameraCollision) continue
+      const reverseHits = reverseRaycaster.intersectObjects(nearbyCollidables, false)
+      // Pick the obstruction *closest to the player*, including reverse-facing
+      // triangles. A wall closer than MIN_DISTANCE still wins: otherwise the
+      // minimum follow distance itself pushes the camera through the wall.
+      for (const hit of [...hits, ...reverseHits.map((reverseHit) => ({
+        ...reverseHit,
+        distance: maxDistance - reverseHit.distance
+      }))]) {
+        if (!isCameraObstacle(hit)) continue
         const clearance = hit.object.userData.cameraClearance
-        if (typeof clearance === 'number') {
-          // Thin rails. The usual minimum follow distance would leave the
-          // camera on the far side of a gantry rail, so stay in front of
-          // the hit even when that is close to the player.
-          const gap = Math.min(clearance, hit.distance * 0.55)
-          // Never further out than the player's follow distance. The rail
-          // only pulls the camera in when it would otherwise sit past it.
-          allowed = Math.min(maxDistance, Math.max(0.35, hit.distance - gap))
-        } else {
-          allowed = Math.max(minDistance, hit.distance - collisionPadding)
-        }
-        break
+        const padding = typeof clearance === 'number'
+          ? Math.min(clearance, hit.distance * 0.55)
+          : collisionPadding
+        allowed = Math.min(allowed, Math.max(CAMERA_SURFACE_MIN_DISTANCE, hit.distance - padding))
       }
     }
 
