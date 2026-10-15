@@ -2128,6 +2128,7 @@ export function createTimewreckLevel({
   const DEPLETE_Z = spans.passenger.maxZ - 1.8
   const WAVE_SPEED = 6.2 // below the actual 6.8 m/s sprint
   const WAVE_LEAD = 12
+  const sprintObjective = () => `Sprint to the locomotive (${bindingLabel(settings.getBinding('run'))}) — pull the emergency brake!`
 
   let depleted = false
   let waveZ = 0
@@ -2373,7 +2374,7 @@ export function createTimewreckLevel({
       collapseHintHoldUntil = -1
       pendingToast = null
       hintsShown.clear()
-      hud.setObjective(depleted ? 'Sprint to the locomotive — pull the emergency brake!' : LEVEL_OBJECTIVE)
+      hud.setObjective(depleted ? sprintObjective() : LEVEL_OBJECTIVE)
       fractureArmed = saved.fractureArmed
       fractureT = saved.fractureT
       applyVaultFracture(0)
@@ -2498,7 +2499,7 @@ export function createTimewreckLevel({
         collapseHintHoldUntil = -1
         if (!braking && hud.getObjective() === COLLAPSE_HINT) {
           hud.setObjective(depleted
-            ? 'Sprint to the locomotive (hold Shift) — pull the emergency brake!'
+            ? sprintObjective()
             : LEVEL_OBJECTIVE)
         }
         if (pendingToast) {
@@ -2914,7 +2915,7 @@ export function createTimewreckLevel({
           restore: captureCheckpointRestore(DEPLETE_Z)
         })
         showLevelToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
-        hud.setObjective('Sprint to the locomotive (hold Shift) — pull the emergency brake!')
+        hud.setObjective(sprintObjective())
       }
 
       if (depleted) {

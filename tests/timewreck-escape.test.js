@@ -19,7 +19,8 @@ function levelHarness(start = 'mechanical', fps = 60) {
   const player = createPlayer()
   const messages = []
   let skipFinale = null
-  const hud = new Proxy({ showToast: (message) => messages.push(message), showCinematicSkip: cb => { skipFinale = cb }, hideCinematicSkip: () => { skipFinale = null } }, {
+  let objective = ''
+  const hud = new Proxy({ setObjective: value => { objective = value }, getObjective: () => objective, showToast: (message) => messages.push(message), showCinematicSkip: cb => { skipFinale = cb }, hideCinematicSkip: () => { skipFinale = null } }, {
     get: (target, key) => target[key] ?? (() => {})
   })
   const time = createTimeSystem({ scene, player, hud })
@@ -31,13 +32,15 @@ function levelHarness(start = 'mechanical', fps = 60) {
   })
   player.setPose(level.checkpoint.position, Math.PI)
   respawn.setCheckpoint(level.checkpoint.position, Math.PI, level.checkpoint)
-  const span = level.getCarriageVolumes().find((v) => v.key === start)
+  const span = level.getCarriageVolumes().find((v) => v.key === (start ?? 'vault'))
   const center = (span.minZ + span.maxZ) / 2
   const layout = securityCrossingLayout(center)
   let duckWasDown = false
+  let frame = 0
   const tick = (seconds, keys = {}) => {
-    for (let t = 0; t < seconds - 1e-9; t += 1 / fps) {
-      const dt = Math.min(1 / fps, seconds - t)
+    for (let t = 0; t < seconds - 1e-9;) {
+      const dt = Math.min(Array.isArray(fps) ? fps[frame++ % fps.length] : 1 / fps, seconds - t)
+      t += dt
       time.update(dt)
       level.update(dt)
       player.update(dt, { keyboard: keys, cameraYaw: Math.PI, bounds: level.bounds,
@@ -48,6 +51,108 @@ function levelHarness(start = 'mechanical', fps = 60) {
   const dispose = () => { respawn.dispose(); level.dispose(); time.dispose() }
   return { hud, get skipFinale() { return skipFinale }, get advanced() { return advanced }, scene, player, time, respawn, level, center, layout, interactions, tick, dispose, messages }
 }
+
+// One live level, normal Vault spawn, no per-room starts or pose changes.
+// This catches clocks/checkpoints/energy carried between the isolated puzzles.
+test('Integration: continuous Vault-to-brake route preserves solvable checkpoints across all carriages', () => {
+  for (const fps of [30, 60, 144]) {
+    const h = levelHarness(null, fps)
+    let stage = 'vault'
+    const center = key => {
+      const span = h.level.getCarriageVolumes().find(v => v.key === key)
+      return (span.minZ + span.maxZ) / 2
+    }
+    const check = () => assert.equal(h.respawn.isFailing(), false,
+      JSON.stringify({fps, stage, pos:h.player.mesh.position, energy:h.time.getEnergy(), messages:h.messages.slice(-3)}))
+    const move = (axis, target, extra = {}) => {
+      for (let i = 0; Math.abs(h.player.mesh.position[axis] - target) > 0.06; i++) {
+        assert.ok(i < fps * 25, `blocked ${stage}/${axis}: ${JSON.stringify(h.player.mesh.position)} -> ${target}`)
+        const positive = h.player.mesh.position[axis] < target
+        h.tick(Math.min(1 / fps, Math.abs(h.player.mesh.position[axis] - target) / (extra.run ? 6.8 : 4)),
+          {...extra, [axis === 'x' ? positive ? 'right' : 'left' : positive ? 'back' : 'forward']:true})
+        check()
+      }
+    }
+    const waitUntil = condition => {
+      for (let i = 0; !condition(); i++) {
+        assert.ok(i < fps * 12, `no window: ${stage}`)
+        h.tick(1 / fps); check()
+      }
+    }
+    const recharge = () => { h.time.setMode('NORMAL'); h.tick(7); check() }
+    try {
+      const gates = []
+      h.scene.traverse(n => {if(n.name === 'vault-security-gate') gates.push(n)})
+      gates.sort((a,b) => b.position.z - a.position.z)
+      for (const gate of gates) {
+        move('z', gate.position.z + 1.4)
+        waitUntil(() => gate.getObjectByName('vault-clearance-signal').material.color.getHex() === 0x42dfad)
+        h.time.triggerFreeze(); move('z', gate.position.z - 1.3)
+        recharge()
+      }
+      stage = 'convergence'
+      move('z', center(stage) + 10)
+      move('x', -0.6)
+      move('z', center(stage) + 6.2)
+      const surge = h.scene.getObjectByName('convergence-electrical-surge')
+      assert.ok(surge)
+      // Wait from safe floor, then stop the direct aisle's safe phase.
+      waitUntil(() => surge.children[0].material.emissiveIntensity < 0.5)
+      h.time.triggerFreeze(); move('z', center(stage) + 2)
+      h.time.setMode('NORMAL')
+      move('z', center('mechanical') + 10)
+      stage = 'mechanical'
+      move('x', 1.5)
+      h.time.triggerSlow(); move('z', center(stage) + 4.6)
+      h.time.setMode('NORMAL'); move('z', center(stage) + 2.7)
+      repair(h, 'mechanical-rewind-shutter')
+      move('z', center(stage) - 2)
+      recharge(); move('x', 0)
+      h.time.triggerSlow(); move('z', center(stage) - 11.5)
+      h.time.setMode('NORMAL')
+      stage = 'cargo'
+      move('z', center(stage) + 12)
+      recharge()
+      h.time.triggerRewind(); h.tick(0.55); h.time.triggerFreeze()
+      move('z', center(stage) + 3.15, {run:true})
+      recharge()
+      waitUntil(() => h.scene.getObjectByName('cargo-loop-door').position.y > 3.49)
+      h.time.triggerFreeze(); move('z', center(stage) - 3, {run:true})
+      h.time.setMode('NORMAL')
+      stage = 'relay'
+      move('z', center(stage) + 2)
+      recharge(); h.time.triggerGhost(); h.tick(0.05)
+      move('z', center(stage) - 4.4)
+      assert.ok(h.interactions.get('relay-manual-catch').isEligible())
+      h.interactions.get('relay-manual-catch').onInteract()
+      h.time.resetGhost()
+      stage = 'security'
+      move('z', center(stage) + 7.15)
+      move('x', -0.9); recharge()
+      h.time.triggerFreeze(); h.tick(0.23)
+      h.tick(0.62, {forward:true}); h.tick(0.5, {forward:true,right:true}); h.tick(0.7,{forward:true}); h.tick(0.05)
+      check(); recharge()
+      // Retry on the island in the same run: no stale Relay echo or old powers.
+      h.respawn.fail('integration retry'); h.respawn.cancel(); h.respawn.respawn()
+      assert.equal(h.player.mesh.position.z, center(stage))
+      assert.equal(h.time.getGhost().isPlaying(), false)
+      move('x', 0.52); move('z', center(stage) + 0.46); recharge()
+      h.time.triggerFreeze(); h.tick(0.23)
+      h.tick(0.81,{forward:true}); h.tick(0.75,{forward:true,run:true,jump:true}); h.tick(0.6,{forward:true}); h.tick(0.05)
+      check(); h.time.setMode('NORMAL'); move('x', 0)
+      stage = 'passenger'
+      move('z', center(stage) + 8.4)
+      h.tick(0.7,{forward:true,run:true,right:true}); h.tick(0.2,{forward:true,run:true})
+      h.time.triggerFreeze(); h.tick(0.3); h.tick(0.37,{left:true,run:true}); h.tick(1.6,{forward:true,run:true})
+      check(); h.time.setMode('NORMAL')
+      move('z', h.scene.getObjectByName('emergency-brake').position.z + 1.5, {run:true})
+      h.interactions.get('emergency-brake').onInteract()
+      assert.equal(h.level.isCinematic,true)
+      h.tick(4.9)
+      assert.equal(h.advanced,1)
+    } finally { h.dispose() }
+  }
+})
 function pose(h, x, z, y = 0) { h.player.setPose(new THREE.Vector3(x, y, z), Math.PI) }
 function repair(h, name) {
   const shutter = h.scene.getObjectByName(name).children[0]
@@ -208,6 +313,38 @@ test('Passenger: unheld and wall-side floors fall; depleted retries reset wave, 
       assert.equal(h.scene.getObjectByName('passenger-falling-rack').children[0].position.y, 2.65)
     }
   } finally { h.dispose() }
+})
+
+test('Passenger: minimum-energy carried entry and repeated checkpoint retries can still reach the brake', () => {
+  for (const fps of [30,60,144,[1/144,1/30,0.1,1/60]]) {
+    const h = levelHarness('passenger',fps)
+    try {
+      // Model arriving from Security with little energy, rather than the dev
+      // shortcut's full bar. This is an input state, not a traversal shortcut.
+      h.time.resetForCheckpoint({...h.time.captureCheckpointState(),energy:0})
+      assert.equal(h.time.getEnergy(),50)
+      h.tick(0.1,{forward:true,run:true})
+      for(let attempt=0;attempt<3;attempt++) {
+        h.respawn.fail('retry'); h.respawn.cancel(); h.respawn.respawn()
+        assert.ok(h.time.getEnergy()<=54)
+        h.tick(0.1,{forward:true,run:true})
+        h.tick(0.7,{forward:true,run:true,right:true})
+        h.tick(0.2,{forward:true,run:true})
+        h.time.triggerFreeze(); h.tick(0.3)
+        h.tick(0.37,{left:true,run:true}); h.tick(1.6,{forward:true,run:true})
+        assert.equal(h.respawn.isFailing(),false,JSON.stringify({fps,attempt,pos:h.player.mesh.position,energy:h.time.getEnergy(),messages:h.messages.slice(-3)}))
+        assert.ok(h.player.mesh.position.z<h.center-3)
+        assert.ok(h.player.mesh.position.y>=-0.1)
+        h.time.setMode('NORMAL')
+        const brake=h.scene.getObjectByName('emergency-brake')
+        for(let steps=0;h.player.mesh.position.z>brake.position.z+1.5;steps++) {
+          assert.ok(steps<100)
+          h.tick(0.1,{forward:true,run:true})
+          assert.equal(h.respawn.isFailing(),false)
+        }
+      }
+    } finally {h.dispose()}
+  }
 })
 
 test('Batches 4/5: full rebuild disposes routes and restores fresh ability and obstacle state', () => {
@@ -401,6 +538,91 @@ test('Finale: pause has priority over cinematic input; resuming retains cinemati
   assert.equal(resolveInputState({...state,paused:true}),'PAUSED')
   assert.equal(resolveInputState({...state,transitioning:true}),'TRANSITION')
   assert.equal(resolveInputState({...state,gameStarted:false}),'TITLE')
+})
+
+test('Finale objective uses the rebound sprint key on entry and checkpoint recovery', () => {
+  settings.setBinding('run',0,'KeyO'); settings.setBinding('run',1,null)
+  const h = levelHarness('passenger')
+  try {
+    h.tick(0.1,{forward:true,run:true})
+    assert.match(h.hud.getObjective(),/\(O\)/)
+    assert.doesNotMatch(h.hud.getObjective(),/Shift/)
+    h.respawn.cancel(); h.respawn.respawn()
+    assert.match(h.hud.getObjective(),/\(O\)/)
+  } finally { h.dispose(); settings.resetAll() }
+})
+
+test('Lifecycle: repeated L3 checkpoint starts release scene resources and interactions on every unload', () => {
+  for (let cycle=0;cycle<3;cycle++) {
+    for (const start of [null,'convergence','mechanical','cargo','relay','security','passenger']) {
+      const h=levelHarness(start)
+      const resources=new Set(), disposed=new Set(), owners=new Map()
+      const ghost=h.time.getGhost().mesh
+      const roots=h.scene.children.filter(root=>root!==ghost)
+      for (const root of roots) root.traverse(node=>{
+        if(node.geometry) {resources.add(node.geometry);owners.set(node.geometry,`${node.name}/${node.type}/geometry`)}
+        for(const mat of Array.isArray(node.material)?node.material:[node.material]) if(mat) {resources.add(mat);owners.set(mat,`${node.name}/${node.type}/material`)}
+      })
+      for(const resource of resources) resource.addEventListener('dispose',()=>disposed.add(resource))
+      try {
+        h.tick(0.2)
+        h.time.triggerFreeze(); h.tick(0.2)
+        h.respawn.cancel(); h.respawn.respawn()
+        h.level.dispose()
+        assert.equal(h.interactions.size,0)
+        assert.deepEqual(h.scene.children,[ghost])
+        assert.equal(disposed.size,resources.size,`${start}/${cycle}: unreleased ${[...resources].filter(r=>!disposed.has(r)).map(r=>owners.get(r)).join(', ')}`)
+        assert.equal(h.player.mesh.userData.tightCrouchCamera,false)
+        assert.equal(h.time.getGhost().isPlaying(),false)
+      } finally {h.respawn.dispose();h.time.dispose()}
+    }
+  }
+})
+
+test('Restart: real level manager rebuilds every L3 start and quit cancels a pending restart', () => {
+  const oldRAF=globalThis.requestAnimationFrame
+  const frames=[]
+  globalThis.requestAnimationFrame=callback=>frames.push(callback)
+  const flush=()=>{for(let i=0;frames.length;i++){assert.ok(i<12);frames.shift()()}}
+  try {
+    for(const start of [null,'convergence','mechanical','cargo','relay','security','passenger']) {
+      const h=levelHarness(start)
+      const spawn=h.level.checkpoint.position.clone()
+      h.level.dispose()
+      const manager=createLevelManager({scene:h.scene,player:h.player,hud:h.hud,timeSystem:h.time,respawn:h.respawn,
+        camera:{snap(){}},loadingScreen:{show(){},hide(){}},interaction:{
+          register:(object,options)=>{h.interactions.set(object.name,options);return()=>h.interactions.delete(object.name)},
+          registerBlocker:()=>()=>{},setEnabled(){},flashPrompt(){}
+        },levels:[
+          {state:'Timewreck',create:ctx=>createTimewreckLevel({...ctx,startCarriage:start})},
+          {state:'Complete',create:()=>({dispose(){}})}
+        ]})
+      try {
+        manager.enter('Timewreck');flush()
+        for(let attempt=0;attempt<3;attempt++) {
+          h.time.triggerFreeze();h.time.update(1)
+          h.respawn.fail('restart while caught')
+          manager.restart();flush()
+          assert.equal(manager.getState(),'Timewreck')
+          assert.equal(manager.isTransitioning(),false)
+          assert.equal(manager.isCinematic(),false)
+          assert.equal(h.respawn.isFailing(),false)
+          assert.equal(h.time.getMode(),'NORMAL')
+          assert.equal(h.time.getEnergy(),100)
+          assert.equal(h.time.getAbilityAvailability().REWIND,true)
+          assert.ok(h.player.mesh.position.distanceTo(spawn)<0.001)
+          const forks=[];h.scene.traverse(n=>{if(n.name==='convergence-route-fork')forks.push(n)})
+          assert.equal(forks.length,1)
+          assert.equal(h.scene.getObjectByName('relay-blast-leaf-right').position.x,0.75)
+        }
+        manager.restart();manager.unload();flush()
+        assert.equal(manager.getState(),null)
+        assert.equal(h.respawn.respawn(),false,'quit discards the outgoing checkpoint')
+        assert.equal(h.interactions.size,0)
+        assert.deepEqual(h.scene.children,[h.time.getGhost().mesh])
+      } finally {manager.dispose();h.respawn.dispose();h.time.dispose()}
+    }
+  } finally {globalThis.requestAnimationFrame=oldRAF}
 })
 
 test('Alternate solution: intercept Mechanical shutter with early Freeze and cross without a repair', () => {

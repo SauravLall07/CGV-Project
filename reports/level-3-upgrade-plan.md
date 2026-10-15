@@ -72,7 +72,8 @@ Play the entire production build without shortcuts, then repeat deaths/restarts/
 - [ ] Batch 3 rendered QA in first/third person remains unavailable.
 - [x] Implement Batches 4 and 5, authorized together on 2026-10-15; automated gameplay/retry/rebuild checks complete.
 - [ ] Batches 4/5 rendered first/third-person QA remains unavailable.
-- [ ] Batch 6 remains pending and is outside the current request.
+- [x] Batch 6 automated integration pass: continuous L3 route, minimum-energy retries, repeated real-manager restart/quit and material cleanup (2026-10-15; see results below).
+- [ ] Batch 6 rendered production run, measured performance and hands-on difficulty tuning remain blocked by unavailable browser access.
 
 ## Decisions
 
@@ -248,3 +249,41 @@ Still required before claiming all five batches verified:
 - Team credits and trailer/deployment links remain deferred by the user. No trailer or hosted-game completion has been confirmed.
 
 Batch 6 remains pending. These automated checks narrow its verification work but do not replace the production browser run or performance/difficulty pass.
+
+## Batch 6 integration results (2026-10-15)
+
+The user authorized Batch 6 and remaining upgrade work. Used Game Studio's Three.js and playtest workflows. The starting working tree was clean. Preserved completed mechanics and camera changes; no power costs, wave speed, jump dimensions or timing windows were changed without rendered player-failure evidence. Earlier statements that Batch 6 was outside scope/pending describe those earlier sessions; this section is the current handover.
+
+Fixed:
+
+- Storm debris detached its scene branch before the level root teardown and disposed only geometry, leaving **four shared materials undisposed per unload**. Its own teardown now uses the existing deduplicating `disposeObject` helper to release geometry and materials. The new resource test reproduced the four missing disposal events before the fix and passes afterward.
+- The finale objective hard-coded `hold Shift`, including when restoring the temporary floor hint. Entry, hint recovery and checkpoint recovery now format the current sprint binding consistently. Verified a rebound O key on chase entry and checkpoint recovery.
+
+Integration evidence (simulated gameplay, no rendered approval):
+
+- Added a continuous **normal Vault spawn -> Convergence direct aisle -> Mechanical -> Cargo -> Relay -> Security -> Passenger -> brake** run at **30/60/144 FPS**. Uses actual movement, power histories, energy, collision, supports and the registered catch/brake callbacks in one live level, without per-room development starts or pose teleports. Includes a Security island failure/retry and then continues to a single natural completion. It observes each Vault lamp and the Convergence safe signal; restores/freezes the Mechanical shutter and Cargo gangway; recharges on safe floor; summons/cancels the real Relay Ghost; and steers/jumps both Security legs. This is **Level 3 source integration**, not the required full-game production browser run.
+- Added Passenger minimum-energy arrival/retry traversal. Starts with the shared 50-energy recovery floor before triggering depletion, then repeats three actual checkpoint restores and reaches brake range each time. Runs at 30/60/144 FPS and a repeating **1/144 s, 1/30 s, 100 ms, 1/60 s** frame schedule. The snapshot includes the small normal-time recharge before depletion; no full-bar reset is injected during traversal. Existing energy and chase settings remain viable under this scripted input.
+- Added **21 teardown checks** (three cycles of Vault plus six carriage starts). Tracks disposal events for every geometry/material attached to the level scene, confirms only the persistent Ghost mesh remains, and checks removal of interactions, echo occupancy and low-camera state. This verifies CPU lifecycle/disposal calls; it does not measure GPU memory or browser heap.
+- Added **21 real level-manager restarts** (three at each of those seven starts), including restart while caught. Checks full energy/abilities, safe spawn, NORMAL time, cleared failure/cinematic state, one fork instance and a fresh closed Relay door. At every start, quit also cancels a pending restart, clears checkpoint ownership and removes the outgoing scene/interactions. Prior tests retain island/local checkpoint recovery, finale skip/restart/quit, both camera calculations, rebound keyboard state and alternate solutions.
+
+Final validation:
+
+| Check | Result |
+| --- | --- |
+| `npm.cmd test` | **78 passed, 0 failed** (five new integration checks; existing 73 preserved) |
+| `npm.cmd run build` | **Passed**; existing >500 kB chunk warning remains |
+| `node scripts/check-production.mjs` | **Passed**: 53 files, 72.62 MiB, 52 asset references reachable under a case-sensitive local subdirectory check |
+| `git diff --check` | **Passed** |
+| Browser inventory / launch | No apps or browsers; in-app launch returned `Browser is not available: iab` |
+
+Node tests and Vite required approved worker-process access after sandboxed runs reported process-spawn errors. The final suite/build above ran successfully with that access. Existing geometry warnings and headless audio cache/timer messages remain; no browser shader/audio result is inferred from them. Detailed command output is in ignored local `reports/batch-6-*.log` files.
+
+Remaining acceptance work / stop state:
+
+1. **Still blocking Batch 6 completion:** an actual production-build Level 1 -> victory run without shortcuts. No connected browser is available in this session. No gameplay screenshots or successful browser boot are claimed.
+2. Rendered first/third-person coverage of all upgrades, including interaction aiming, maintenance camera clearance, Security jump, Passenger warning/floor and bridge reveal; native pointer-lock, rebindings and pause/restart/quit/skip ordering. Mathematical and simulated input checks remain supporting evidence only.
+3. Measure draw calls, frame-time distribution, shader errors, renderer resources and heap through actual play/repeated transitions on identified hardware. The material-disposal fix addresses one demonstrated leak, but does not certify runtime resource stability or performance.
+4. Tune difficulty from observed human failures after those checks. No speculative reductions to timing windows or energy budgets were made. Player-facing docs were not expanded with unverified claims.
+5. Team identities/roles and trailer/hosted URLs remain deferred under the earlier user instruction. Nothing was published or represented as deployed.
+
+Stopped after the feasible Batch 6 implementation, integration verification and this handover. Batch 6 is **partially verified**, with the browser-dependent acceptance work explicitly outstanding.
