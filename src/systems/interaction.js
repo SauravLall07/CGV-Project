@@ -430,6 +430,7 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     entry.object.getWorldPosition(targetPos)
     lastPlayer.getWorldPosition(playerPos)
     const gesture = entry.gesture ?? (targetPos.y - playerPos.y < 0.7 ? 'pickup' : 'press')
+    if (import.meta.env.DEV && gesture === 'pickup') console.info(`[pickup @${performance.now().toFixed(1)}ms] press received`, entry.object.name)
     if (gesture !== 'none') onTap?.({ object: entry.object, player: lastPlayer, gesture })
     entry.onInteract({ object: entry.object, entry, player: lastPlayer })
     return true

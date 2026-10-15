@@ -9,7 +9,7 @@ const PRESS_SPEED = 1.0
 const PRESS_FADE_IN = 0.08
 const PRESS_FADE_OUT = 0.2
 const PICKUP_SPEED = 1.3
-const PICKUP_RETURN_SPEED = 1.5
+const PICKUP_FADE_OUT = 0.25
 const PULL_RETURN_SPEED = 1.5
 // The crouch transitions last ~0.3s once sped up, so a full CROSSFADE would
 // hide them; they fade in and out faster.
@@ -529,6 +529,9 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   let pointApplied = false
   let pulling = null
   let pickingUp = null
+  function logPickup(event) {
+    if (import.meta.env.DEV) console.info(`[pickup @${performance.now().toFixed(1)}ms] ${event}`)
+  }
 
   function restorePointBase() {
     if (!pointApplied) return
@@ -627,13 +630,17 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   function playPickup() {
-    if (!actions.pickup || throwing || casting || pulling || pickingUp || scriptedWalking) return { finished: true }
+    if (!actions.pickup || throwing || casting || pulling || pickingUp || scriptedWalking) {
+      logPickup('start ignored (missing clip or animation busy)')
+      return { finished: true }
+    }
     stopPress()
     crouchTransition = null
     airborneJump = null
     wasCrouching = false
     wanted = 'idle'
-    pickingUp = { finished: false, phase: 'forward' }
+    pickingUp = { finished: false }
+    logPickup('pickup start')
     actions.pickup.setEffectiveTimeScale(PICKUP_SPEED)
     fadeTo('pickup', PRESS_FADE_IN, { restart: true })
     return pickingUp
@@ -676,18 +683,10 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
 
   mixer.addEventListener('finished', (event) => {
     if (event.action === actions.pickup && pickingUp) {
-      if (event.direction > 0) {
-        pickingUp.phase = 'reverse'
-        actions.pickup.paused = false
-        actions.pickup.enabled = true
-        actions.pickup.stopFading().setEffectiveWeight(1)
-        actions.pickup.setEffectiveTimeScale(-PICKUP_RETURN_SPEED).play()
-      } else {
-        pickingUp.finished = true
-        pickingUp = null
-        actions.pickup.setEffectiveTimeScale(PICKUP_SPEED)
-        fadeTo(wanted, PRESS_FADE_OUT)
-      }
+      logPickup('pickup finished')
+      pickingUp.finished = true
+      pickingUp = null
+      fadeTo(wanted, PICKUP_FADE_OUT)
       return
     }
     if (event.action === actions.pull && pulling) {
