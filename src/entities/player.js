@@ -252,12 +252,15 @@ export function createPlayer() {
 
   let visual = null
   let scriptedWalk = null
+  let scriptedTurn = null
   let cinematicView = null
   let poseResetCallback = null
   let interactionPlanted = false
+  let pickupHandle = null
   const interactionTarget = new THREE.Vector3()
 
   function startInteractionPull(target) {
+    pickupHandle = null
     target.getWorldPosition(interactionTarget)
     facing = Math.atan2(interactionTarget.x - group.position.x, interactionTarget.z - group.position.z)
     group.rotation.y = facing
@@ -277,7 +280,20 @@ export function createPlayer() {
 
   function resetInteractionAnimation() {
     interactionPlanted = false
+    pickupHandle = null
     visual?.resetInteractionAnimation()
+  }
+
+  function playPickup() {
+    if (interactionPlanted || airborne) return
+    pickupHandle = visual?.playPickup() ?? { finished: true }
+    if (pickupHandle.finished) { pickupHandle = null; return }
+    interactionPlanted = true
+    crouchToggled = false
+    crouchAmount = 0
+    crouching = false
+    moving = false
+    running = false
   }
 
   function cancelScriptedWalk() {
@@ -290,6 +306,23 @@ export function createPlayer() {
     scriptedWalk = { path: path.map(point => point.clone()), duration, elapsed: 0, onDone }
     group.position.copy(path[0])
     visual?.setScriptedWalking(true)
+  }
+
+  function startScriptedTurn(yaw, duration) {
+    visual?.setScriptedWalking(false)
+    scriptedTurn = { from: facing, yaw, duration, elapsed: 0 }
+  }
+
+  function updateScriptedTurn(delta) {
+    if (!scriptedTurn) return true
+    const turn = scriptedTurn
+    turn.elapsed += delta
+    const t = Math.min(1, turn.elapsed / turn.duration)
+    const smooth = t * t * (3 - 2 * t)
+    facing = turn.from + (turn.yaw - turn.from) * smooth
+    group.rotation.y = facing
+    if (t >= 1) scriptedTurn = null
+    return t >= 1
   }
 
   // Driven by the level during its cinematic, bypassing ordinary track collision.
@@ -337,6 +370,10 @@ export function createPlayer() {
 
   function updateVisual(delta) {
     visual?.update(delta)
+    if (pickupHandle?.finished) {
+      pickupHandle = null
+      interactionPlanted = false
+    }
   }
 
   function playCast() {
@@ -407,6 +444,7 @@ export function createPlayer() {
     poseResetCallback?.()
     resetInteractionAnimation()
     cancelScriptedWalk()
+    scriptedTurn = null
     cinematicView = null
     visual?.setScriptedWalking(false)
     visual?.cancelThrow()
@@ -777,13 +815,17 @@ export function createPlayer() {
     updateVisual,
     playCast,
     playThrow,
-    playPoint: () => visual?.playPoint(),
-    stopPoint: () => visual?.stopPoint(),
+    playPress: () => visual?.playPress(),
+    stopPress: () => visual?.stopPress(),
+    playPickup,
+    cancelPickup: () => { if (pickupHandle) resetInteractionAnimation() },
     startInteractionPull,
     returnInteractionPull,
     resetInteractionAnimation,
     startScriptedWalk,
     updateScriptedWalk,
+    startScriptedTurn,
+    updateScriptedTurn,
     cancelScriptedWalk,
     onPoseReset: callback => { poseResetCallback = callback },
     setCinematicView: value => { cinematicView = value },

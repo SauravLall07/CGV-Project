@@ -5,9 +5,11 @@ import * as THREE from 'three'
 
 const MIXAMO_CM_SCALE = 0.01
 const CROSSFADE = 0.3
-const POINTING_SPEED = 1.0
-const POINTING_FADE_IN = 0.12
-const POINTING_FADE_OUT = 0.25
+const PRESS_SPEED = 1.0
+const PRESS_FADE_IN = 0.08
+const PRESS_FADE_OUT = 0.2
+const PICKUP_SPEED = 1.3
+const PICKUP_RETURN_SPEED = 1.5
 const PULL_RETURN_SPEED = 1.5
 // The crouch transitions last ~0.3s once sped up, so a full CROSSFADE would
 // hide them; they fade in and out faster.
@@ -20,7 +22,8 @@ const FILES = {
   idle: new URL('../assets/models/detective/Idle.fbx', import.meta.url),
   run: new URL('../assets/models/detective/Running.fbx', import.meta.url),
   walk: new URL('../assets/models/detective/Walking.fbx', import.meta.url),
-  point: new URL('../assets/models/detective/Pointing.fbx', import.meta.url),
+  press: new URL('../assets/models/detective/Button Pushing.fbx', import.meta.url),
+  pickup: new URL('../assets/models/detective/Pick Up.fbx', import.meta.url),
   pull: new URL('../assets/models/detective/Pull Pilot From Seat.fbx', import.meta.url),
   jumpIdle: new URL('../assets/models/detective/Jump.fbx', import.meta.url),
   jumpRun: new URL('../assets/models/detective/Standing Jump Running.fbx', import.meta.url),
@@ -306,7 +309,7 @@ function prepareModel(model) {
 export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettleTime = 0 } = {}) {
   const [
     idleFbx, runFbx, jumpIdleFbx, jumpRunFbx, castFbx,
-    standToCrouchFbx, crouchIdleFbx, crouchWalkFbx, crouchToStandFbx, throwFbx, walkFbx, pointFbx, pullFbx
+    standToCrouchFbx, crouchIdleFbx, crouchWalkFbx, crouchToStandFbx, throwFbx, walkFbx, pressFbx, pullFbx, pickupFbx
   ] = await Promise.all([
     assets.loadFbx(FILES.idle.href),
     loadOptionalFbx(assets, FILES.run.href),
@@ -319,8 +322,9 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     loadOptionalFbx(assets, FILES.crouchToStand.href),
     loadOptionalFbx(assets, FILES.throw.href),
     loadOptionalFbx(assets, FILES.walk.href),
-    loadOptionalFbx(assets, FILES.point.href),
-    loadOptionalFbx(assets, FILES.pull.href)
+    loadOptionalFbx(assets, FILES.press.href),
+    loadOptionalFbx(assets, FILES.pull.href),
+    loadOptionalFbx(assets, FILES.pickup.href)
   ])
 
   const info = prepareModel(idleFbx)
@@ -337,6 +341,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     run: firstClip(runFbx, 'run'),
     walk: firstClip(walkFbx, 'walk'),
     pull: firstClip(pullFbx, 'pull'),
+    pickup: firstClip(pickupFbx, 'pickup'),
     jumpIdle: firstClip(jumpIdleFbx, 'jumpIdle'),
     jumpRun: firstClip(jumpRunFbx, 'jumpRun'),
     cast: firstClip(castFbx, 'cast'),
@@ -348,12 +353,12 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   const crouchWalkTravel = rootTravel(clips.crouchWalk, info.scale)
-  const pointClip = firstClip(pointFbx, 'point')
+  const pointClip = firstClip(pressFbx, 'press')
   stripRootMotion(pointClip)
-  if (import.meta.env.DEV && pointClip) console.info(`[detective] point duration=${pointClip.duration.toFixed(3)}s`)
+  if (import.meta.env.DEV && pointClip) console.info(`[detective] press duration=${pointClip.duration.toFixed(3)}s`)
 
   const rootMotionClips = [
-    'run', 'walk', 'pull', 'jumpIdle', 'jumpRun',
+    'run', 'walk', 'pull', 'pickup', 'jumpIdle', 'jumpRun',
     'standToCrouch', 'crouchIdle', 'crouchWalk', 'crouchToStand', 'throw'
   ]
   for (const name of rootMotionClips) {
@@ -493,7 +498,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   // Last logged sub-state: 'standing', a transition, 'crouchIdle' or 'crouchWalk'.
   let crouchState = 'standing'
 
-  // A detached bone-only rig samples the absolute pointing pose. It never
+  // A detached bone-only rig samples the absolute button-press pose. It never
   // competes with locomotion in PropertyMixer's normalized weighted average.
   const pointRig = new THREE.Group()
   idleFbx.traverse(node => {
@@ -522,6 +527,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   let pointElapsed = null
   let pointApplied = false
   let pulling = null
+  let pickingUp = null
 
   function restorePointBase() {
     if (!pointApplied) return
@@ -533,26 +539,26 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     pointApplied = false
   }
 
-  function stopPoint() {
+  function stopPress() {
     restorePointBase()
     pointElapsed = null
     pointAction?.stop()
   }
 
-  function playPoint() {
-    if (!pointAction || throwing || casting || pulling || scriptedWalking) return
-    stopPoint()
+  function playPress() {
+    if (!pointAction || throwing || casting || pulling || pickingUp || scriptedWalking) return
+    stopPress()
     pointElapsed = 0
-    pointAction.reset().setEffectiveWeight(1).setEffectiveTimeScale(POINTING_SPEED).play()
+    pointAction.reset().setEffectiveWeight(1).setEffectiveTimeScale(PRESS_SPEED).play()
   }
 
   function updatePoint(delta) {
     if (pointElapsed == null) return
     pointElapsed += delta
-    const end = pointClip.duration / POINTING_SPEED
-    const weight = Math.max(0, Math.min(1, pointElapsed / POINTING_FADE_IN,
-      (end + POINTING_FADE_OUT - pointElapsed) / POINTING_FADE_OUT))
-    if (weight <= 0) { stopPoint(); return }
+    const end = pointClip.duration / PRESS_SPEED
+    const weight = Math.max(0, Math.min(1, pointElapsed / PRESS_FADE_IN,
+      (end + PRESS_FADE_OUT - pointElapsed) / PRESS_FADE_OUT))
+    if (weight <= 0) { stopPress(); return }
     pointMixer.update(delta)
     for (const pose of pointBones) {
       pose.position.copy(pose.bone.position)
@@ -566,7 +572,8 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   function startPull() {
-    stopPoint()
+    if (pickingUp) resetInteractionAnimation()
+    stopPress()
     cancelThrow()
     casting = false
     crouchTransition = null
@@ -599,11 +606,14 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   function resetInteractionAnimation() {
-    stopPoint()
-    if (!pulling) return
-    pulling.finished = true
+    stopPress()
+    if (!pulling && !pickingUp) return
+    if (pulling) pulling.finished = true
+    if (pickingUp) pickingUp.finished = true
     pulling = null
+    pickingUp = null
     actions.pull?.stop().setEffectiveTimeScale(1)
+    actions.pickup?.stop().setEffectiveTimeScale(PICKUP_SPEED)
     current = null
     currentName = null
     mixer.stopAllAction()
@@ -613,6 +623,19 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     wanted = 'idle'
     fadeTo('idle', 0)
     mixer.update(0)
+  }
+
+  function playPickup() {
+    if (!actions.pickup || throwing || casting || pulling || pickingUp || scriptedWalking) return { finished: true }
+    stopPress()
+    crouchTransition = null
+    airborneJump = null
+    wasCrouching = false
+    wanted = 'idle'
+    pickingUp = { finished: false, phase: 'forward' }
+    actions.pickup.setEffectiveTimeScale(PICKUP_SPEED)
+    fadeTo('pickup', PRESS_FADE_IN, { restart: true })
+    return pickingUp
   }
 
   function pickJumpClip(moving) {
@@ -651,6 +674,21 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   mixer.addEventListener('finished', (event) => {
+    if (event.action === actions.pickup && pickingUp) {
+      if (event.direction > 0) {
+        pickingUp.phase = 'reverse'
+        actions.pickup.paused = false
+        actions.pickup.enabled = true
+        actions.pickup.stopFading().setEffectiveWeight(1)
+        actions.pickup.setEffectiveTimeScale(-PICKUP_RETURN_SPEED).play()
+      } else {
+        pickingUp.finished = true
+        pickingUp = null
+        actions.pickup.setEffectiveTimeScale(PICKUP_SPEED)
+        fadeTo(wanted, PRESS_FADE_OUT)
+      }
+      return
+    }
     if (event.action === actions.pull && pulling) {
       if (event.direction < 0) {
         pulling.finished = true
@@ -719,7 +757,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     wasCrouching = crouching
     lastMoving = moving
     lastCrouching = crouching
-    if (pulling) {
+    if (pulling || pickingUp) {
       wanted = crouching ? crouchLoop(moving) : standLoop(moving)
       return 'pulling'
     }
@@ -825,21 +863,21 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   // One-shot ability pose. Standing: play the clip. Moving/airborne: skip so
   // run/jump are not held for the cast duration.
   function playCast() {
-    if (pulling || scriptedWalking) return
+    if (pulling || pickingUp || scriptedWalking) return
     if (throwing) return
     if (!actions.cast) return
     if (wanted !== 'idle') return
-    stopPoint()
+    stopPress()
     casting = true
     fadeTo('cast', CROSSFADE)
   }
 
   function playThrow() {
-    if (pulling || scriptedWalking) return null
+    if (pulling || pickingUp || scriptedWalking) return null
     if (throwing) return null
     // Preserve the existing mechanic if this optional clip failed to load.
     if (!actions.throw) return { released: true, finished: true, cancelled: false }
-    stopPoint()
+    stopPress()
     casting = false
     crouchTransition = null
     airborneJump = null
@@ -861,7 +899,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   function setScriptedWalking(value) {
-    stopPoint()
+    stopPress()
     scriptedWalking = value
     casting = false
     cancelThrow()
@@ -916,6 +954,6 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   return { root: info.wrapper, mixer, actions, setLocomotion, playCast, playThrow, cancelThrow,
-    playPoint, stopPoint, startPull, returnPull, resetInteractionAnimation,
+    playPress, playPickup, stopPress, startPull, returnPull, resetInteractionAnimation,
     setScriptedWalking, noteJumpAirtime, update, dispose }
 }

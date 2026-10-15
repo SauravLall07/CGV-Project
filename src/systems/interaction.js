@@ -147,6 +147,7 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     selectionMode = 'forgiving',
     aimMin = 0.72,
     onFocusChange,
+    gesture,
     holdSeconds = 0,
     onHoldStart,
     onHoldProgress,
@@ -166,6 +167,7 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
       selectionMode,
       aimMin,
       onFocusChange,
+      gesture,
       holdSeconds, onHoldStart, onHoldProgress, onHoldCancel, onHoldComplete
     }
     registry.set(object, entry)
@@ -425,7 +427,10 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
 
     const entry = focused
     if (entry.holdSeconds > 0) return true
-    onTap?.({ object: entry.object, player: lastPlayer })
+    entry.object.getWorldPosition(targetPos)
+    lastPlayer.getWorldPosition(playerPos)
+    const gesture = entry.gesture ?? (targetPos.y - playerPos.y < 0.7 ? 'pickup' : 'press')
+    if (gesture !== 'none') onTap?.({ object: entry.object, player: lastPlayer, gesture })
     entry.onInteract({ object: entry.object, entry, player: lastPlayer })
     return true
   }

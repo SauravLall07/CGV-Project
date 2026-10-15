@@ -37,10 +37,13 @@ const BOARDING_HOLD_SECONDS = 5
 const BOARDING_RETURN_TIMEOUT = 2
 const BOARDING_OPEN_SECONDS = 0.6
 const BOARDING_WALK_SECONDS = 1.6
+const BOARDING_TURN_SECONDS = 0.5
 const BOARDING_CLOSE_SECONDS = 0.6
-const BOARDING_PAUSE_SECONDS = 0.5
-const BOARDING_DEPART_SECONDS = 2.4
+const BOARDING_PAUSE_SECONDS = 0.4
+const BOARDING_DEPART_SECONDS = 3.5
 const BOARDING_ACCELERATION = 6.5
+const BOARDING_CAMERA_POSITION = new THREE.Vector3(2.25, 1.8, 39.2)
+const BOARDING_CAMERA_DAMPING = 5
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -139,7 +142,7 @@ export function createBoardingLevel({
     { minX: PLAZA.minX - 0.3, maxX: FACADE_X + 0.4, minZ: PLAZA.maxZ - 0.05, maxZ: 90 }
   )
 
-  const { train, stationSteam, boardingDoor, openDoor, closeDoor, update: updateTrain } = createTrain()
+  const { train, stationSteam, boardingDoor, hideBoardingCues, openDoor, closeDoor, update: updateTrain } = createTrain()
   const lights = createStationLighting()
   const sunlight = lights.find((node) => node.name === 'station-sun')
   const skyFill = lights.find((node) => node.name === 'station-sky')
@@ -642,15 +645,15 @@ export function createBoardingLevel({
     range: 8.0
   })
 
-  // Open platform patrols. All segments stay on the unobstructed centre lane.
+  // Edge patrols expose the old wall/track shortcuts; middle islands are shelter.
   const platformPatrols = [
-    { id: 'platform-rear', start: -16, end: 0, speed: 1.25, waitTime: 3, initialWaypoint: 0, delay: 0 },
-    { id: 'platform-middle', start: 7, end: 23, speed: 1.35, waitTime: 3.5, initialWaypoint: 1, delay: 0 },
-    { id: 'platform-front', start: 30, end: 39, speed: 1.2, waitTime: 4, initialWaypoint: 0, delay: 3 }
+    { id: 'platform-rear', x: 3.6, start: -22, end: -2, speed: 1.25, waitTime: 3, initialWaypoint: 0, delay: 0 },
+    { id: 'platform-middle', x: -3.4, start: 6, end: 26, speed: 1.35, waitTime: 3.5, initialWaypoint: 1, delay: 0 },
+    { id: 'platform-front', x: 3.6, start: 24, end: 37, speed: 1.2, waitTime: 4, initialWaypoint: 0, delay: 3 }
   ]
   const platformGuards = platformPatrols.map(route => {
     const guard = stealth.addGuard({
-      waypoints: [new THREE.Vector3(0, 0, route.start), new THREE.Vector3(0, 0, route.end)],
+      waypoints: [new THREE.Vector3(route.x, 0, route.start), new THREE.Vector3(route.x, 0, route.end)],
       speed: route.speed, waitTime: route.waitTime, initialWaypoint: route.initialWaypoint
     })
     guard.group.userData.patrolId = route.id
@@ -669,15 +672,18 @@ export function createBoardingLevel({
     const direction = new THREE.Vector3(), flat = new THREE.Vector3()
     station.updateMatrixWorld(true)
     const table = PLATFORM_COVER.map(pocket => {
-      target.set(pocket.pocketX, 0.72, pocket.z)
       let tested = 0, exposed = null
+      // Probe centre and all corners of the player's radius bounding square.
+      for (const height of pocket.middle ? [0.72] : [0.72, 1.2])
+      for (const [dx, dz] of [[0, 0], [-0.18, -0.18], [-0.18, 0.18], [0.18, -0.18], [0.18, 0.18]]) {
+      target.set(pocket.pocketX + dx, height, pocket.z + dz)
       // Include every station guard whose route is at platform height. This also
       // checks the hall junction patrol, which can see through the entrance.
       for (const guard of stealth.getGuards()) {
         if (guard.waypoints.some(p => Math.abs(p.y) > 0.01)) continue
         for (let segment = 0; segment < guard.waypoints.length; segment++) {
           const a = guard.waypoints[segment], b = guard.waypoints[(segment + 1) % guard.waypoints.length]
-          const length = a.distanceTo(b), steps = Math.max(1, Math.ceil(length / 0.5))
+          const length = a.distanceTo(b), steps = Math.max(1, Math.ceil(length / 0.25))
           const heading = Math.atan2(b.x - a.x, b.z - a.z)
           for (let step = 0; step <= steps; step++) {
             eye.lerpVectors(a, b, step / steps); eye.y += 1.55
@@ -704,11 +710,25 @@ export function createBoardingLevel({
           }
         }
       }
-      return { pocket: pocket.id, x: pocket.pocketX, z: pocket.z,
+      }
+      return { pocket: pocket.id, middle: pocket.middle, x: pocket.pocketX, z: pocket.z,
         result: exposed ? 'EXPOSED' : 'safe', samplesInFov: tested, exposedFrom: exposed || '—' }
     })
     console.table(table)
-    console.info(`cover self-test: ${table.filter(row => row.result === 'safe').length}/${table.length} pockets safe`)
+    const islandTable = table.filter(row => row.middle)
+    console.info(`cover self-test: ${islandTable.filter(row => row.result === 'safe').length}/${islandTable.length} islands safe`)
+    console.assert(islandTable.every(row => row.result === 'safe'), 'A middle island exposes a crouched player')
+    console.info('Checkpoint shelter standing AND crouched probes:', table.find(row => !row.middle))
+    // This is a lower bound independent of FOV/scan phase: use the entire 7.5 m
+    // range projected along Z, even ignoring horizontal/vertical separation.
+    const doorRoute = platformPatrols[2]
+    const safeWindow = 2 * (43.2 - range - doorRoute.start) / doorRoute.speed + doorRoute.waitTime
+    const patrolCycle = 2 * (doorRoute.end - doorRoute.start) / doorRoute.speed + 2 * doorRoute.waitTime
+    console.info('Boarding door guaranteed unseen window (standing AND crouched):', {
+      seconds: safeWindow, cycleExcludingTurns: patrolCycle, required: 7,
+      assumptions: 'routine patrol; 7.5 m range, eye y=1.55; FOV/scanning can only extend this range-only window'
+    })
+    console.assert(safeWindow >= 7, 'Boarding window is shorter than seven seconds')
     console.info('Cover test uses y=1.55 / target=0.72, range=7.5, detection dot>=0.52; animated torch origin still needs playtesting.')
 
     // Match PLAYER_COLLISION_RADIUS in entities/player.js (0.18 m). That
@@ -782,11 +802,13 @@ export function createBoardingLevel({
     const reachable = flood(playerRadius)
     const reachableWithSpare = flood(probeRadius)
     const reachTable = PLATFORM_COVER.map(pocket => ({ pocket: pocket.id,
+      middle: pocket.middle,
       result: reachable(pocket) ? 'reachable' : 'BLOCKED',
       with015mSpare: reachableWithSpare(pocket) ? 'reachable' : 'BLOCKED' }))
     console.table(reachTable)
-    console.info(`cover reachability: ${reachTable.filter(row => row.result === 'reachable').length}/${reachTable.length} pockets reachable`)
-    console.info(`cover reachability with 0.15 m spare: ${reachTable.filter(row => row.with015mSpare === 'reachable').length}/${reachTable.length} pockets reachable`)
+    const islandReachTable = reachTable.filter(row => row.middle)
+    console.info(`cover reachability: ${islandReachTable.filter(row => row.result === 'reachable').length}/${islandReachTable.length} islands reachable`)
+    console.info(`cover reachability with 0.15 m spare: ${islandReachTable.filter(row => row.with015mSpare === 'reachable').length}/${islandReachTable.length} islands reachable`)
     console.assert(reachTable.every(row => row.with015mSpare === 'reachable'), 'A cover pocket is disconnected from the platform start')
     // Mesh/point submissions, not a GPU/frame measurement. Include instance
     // multiplicity and geometry groups; shadows/postprocessing are excluded.
@@ -821,6 +843,8 @@ export function createBoardingLevel({
   let boardingReturn = null
   const departureStartZ = train.position.z
   const boardingTarget = new THREE.Vector3()
+  const boardingView = { mode: 'fixed', position: BOARDING_CAMERA_POSITION,
+    target: new THREE.Vector3(5.5, 1.4, 43.2), damping: BOARDING_CAMERA_DAMPING, allowPress: false }
 
   function beginBoardingPhase(phase) {
     boardingPhase = phase
@@ -829,18 +853,17 @@ export function createBoardingLevel({
 
   function startBoardingWalk() {
     beginBoardingPhase('walking')
+    player.setCinematicView(boardingView)
     boardingDoor.getWorldPosition(boardingTarget)
     const z = boardingTarget.z
     player.startScriptedWalk([
       player.mesh.position.clone(),
       new THREE.Vector3(4.55, 0.05, z),
       new THREE.Vector3(5.05, 0.24, z),
-      new THREE.Vector3(6.05, 0.55, z)
+      new THREE.Vector3(6.3, 0.55, z)
     ], BOARDING_WALK_SECONDS, () => {
-      player.mesh.visible = false
-      player.setCinematicView({ mode: 'hold', target: new THREE.Vector3(5.5, 1.4, z) })
-      closeDoor()
-      beginBoardingPhase('closing')
+      player.startScriptedTurn(player.mesh.rotation.y + Math.PI, BOARDING_TURN_SECONDS)
+      beginBoardingPhase('turning')
     })
   }
 
@@ -863,6 +886,7 @@ export function createBoardingLevel({
     onHoldComplete: () => {
       if (isBoardingCinematic || respawn.isFailing()) return
       isBoardingCinematic = true
+      hideBoardingCues()
       beginBoardingPhase('returning')
       boardingReturn = player.returnInteractionPull?.(true)
       camera?.setMode?.('third', { announce: false })
@@ -882,8 +906,8 @@ export function createBoardingLevel({
   let approachZoneIndex = -1
 
   const zoneNames = [
-    'Reach the last carriage at the far end — use luggage as cover',
-    'Keep low and watch the patrols',
+    'Guards patrol the edges — move through the middle, from cover to cover',
+    'Keep low between the paired luggage stacks; time each open crossing',
     'The last carriage door is ahead at the far end — hold to force it open'
   ]
   let zoneIndex = -1
@@ -1181,7 +1205,7 @@ export function createBoardingLevel({
         if (crossed !== zoneIndex) {
           zoneIndex = crossed
           if (hud) hud.showToast(zoneNames[zoneIndex], 2200)
-          hud?.setObjective('Reach the last carriage at the far end of the platform — Force the door')
+          hud?.setObjective('Use the middle cover islands to reach the last carriage — Force the door')
         }
         if (!platformCheckpointActive && p.z >= 6) {
           platformCheckpointActive = true
@@ -1215,13 +1239,21 @@ export function createBoardingLevel({
           startBoardingWalk()
         } else if (boardingPhase === 'walking') {
           player.updateScriptedWalk(delta)
+        } else if (boardingPhase === 'turning' && player.updateScriptedTurn(delta)) {
+          boardingView.allowPress = true
+          player.playPress()
+          closeDoor()
+          beginBoardingPhase('closing')
         } else if (boardingPhase === 'closing' && cinematicTimer >= BOARDING_CLOSE_SECONDS) {
+          player.mesh.visible = false
+          boardingView.allowPress = false
           beginBoardingPhase('pause')
         } else if (boardingPhase === 'pause' && cinematicTimer >= BOARDING_PAUSE_SECONDS) {
           beginBoardingPhase('departing')
         } else if (boardingPhase === 'departing') {
           const t = Math.min(cinematicTimer, BOARDING_DEPART_SECONDS)
           train.position.z = departureStartZ - 0.5 * BOARDING_ACCELERATION * t * t
+          boardingView.target.set(6, 1.4, 44.3 + train.position.z - departureStartZ)
         }
         pointPool.update(player.mesh.position, delta)
         torchPool.update(player.mesh.position, delta)

@@ -71,17 +71,20 @@ const APPROACH_Z_MAX = APPROACH_CENTER_Z + APPROACH_WIDTH / 2
 
 const DOOR_HEIGHT = 2.6
 
-// Every core is 1.3 X × at least 6 Z; pockets are OUTSIDE on its sheltered side.
-// At x=±4.1, |dz|max=sqrt(7.5²-4.1²-0.83²)=6.226. At the inner
-// face |x|=2.4, t=2.4/4.1: y=1.064 and |dz from centre|<=2.581<3.
-// This bound covers every facing, including endpoint scans, not only the FOV.
-export const PLATFORM_COVER = [-20, -12, -4, 6, 14, 22, 30, 38, 46, 54].map((z, i) => ({
-  id: `cover-${i + 1}`, z, x: (i % 2 ? 1 : -1) * 3.05,
-  pocketX: (i % 2 ? 1 : -1) * 4.1,
-  width: 1.3, length: i === 2 || i === 3 ? 8 : 6,
-  height: i === 0 || i === 6 ? 1.8 : 1.35,
-  type: ['trunks', 'trolley', 'trunks', 'trunks', 'crates'][i % 5]
-}))
+// Each middle island pairs two 1.2 m cores, leaving a 0.7 m central pocket.
+// Both edge lanes are occluded; the 4 m open gaps force timed crossings.
+// At the inner faces x=±0.35, a ray from either edge to the pocket is well
+// below the 1.45 m core and within its 2 m half-length, even at full range.
+export const PLATFORM_COVER = [
+  ...[-22, -14, -6, 2, 10, 18, 26, 34, 40].map((z, i) => ({
+    id: `island-${i + 1}`, z, x: 0, centres: [-0.95, 0.95], pocketX: 0,
+    width: 1.2, length: 4, height: 1.45, middle: true,
+    type: ['trunks', 'trolley', 'crates'][i % 3]
+  })),
+  // The only edge shelter preserves a safe checkpoint, outside both track patrols.
+  { id: 'checkpoint-shelter', z: 6, x: 3.05, centres: [3.05], pocketX: 4.1,
+    width: 1.3, length: 3, height: 1.45, middle: false, type: 'trunks' }
+]
 
 // Axis-aligned outer bounds. The west side is extended for the new
 // perpendicular infiltration wing. Solid wall colliders below keep the
@@ -96,9 +99,9 @@ export const bounds = {
 function createTrackBed() {
   const group = new THREE.Group()
   group.name = 'platform-track'
-  // Rail covers the locomotive at rest and its ~19 m departure roll. Each
-  // 20 m section has ballast, two rails, and one instanced sleeper draw.
-  const length = Math.max(160, PLATFORM_LENGTH + 16, TRAIN_LENGTH + 48)
+  // Nose ends at -54.3 - 0.5*6.5*3.5² = -94.1125. The -107.5 rail
+  // endpoint leaves 13.3875 m beyond it; retain eight batched sleeper draws.
+  const length = Math.max(220, PLATFORM_LENGTH + 16, TRAIN_LENGTH + 48)
   const ballastMaterial = plasterMaterial({ repeat: [3, 7], base: 0x3b3830, roughness: 1 })
   const sleeperMaterial = woodMaterial({ repeat: [2, 1], light: 0x4a3826, dark: 0x241a11, roughness: 0.95 })
   const railMaterial = metalMaterial({ repeat: [1, 8], base: 0x8d8a83, roughness: 0.78, metalness: 0.45 })
@@ -644,34 +647,35 @@ function createOpenPlatform() {
   // Detail is batched separately and can never create holes in the core.
   const cores = new Map()
   for (const cover of PLATFORM_COVER) {
-    const { id, x, z, width, height, length, type } = cover
+    const { id, centres, z, width, height, length, type } = cover
     const builder = createKitBuilder()
-    builder.add(type === 'crates' ? k.crate : k.leather, kbox(width, height, length, x, height / 2, z))
+    for (const x of centres) {
+      builder.add(type === 'crates' ? k.crate : k.leather, kbox(width, height, length, x, height / 2, z))
+    }
     const coreGroup = new THREE.Group()
     const [mesh] = builder.build(coreGroup, id)
     mesh.userData.coverId = id
     cores.set(id, mesh); group.add(coreGroup)
-    colliders.push({ minX: x - width / 2, maxX: x + width / 2,
-      minZ: z - length / 2, maxZ: z + length / 2, kind: type === 'crates' ? 'crate' : 'trunk' })
     const b = sectionAt(z).b
-    // Panel seams and brass straps make each long body read as a luggage stack.
-    for (const dz of [-2.8, -1.4, 0, 1.4, 2.8]) {
-      box(b, k.brass, width + 0.012, 0.035, 0.06, x, height + 0.01, z + dz)
-      for (const side of [-1, 1]) box(b, k.brass, 0.025, height, 0.06, x + side * (width / 2 + 0.01), height / 2, z + dz)
-    }
-    for (const dz of [-1.8, 0, 1.8]) trunk(b, k, at(x, height, z + dz), 1.1, 0.32, 1.2)
-    if (type === 'trolley') {
-      // Long baggage cart: its loaded body is the solid cover core.
-      for (const dz of [-2.4, 2.4]) for (const side of [-1, 1]) {
-        const wheel = new THREE.CylinderGeometry(0.15, 0.15, 0.06, 10)
-        wheel.rotateZ(Math.PI / 2); wheel.translate(x + side * 0.58, 0.15, z + dz)
-        b.add(k.iron, wheel)
+    for (const x of centres) {
+      colliders.push({ minX: x - width / 2, maxX: x + width / 2,
+        minZ: z - length / 2, maxZ: z + length / 2, kind: type === 'crates' ? 'crate' : 'trunk' })
+      // Details stay inside each footprint; paired cores share one mesh/material.
+      for (const dz of [-length * 0.4, 0, length * 0.4]) {
+        box(b, k.brass, width + 0.012, 0.035, 0.06, x, height + 0.01, z + dz)
+        for (const side of [-1, 1]) box(b, k.brass, 0.025, height, 0.06, x + side * (width / 2 + 0.01), height / 2, z + dz)
+      }
+      for (const dz of [-length * 0.3, length * 0.3]) trunk(b, k, at(x, height, z + dz), 1.1, 0.32, Math.min(1.2, length * 0.35))
+      if (type === 'trolley') {
+        for (const dz of [-length * 0.4, length * 0.4]) for (const side of [-1, 1]) {
+          const wheel = new THREE.CylinderGeometry(0.15, 0.15, 0.06, 10)
+          wheel.rotateZ(Math.PI / 2); wheel.translate(x + side * 0.53, 0.15, z + dz)
+          b.add(k.iron, wheel)
+        }
       }
     }
   }
-  // Full furniture footprints, not just centres, stay >=2 m beyond every
-  // wall-side core end (exceeding the 1.5 m reserved approach). Preserve six
-  // benches and five conifers; none can cap either end of a hiding channel.
+  // Preserve six benches and five conifers along the wall, away from middle pockets.
   // They have movement boxes, but their slats/foliage are deliberately not cover.
   for (const z of [-13.7, 3, 20, 36, 52, 59]) {
     cushionedBench(sectionAt(z).b, k, at(-4.25, 0, z))
