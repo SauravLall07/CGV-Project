@@ -1530,10 +1530,12 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     const p = player?.mesh?.position
     if (vent.hasCleared(p)) bridgeEntered = true
 
-    // Secondary containment guard. If a future geometry/collider regression lets
-    // the player escape a lower Passageway 3 wall, fail immediately instead of
-    // letting the fallback ground sampler create an invisible outdoor floor.
-    if (bridgeEntered && p && p.y < -1.0 && !isInsidePassage(p)) {
+    // Only enforce Passageway 3 containment when the player is on its side of
+    // the vent. Backtracking through the vent into Passageway 2 is legitimate;
+    // Passageway 2 owns that space and must not trigger this fail condition.
+    // Preserve the guard against escaping a Passageway 3 wall/void.
+    const onBridgeSideOfVent = p && p.x > VENT_EXIT_X + 0.3
+    if (bridgeEntered && onBridgeSideOfVent && p.y < -1.0 && !isInsidePassage(p)) {
       respawn?.fail?.('fell')
       return
     }
