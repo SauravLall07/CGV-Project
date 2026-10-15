@@ -66,6 +66,7 @@ export function createPlayerView({ camera, domElement, player, hud }) {
   }
 
   function snap() {
+    player.mesh.visible = mode !== VIEW_MODES.FIRST
     third.snap()
     first.snap(crouching)
   }
@@ -78,6 +79,12 @@ export function createPlayerView({ camera, domElement, player, hud }) {
 
   return {
     update,
+    // Level owns the brake reveal only while input/follow are suspended.
+    showWreckStop(target, seconds) {
+      player.mesh.visible = true
+      camera.position.set(10, 6, target.z - 13 - Math.min(seconds, 3))
+      camera.lookAt(target.x, 0.8, target.z - 5)
+    },
     snap,
     reset,
     toggle,

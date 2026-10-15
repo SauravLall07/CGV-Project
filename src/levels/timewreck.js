@@ -10,6 +10,7 @@ import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
+import { createWreckRoutes, createPassengerRack } from './timewreck-routes.js'
 import { createSecurityCrossing } from './timewreck-security.js'
 import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
 import {
@@ -214,7 +215,7 @@ export function createTimewreckLevel({
 
   let failCooldown = 0
   const LEVEL_OBJECTIVE = 'The Chrono Core is tearing the train apart — escape to the locomotive'
-  const COLLAPSE_HINT = 'Freeze the tile — then hold W + Shift'
+  const COLLAPSE_HINT = `Freeze the marked floor with ${bindingLabel(settings.getBinding('freeze'))}, then sprint across its centre`
   const COLLAPSE_HINT_S = 4.6
   let collapseHintHoldUntil = -1
   let pendingToast = null
@@ -289,6 +290,9 @@ export function createTimewreckLevel({
     const floorStrip = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.03, 0.42), vaultPlateMat)
     floorStrip.position.set(0, 0.02, 0)
     group.add(floorStrip)
+    const signal = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.08), new THREE.MeshBasicMaterial({ color: 0xe49a30 }))
+    signal.name = 'vault-clearance-signal'
+    signal.position.set(1.9, 2.6, 0.15); group.add(signal)
     const beams = VAULT_BEAM_BASES.map((baseY) => {
       const mesh = new THREE.Mesh(
         new THREE.CylinderGeometry(VAULT_BEAM_RADIUS, VAULT_BEAM_RADIUS, VAULT_BEAM_LENGTH, 12),
@@ -317,7 +321,7 @@ export function createTimewreckLevel({
     group.add(wash)
     group.traverse((node) => { node.userData.noCameraCollision = true })
     root.add(group)
-    return { z, phase, speed, laserMat, beams, wash, plateMat: vaultPlateMat }
+    return { z, phase, speed, laserMat, beams, wash, signal, plateMat: vaultPlateMat }
   }
 
   const vaultGates = [
@@ -330,6 +334,7 @@ export function createTimewreckLevel({
     for (const gate of vaultGates) {
       const lift = (0.5 + 0.5 * Math.sin(vaultGateT * gate.speed + gate.phase)) * VAULT_BEAM_LIFT
       if (gate.laserMat.customUniforms) gate.laserMat.customUniforms.uTime.value += dt
+      gate.signal.material.color.setHex(VAULT_BEAM_BASES[0] + lift - VAULT_HIT_HALF_Y > 1.85 ? 0x42dfad : 0xe49a30)
       const openAmt = lift / VAULT_BEAM_LIFT
       gate.wash.intensity = 0.7 + (1 - openAmt) * 2.4
       vaultPostMat.emissiveIntensity = 0.18 + (1 - openAmt) * 0.35
@@ -342,7 +347,7 @@ export function createTimewreckLevel({
         for (const emitter of beam.emitters) emitter.position.y = y
         if (!playerPos) continue
         const overlapsBody = (y + VAULT_HIT_HALF_Y) > playerPos.y
-          && (y - VAULT_HIT_HALF_Y) < playerPos.y + VAULT_BODY_HEIGHT
+          && (y - VAULT_HIT_HALF_Y) < playerPos.y + (player.isCrouching() ? 1.15 : VAULT_BODY_HEIGHT)
         const inSlice = Math.abs(playerPos.z - gate.z) <= VAULT_HIT_HALF_Z
         const inWidth = Math.abs(playerPos.x) <= VAULT_BEAM_LENGTH / 2
         if (overlapsBody && inSlice && inWidth) {
@@ -350,6 +355,12 @@ export function createTimewreckLevel({
         }
       }
     }
+  }
+
+  // Brass observation spots are outside both laser body slices.
+  for (const z of [spans.vault.center + 0.8, spans.vault.center - 2.9]) {
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.015, 0.9), new THREE.MeshStandardMaterial({ color: 0x315954, emissive: 0x296458, emissiveIntensity: 0.4 }))
+    pad.name = 'vault-safe-observation'; pad.position.set(0, 0.01, z); root.add(pad)
   }
 
   // Convergence — electrical surges across the aisle. The ladder is at this
@@ -583,7 +594,7 @@ export function createTimewreckLevel({
     root.add(group)
 
     const surge = {
-      z, side, offset, period, danger,
+      group, z, side, offset, period, danger,
       panelMat, light, panelLight, glowMat, coreMat, hazeMat, sparkMat, sparkPos, sparks,
       coreSegs, glowSegs,
       boltSeed: -1, boltMode: ''
@@ -592,13 +603,11 @@ export function createTimewreckLevel({
     return surge
   }
 
-  // ~30% faster cycles; offsets keep the three arcs out of phase so a single
-  // Slow burst rarely clears the whole car.
-  const electricalSurges = [
-    createElectricalSurge(spans.convergence.center + 8, 1, 0, 3.2, 1.85),
-    createElectricalSurge(spans.convergence.center - 4, -1, 1.05, 3.15, 2.05),
-    createElectricalSurge(spans.convergence.center - 14, 1, 2.0, 3.05, 2.2)
-  ]
+  // One short fork: a close direct surge window or a shielded shutter passage.
+  const electricalSurges = [createElectricalSurge(spans.convergence.center + 4, -1, 0, 3.6, 2.05)]
+  // Only the direct aisle is electrified; the brass partition shields maintenance.
+  electricalSurges[0].group.scale.x = 0.59
+  electricalSurges[0].group.position.x = -0.72
 
   function updateSurgeSparks(surge, seed, active, strong) {
     const arr = surge.sparkPos
@@ -665,7 +674,7 @@ export function createTimewreckLevel({
       if (!dangerous || !playerPos) continue
       const overlapsBody = playerPos.y < 1.67 && playerPos.y + 1.85 > 0.43
       const inSlice = Math.abs(playerPos.z - surge.z) <= SURGE_HIT_HALF_Z
-      const inWidth = Math.abs(playerPos.x) <= 2.1
+      const inWidth = playerPos.x < 0.78 && playerPos.x > -2.6
       if (overlapsBody && inSlice && inWidth) {
         failSoft('An electrical surge caught you!')
       }
@@ -858,7 +867,11 @@ export function createTimewreckLevel({
   applyRelay()
 
   const checkpointZs = [
+    spans.convergence.center + 11,
+    spans.convergence.center - 3,
     spans.mechanical.maxZ - 1.5,
+    spans.mechanical.center + 2.7,
+    spans.mechanical.center - 2,
     spans.cargo.maxZ - 1.5,
     spans.cargo.minZ + 1.5,
     spans.relay.maxZ - 1.5,
@@ -963,8 +976,8 @@ export function createTimewreckLevel({
     return head
   }
 
-  // Offsets from the Mechanical car's centre, keeping the original spacing.
-  for (const [dz, phase] of [[3, 0], [-1, 2.1], [-5, 4.2]]) {
+  // Leave protected switching floor between the first bank and the shutter.
+  for (const [dz, phase] of [[7, 0], [-6, 2.1], [-10, 4.2]]) {
     const z = spans.mechanical.center + dz
     const rail = new THREE.Mesh(
       new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2, 0.1, 0.16),
@@ -1008,6 +1021,8 @@ export function createTimewreckLevel({
     getSnapshot: () => ({ ramT }),
     restoreSnapshot: (s) => { ramT = s.ramT; applyRams() }
   }))
+
+  const wreckRoutes = createWreckRoutes({ root, spans, player, timeSystem, unregisters, obstacles: blastObstacles })
 
   // ============================================================
   // CARGO — TIME-LOOP CAR: a scripted open/close/fall/rewind cycle
@@ -1250,10 +1265,23 @@ export function createTimewreckLevel({
   // ============================================================
   // Player travels −Z. Security ends at passenger.maxZ; Core depletion is
   // passenger.center. This hole sits between the fail-burst and that beat.
-  const collapseMaxZ = spans.passenger.maxZ - 2.4
-  const collapseMinZ = spans.passenger.center + 0.15
-  const collapseTriggerZ = collapseMaxZ + 1.15
-  const collapseVoid = { minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: collapseMinZ, maxZ: collapseMaxZ }
+  const collapseMaxZ = spans.passenger.center + 1.4
+  const collapseMinZ = spans.passenger.center - 3
+  const collapseTriggerZ = collapseMaxZ + 2.0
+  const collapseVoid = { minX: -WRECK_WALL_X, maxX: WRECK_WALL_X, minZ: collapseMinZ, maxZ: collapseMaxZ }
+
+  cutCargoGangwayFloor(root.getObjectByName('floor-passenger'), spans.passenger, collapseVoid)
+  // Split decorative runners too; none may conceal the opening.
+  const passengerStrips = []
+  carriages.passenger.traverse(n => { if (['passenger-floor-edge', 'passenger-floor-cyan'].includes(n.name)) passengerStrips.push(n) })
+  for (const strip of passengerStrips) {
+    for (const [a, b] of [[spans.passenger.minZ + 1.2, collapseMinZ], [collapseMaxZ, spans.passenger.maxZ - 1.2]]) {
+      const piece = new THREE.Mesh(new THREE.BoxGeometry(strip.geometry.parameters.width, strip.geometry.parameters.height, b - a), strip.material)
+      piece.position.set(strip.position.x, strip.position.y, (a + b) / 2 - spans.passenger.center)
+      piece.name = strip.name; carriages.passenger.add(piece)
+    }
+    strip.removeFromParent(); strip.geometry.dispose()
+  }
 
   // Purple temporal well under the collapse gap (visual only — void logic unchanged).
   const collapsePit = new THREE.Mesh(
@@ -1394,12 +1422,12 @@ export function createTimewreckLevel({
     return markNoCam(g)
   }
 
-  const COLLAPSE_PAD_X = 0.42
-  const COLLAPSE_PAD_Z = 0.4
+  const COLLAPSE_PAD_X = 0
+  const COLLAPSE_PAD_Z = 0
   const collapsePieces = [
     {
       mesh: makeCollapseDeck(),
-      restX: 0, restY: 0.05, restZ: collapseMaxZ - 0.82,
+      restX: 0, restY: 0.05, restZ: collapseMaxZ - 0.74,
       hx: 1.36 / 2, hy: 0.1 / 2, hz: 1.52 / 2,
       phase: 0.2, spin: 0.55
     },
@@ -1411,12 +1439,17 @@ export function createTimewreckLevel({
     },
     {
       mesh: makeCollapsePanel(),
-      restX: 0, restY: 0.05, restZ: collapseMinZ + 0.82,
+      restX: 0, restY: 0.05, restZ: collapseMinZ + 0.74,
       hx: 1.34 / 2, hy: 0.09 / 2, hz: 1.5 / 2,
       phase: 2.5, spin: 0.7
     }
   ]
   for (const p of collapsePieces) {
+    // Flat wood caps give collision an exact, visible top across each piece.
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(p.hx * 2, 0.03, p.hz * 2), collapseWood)
+    cap.name = 'passenger-support-top'
+    cap.position.y = 0.165
+    p.mesh.add(cap)
     p.mesh.position.set(p.restX, 0.04, p.restZ)
     p.mesh.visible = false
     root.add(p.mesh)
@@ -1478,7 +1511,7 @@ export function createTimewreckLevel({
     collapseFloor.rotation.x = collapseFloorT * 1.15
     collapseFloor.position.y = 0.02 - collapseFloorT * 1.35
     collapseFloor.visible = collapseFloorT < 1.05
-    collapsePit.visible = collapseLive
+    collapsePit.visible = false
     for (const lip of collapseLips) lip.visible = collapseLive
 
     const sparkLife = collapseLive && collapseFloorT < 0.85
@@ -1805,6 +1838,7 @@ export function createTimewreckLevel({
   // Slow runs the world at 0.2x; meshes copy rigid-body pose each tick.
   unregisters.push(timeSystem.register(chunkGroup, {
     onUpdate(scaledDelta) {
+      if (braking) scaledDelta *= Math.max(0, 1 - brakeT / 2.5)
       const burstSim = failBurstT >= 0 && !failBurstSettled
       const stormActive = breakupT >= 0 && breakupT < DEBRIS_STORM_S
       if (breakupT < 0 && !burstSim) return
@@ -2091,14 +2125,44 @@ export function createTimewreckLevel({
   let finalePulseT = -1
   let resumeFlashT = -1
 
-  const DEPLETE_Z = spans.passenger.center
-  const WAVE_SPEED = 6.2 // just under the player's 7.2 m/s sprint
-  const WAVE_LEAD = 6
+  const DEPLETE_Z = spans.passenger.maxZ - 1.8
+  const WAVE_SPEED = 6.2 // below the actual 6.8 m/s sprint
+  const WAVE_LEAD = 12
 
   let depleted = false
   let waveZ = 0
   let braking = false
   let brakeT = 0
+
+  const bridge = new THREE.Group()
+  bridge.name = 'broken-bridge-ahead'
+  const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x796b53, roughness: 0.8 })
+  for (const [a, b] of [[spans.cab.minZ - 5, spans.cab.minZ + 5], [spans.cab.minZ - 35, spans.cab.minZ - 20]]) {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.6, b - a), bridgeMat)
+    deck.position.set(0, -0.7, (a + b) / 2); bridge.add(deck)
+    for (const x of [-0.8, 0.8]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, b - a), bridgeMat)
+      rail.position.set(x, -0.33, (a + b) / 2); bridge.add(rail)
+    }
+  }
+  root.add(bridge)
+  // Exterior locomotive silhouette for the stop reveal, ahead of the existing cab.
+  const locomotive = new THREE.Group()
+  locomotive.name = 'finale-locomotive'
+  const engineMetal = new THREE.MeshStandardMaterial({ color: 0x24413e, metalness: 0.65, roughness: 0.4 })
+  const engineBrass = new THREE.MeshStandardMaterial({ color: 0xc4a052, metalness: 0.85, roughness: 0.35 })
+  const boiler = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 3.4, 20), engineMetal)
+  boiler.rotation.x = Math.PI / 2
+  boiler.position.set(0, 0.9, spans.cab.minZ - 1.7); locomotive.add(boiler)
+  const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.18, 1.0, 12), engineBrass)
+  chimney.position.set(0, 2.2, spans.cab.minZ - 2.7); locomotive.add(chimney)
+  for (const z of [spans.cab.minZ - 0.6, spans.cab.minZ - 2.6]) {
+    for (const x of [-1.05, 1.05]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.14, 16), engineBrass)
+      wheel.rotation.z = Math.PI / 2; wheel.position.set(x, 0, z); locomotive.add(wheel)
+    }
+  }
+  root.add(locomotive)
 
   const brake = createEmergencyBrake()
   addProp(brake, spans.cab.center - 1.5)
@@ -2146,8 +2210,10 @@ export function createTimewreckLevel({
   unregisters.push(interaction.register(brake, {
     prompt: 'Pull the emergency brake',
     onInteract: () => {
-      if (braking) return
+      if (braking || !depleted || Math.abs(player.mesh.position.z - brake.position.z) > 2.5) return
       braking = true
+      timeSystem.setMode('NORMAL')
+      timeSystem.resetGhost()
       beginCinematic?.()
       // The run is over — hand the full kit back before the next level.
       timeSystem.setAbilityAvailability({})
@@ -2222,6 +2288,9 @@ export function createTimewreckLevel({
   const lever = brake.getObjectByName('brake-lever')
   let elapsed = 0
 
+  const passengerRack = createPassengerRack({ root, span: spans.passenger, player, timeSystem, unregisters, obstacles: blastObstacles,
+    warn: () => showLevelToast('Rack bolts snapping! Amber is the fall zone — keep RIGHT or Freeze.', 3200) })
+
   // Capture the collapse at each checkpoint, then restore moving hazards to a
   // predictable phase. The final checkpoint also puts the pursuing wave far
   // enough behind the player for repeated deaths to remain recoverable.
@@ -2260,6 +2329,16 @@ export function createTimewreckLevel({
       relayOpen = relayLatched ? 1 : 0
       releaseDeck.position.y = 0
       applyRelay()
+      wreckRoutes.reset()
+      passengerRack.reset()
+      failBurstArmed = true
+      failBurstT = -1
+      failBurstSettled = false
+      applyFailBurst()
+      vaultGateT = 0
+      updateVaultGates(0, null)
+      surgeT = 0
+      updateElectricalSurges(0, null)
       ramT = 0
       applyRams()
       loopT = 0
@@ -2278,6 +2357,10 @@ export function createTimewreckLevel({
       setCollapseVoid(collapseLive)
       applyCollapseMotion()
       env.restorePassengerLights?.(collapseLive)
+      collapseHintHoldUntil = -1
+      pendingToast = null
+      hintsShown.clear()
+      hud.setObjective(depleted ? 'Sprint to the locomotive — pull the emergency brake!' : LEVEL_OBJECTIVE)
       fractureArmed = saved.fractureArmed
       fractureT = saved.fractureT
       applyVaultFracture(0)
@@ -2329,7 +2412,7 @@ export function createTimewreckLevel({
       luggageMat.emissive.setHex(0x1a1008)
       luggageMat.emissiveIntensity = 0.08
 
-      waveZ = depleted ? DEPLETE_Z + WAVE_LEAD : 0
+      waveZ = depleted ? checkpointZ + WAVE_LEAD : 0
       wave.position.z = waveZ
       wave.scale.set(1, 1, 1)
       wave.visible = depleted
@@ -2338,7 +2421,7 @@ export function createTimewreckLevel({
     }
   }
 
-  const initialZ = ['cargo', 'relay', 'security'].includes(startCarriage)
+  const initialZ = ['convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger'].includes(startCarriage)
     ? spans[startCarriage].maxZ - 1.5 : spans.vault.center + 3
   return {
     objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
@@ -2376,7 +2459,7 @@ export function createTimewreckLevel({
       if (mode === 'SLOW') motionScale = 0.2
       else if (mode === 'FREEZE') motionScale = 0
       else if (mode === 'REWIND') motionScale = -1.25
-      const envDt = motionScale * delta
+      const envDt = (braking ? Math.max(0, 1 - brakeT / 2.5) : motionScale) * delta
       const exteriorScale = braking
         ? Math.max(0, 1 - brakeT / 2.5)
         : mode === 'FREEZE' ? 0 : resumeBoost * (mode === 'SLOW' ? 0.2 : 1)
@@ -2428,7 +2511,9 @@ export function createTimewreckLevel({
       if (mechHazardActive) applyRams()
       if (cargoHazardActive) applyLoop()
 
-      if (vaultActive) updateVaultGates(envDt, pp)
+      wreckRoutes.update()
+      passengerRack.update()
+      if (vaultActive && !braking) updateVaultGates(envDt, pp)
       if (surgeActive) updateElectricalSurges(envDt, pp)
       if (blastActive) updateBlastDoors(delta, pp)
       const modeInt = MODE_INT[mode] ?? 0
@@ -2567,6 +2652,7 @@ export function createTimewreckLevel({
       // --- Brake pulled: celebratory stop — heavy shake, exit path opens ---
       if (braking) {
         brakeT += delta
+        lever.rotation.x = -0.4 + Math.min(1, brakeT / 0.4) * 1.1
         // Early punch that settles into a fading rumble (celebratory, not subtle).
         const punch = Math.exp(-brakeT * 1.55)
         const rumble = Math.max(0, 1 - brakeT / 2.8)
@@ -2579,6 +2665,7 @@ export function createTimewreckLevel({
           Math.sin(brakeT * 47) * shakeAmp * 0.35
         root.position.x = Math.sin(brakeT * 39) * shakeAmp * 0.4
 
+        camera.showWreckStop?.(new THREE.Vector3(0, 0, spans.cab.center), brakeT)
         // Doors swing open and warm light floods the escape path.
         const open = Math.min(1, brakeT / 1.15)
         const eased = open * open * (3 - 2 * open)
@@ -2667,12 +2754,12 @@ export function createTimewreckLevel({
       }
 
       hint('vault-lasers', pp.z, spans.vault.center + 0.6,
-        `Use ${bindingLabel(settings.getBinding('slow'))} to Slow the security lasers`)
+        `Watch BOTH rack lamps from the teal pads: green means standing clearance. Slow with ${bindingLabel(settings.getBinding('slow'))} or Freeze a clear rack with ${bindingLabel(settings.getBinding('freeze'))}; observe again between them.`)
       hint('convergence-surges', pp.z, electricalSurges[0].z + 4.5,
-        `Use ${bindingLabel(settings.getBinding('slow'))} to slow the electrical surges`,
+        `One fork: brass direct aisle has a short surge window. Cyan maintenance passage needs ${bindingLabel(settings.getBinding('duck'))} crouching; Rewind its shutter, then Freeze to pass.`,
         4800)
       hint('mechanical', pp.z, spans.mechanical.maxZ,
-        'Mechanical car — the pistons are running at wrecked speed. [1]/Q SLOW is the only way through.')
+        `Slow the first luggage bank with ${bindingLabel(settings.getBinding('slow'))}. Stop on the teal recess, recharge, then Rewind the shutter and Freeze it open. The next bank is beyond it.`, 6500)
       hint('cargo', pp.z, spans.cargo.maxZ,
         'Cargo — the emergency gangway is buckling. The pale frame marks its earlier position.', 4400)
       hint('cargo-gangway', pp.z, cargoGap.maxZ + 1.3,
@@ -2686,14 +2773,14 @@ export function createTimewreckLevel({
       hint('security-island', pp.z, spans.security.center + 0.8,
         `Safe island: release Freeze and recharge. The next path is to the right; use ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across its short break.`, 6000)
       hint('passenger', pp.z, spans.passenger.maxZ,
-        'The train is coming apart behind you — do not stop.')
+        `Falling rack ahead: amber marks its landing. Keep right, then centre for the broken floor. ${bindingLabel(settings.getBinding('freeze'))} holds obstacles AND the pursuing wave.`, 6500)
 
       if (failBurstArmed && pp.z < FAIL_BURST_TRIGGER_Z) startFailBurst()
 
       // --- FAST-TIME CAR: runaway pistons ---------------------------------
-      if (mechHazardActive) {
+      if (mechHazardActive && !braking) {
         for (const r of rams) {
-          if (Math.abs(pp.z - r.z) < 0.55 && Math.abs(pp.x - r.head.position.x) < 0.5) {
+          if (Math.abs(pp.z - r.z) < 0.55 && Math.abs(pp.x - r.head.position.x) < 0.5 && pp.y < 1.8 && pp.y + (player.isCrouching() ? 1.15 : 1.85) > 0.025) {
             failSoft('Crushed by a runaway piston!')
             break
           }
@@ -2728,9 +2815,12 @@ export function createTimewreckLevel({
         failSoft('Freeze the marked debris; recharge on the intact island before the second crossing.', 'fell')
       }
 
+      // Shell floor is cut; the visible intact slab supports only before failure.
+      if (!collapseLive) slabSupports.push({ ...collapseVoid, y: 0.06 })
+      for (const [a, b] of [[spans.passenger.minZ, collapseMinZ], [collapseMaxZ, spans.passenger.maxZ]]) slabSupports.push({ minX: -2.6, maxX: 2.6, minZ: a, maxZ: b, y: 0 })
       // --- PASSENGER collapse: Freeze stepping-stones across the hole ------
       if (collapseArmed && pp.z < collapseTriggerZ) startCollapse()
-      collapseSettle += ((frozen && collapseLive ? 1 : 0) - collapseSettle) * Math.min(1, delta * 9)
+      collapseSettle = THREE.MathUtils.clamp(collapseSettle + (frozen && collapseLive ? 1 : -1) * delta / 0.2, 0, 1)
       const nearCollapse = pp.z > collapseMinZ - HAZARD_PAD && pp.z < collapseMaxZ + HAZARD_PAD
       const collapseFxLive = collapseLive && (nearCollapse || collapseMotionNeedsUpdate(frozen))
       if (collapseFxLive) applyCollapseMotion()
@@ -2742,28 +2832,27 @@ export function createTimewreckLevel({
         collapseWood.emissiveIntensity = frozen ? 0.85 : 0.1
         collapseCyan.emissiveIntensity = frozen ? 1.25 : 0.65
       }
-      if (frozen && collapseLive) {
+      if (frozen && collapseLive && collapseSettle > 0.98) {
         for (const p of collapsePieces) {
           slabSupports.push({
             minX: p.mesh.position.x - p.hx - COLLAPSE_PAD_X,
             maxX: p.mesh.position.x + p.hx + COLLAPSE_PAD_X,
             minZ: p.mesh.position.z - p.hz - COLLAPSE_PAD_Z,
             maxZ: p.mesh.position.z + p.hz + COLLAPSE_PAD_Z,
-            y: p.mesh.position.y + p.hy + 0.02
+            y: p.mesh.position.y + 0.18
           })
         }
       }
       const inCollapse = collapseLive && pp.z > collapseMinZ && pp.z < collapseMaxZ
-      const onFarLip = pp.z <= collapseMinZ + 1.9
       let onCollapseSupport = false
-      if (frozen && collapseLive) {
+      if (frozen && collapseLive && collapseSettle > 0.98) {
         for (const p of collapsePieces) {
           if (
             pp.x >= p.mesh.position.x - p.hx - COLLAPSE_PAD_X &&
             pp.x <= p.mesh.position.x + p.hx + COLLAPSE_PAD_X &&
             pp.z >= p.mesh.position.z - p.hz - COLLAPSE_PAD_Z &&
             pp.z <= p.mesh.position.z + p.hz + COLLAPSE_PAD_Z &&
-            pp.y >= p.mesh.position.y + p.hy - 1.0
+            pp.y >= p.mesh.position.y + 0.18 - 0.25
           ) {
             onCollapseSupport = true
             break
@@ -2774,8 +2863,7 @@ export function createTimewreckLevel({
         // Landing on/over an active Freeze pad — do not treat the void as a fail.
       } else if (inCollapse && pp.y < -0.3) {
         failSoft('The floor collapsed — FREEZE the wreckage and cross!', 'fell')
-      } else if (inCollapse && !frozen && !onFarLip && collapseSettle < 0.18) {
-        failSoft('The floor collapsed — FREEZE the wreckage and cross!', 'fell')
+
       }
 
       // --- BREAKING TRAIN --------------------------------------------------
@@ -2842,6 +2930,8 @@ export function createTimewreckLevel({
     },
 
     dispose() {
+      player.mesh.userData.tightCrouchCamera = false
+      player.mesh.userData.wreckLowCeiling = false
       timeSystem.resetGhost()
       unregisters.forEach((fn) => fn())
       stormDebris.dispose()

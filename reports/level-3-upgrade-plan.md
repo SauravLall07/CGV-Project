@@ -70,7 +70,9 @@ Play the entire production build without shortcuts, then repeat deaths/restarts/
 - [x] Implement Batch 3 Security two-stage crossing, full-width recharge island and grounded island/exit checkpoints.
 - [x] Verify Batch 3 automated traversal, energy, falls, retries and rebuild: 55/55 suite tests pass; production build passes.
 - [ ] Batch 3 rendered QA in first/third person remains unavailable.
-- [ ] Batches 4-6 remain pending and are not authorized by this request.
+- [x] Implement Batches 4 and 5, authorized together on 2026-10-15; automated gameplay/retry/rebuild checks complete.
+- [ ] Batches 4/5 rendered first/third-person QA remains unavailable.
+- [ ] Batch 6 remains pending and is outside the current request.
 
 ## Decisions
 
@@ -85,7 +87,7 @@ Play the entire production build without shortcuts, then repeat deaths/restarts/
 
 ## Verification, known issues and next step
 
-Batch 1 implementation is complete. Batch 2 implementation and automated verification are complete, with rendered browser QA still pending. Batch 3 implementation and automated verification are complete; its rendered QA remains pending. Batches 4-6 remain untouched. The Batch 2 starting working tree was clean; prior completed work was preserved.
+Batch 1 implementation is complete. Batch 2 implementation and automated verification are complete, with rendered browser QA still pending. Batch 3 implementation and automated verification are complete; its rendered QA remains pending. Batches 4/5 were subsequently authorized together and implemented below. Batch 6 remains untouched. The Batch 2 starting working tree was clean; prior completed work was preserved.
 
 Batch 1 verification on 2026-10-15:
 
@@ -168,4 +170,44 @@ Manual checks when a browser is available:
 4. Fall before the island and repeat from the entry checkpoint. Fall after reaching the island and repeat from its centre. Deliberately deplete energy on the island and on a crossing; confirm safe recharge and recovery.
 5. Press R to verify a fresh entry start with drifting debris and no duplicated geometry. Repeat traversal/falls in both first and third person and with rebound controls; inspect floor visibility, outlines, jump readability and camera clearance.
 
-Remaining issues: rendered and hands-on verification remains outstanding for Batches 1-3 because no browser is connected. Full production-route testing/performance tuning remains Batch 6. Next implementation batch, only on a new request: Batch 4, Mechanical combination and Convergence route choice. Stop after this Batch 3 handover.
+Remaining issues: rendered and hands-on verification remains outstanding for Batches 1-3 because no browser is connected. Full production-route testing/performance tuning remains Batch 6. Historical Batch 3 handover: Batches 4/5 were subsequently authorized together; see results below.
+
+## Batches 4 and 5 results (2026-10-15)
+
+Implemented only Batches 4 and 5 using Game Studio's Three.js and playtest guidance. The starting working tree was clean; Cargo, Relay and Security implementations remain intact. No engine migration or Batch 6 integration/tuning was performed.
+
+Batch 4:
+
+- Mechanical's first runaway luggage bank is at centre +7; the next bank is at -6/-10. The teal switching recess at +2.7 lies outside their sweeps, before the full-width shutter at centre. Slow the first bank, recharge in the recess, Rewind the failed shutter, Freeze to cross, then switch for the next bank. Early interception and lateral timing remain valid alternatives.
+- Both maintenance shutters visibly start raised, fail on approach over 0.8 seconds, and retain their intact history after prolonged waiting. Pale wire frames show the earlier position. Shared Rewind restores the panel; shared Freeze holds it. Collision uses the rendered panel's clearance and standing/crouched body height. A body already occupying the seam prevents crushing; approaching a closed panel does not reopen it.
+- Convergence is one fork, centre +9 to -1, rejoining well before Mechanical. The brass direct aisle has one 3.6-second surge cycle, dangerous for 2.05 seconds. The cyan maintenance lane is shielded by a partition, is 1.68 m wide, and has a low roof plus its own restorable shutter. Crouch is required at entry; the player stays low inside even if the control is released. That level-owned flag clears on exit, retry and teardown. Camera clearance still needs rendered review.
+- Added checkpoints before/after the fork and at Mechanical's switching floor and shutter exit. Checkpoint restores reset shutters immediately before time-history baselines are rebuilt. Full restart reconstructs the original failure setup.
+
+Batch 5:
+
+- Vault retains two independently phased laser racks. Each has its own amber/green standing-clearance lamp. Teal pads mark safe observation before and between racks; the hint explains checking both windows and using Slow or Freeze. Laser collisions now respect crouched body height. No additional instant-kill hazards were stacked here.
+- Passenger has a deterministic falling brass luggage rack at centre +5.8, an amber landing footprint, and a 0.9-second warning before its 0.65-second fall. Keep right or intercept with Freeze. The rack blocks movement rather than adding an unrelated instant death.
+- Moved/refined the existing separating floor crossing to centre -3 through +1.4 (4.4 m). Cut the actual shell floor and decorative runners; the purple visual well no longer covers the opening. Three broad capped pieces make a contiguous central route. Their support footprints/top heights match the visible flat wood caps, with no invisible side padding. Freeze settles them over 0.2 seconds; the warning starts 2 m before the opening. Unheld/wall-side falls use actual body height.
+- The pursuing wave now starts before the Passenger obstacles, at entry -1.8 m, with a 12 m lead. Speed remains 6.2 m/s against the real 6.8 sprint; it was not increased. Freeze pauses the wave, registered hazards/physics and exterior/environment motion while the player retains movement and view control. Global stasis is energy-limited by the unchanged 28/s Freeze drain (at most about 3.57 seconds from 100 energy per continuous use).
+- Passenger retries return to safe entry floor, reset the rack warning/floor/fail-burst, restore wave lead and the captured ability availability, and recover at least the shared 50-energy floor. They clear queued hints and reconstruct histories. The depleted checkpoint intentionally keeps only Freeze available.
+- Added broken bridge decks/rails ahead, separated by a visible missing span, and an exterior teal/brass locomotive silhouette in front of the existing cab. Pulling the brake ends player input ownership; the level owns a fixed 4.8-second exterior camera reveal, lever pull, deceleration, warm exit and dawn transition. Both outdoor scenery systems actually decelerate to zero over 2.5 seconds. Cosmetic rigid debris decelerates too. The locomotive stops before the broken edge.
+- The reveal has no separate skip control; it advances automatically after 4.8 seconds through the existing level manager. Existing restart/quit lifecycle remains the recovery path, with no new persistent cinematic state. Player-view snap restores first-person body visibility after an exterior reveal. Camera composition and UI recovery require browser verification.
+
+Verification:
+
+- `npm.cmd test`: **64 passed, zero failures**, including nine new tests in `tests/timewreck-escape.test.js` and all earlier Cargo/Relay/Security tests. Final run used approved Node worker-process access.
+- Actual player/time/level systems traverse both Convergence branches, Mechanical's Slow → Rewind → Freeze → Slow sequence, both Vault racks, and Passenger's rack/floor/sprint/brake at **30/60/144 FPS**. Tests assert energy margin at the Mechanical shutter, live movement throughout the finale sprint, wave position during Freeze, stopped main scenery, and a single completion transition.
+- Tests also cover three checkpoint restores per new start, three Passenger falls with depleted-state recovery, shut-panel walking/crouching/jumping collision, real shell-floor raycasts and cap/support dimensions, and teardown/reconstruction with fresh energy/ability state and no duplicate fork. These are simulated gameplay checks, not rendered approval.
+- `npm.cmd run build`: **passed** after final gameplay edits, using approved worker-process access. Existing >500 kB bundle warning remains. Existing geometry warnings appear in tests.
+- `git diff --check`: passed.
+- Browser inventory returned no apps/browsers. Creating an in-app tab returned `Browser is not available: iab`. No screenshots, shader results, manual difficulty approval, runtime FPS/memory, first/third-person camera clearance or rebound-input QA is claimed.
+
+Local manual checks still required:
+
+1. Run `npm run dev`. Use `?start=level3-convergence`, `?start=level3-mechanical`, or `?start=level3-passenger`; choose NEW GAME. These shortcuts are development-only and R retains the chosen start. Vault starts at `?start=level3`.
+2. Try both fork routes and each sequential Mechanical power switch. Check low-roof camera clearance and crouch release in both views. Wait at a broken shutter, repair it, release Freeze in the seam, die and retry from each checkpoint.
+3. Observe both Vault lamps, cross each window separately, and try Slow/crouch alternatives. Confirm signals and laser/body clearance visually.
+4. Run Passenger: observe the rack warning, steer right, return to centre before the gap, Freeze and sprint over its caps, then reach the brake. Fall, deplete energy, let the wave catch up, retry repeatedly, then restart/quit. Verify warning, wave lead and energy recover each time.
+5. Verify the global freeze is visible outside, player camera/input remain available until the brake, the bridge gap and locomotive read clearly in the exterior shot, scenery settles, and completion happens once. Check pause/restart/quit during the reveal and first-person visibility after recovery.
+
+Remaining issues: rendered/hands-on QA is outstanding for all upgraded batches due to unavailable browser access. Bridge shot composition, roof/camera clearance, alternate abilities, rebindings and human chase fairness need that pass. The full production-route run, performance/resource checks and wider difficulty tuning remain Batch 6. Stop here; do not begin Batch 6 without a new request.
