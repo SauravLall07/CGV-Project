@@ -10,6 +10,7 @@ import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
+import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
 import {
   DASH_DOOR_TIMING,
   createCarriageShake,
@@ -150,7 +151,7 @@ function createEmergencyBrake() {
 }
 
 export function createTimewreckLevel({
-  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic
+  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic, startCarriage = null
 }) {
   // Level 3 is the "unstable" end of the scale — the shaders read this.
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.8)
@@ -873,6 +874,7 @@ export function createTimewreckLevel({
   const checkpointZs = [
     spans.mechanical.maxZ - 1.5,
     spans.cargo.maxZ - 1.5,
+    spans.cargo.minZ + 1.5,
     spans.security.maxZ - 1.5,
     spans.passenger.maxZ - 1.5
   ]
@@ -1026,9 +1028,11 @@ export function createTimewreckLevel({
   const LOOP_PERIOD = 9
   const loopDoorZ = spans.cargo.center + 2
   const loopBeamZ = spans.cargo.center - 2
+  const cargoGap = cargoGangwayLayout(spans.cargo.center, WRECK_WALL_X)
+  cutCargoGangwayFloor(root.getObjectByName('floor-cargo'), spans.cargo, cargoGap)
 
-  // Cargo walkway: same footprint as the old rail bed — restyled as broken wood
-  // planks with brass trim and cyan fracture edges (collision/layout unchanged).
+  // Retain the wood/brass dressing on the intact approach and landing, but
+  // split every deck layer at the gangway opening so the void is visible.
   const cargoTrackLen = spans.cargo.maxZ - spans.cargo.minZ - 0.8
   const cargoTrackZ0 = spans.cargo.center
   const cargoTracks = new THREE.Group()
@@ -1048,41 +1052,72 @@ export function createTimewreckLevel({
     color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
   })
 
-  const deck = new THREE.Mesh(
-    new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2 - 0.35, cargoTrackLen),
-    plankMat
-  )
-  deck.name = 'cargo-wood-deck'
-  deck.rotation.x = -Math.PI / 2
-  deck.position.y = 0.02
-  deck.receiveShadow = true
-  cargoTracks.add(deck)
+  const cargoDeckSegments = [
+    [-cargoTrackLen / 2, cargoGap.minZ - cargoTrackZ0],
+    [cargoGap.maxZ - cargoTrackZ0, cargoTrackLen / 2]
+  ]
+  for (const [from, to] of cargoDeckSegments) {
+    const deck = new THREE.Mesh(
+      new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2 - 0.35, to - from), plankMat
+    )
+    deck.name = 'cargo-wood-deck'
+    deck.rotation.x = -Math.PI / 2
+    deck.position.set(0, 0.02, (from + to) / 2)
+    deck.receiveShadow = true
+    cargoTracks.add(deck)
+  }
 
   const sleeperStep = 0.72
   const halfLen = cargoTrackLen * 0.5
   for (let z = -halfLen + 0.4; z <= halfLen - 0.4; z += sleeperStep) {
+    if (z + cargoTrackZ0 + 0.28 > cargoGap.minZ && z + cargoTrackZ0 - 0.28 < cargoGap.maxZ) continue
     const plank = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.5, 0.06, 0.55), plankDarkMat)
     plank.position.set(0, 0.05, z)
     plank.receiveShadow = true
     cargoTracks.add(plank)
   }
-  // Brass side rails + cyan broken-edge cues (2 long strips — cheap).
+  // Brass side rails + cyan broken-edge cues, interrupted at the opening.
   for (const side of [-1, 1]) {
-    const brass = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.05, cargoTrackLen - 0.3),
-      plankBrassMat
-    )
-    brass.position.set(side * (INTERIOR_HALF_WIDTH - 0.35), 0.07, 0)
-    cargoTracks.add(brass)
-    const cyan = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.03, cargoTrackLen - 0.5),
-      plankCyanMat
-    )
-    cyan.position.set(side * (INTERIOR_HALF_WIDTH - 0.42), 0.09, 0)
-    cargoTracks.add(cyan)
+    for (const [from, to] of cargoDeckSegments) {
+      const brass = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.05, to - from), plankBrassMat
+      )
+      brass.position.set(side * (INTERIOR_HALF_WIDTH - 0.35), 0.07, (from + to) / 2)
+      cargoTracks.add(brass)
+      const cyan = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.03, to - from), plankCyanMat
+      )
+      cyan.position.set(side * (INTERIOR_HALF_WIDTH - 0.42), 0.09, (from + to) / 2)
+      cargoTracks.add(cyan)
+    }
   }
   cargoTracks.traverse((node) => { node.userData.noCameraCollision = true })
   root.add(cargoTracks)
+
+  const cargoGangway = createCargoGangway({ root, layout: cargoGap,
+    wood: plankMat, brass: plankBrassMat, cyan: plankCyanMat })
+  unregisters.push(timeSystem.register(cargoGangway.group, {
+    recordWhen: () => cargoGangway.state.recording,
+    onUpdate(dt) {
+      const z = player.mesh.position.z
+      cargoGangway.state.step(dt, z <= cargoGap.triggerZ && z > cargoGap.minZ)
+      cargoGangway.apply()
+    },
+    getSnapshot: () => cargoGangway.state.snapshot(),
+    restoreSnapshot(snapshot) { cargoGangway.state.restore(snapshot); cargoGangway.apply() }
+  }))
+
+  // Brass-edged, intact landing between gangway and door. The shell remains
+  // solid here so the player can release Freeze and wait for the next cycle.
+  const cargoLanding = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.1, 1.1), plankMat)
+  cargoLanding.name = 'cargo-safe-landing'
+  cargoLanding.position.set(0, 0.025, spans.cargo.center + 3.15)
+  root.add(cargoLanding)
+  for (const x of [-0.8, 0.8]) {
+    const rim = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 1.1), plankBrassMat)
+    rim.position.set(x, 0.07, 0)
+    cargoLanding.add(rim)
+  }
 
   // Cargo loop door — aisle-wide so it fully blocks when closed (motion/hits unchanged).
   const LOOP_DOOR_W = INTERIOR_HALF_WIDTH * 2 - 0.15
@@ -1180,21 +1215,12 @@ export function createTimewreckLevel({
   let loopBeamDown = 0
   // Cleared each level frame; when false, clock still advances for Rewind.
   let cargoVisualsActive = true
+  const loopPose = {}
   function applyLoop() {
-    const phase = ((loopT % LOOP_PERIOD) + LOOP_PERIOD) % LOOP_PERIOD
-    let colour = 0x10b981 // open — go
-    if (phase < 2.5) { loopDoorOpen = 1; loopBeamDown = 0 }
-    else if (phase < 3.7) { loopDoorOpen = 1 - (phase - 2.5) / 1.2; loopBeamDown = 0; colour = 0xf59e0b }
-    else if (phase < 5.0) { loopDoorOpen = 0; loopBeamDown = 0; colour = 0xef4444 }
-    else if (phase < 6.0) { loopDoorOpen = 0; loopBeamDown = phase - 5.0; colour = 0xef4444 }
-    else if (phase < 7.5) { loopDoorOpen = 0; loopBeamDown = 1; colour = 0xef4444 }
-    else {
-      // The loop snaps backwards to intact — the concept doc's "rewind" beat.
-      const t = (phase - 7.5) / 1.5
-      loopDoorOpen = t
-      loopBeamDown = 1 - t
-      colour = 0xa855f7
-    }
+    const pose = cargoLoopPose(loopT, loopPose)
+    loopDoorOpen = pose.door
+    loopBeamDown = pose.beam
+    const colour = pose.colour
     loopDoor.position.y = 1.15 + loopDoorOpen * 2.35
     loopBeam.position.y = 2.25 - loopBeamDown * 1.85
     loopRingMat.color.setHex(colour)
@@ -1275,8 +1301,8 @@ export function createTimewreckLevel({
     color: 0x6a1824, roughness: 0.92, metalness: 0, emissive: 0x1a0608, emissiveIntensity: 0.08
   })
   const slabs = []
-  const slabSupports = []
-  const gapVoids = [{ minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: gapMinZ, maxZ: gapMaxZ }]
+  const slabSupports = [...cargoGangway.supports]
+  const gapVoids = [cargoGap, { minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: gapMinZ, maxZ: gapMaxZ }]
   for (let i = 0; i < 5; i++) {
     const slab = new THREE.Group()
     slab.name = `security-freeze-tile-${i}`
@@ -2346,6 +2372,8 @@ export function createTimewreckLevel({
       applyRams()
       loopT = 0
       applyLoop()
+      cargoGangway.state.reset()
+      cargoGangway.apply()
       slabDriftT = 0
       slabSettle = 0
       collapseArmed = saved.collapseArmed
@@ -2416,12 +2444,13 @@ export function createTimewreckLevel({
     }
   }
 
+  const initialZ = startCarriage === 'cargo' ? spans.cargo.maxZ - 1.5 : spans.vault.center + 3
   return {
     objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
     checkpoint: {
-      position: new THREE.Vector3(0, 0, spans.vault.center + 3),
+      position: new THREE.Vector3(0, 0, initialZ),
       yaw: Math.PI,
-      restore: captureCheckpointRestore(spans.vault.center + 3)
+      restore: captureCheckpointRestore(initialZ)
     },
     bounds,
     obstacles: blastObstacles,
@@ -2736,7 +2765,11 @@ export function createTimewreckLevel({
       hint('mechanical', pp.z, spans.mechanical.maxZ,
         'Mechanical car — the pistons are running at wrecked speed. [1]/Q SLOW is the only way through.')
       hint('cargo', pp.z, spans.cargo.maxZ,
-        'Cargo car — this bulkhead is stuck in a time loop. Watch the ring and move on green.')
+        'Cargo — the emergency gangway is buckling. The pale frame marks its earlier position.', 4400)
+      hint('cargo-gangway', pp.z, cargoGap.maxZ + 1.3,
+        `Restore the gangway with ${bindingLabel(settings.getBinding('rewind'))}, then hold it with ${bindingLabel(settings.getBinding('freeze'))}. Rest on the landing before the bulkhead.`, 6500)
+      hint('cargo-landing', pp.z, cargoGap.minZ - 0.25,
+        'Intact landing — recharge here. Watch the bulkhead ring; green means the door and overhead load are clear.', 4800)
       hint('relay-blast-doors', pp.z, doorZ + 4.2,
         `Use ${bindingLabel(settings.getBinding('slow'))} or ${bindingLabel(settings.getBinding('freeze'))} to pass the blast doors`)
       hint('security', pp.z, spans.security.maxZ,
@@ -2758,10 +2791,16 @@ export function createTimewreckLevel({
 
       // --- TIME-LOOP CAR: crushing bulkhead and falling girder -------------
       if (cargoHazardActive) {
-        if (loopDoorOpen < 0.35 && Math.abs(pp.z - loopDoorZ) < 0.5) {
+        const bodyTop = pp.y + (player.isCrouching?.() ? 1.15 : 1.85)
+        if (pp.z > cargoGap.minZ && pp.z < cargoGap.maxZ && pp.y < -0.5) {
+          failSoft('The gangway buckled — rewind its pale frame, then freeze the restored deck.', 'fell')
+        }
+        if (loopDoor.position.y - LOOP_DOOR_H / 2 < bodyTop &&
+            loopDoor.position.y + LOOP_DOOR_H / 2 > pp.y && Math.abs(pp.z - loopDoorZ) < 0.3) {
           failSoft('The bulkhead slammed shut on you!')
         }
-        if (loopBeamDown > 0.55 && Math.abs(pp.z - loopBeamZ) < 0.65) {
+        if (loopBeam.position.y - 0.16 < bodyTop && loopBeam.position.y + 0.21 > pp.y &&
+            Math.abs(pp.x) < 1.5 && Math.abs(pp.z - loopBeamZ) < 0.4) {
           failSoft('Crushed by the falling girder!')
         }
       }
@@ -2769,6 +2808,7 @@ export function createTimewreckLevel({
       // --- FROZEN CAR: suspended wreckage as a walkway ---------------------
       const frozen = mode === 'FREEZE'
       slabSupports.length = 0
+      slabSupports.push(...cargoGangway.supports)
       if (walkwayActive) {
         slabSettle += ((frozen ? 1 : 0) - slabSettle) * Math.min(1, delta * 7)
         for (const slab of slabs) {
