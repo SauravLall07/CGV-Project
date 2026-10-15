@@ -469,3 +469,100 @@ was changed. No package-size or draw-call saving is claimed.
 Follow the existing production protocol above and the Phase B manual checklist
 in the progress tracker before accepting/expanding B1 or selecting B2-B4 work.
 No B2-B4 bottleneck was established by this CPU-only resource census.
+
+## Phase C session evidence - 15 October 2026
+
+The user reported testing the delivered B fixture change and explicitly
+authorized Phase C. That delivered scope is approved; broader unimplemented
+B tasks remain deferred. This agent executed no commit. At session start HEAD
+was `51ca645`, with the five Phase B paths modified/untracked. An external/user
+commit subsequently recorded exactly that B scope as `e64da95`; C remains
+uncommitted. The before application source is reproducible at `e64da95`, not
+bare `51ca645` or the original audit revision. Copy the new workload script into
+an isolated `e64da95` checkout to reproduce its before counts/hashes.
+
+Only the C1 immutable-availability/direct-rewind-scan substeps and C3 relay
+unchanged-state guards were implemented. Temporal history storage, C2, broader
+C3 scheduling, C4 timing and C5 mixer ordering remain deferred behind their
+measurement/behavior gates. Browser inventory again returned no apps/browsers.
+
+### Reproducible workload counts
+
+Run from repository root:
+
+```powershell
+node --import ./scripts/register-test-assets.mjs scripts/measure-phase-c-work.mjs
+```
+
+This is a deterministic Node probe, not a frame-time benchmark. Availability
+reads are taken without changes to the ability map. Relay idle counts exclude
+the initial setup and count actual `setMatrixAt`/emissive calls and
+`instanceMatrix.version` increments. No renderer consumes the dirty attributes,
+so these are not measured GPU uploads. No heap/GC/FPS improvement is inferred.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| Distinct objects returned by 1,000 availability reads | 1,000 | 1 | 999 fewer returned object identities |
+| Matrix writes across 1,200 idle relay updates | 9,600 | 0 | 9,600 avoided writes |
+| Buffer dirty/version marks across 1,200 idle relay updates | 1,200 | 0 | 1,200 avoided marks |
+| Emissive assignments across 1,200 idle relay updates | 1,200 | 0 | 1,200 avoided assignments |
+
+Rewind metadata now scans registered entries directly rather than constructing
+two Set-spread arrays and a mapped array. This is a code-supported removal of
+those temporary arrays, not a browser allocation profile of all temporal work.
+Player recording and snapshot allocations/cadences remain unchanged.
+
+### Before/after behavior evidence
+
+The same script was captured before runtime edits and after them. Per-update
+time-system state hashes match for all five schedules below. Traces span twelve
+seconds of recording (past the snapshot horizon), reverse playback, resumed
+recording, concurrent ghost playback, Freeze, availability changes, checkpoint
+restore and level reset. Input/state sequences are identical within each
+before/after pair; this is not a claim of identical trajectories across
+different schedules or a complete browser gameplay replay.
+
+| Schedule | Updates | Before and after state SHA-256 |
+|---|---:|---|
+| 10 Hz | 160 | `53dbedd75f11358f9375e8f38bb21ca68788ce72bd02493513ee3db1fae75702` |
+| 30 Hz | 478 | `2df58ebac6af024c6388bf273fcdade57b10fe175ca02d35f2f33dd9bfd3544d` |
+| 60 Hz | 954 | `e4d3ca4a67a7f1e81bbbcb864760763f1e5a5b7933370da732d80043010440d5` |
+| 144 Hz | 2,292 | `7ae9b756942a71f7870ddaafb3cc2a80708d96bebad85a4a0f94397565d4eee3` |
+| Irregular: 100 ms, 1/144 s, 13 ms, 1/30 s | 421 | `baf7f2f35ff38ab9bc28f6abfc0e2d5891d8e428924e68bc56687e2453005211` |
+
+The relay presentation probe compares all instance matrices, emissive values
+and linkage Y positions across empty/full bars, 480 countdown frames, latch,
+release and reset. Before/after presentation SHA-256:
+`080c7ff818606082e3e064504556a9877ab97527ba12060fd1203996b73f4c66`.
+Matching data does not substitute for screenshots, visual review or traces on
+actual graphics hardware. New tests independently exercise availability-view
+ownership and mixed/exhausted rewind histories, plus relay idle and transitions.
+
+### Production bytes and validation
+
+Same installed toolchain, Node Buffer byte counts and default `gzipSync`.
+Before used fresh in-memory Vite output; after used a fresh production build.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| Total output, 53 files | 76,158,052 B | 76,158,180 B | None; +128 B |
+| Entry JavaScript | 1,514,435 B | 1,514,563 B | None; +128 B |
+| Entry JavaScript, local gzip | 445,037 B | 445,102 B | None; +65 B |
+
+- Before full suite: 101 passed, 0 failed/skipped/cancelled.
+- Targeted time/relay feedback/relay integration: 19 passed.
+- Final full suite: 107 passed, 0 failed/skipped/cancelled; six new tests.
+  Duration 41,838.89 ms is not a game performance metric.
+- All 126 source modules, the workload script and both changed/new test modules
+  passed `node --check`. No repository type-check/lint command is configured.
+- Production build and the 53-file/52-reference subdirectory HTTP check passed.
+  The existing large-entry warning remains; existing geometry/audio diagnostics
+  in Node tests were not changed as part of this phase.
+- Runtime profiling, actual GPU/heap/GC behavior and Phase C manual testing
+  remain pending. No save-data, physics, difficulty, animation or clock policy
+  changed. The availability getter now provides an explicit read-only view;
+  setters and checkpoint capture/restore maintain separate ownership.
+
+Use the Phase C manual checklist in the progress tracker and the production
+baseline protocol above before asserting FPS, memory, GC or latency gains or
+expanding the remaining C work. No Phase D implementation began.

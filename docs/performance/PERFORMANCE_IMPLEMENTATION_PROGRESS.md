@@ -7,16 +7,18 @@ Initial working tree: clean. No commit, push, dependency installation or deploym
 
 ## Phase register
 
-The user subsequently instructed "Move on to Phase B". Phase B is now the
-active scope; Phase A remains incomplete and unapproved. No manual testing
-acceptance has been supplied for either phase. Initial Phase A session details
-below are retained as historical evidence; the Phase B session is appended.
+The user tested the delivered Phase B fixture change and explicitly authorized
+Phase C: "Ok ive tested it, give me a git commit message and can move onto
+Phase C". The delivered Phase B scope is APPROVED. Its unimplemented broader
+tasks remain deferred, not silently completed. Phase C is the active scope;
+Phase A remains incomplete and unapproved. Earlier session details below are
+historical evidence; current Phase C results are appended.
 
 | Phase | Plan tasks | Status | Completed / remaining |
 |---|---|---|---|
 | A - Quick wins | A0-A4 | BLOCKED | Partial A0 diagnostic tooling and automated checks completed. Real-browser prerequisite and remaining A0 work block A1-A4. |
-| B - Rendering improvements | B1-B4 | BLOCKED | B1 fixture geometry-sharing substep implemented, awaiting user testing. Broader B1 batching and B2-B4 require browser profiling/visual evidence. |
-| C - CPU and game loop improvements | C1-C5 | NOT STARTED | All tasks remain; A0 loop instrumentation does not change simulation scheduling. |
+| B - Rendering improvements | B1-B4 | APPROVED | User tested/accepted the delivered fixture-sharing substep. Broader B1 batching and B2-B4 remain unimplemented and deferred behind profiling gates. |
+| C - CPU and game loop improvements | C1-C5 | BLOCKED | C1 immutable availability/direct rewind scan and C3 relay unchanged-state guards implemented, awaiting user testing. Remaining storage/raycast/scheduling/timing work needs profiling or an agreed behavior reference. |
 | D - Memory improvements | D1-D3 | NOT STARTED | All tasks remain; query cleanup here belongs to A0 diagnostic ownership, not application shutdown. |
 | E - Loading and build improvements | E1-E4 | NOT STARTED | All tasks remain; no readiness, loading, asset or hosting behavior change. |
 | F - Advanced optimizations | F1-F2 | NOT STARTED | All tasks and their measurement/architecture gates remain. |
@@ -258,7 +260,10 @@ repository inspection or indicate whitespace errors.
 
 ## Phase B session - 15 October 2026
 
-**Status: BLOCKED - partial B1 implemented, awaiting user testing.**
+**Status at original session close: BLOCKED - partial B1 implemented.**
+Subsequent feedback: the user tested and accepted the delivered fixture change
+and authorized Phase C. The delivered scope is APPROVED; broader B work remains
+deferred. See the Phase C feedback record below.
 
 Authorization: "Move on to Phase B". This explicitly changes the active phase;
 it is not evidence that the user has tested or accepted Phase A. No work on
@@ -438,3 +443,205 @@ file. Ordinary `git diff --stat` excludes the two untracked new modules. The
 runtime diff is 26 insertions and 6 deletions in `carriages.js`; it changes only
 fixture geometry construction and reuse. No tracked file was deleted. Final
 `git diff --check` passed. Nothing was staged, committed, pushed or deployed.
+
+## Phase C session - 15 October 2026
+
+**Status: BLOCKED - C1/C3 substeps implemented, awaiting user testing.**
+
+### Prior-phase feedback, authorization and Git boundary
+
+The user explicitly reported testing the delivered Phase B change and authorized
+Phase C. That fixture-sharing scope is now APPROVED; the remaining original B
+tasks are still unimplemented. The request was for a commit message, not for
+execution of `git commit`. Suggested Phase B message:
+
+```text
+perf(rendering): share carriage fixture geometry
+```
+
+At the start of this
+session, all five Phase B paths from its Git summary above were still modified/
+untracked against `51ca6450ebbf677a1309188494aa3b98a8062110`. During this session,
+an external/user commit recorded exactly that B scope as `e64da95`
+(`perf(rendering): share carriage fixture geometry`). This agent did not create
+the commit. The C baseline application source is therefore reproducible at
+`e64da95`. Those existing changes were preserved. In particular, Phase B's
+`carriages.js`, census script and fixture tests were not edited in Phase C.
+The two shared performance documents received the authorized progress/evidence
+updates. No staging, commit, push, dependency install or deployment occurred.
+
+### Scope, dependencies and task status
+
+A fresh browser inventory again returned `apps: []`, `browsers: []`. Browser
+allocation/GC, per-subsystem CPU and input-to-presentation traces remain
+unavailable. This session therefore implements bounded C1/C3 work whose
+redundant operations can be counted and whose behavior can be compared offline.
+This is a documented deviation from waiting for A0/browser evidence before any
+C implementation; it does not waive the remaining measurement/behavior gates.
+
+| Task | Status | Completed / remaining |
+|---|---|---|
+| C1 - Bound temporal storage with stable ownership | IN PROGRESS | Immutable stable availability views and direct rewind metadata scan implemented. Circular player/snapshot storage, reusable transform slots and custom snapshot ownership changes remain deferred until allocation evidence and expanded wrap/alias tests. |
+| C2 - Optimize measured raycast/collision work | NOT STARTED | Need candidate/grid/triangle/collision timings before choosing work. Existing raycast cadence and collision substeps are untouched. |
+| C3 - Skip unchanged cosmetic uploads/schedule visuals | IN PROGRESS | Relay bars/material/linkage guards implemented. Particle/atmosphere/valley scheduling remains deferred; logical clocks, PRNG progression and hazards are untouched. |
+| C4 - Repair refresh dependence | NOT STARTED | Intended guard search/glitch-bob trajectory and difficulty reference must be agreed before retiming. No 30/60/144 Hz behavior was silently normalized. |
+| C5 - Animation response ordering | NOT STARTED | Need input-to-pose/render trace and pause policy before moving the single mixer tick or Throw release. |
+
+### Implemented changes
+
+- `getAbilityAvailability()` returns a frozen point-in-time view instead of a
+  new mutable copy on every read. All repository consumers were checked: the
+  production caller passes it read-only to the HUD. Setters/checkpoint restores
+  replace the view, so retained old views stay unchanged. Checkpoint capture
+  still returns an independent editable copy. Default abilities are immutable.
+- Rewind metadata is collected by one direct pass over registered entries.
+  This replaces two Set spreads and one mapped array per rewind update while
+  preserving the maximum history, procedural reverse fallback, energy charge,
+  snapshot restoration order and exhaustion behavior.
+- Relay bar matrices are recomputed/marked dirty only when displayed fill
+  changes. Emissive color is assigned only when its displayed color changes;
+  release and catch linkage Y are written only when different. Color/linkage
+  transitions still run when the row stays full. Echo countdown remains smooth
+  at the original update frequency and uses the original arithmetic.
+
+No snapshot frequency, horizon, ghost recording cadence, player integration,
+energy/strain rule, input, collision, difficulty, animation timing or save data
+was changed. Temporal ring storage was not partially introduced. The relay
+adapter still owns no puzzle clocks, occupancy or collision state and creates
+no new timers, listeners or resources requiring cleanup.
+
+### Files created or modified in Phase C
+
+| File | Change | Reason |
+|---|---|---|
+| `src/systems/time-system.js` | Frozen stable availability views and direct rewind metadata scan | Remove per-frame copies/temporary metadata arrays while retaining state ownership. |
+| `src/levels/timewreck-relay-feedback.js` | Independent guards for fill, emissive color and linkage positions | Avoid identical matrix writes/dirty marks without freezing active countdowns or transitions. |
+| `test/time-system.test.mjs` | Three ownership/rewind regression tests | Verify immutable views, checkpoint isolation, mixed procedural history and maximum-history exhaustion. |
+| `test/relay-feedback.test.mjs` (new) | Three idle/transition/countdown tests | Check unchanged-state suppression and smooth bar/indicator parity. |
+| `scripts/measure-phase-c-work.mjs` (new) | Deterministic operation counts and temporal/presentation trace hashes | Reproduce actual work reductions and before/after behavior comparison in Node. |
+| `docs/performance/PERFORMANCE_BASELINE.md` | Append Phase C measurements/reference hashes | Preserve prior evidence and separate workload counts from browser performance. |
+| `docs/performance/PERFORMANCE_IMPLEMENTATION_PROGRESS.md` | Record Phase B feedback and Phase C status/results/limitations | Track acceptance of delivered work and the remaining original plan. |
+
+Ignored `dist/` was rebuilt for validation. Before/after workload JSON and test
+logs are in the OS temp directory. No tracked file was deleted.
+
+### Measured results
+
+Identical Node workload before and after; no renderer or real GPU uploads.
+Relay idle counts exclude the necessary initial display setup.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| Distinct availability objects across 1,000 unchanged reads | 1,000 | 1 | 999 fewer returned object identities |
+| Relay matrix writes across 1,200 idle updates | 9,600 | 0 | 9,600 avoided writes |
+| Relay buffer-version increments across 1,200 idle updates | 1,200 | 0 | 1,200 avoided dirty marks |
+| Relay emissive assignments across 1,200 idle updates | 1,200 | 0 | 1,200 avoided assignments |
+| Total production output, 53 files | 76,158,052 B | 76,158,180 B | None; +128 B |
+| Entry JavaScript | 1,514,435 B | 1,514,563 B | None; +128 B |
+| Entry JavaScript, local gzip | 445,037 B | 445,102 B | None; +65 B |
+
+Per-update temporal state hashes match before/after for 10/30/60/144 Hz and an
+irregular schedule. Each trace records across the snapshot horizon, rewind,
+resumed recording, concurrent ghost playback, Freeze, availability changes and
+checkpoint/level resets. Relay presentation hashes match over full/empty bars,
+a 480-frame countdown, latch, release and reset. This proves equivalence for
+those scripted states, not every gameplay path or browser raster result.
+
+Expected benefits are less CPU matrix work and fewer allocations/
+dirty uploads in stable states. No average/1% low FPS, frame-time, browser heap,
+GC, startup, actual GPU transfer or input-latency improvement was measured.
+The direct rewind scan's removed arrays are code-supported, not an allocation
+profile of the entire update function. Other temporal allocations remain.
+
+### Validation results
+
+| Check | Result |
+|---|---|
+| Before full suite | PASS: 101 tests; 0 failed/skipped/cancelled |
+| Targeted time/feedback/relay integration suites | PASS: 19 tests |
+| After full suite | PASS: 107 tests; 0 failed/skipped/cancelled |
+| Syntax | PASS: 126 source modules plus the probe and both changed/new test modules |
+| Type checking / linting | UNAVAILABLE: no repository commands/configuration |
+| Production build | PASS; existing >500 kB chunk warning remains |
+| Production packaging/HTTP | PASS: 53 files / 52 subdirectory asset references |
+| Before/after state comparison | PASS: all five temporal schedule hashes and relay presentation hash match |
+| Cleanup/ownership | PASS: availability cannot mutate live state; checkpoint copies remain separate; existing lifecycle/teardown suites pass |
+| Runtime profiling / browser integration | BLOCKED: no accessible browser/GPU context |
+| Phase C manual user testing | NOT COMPLETED; awaiting feedback |
+
+The full suite includes refresh-schedule puzzle, continuous L3 route, relay,
+cargo/security, camera, Throw and disposal coverage. Existing Node test warnings
+from already-non-indexed geometry and ability-SFX timing/absent AudioContext are
+unrelated; no audio/geometry conversion changes were made here. Test duration
+41,838.89 ms is not a game performance benchmark.
+
+### Manual test checklist
+
+Reference: the session-start source at `51ca645` plus the already-tested Phase B
+changes, now committed as `e64da95`. Use that reference in a separate matching
+checkout/copy with identical settings; do not compare away the accepted B work.
+
+1. **L2 HUD/ability availability:** launch `/?start=level2`, click New Game,
+   exercise Slow/Freeze/Rewind/Ghost, then restart and return through title.
+   Availability and warning states should match the reference; watch stale
+   disabled slots, exceptions from accidental writes to the read-only view or
+   failure to exit an ability when it goes offline.
+2. **L3 checkpoints/depletion:** launch `/?start=level3`, progress through
+   checkpoint/failure and final core depletion. Expect the original available
+   kit on respawn, then the original Freeze-only sprint and reset recovery.
+   Watch availability leaking between checkpoints/levels. Compare the same
+   route/state with the reference; no energy or progression rule changed.
+3. **Rewind histories:** in L2 mechanical/convergence and L3 collapsing/moving
+   puzzles, record long enough to fill history, partially rewind, resume, then
+   rewind to exhaustion. Expect identical restoration, energy cost and procedural
+   repair behavior. Try different frame rates and watch early exhaustion,
+   duplicate reverse integration or old-life states after respawn.
+4. **Relay idle/hold/countdown:** launch `/?start=level3-relay`, click New Game,
+   inspect idle tick marks, stand on release, summon Ghost and leave, then
+   use Freeze. Bars should stay full for physical occupancy and drain smoothly
+   with the echo's real lifetime during Freeze. Compare the same remaining-time
+   values to the reference; watch frozen bars, color changes or stepped motion.
+5. **Relay latch/reset:** latch the catch while held, then leave the plate;
+   cancel/expire an echo and restart/fail before the catch. Color and release/
+   catch linkage should change even when bar fill stays full, and reset should
+   restore tick marks. Watch a stale cyan/green display or linkage after reset.
+6. **Performance:** warm identical fixed-quality routes and collect three 60 s
+   browser captures plus allocation/GC traces. Compare idle relay versus active
+   countdown separately. Save raw diagnostic exports and environment/settings.
+   Actual GPU writes, heap/FPS and overhead require browser evidence; dirty-mark
+   counts and Node timings cannot stand in for those measurements.
+
+### Risks, deviations and stop
+
+- The availability getter is now explicitly read-only. Repository callers were
+  checked; external debugging/extensions that assigned into its old detached
+  copy must instead copy the view or use `setAbilityAvailability`. No persisted
+  data format changed, and checkpoint data remains editable/separate.
+- Relay caches cover only adapter-owned presentation. Actual echo fill changes
+  still rebuild matrices at full frequency; no quantization or throttling was
+  introduced. Puzzle clocks/hazard state are untouched.
+- C1 history storage/reuse, C2 and broader C3 need profiling; C4 needs an agreed
+  intended trajectory; C5 needs latency evidence. These remain unimplemented.
+- Delivered C substeps await user testing; Phase C is not APPROVED or complete.
+  Phase B acceptance covers delivered fixtures, not its deferred original tasks.
+- Stop here after reporting Phase C. Do not begin Phase D without explicit
+  authorization, and do not commit/push/deploy automatically.
+- Phase B is now committed externally as `e64da95`; Phase C remains
+  uncommitted. Suggested C message:
+  `perf(time): avoid redundant availability and relay display work`.
+
+### Phase C Git summary
+
+```text
+ M docs/performance/PERFORMANCE_BASELINE.md
+ M docs/performance/PERFORMANCE_IMPLEMENTATION_PROGRESS.md
+ M src/levels/timewreck-relay-feedback.js
+ M src/systems/time-system.js
+ M test/time-system.test.mjs
+?? scripts/measure-phase-c-work.mjs
+?? test/relay-feedback.test.mjs
+```
+
+Only C changes remain in this diff. The two new modules are untracked and
+omitted from ordinary `git diff --stat`. No tracked file was deleted. Final
+`git diff --check` passed. No agent staging/commit/push/deployment occurred.
