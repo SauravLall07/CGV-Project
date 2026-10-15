@@ -391,6 +391,156 @@ export function createTimewreckLevel({
     pad.name = 'vault-safe-observation'; pad.position.set(0, 0.01, z); root.add(pad)
   }
 
+  // Flying storm debris — one sideways wreckage dash after the second laser rack,
+  // before the Convergence doorway. Clear of gate hit slices (~center-4.6 ±0.11).
+  const DEBRIS_Z = spans.vault.center - 6.8
+  const DEBRIS_PERIOD = 4.6
+  const DEBRIS_WARN = 0.75
+  const DEBRIS_MOVE = 0.7
+  const DEBRIS_PARK_X = -2.25
+  const DEBRIS_END_X = 2.2
+  const DEBRIS_HALF_X = 0.42
+  const DEBRIS_HALF_Y = 0.32
+  const DEBRIS_HALF_Z = 0.28
+  const DEBRIS_FLY_Y = 1.05
+  let debrisClock = 0
+  const debrisWood = new THREE.MeshStandardMaterial({
+    color: 0x6a4528, roughness: 0.82, metalness: 0.05, emissive: 0x2a180c, emissiveIntensity: 0.12
+  })
+  const debrisMetal = new THREE.MeshStandardMaterial({
+    color: 0x8a949c, roughness: 0.38, metalness: 0.85, emissive: 0x1a2030, emissiveIntensity: 0.14
+  })
+  const debrisWarnMat = new THREE.MeshBasicMaterial({ color: 0x9b5cff })
+  const debrisTrailMat = new THREE.MeshBasicMaterial({
+    color: 0xc4a0ff, transparent: true, opacity: 0.35, depthWrite: false
+  })
+  const debrisGroup = new THREE.Group()
+  debrisGroup.name = 'vault-flying-storm-debris'
+  debrisGroup.position.set(DEBRIS_PARK_X, DEBRIS_FLY_Y, DEBRIS_Z)
+  const debrisPlank = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.12, 0.38), debrisWood)
+  debrisPlank.rotation.z = 0.18
+  debrisGroup.add(debrisPlank)
+  const debrisBrace = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.45, 0.14), debrisMetal)
+  debrisBrace.position.set(0.2, 0.08, -0.05)
+  debrisBrace.rotation.x = 0.35
+  debrisGroup.add(debrisBrace)
+  const debrisShard = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.5), debrisMetal)
+  debrisShard.position.set(-0.18, -0.06, 0.08)
+  debrisShard.rotation.y = -0.4
+  debrisGroup.add(debrisShard)
+  const debrisWarnLamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.1), debrisWarnMat)
+  debrisWarnLamp.name = 'vault-debris-warn-lamp'
+  debrisWarnLamp.position.set(0, 0.28, 0.22)
+  debrisGroup.add(debrisWarnLamp)
+  const debrisTrails = []
+  for (let i = 0; i < 4; i++) {
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.22 - i * 0.03, 0.08, 0.16), debrisTrailMat.clone())
+    t.visible = false
+    t.userData.noCameraCollision = true
+    root.add(t)
+    debrisTrails.push(t)
+  }
+  debrisGroup.traverse((n) => { n.userData.noCameraCollision = true })
+  root.add(debrisGroup)
+  const debrisLaunchLight = new THREE.PointLight(0xb57bff, 0, 5.5, 2)
+  debrisLaunchLight.name = 'vault-debris-storm-flash'
+  debrisLaunchLight.position.set(0, 1.6, DEBRIS_Z)
+  root.add(debrisLaunchLight)
+  // Safe wait pad just before the flight plane (between second rack and debris).
+  const debrisSafePad = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 0.015, 0.85),
+    new THREE.MeshStandardMaterial({ color: 0x315954, emissive: 0x5b21b6, emissiveIntensity: 0.45 })
+  )
+  debrisSafePad.name = 'vault-debris-safe-wait'
+  debrisSafePad.position.set(0, 0.01, DEBRIS_Z + 1.15)
+  root.add(debrisSafePad)
+
+  function debrisPhase() {
+    const p = ((debrisClock % DEBRIS_PERIOD) + DEBRIS_PERIOD) % DEBRIS_PERIOD
+    if (p < DEBRIS_WARN) return { mode: 'warn', u: p / DEBRIS_WARN, p }
+    if (p < DEBRIS_WARN + DEBRIS_MOVE) return { mode: 'move', u: (p - DEBRIS_WARN) / DEBRIS_MOVE, p }
+    return { mode: 'idle', u: 0, p }
+  }
+
+  function applyFlyingDebris() {
+    const { mode, u } = debrisPhase()
+    if (mode === 'move') {
+      const ease = u * u * (3 - 2 * u)
+      debrisGroup.position.x = DEBRIS_PARK_X + (DEBRIS_END_X - DEBRIS_PARK_X) * ease
+      debrisGroup.position.y = DEBRIS_FLY_Y + Math.sin(u * Math.PI) * 0.22
+      debrisGroup.position.z = DEBRIS_Z
+      debrisGroup.rotation.x = u * 2.4
+      debrisGroup.rotation.y = u * 1.8
+      debrisGroup.rotation.z = Math.sin(u * Math.PI * 5) * 0.35
+      debrisWarnMat.color.setHex(0xff66ee)
+      debrisWarnLamp.scale.setScalar(1.1 + Math.sin(debrisClock * 30) * 0.15)
+      debrisLaunchLight.intensity = u < 0.18 ? 7.5 * (1 - u / 0.18) : Math.max(0, 1.2 - u * 1.2)
+      debrisLaunchLight.color.setHex(0xd8b4fe)
+      for (let i = 0; i < debrisTrails.length; i++) {
+        const trail = debrisTrails[i]
+        const back = ease - (i + 1) * 0.07
+        if (back <= 0) { trail.visible = false; continue }
+        const te = Math.max(0, Math.min(1, back))
+        trail.visible = true
+        trail.position.set(
+          DEBRIS_PARK_X + (DEBRIS_END_X - DEBRIS_PARK_X) * te,
+          DEBRIS_FLY_Y + Math.sin(te * Math.PI) * 0.18,
+          DEBRIS_Z
+        )
+        trail.material.opacity = 0.32 - i * 0.06
+        trail.scale.setScalar(1 - i * 0.12)
+      }
+    } else if (mode === 'warn') {
+      debrisGroup.position.set(DEBRIS_PARK_X, DEBRIS_FLY_Y, DEBRIS_Z)
+      debrisGroup.rotation.set(
+        Math.sin(debrisClock * 19) * 0.12,
+        Math.sin(debrisClock * 14) * 0.1,
+        Math.sin(debrisClock * 23) * 0.16
+      )
+      debrisWarnMat.color.setHex(Math.sin(debrisClock * 18) > 0 ? 0xd8b4fe : 0x7c3aed)
+      debrisWarnLamp.scale.setScalar(1.3 + Math.sin(debrisClock * 22) * 0.4)
+      debrisLaunchLight.intensity = 1.2 + Math.abs(Math.sin(debrisClock * 16)) * 2.8
+      debrisLaunchLight.color.setHex(0x9b5cff)
+      for (const trail of debrisTrails) trail.visible = false
+    } else {
+      debrisGroup.position.set(DEBRIS_PARK_X, DEBRIS_FLY_Y, DEBRIS_Z)
+      debrisGroup.rotation.set(0.1, 0.2, 0.05)
+      debrisWarnMat.color.setHex(0x6d28d9)
+      debrisWarnLamp.scale.setScalar(1)
+      debrisLaunchLight.intensity = 0
+      for (const trail of debrisTrails) trail.visible = false
+    }
+  }
+
+  function updateFlyingDebris(playerPos) {
+    applyFlyingDebris()
+    if (!playerPos) return
+    if (debrisPhase().mode !== 'move') return
+    const cx = debrisGroup.position.x
+    const cy = debrisGroup.position.y
+    const cz = debrisGroup.position.z
+    const overlapsX = Math.abs(playerPos.x - cx) <= DEBRIS_HALF_X + 0.18
+    const overlapsZ = Math.abs(playerPos.z - cz) <= DEBRIS_HALF_Z + 0.18
+    const bodyTop = playerPos.y + (player.isCrouching() ? 1.15 : 1.85)
+    const overlapsY = playerPos.y < cy + DEBRIS_HALF_Y && bodyTop > cy - DEBRIS_HALF_Y
+    if (overlapsX && overlapsZ && overlapsY) {
+      failSoft('Flying storm debris hit you! Wait on the purple-teal pad, then dodge or Slow/Freeze the crossing.')
+    }
+  }
+
+  applyFlyingDebris()
+  unregisters.push(timeSystem.register(debrisGroup, {
+    onUpdate(scaledDelta) {
+      debrisClock += scaledDelta
+      applyFlyingDebris()
+    },
+    getSnapshot: () => ({ debrisClock }),
+    restoreSnapshot(s) {
+      debrisClock = s.debrisClock ?? 0
+      applyFlyingDebris()
+    }
+  }))
+
   // Convergence — electrical surges across the aisle. The ladder is at this
   // car's Vault end; the arcs sit further along the walk toward Mechanical.
   // Bolts are short additive mesh segments (WebGL lines stay 1px thick).
@@ -2605,6 +2755,8 @@ export function createTimewreckLevel({
       applyFailBurst()
       vaultGateT = 0
       updateVaultGates(0, null)
+      debrisClock = 0
+      applyFlyingDebris()
       surgeT = 0
       updateElectricalSurges(0, null)
       cartClock = 0
@@ -2811,6 +2963,7 @@ export function createTimewreckLevel({
         failSoft('The connector folded. Rewind from solid floor, then Freeze its flat hinges.', 'fell')
       }
       if (vaultActive && !braking) updateVaultGates(envDt, pp)
+      if (vaultActive && !braking && !respawn.isFailing()) updateFlyingDebris(pp)
       if (surgeActive) updateElectricalSurges(envDt, pp)
       if (!braking && !respawn.isFailing()) updateRunawayCart(pp)
       if (blastActive) updateBlastDoors(delta, pp)
@@ -3059,6 +3212,8 @@ export function createTimewreckLevel({
         `Teal pads are safe to observe. A horizontal green lamp means standing clearance; upright amber means wait. ${bindingLabel(settings.getBinding('slow'))} slows the racks; ${bindingLabel(settings.getBinding('freeze'))} holds their current pose.`, 5500)
       hint('vault-reassess', pp.z, spans.vault.center - 2.7,
         `Reassess the SECOND rack from this pad. Freeze holds dangerous beams too. Wait for its horizontal lamp, or watch clearance while using ${bindingLabel(settings.getBinding('duck'))} to crouch.`, 5000)
+      hint('vault-debris', pp.z, spans.vault.center - 5.4,
+        `Storm debris ahead: purple flash means wreckage is about to fly across. Wait on the purple-teal pad, then dodge or ${bindingLabel(settings.getBinding('slow'))}/${bindingLabel(settings.getBinding('freeze'))} Slow/Freeze the crossing.`, 5000)
       hint('convergence-threshold', pp.z, spans.convergence.center + 16.5,
         `Broken threshold: ${bindingLabel(settings.getBinding('jump'))} jump the low brass edge. Pass the open right end of the trolley, then choose either aisle.`, 4500)
       hint('convergence-surges', pp.z, spans.convergence.center + 11.5,

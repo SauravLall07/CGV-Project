@@ -144,7 +144,10 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
         recharge()
       }
       stage = 'convergence'
+      // Vault-exit flying debris — Freeze holds the sideways wreckage dash.
+      h.time.triggerFreeze()
       move('z', center(stage) + 15.1)
+      h.time.setMode('NORMAL')
       h.tick(0.75, { forward: true, jump: true })
       check()
       move('x', 0.65) // open end of the diagonal trolley
@@ -621,6 +624,66 @@ test('New checkpoints: repeated local retries restore warnings, shutters, wave l
   }
 })
 
+
+test('Vault: flying storm debris crosses after the second rack; Slow/Freeze stretch it', () => {
+  const h = levelHarness('vault')
+  try {
+    const debris = h.scene.getObjectByName('vault-flying-storm-debris')
+    assert.ok(debris)
+    assert.ok(Math.abs(debris.position.z - (h.center - 6.8)) < 0.05)
+    assert.ok(h.scene.getObjectByName('vault-debris-warn-lamp'))
+    assert.ok(h.scene.getObjectByName('vault-debris-safe-wait'))
+    assert.ok(h.scene.getObjectByName('vault-debris-storm-flash'))
+    // Second laser rack stays clear of the debris plane.
+    const gates = []
+    h.scene.traverse(n => { if (n.name === 'vault-security-gate') gates.push(n) })
+    gates.sort((a, b) => b.position.z - a.position.z)
+    assert.equal(gates.length, 2)
+    assert.ok(gates[1].position.z - debris.position.z > 1.5, 'debris must sit after the second rack')
+    // Parked at cycle start.
+    assert.ok(debris.position.x < -1.8)
+    // Mid-flight after warn 0.75s.
+    h.tick(1.05)
+    assert.ok(debris.position.x > -1.5, 'debris must leave the wall during the flight')
+    // Slow stretches remaining flight.
+    h.respawn.cancel()
+    h.respawn.respawn()
+    h.tick(0.9)
+    const before = debris.position.x
+    h.time.triggerSlow()
+    h.tick(0.35)
+    const afterSlow = debris.position.x
+    h.time.setMode('NORMAL')
+    assert.ok(afterSlow - before < 0.55, 'Slow must stretch the debris dash')
+    // Freeze holds pose.
+    h.respawn.cancel()
+    h.respawn.respawn()
+    h.tick(1.0)
+    const frozenX = debris.position.x
+    h.time.triggerFreeze()
+    h.tick(0.5)
+    assert.ok(Math.abs(debris.position.x - frozenX) < 0.05, 'Freeze must hold the debris')
+    h.time.setMode('NORMAL')
+    // Safe pad is clear while debris is mid-flight.
+    h.respawn.cancel()
+    h.respawn.respawn()
+    pose(h, 0, h.center - 6.8 + 1.15)
+    h.tick(1.05)
+    assert.equal(h.respawn.isFailing(), false, 'safe wait pad must stay clear of the flight')
+    // Standing in the flight path fails.
+    h.respawn.cancel()
+    h.respawn.respawn()
+    pose(h, 0, h.center - 6.8)
+    h.tick(1.05)
+    assert.equal(h.respawn.isFailing(), true, 'standing in the debris path must fail')
+    h.respawn.cancel()
+    h.respawn.respawn()
+    pose(h, 0, h.center - 5.5)
+    h.tick(0.05)
+    const hint = h.messages.find(m => /storm debris/i.test(m))
+    assert.ok(hint, 'debris hint should teach the dodge')
+  } finally { h.dispose() }
+})
 
 test('Vault: both clearance windows can be observed, held and crossed with real body collision', () => {
   for (const fps of [30, 60, 144]) {
