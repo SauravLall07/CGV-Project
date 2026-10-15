@@ -7,7 +7,7 @@ import { disposeObject } from '../src/core/dispose.js'
 
 function harness(fps) {
   const root = new THREE.Group(), obstacles = [], player = createPlayer()
-  const spans = Object.fromEntries(['vault', 'convergence', 'relay', 'security'].map((key, i) =>
+  const spans = Object.fromEntries(['vault', 'convergence', 'relay', 'security', 'passenger'].map((key, i) =>
     [key, { center: -60 * i, minZ: -60 * i - 20, maxZ: -60 * i + 20 }]))
   const spatial = createWreckSpatial({ root, spans, player, obstacles })
   const pose = (key, x, z) => player.setPose(new THREE.Vector3(x, 0, spans[key].center + z), Math.PI)
@@ -84,4 +84,18 @@ test('N4/N5: teardown removes only owned collision/support entries and releases 
   h.dispose()
   assert.equal(counts.size, resources.size)
   assert.ok([...counts.values()].every(count => count === 1))
+})
+
+test('N6: seat backs are real solids with a clear rightward then inward route', () => {
+  const h = harness(60), c = h.spans.passenger.center
+  try {
+    h.pose('passenger', 0, 8.5); h.tick(0.5, { forward: true })
+    assert.ok(h.player.mesh.position.z > c + 7.8, 'first seat blocks a straight centre run')
+    h.tick(0.2, { right: true }); h.tick(0.6, { forward: true })
+    assert.ok(h.player.mesh.position.z < c + 6, 'right end opens into rack clearance')
+    h.pose('passenger', 2.1, 4.5); h.tick(0.5, { forward: true })
+    assert.ok(h.player.mesh.position.z > c + 3.8, 'second shallow seat stops the outer line')
+    h.tick(0.5, { left: true }); h.tick(0.6, { forward: true })
+    assert.ok(h.player.mesh.position.z < c + 2, 'centre return leaves generous approach to the hole')
+  } finally { h.dispose() }
 })

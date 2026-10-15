@@ -44,6 +44,13 @@ export function createWreckAudio({ context = getContext, output = getMasterGain 
     bus?.disconnect(); bus = null
   }
   return {
+    snap() {
+      const ctx = connect()
+      if (ctx && !paused) {
+        tone(ctx, 1350, 180, 0.09, 0.045, 'sawtooth')
+        tone(ctx, 260, 65, 0.16, 0.055, 'triangle')
+      }
+    },
     warning() {
       const ctx = connect()
       if (ctx && !paused) tone(ctx, 640, 420, 0.22, 0.075, 'triangle')

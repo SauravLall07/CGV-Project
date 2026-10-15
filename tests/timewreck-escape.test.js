@@ -37,20 +37,71 @@ function levelHarness(start = 'mechanical', fps = 60) {
   const layout = securityCrossingLayout(center)
   let duckWasDown = false
   let frame = 0
+  let elapsed = 0
+  let probe = null
   const tick = (seconds, keys = {}) => {
     for (let t = 0; t < seconds - 1e-9;) {
       const dt = Math.min(Array.isArray(fps) ? fps[frame++ % fps.length] : 1 / fps, seconds - t)
       t += dt
+      elapsed += dt
       time.update(dt)
       level.update(dt)
       player.update(dt, { keyboard: keys, cameraYaw: Math.PI, bounds: level.bounds,
         obstacles: level.obstacles, supports: level.supports, voids: level.voids, crouchPressed: Boolean(keys.duck) && !duckWasDown })
       duckWasDown = Boolean(keys.duck)
+      probe?.()
     }
   }
   const dispose = () => { respawn.dispose(); level.dispose(); time.dispose() }
-  return { hud, get skipFinale() { return skipFinale }, get advanced() { return advanced }, scene, player, time, respawn, level, center, layout, interactions, tick, dispose, messages }
+  return { hud, setProbe(fn) { probe = fn }, get elapsed() { return elapsed }, get skipFinale() { return skipFinale }, get advanced() { return advanced }, scene, player, time, respawn, level, center, layout, interactions, tick, dispose, messages }
 }
+
+test('N7: live approach/depleted repair, three falls/retries, Mechanical checkpoint and steam remain safe', () => {
+  for (const fps of [30, 60, 144, [1/144, 1/30, 0.1, 1/60]]) {
+    const h = levelHarness('convergence', fps)
+    const b = h.level.getCarriageVolumes().find(v => v.key === 'convergence').minZ
+    const hinge = h.scene.getObjectByName('connector-approach-hinge')
+    try {
+      pose(h, 0, b + 3.2); h.tick(0.1, { forward: true }); h.tick(0.05)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        h.tick(3)
+        assert.ok(Math.abs(hinge.rotation.x) > 1)
+        h.tick(1.15, { forward: true })
+        assert.equal(h.respawn.isFailing(), true)
+        h.respawn.cancel(); h.respawn.respawn()
+        assert.equal(h.player.mesh.position.z, b + 3)
+        assert.equal(h.player.mesh.position.y, 0)
+        assert.equal(Math.abs(hinge.rotation.x), 0, 'restore geometry before shared history reset')
+        assert.ok(h.level.supports.some(s => s.y === 0.04 && s.maxX > s.minX))
+      }
+      h.time.triggerFreeze() // deplete safely on the permanent approach
+      while (h.time.getMode() === 'FREEZE') h.tick(0.02)
+      assert.ok(h.time.getEnergy() < 1)
+      assert.equal(h.respawn.isFailing(), false)
+      h.tick(26)
+      h.time.triggerRewind()
+      for (let i = 0; Math.abs(hinge.rotation.x) > 0.01; i++) { assert.ok(i < 150); h.tick(0.02) }
+      h.time.triggerFreeze(); h.tick(1.4, { forward: true }); h.tick(0.05)
+      assert.ok(h.player.mesh.position.z < b - 2.5)
+      assert.equal(h.player.mesh.position.y, 0)
+      h.time.setMode('NORMAL'); h.tick(7)
+      for (let i = 0; Math.abs(h.scene.getObjectByName('steam-clearance-signal').rotation.z) > 0.01; i++) {
+        assert.ok(i < 600); h.tick(0.02)
+      }
+      h.time.triggerFreeze(); h.tick(0.75, { forward: true })
+      assert.ok(h.player.mesh.position.z < b - 5.5, 'crosses steam after recovery on real floor')
+      assert.equal(h.respawn.isFailing(), false)
+      h.respawn.fail('downstream retry'); h.respawn.cancel(); h.respawn.respawn()
+      assert.equal(h.player.mesh.position.z, b - 2.5)
+      assert.equal(h.player.mesh.position.y, 0)
+      assert.equal(Math.abs(hinge.rotation.x), 0)
+      assert.ok(h.time.getEnergy() >= 50)
+    } finally { h.dispose() }
+    const dev = levelHarness('mechanical', fps)
+    try { assert.equal(dev.player.mesh.position.z, b - 2.5); dev.tick(0.2); assert.equal(dev.respawn.isFailing(), false) }
+    finally { dev.dispose() }
+  }
+})
 
 // One live level, normal Vault spawn, no per-room starts or pose changes.
 // This catches clocks/checkpoints/energy carried between the isolated puzzles.
@@ -498,6 +549,13 @@ test('Passenger: minimum-energy carried entry and repeated checkpoint retries ca
       for(let attempt=0;attempt<3;attempt++) {
         h.respawn.fail('retry'); h.respawn.cancel(); h.respawn.respawn()
         assert.ok(h.time.getEnergy()<=54)
+        const started = h.elapsed
+        let minGap = Infinity, minEnergy = Infinity
+        h.setProbe(() => {
+          minGap = Math.min(minGap, h.scene.getObjectByName('time-wave').position.z - h.player.mesh.position.z)
+          minEnergy = Math.min(minEnergy, h.time.getEnergy())
+        })
+        if (attempt === 2) h.tick(0.05, { right: true, run: true }) // recover a small entry misalignment
         h.tick(0.1,{forward:true,run:true})
         h.tick(0.7,{forward:true,run:true,right:true})
         h.tick(0.2,{forward:true,run:true})
@@ -513,9 +571,49 @@ test('Passenger: minimum-energy carried entry and repeated checkpoint retries ca
           h.tick(0.1,{forward:true,run:true})
           assert.equal(h.respawn.isFailing(),false)
         }
+        h.setProbe(null)
+        assert.equal(h.scene.getObjectByName('buckling-inter-car-connector').visible, false,
+          'inaccessible connector retires before Mechanical detachment')
+        console.log('N6 chase evidence', JSON.stringify({ fps, attempt, seconds: +(h.elapsed-started).toFixed(3),
+          minEnergy: +minEnergy.toFixed(3), brakeEnergy: +h.time.getEnergy().toFixed(3), minWaveGap: +minGap.toFixed(3) }))
+        assert.ok(minGap > 0.35)
       }
     } finally {h.dispose()}
   }
+})
+
+test('N6: rebound movement/Freeze controls navigate both seats and reach the brake from minimum energy', () => {
+  const h = levelHarness('passenger')
+  const target = new EventTarget(); globalThis.window = target
+  const codes = { forward: 'KeyI', right: 'KeyL', left: 'KeyJ', run: 'KeyO', freeze: 'KeyP' }
+  for (const [action, code] of Object.entries(codes)) { settings.setBinding(action, 0, code); settings.setBinding(action, 1, null) }
+  const keyboard = createKeyboardState()
+  const key = (type, code) => { const e = new Event(type); Object.assign(e, { code, repeat: false }); target.dispatchEvent(e) }
+  keyboard.onAction('freeze', () => h.time.triggerFreeze())
+  const walk = (seconds, actions = []) => {
+    for (const action of ['forward', 'right', 'left', 'run']) {
+      const down = actions.includes(action)
+      if (down !== Boolean(keyboard.state[action])) key(down ? 'keydown' : 'keyup', codes[action])
+    }
+    h.tick(seconds, keyboard.state)
+    assert.equal(h.respawn.isFailing(), false)
+  }
+  try {
+    h.time.resetForCheckpoint({ ...h.time.captureCheckpointState(), energy: 0 })
+    walk(0.1, ['forward', 'run'])
+    walk(0.7, ['forward', 'right', 'run']); walk(0.2, ['forward', 'run'])
+    key('keydown', 'KeyF'); assert.equal(h.time.getMode(), 'NORMAL')
+    key('keydown', codes.freeze); assert.equal(h.time.getMode(), 'FREEZE')
+    walk(0.3); walk(0.37, ['left', 'run']); walk(1.6, ['forward', 'run'])
+    assert.ok(h.player.mesh.position.z < h.center - 3)
+    h.time.setMode('NORMAL')
+    const brake = h.scene.getObjectByName('emergency-brake')
+    for (let n = 0; h.player.mesh.position.z > brake.position.z + 1.5; n++) {
+      assert.ok(n < 100); walk(0.1, ['forward', 'run'])
+    }
+    h.interactions.get('emergency-brake').onInteract()
+    assert.equal(h.level.isCinematic, true)
+  } finally { keyboard.dispose(); settings.resetAll(); h.dispose() }
 })
 
 test('Batches 4/5: full rebuild disposes routes and restores fresh ability and obstacle state', () => {

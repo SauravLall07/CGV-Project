@@ -6,7 +6,13 @@ batch. No conversation history is required.
 
 ## Authorization and current state
 
-Latest instruction (2026-10-15): implement **N4 and N5 only**. This batch is
+Latest instruction (2026-10-15): implement **N6 and N7 only**. Starting HEAD
+`2cb5d5e`, clean working tree. Both batches are implemented and automatically
+checked; rendered acceptance remains pending. N1 is still NOT STARTED. N2-N5
+are preserved; N8/N9 have not been started. See the N6/N7 handover and latest
+exact next-batch prompt at the end.
+
+Historical N4/N5 instruction (2026-10-15): implement **N4 and N5 only**. This batch is
 implemented and automatically checked; rendered acceptance remains pending.
 Starting HEAD `95f1128`, clean working tree. N1 remains NOT STARTED. Preserve
 N2/N3 and all older completed work. N6-N9 are not authorized in this batch.
@@ -23,8 +29,8 @@ Final validation/results are recorded in the N2/N3 handover below.
 
 Historical N0 authorization was **N0 only**: inspect the existing game and handovers and save
 the complete expansion design. No gameplay, rendering, audio, camera, test,
-dependency, or configuration changes were part of N0. The latest N2/N3 request
-supersedes that historical scope only for those two batches. Implement only the
+dependency, or configuration changes were part of N0. Subsequent explicit batch requests
+supersede that historical scope only for the named batches. Implement only the
 batch requested by the user, verify it, update this file, and stop.
 
 N0 started at HEAD `a3cac97` with a clean working tree. Repository search found
@@ -357,7 +363,8 @@ aiming, deck edges and locker footprint; ask players to explain next actions.
 
 ### N6 - Passenger seat weave and chase integration
 
-Status: NOT STARTED. Depends on N5. The existing chase is already tight: begin with
+Status: IMPLEMENTED; automated/static checks passed; rendered/human acceptance
+pending. See N6/N7 handover. The existing chase is already tight: begin with
 small authored deflections and prove the entire route, not each obstacle alone.
 
 **Placement/action:** candidate displaced seat back near +7.5 on the left, guiding
@@ -389,7 +396,8 @@ human first-time chase evidence before declaring difficulty tuned.
 
 ### N7 - One buckling inter-car connector
 
-Status: NOT STARTED. Depends on N6. Highest support/collision risk; keep isolated.
+Status: IMPLEMENTED; automated/static checks passed; rendered/human acceptance
+pending. See N6/N7 handover. Highest support/collision risk; kept isolated.
 
 **Placement/action:** candidate boundary `b = spans.convergence.minZ` (also
 Mechanical maxZ). A short authored connector cut across both floors, initially
@@ -566,7 +574,9 @@ depend on chat memory or silently discard deferred checks after compaction.
 - [ ] N2/N3 rendered, audible, human and measured performance acceptance.
 - [x] N4/N5 implementation and automated/static verification (see handover below).
 - [ ] N4/N5 rendered, human, audio and measured performance acceptance.
-- [ ] N6-N9 implementation; do not begin without their requested scope.
+- [x] N6/N7 implementation and automated/static verification (see handover below).
+- [ ] N6/N7 rendered, audible, human and measured performance acceptance.
+- [ ] N8/N9 implementation; do not begin without their requested scope.
 - [ ] Fresh rendered/audio/human/performance acceptance, including A1-A9.
 
 N0 changes only this new Markdown file. Historical latest refinement result is
@@ -836,7 +846,7 @@ Implemented versus verified:
 - Next sequential implementation batch is **N6 only**, on a new explicit request.
   The skipped N1 visual benchmark remains separate pending scope. Stop here.
 
-## Exact next-batch prompt
+## Historical next-batch prompt after N4/N5 (superseded by explicit N6/N7 request)
 
 ```text
 Use Game Studio. Complete N6 only from reports/level-3-expansion-plan.md.
@@ -874,4 +884,177 @@ Update reports/level-3-expansion-plan.md with changed files, final bounds/reason
 resource deltas, fresh evidence, unresolved issues, implemented versus visually
 verified status and the exact N7 prompt. Complete N6 before stopping. Do not
 begin N7 or any other batch, publish, or silently complete the skipped N1.
+```
+
+## N6/N7 implementation and verification (2026-10-15)
+
+Starting revision `2cb5d5e`, clean working tree. Read this plan and current
+Passenger guidance/rack/chase, Cargo strip support/history, floor dressing,
+Convergence spatial supports, Mechanical steam, player, collision, checkpoint,
+time, audio and lifecycle source before implementation. Used the established
+Game Studio Three.js/playtest workflow. This explicit N6/N7 request supersedes
+the historical N6-only continuation prompt. N1 remains NOT STARTED; N2-N5 and all
+older completed work are preserved. No N8/N9 implementation, new dependencies,
+publication, staging or commits. Existing gameplay parameters remain unchanged.
+
+Changed files:
+
+- `src/levels/timewreck-spatial.js`: N6 Passenger seat backs and side-only late
+  damage, merged with the existing owner's materials. Rounded seat ends use
+  static extruded profiles; explicit component colliders use the same extents.
+- `src/levels/timewreck-connector.js`: N7 two-leaf connector, deterministic
+  warning/fold clock, selective retained shared-time history, actual floor/edge
+  cuts on both carriages, persistent moving support strips, permanent lips,
+  clearance arm, restored outline and synchronous reset.
+- `src/levels/timewreck.js`: construct/register connector, clip N4's floor support
+  to the new lip, add void/fall detection, include strips in initial/frame/reset
+  support rebuilding, add pre-lip checkpoint, relocate Mechanical checkpoint/dev
+  spawn, guard the two new checkpoints against airborne saves, restore before
+  history reset and remove owned supports/void on unload. Hide the inaccessible
+  connector at existing breakup >1 s, before Mechanical detaches at 1.1 s; reset
+  restores visibility. No new background vignette or carriage-motion change.
+- `src/systems/wreck-audio.js`, `test/wreck-audio.test.mjs`: one short two-tone
+  metal snap through existing master/pause/reset/disposal ownership, with graph
+  assertions for voice bounds, routing, pause and pre-unlock silence.
+- `tests/timewreck-connector.test.js`: real walking/Slow/early Freeze, minimum
+  energy, long-idle repair, dangerous frozen pose, sprint jump, both floor/edge
+  cuts, moving geometry/support alignment and reset at fixed/mixed frame rates.
+- `tests/timewreck-spatial.test.js`: Passenger fixture and actual-player seat
+  blocking/rightward/inward clearance; existing merged-resource disposal checks
+  now cover the Passenger subtree too.
+- `tests/timewreck-escape.test.js`: live connector fall/retry/depletion/repair/
+  steam integration and relocated dev start, Passenger rebound-input run,
+  minimum-energy retry misalignment recovery, per-frame chase metrics and
+  connector retirement before detachment. The continuous Vault-to-brake route
+  walks across N7 and navigates the two real seats without new pose shortcuts.
+
+Final placement and timing decisions:
+
+| Addition | Accepted implementation |
+| --- | --- |
+| Passenger first seat | Centre X -1.25, Z +7.5; wood X -2.5..0, Z +7.34..+7.66, Y 0..1.2. Burgundy inset reaches 0.01 m farther in Z and uses the same 0.12 m rounded-end profile. Keeps the right side open into the existing rack clearance. |
+| Passenger second seat | Centre X +1.95, Z +3.5; wood X +1.4..+2.5, Z +3.34..+3.66, Y 0..1.2. Shallow lateral obstruction encourages returning to centre before the +1.4 hole. Centre remains open. |
+| Passenger route/damage | Existing right-around-rack then inward route remains valid without a new crouch/jump. Rounded visual corners sit within component AABBs (small conservative corner tolerance), not a large slalom enclosure. After the hole, small seating remnants stay at |X| >=2.06, Z -4.3/-7; torn lining and sagging teal caps stay above Y 2.4. No solid floor/support across the hole or obstruction to the central cab line. |
+| Connector opening | `b = spans.convergence.minZ = spans.mechanical.maxZ`. Full shell-width void X -2.6..+2.6, Z b-1.2..b+1.2. Both floor meshes and both floor-edge strip pairs stop at the real lips. Current damaged builders have no runner at this boundary; instanced Convergence floor plates stop well before the cut. N4's old full-carriage support is explicitly shortened. |
+| Connector deck | Two symmetric leaves, each 2.2 m wide and 1.2 m long, top Y 0.04 when flat, 0.12 m thick, hinged at the two lips. Flush brass seams and fixed mating marks, visible symmetric axle bars. Restored outline is non-supporting. Clearance arm is horizontal while walkable and upright when steep. No wall-side bypass. |
+| Connector clock | Trigger on near-side approach Z (b+1.2, b+3.4], one metal snap/toast, 1.3 s flat warning, then 1 s smooth fold to 1.2 rad. Prompt walking is deliberately valid. Snapshot pose drives both leaves, arm and support strips. Freeze retains the actual pose; Rewind restores it. Selective history retains intact baseline through >26 s idle. |
+| Connector supports | Twelve persistent strips per leaf; X +/-1.1 only while angle <=0.15 rad, midpoint height and Z projection from the visible angle. No support when steep; no automatic player carrying. Two permanent shell-floor support rectangles stop at lips. Strip height approximation within each 0.1 m segment is bounded; ray checks compare segment midpoints, not general rigid-body physics. |
+| Checkpoints/spawn | Added grounded pre-lip checkpoint b+3. Relocated Mechanical entry checkpoint and dev spawn from b-1.5 to b-2.5, on permanent floor, 1.3 m past the lip and 1.5 m before steam centre b-4. The two new saves require grounded feet within 0.06 m of floor. No checkpoint on leaves; downstream retry remains downstream. All original steam/luggage timings and safe recesses retained. |
+| Lifecycle | Restore flat leaves, trigger, supports and visibility synchronously before shared history reset. One registration follows the existing unregister owner. Owned support/void entries removed at unload; GPU resources deduplicated by root disposal. Connector hidden once the old boundary becomes inaccessible during existing Passenger breakup, before Mechanical begins detaching. |
+
+Measured automated route evidence:
+
+| Schedule | Three Passenger retry times to brake approach | Lowest energy during run | Energy at brake approach | Minimum wave gap |
+| --- | --- | --- | --- | --- |
+| 30 FPS | 4.37, 4.37, 4.42 s | 2.940..3.690 | 19.440..20.190 | 9.850..10.160 m |
+| 60 FPS | 4.37, 4.37, 4.42 s | 2.440..3.190 | 18.940..19.690 | 9.850..10.160 m |
+| 144 FPS | 4.37, 4.37, 4.42 s | 2.273..3.023 | 18.773..19.523 | 9.850..10.160 m |
+| Repeating 1/144, 1/30, 100 ms, 1/60 steps | 4.37, 4.37, 4.42 s | 2.044..4.294 | 18.544..20.794 | 9.850..10.513 m |
+
+Runs start from the actual minimum-energy checkpoint recovery (50, <=54 after
+brief entry progression), observe actual body collision and finish within 1.5 m
+of the brake. Third retry includes a 0.05 s lateral misalignment and recovery.
+Metrics sample every simulated player frame. A separate actual rebound-key run
+uses I/J/L/O/P for movement/sprint/Freeze, rejects the old Freeze key and activates
+the brake. Continuous full L3 integration still completes the finale at 30/60/144.
+Energy near 2 is a **tight automated margin**, not proof of human difficulty or
+robust first-time execution; no baseline power/wave/movement tuning was applied.
+
+N7 walking takes 1.45 s from b+3 to permanent floor beyond b-2.5 with Normal,
+Slow or early Freeze at all four schedules, including starting energy 50.
+Tests also retain a fully broken pose during Freeze (actual fall), repair after
+26 s idle, and successfully sprint-jump the broken opening. Live level tests
+repeat three falls/restores per schedule, deplete Freeze safely on the staging
+floor, recharge/repair/cross, then observe/freeze/cross steam. A later failure
+restores grounded b-2.5 with energy >=50 and flat connector immediately.
+Existing restart/quit/lifecycle tests cover the added owner and its resources.
+
+Measured resource delta against the N4/N5 implementation:
+
+| New subtree | Meshes | LineSegments | Triangles | Geometries | Referenced materials |
+| --- | --- | --- | --- | --- | --- |
+| Passenger static seats/damage | 4 | 0 | 456 | 4 | 4, all reused from N4/N5 spatial owner |
+| Connector | 6 | 1 | 252 | 7 | 4 new unique materials, including line material |
+
+Combined +10 meshes, +1 LineSegments object, +708 triangles, +11 geometries,
++4 unique materials, +1 time registration, +2 explicit seat solids, +26 persistent
+support rectangles (24 moving strips, two permanent) and +1 void. Floor/strip
+geometry replacements retain their object counts and dispose the old geometries.
+Zero added textures, source lights, shadow casters, particles or post passes.
+Audio adds at most two short oscillators per connector activation (0.09/0.16 s),
+reusing the existing bus; no continuous source/sample/dependency. These inventories
+and disposal checks do not establish GPU residency, leaks, frame rate or speedup.
+
+Fresh final validation:
+
+| Check | Result |
+| --- | --- |
+| `node --import ./scripts/register-test-assets.mjs tests/timewreck-connector.test.js` | PASS, three tests at fixed/mixed frame schedules. |
+| `node --import ./scripts/register-test-assets.mjs --test --test-isolation=none --test-name-pattern 'N7:' tests/timewreck-escape.test.js` | PASS, live N7 integration at four schedules. |
+| `node --import ./scripts/register-test-assets.mjs tests/timewreck-spatial.test.js` | PASS, five tests including actual Passenger route clearance. |
+| `npm.cmd test` | PASS, 158 passed, zero failed/skipped; includes final detachment-retirement assertion, all existing L2/L3 regressions, audio, manager restart/quit and resource disposal. |
+| `npm.cmd run build` | PASS, final build about 1.59 s. Existing >500 kB chunk warning remains. |
+| `node scripts/check-production.mjs` | PASS: 57 files, 72.65 MiB, 56 case-sensitive local subdirectory asset references. |
+| Actual-level resource/geometry probe | PASS: counts above; both actual floors/edges expose gap at five X/four Z samples; no old support remains across folded opening at centre or wall edges. Geometry/ray evidence only. |
+| `git diff --check` and new-file whitespace/conflict/fence checks | PASS at handover. |
+| Render availability | Fresh inventory: `apps: []`, `browsers: []`. Attempted in-app Passenger URL: `Browser is not available: iab`. No rendered frames obtained. |
+
+Full suite/build used approved child-process access. Targeted isolation-free tests
+ran without worker spawning. Existing non-indexed geometry/headless audio timer
+warnings remain. Intermediate test fixes distinguish signed zero from a nonzero
+hinge angle and stop at actual Freeze exhaustion before Normal recharge; no
+gameplay rule was changed to accommodate those tests. Ignored evidence logs:
+`reports/expansion-n67-{connector,spatial,integration,escape,tests,build,geometry}.log`
+(spatial targeted output was returned directly, not saved as a log).
+
+**Implementation versus acceptance:** N6/N7 are implemented and automatically/
+statically checked. They are **not visually or audibly verified**. Both cameras,
+seat/rack silhouettes and stasis/cab sightlines, both connector lips and side/
+underside views, hinge/collision apparent alignment, human repair comprehension,
+native rebound inputs, pause/audio balance, culling/shader/minimap rendering and
+hardware CPU/GPU/heap measurements remain pending due to unavailable browser.
+No FPS, visual-quality or difficulty-tuning claim. A1-A9 and older upgrade Batch
+6/refinement R7 remain open. When a browser is available, inspect both cameras
+in Normal/Freeze, all N7 alternatives and retries, then the minimum-energy chase
+with measured human timings. N1 is still a skipped separate benchmark. Stop here;
+the next sequential batch is N8 only, upon explicit request.
+
+## Exact next-batch prompt
+
+```text
+Use Game Studio. Complete N8 only from reports/level-3-expansion-plan.md.
+
+Read the plan, latest N2-N7 handovers and relevant current source first. Inspect
+git status and preserve existing changes and completed work. N2-N7 are implemented
+and automatically checked; N1 remains NOT STARTED. Do not implement N1 or N9.
+
+Implement linked repair fragments/time feedback and the three bounded background
+vignettes defined in N8. Use actual registered snapshot clocks for attached Cargo
+gangway/connector straps and splinters, Vault valuables outside the route, and
+approach-triggered exterior/lining events beside Convergence, downstream Cargo
+and behind Passenger. Preserve real freight, steam, Relay and finale state cues.
+Do not add mandatory hazards, false supports, lights, global post passes or retune
+N2-N7 mechanics. Keep effects clear of camera/body routes, lips, catch/brake aiming,
+warnings and the cab destination. Use pooled/bounded geometry and existing audio
+ownership; handle pause, shared powers, finale stasis/braking, checkpoint progress,
+restart/skip/natural completion and disposal without stale fragments or cue spam.
+
+Preserve N7's opening at b +/-1.2, retained repair clock, grounded pre-checkpoint
+b+3, Mechanical checkpoint/dev spawn b-2.5, and connector retirement before the
+existing Mechanical detachment. Preserve N6 seat bounds and minimum-energy chase;
+its measured energy margin is tight and human difficulty remains unverified.
+Keep ability/movement/energy/wave/camera parameters, Level 2 and the current stack.
+
+Run appropriate pose/history/lifecycle and continuous-route regressions, build,
+production packaging and resource/diff checks. Attempt actual rendered/audible
+verification of every repair/vignette in both views and Normal/Freeze/Rewind;
+record settings and measured resources/performance where available. If browser
+access remains unavailable, finish independently checkable implementation and
+retain rendered/audio/human/performance acceptance explicitly pending. Carry
+A1-A9 and older Batch 6/R7 acceptance forward; automation is not visual proof.
+
+Update reports/level-3-expansion-plan.md with final bounds/clocks, changed files,
+resource deltas, fresh evidence, unresolved issues, implemented versus visually
+verified status and the exact N9 prompt. Complete N8 before stopping. Do not begin
+N9, the skipped N1, or publication.
 ```

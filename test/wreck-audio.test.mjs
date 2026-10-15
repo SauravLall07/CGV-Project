@@ -22,7 +22,7 @@ test('Wreck audio: silent before unlock; real master/mute, hush, pause, settling
     createOscillator: () => { const n = node('oscillator'); sources.push(n); return n }
   }
   const silent = createWreckAudio({ context: () => null, output: () => null })
-  silent.warning(); silent.brake(); silent.update(true, false); silent.dispose()
+  silent.warning(); silent.snap(); silent.brake(); silent.update(true, false); silent.dispose()
   assert.equal(nodes.length, 0)
   const oldWindow = globalThis.window
   const volume = settings.get('masterVolume'), mute = settings.get('mute')
@@ -41,12 +41,16 @@ test('Wreck audio: silent before unlock; real master/mute, hush, pause, settling
     assert.equal(bed.gain.target, 0.0005)
     sound.warning()
     assert.equal(sources.at(-1).destination.destination, bus, 'warning bypasses the hushed bed')
+    const beforeSnap = sources.length
+    sound.snap()
+    assert.equal(sources.length, beforeSnap + 2, 'one connector snap uses two bounded short tones')
+    assert.ok(sources.slice(-2).every(s => s.destination.destination === bus && s.stopped))
     settings.set('mute', true); assert.equal(master.gain.value, 0)
     settings.set('masterVolume', 0.23); assert.equal(master.gain.value, 0)
     settings.set('mute', false); assert.equal(master.gain.value, 0.23)
     sound.setPaused(true); assert.equal(bus.gain.value, 0)
     const count = sources.length
-    sound.warning(); assert.equal(sources.length, count)
+    sound.warning(); sound.snap(); assert.equal(sources.length, count)
     sound.setPaused(false); assert.equal(bus.gain.value, 1)
     assert.equal(master.gain.value, 0.23, 'resuming must not override master volume')
     sound.brake(); sound.update(true, false, 0)

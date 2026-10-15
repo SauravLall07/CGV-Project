@@ -13,6 +13,7 @@ import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
 import { createWreckRoutes, createPassengerRack } from './timewreck-routes.js'
 import { createWreckSpatial } from './timewreck-spatial.js'
+import { createWreckConnector } from './timewreck-connector.js'
 import { createSecurityCrossing } from './timewreck-security.js'
 import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
@@ -900,7 +901,8 @@ export function createTimewreckLevel({
   const checkpointZs = [
     spans.convergence.center + 11,
     spans.convergence.center - 3,
-    spans.mechanical.maxZ - 1.5,
+    spans.convergence.minZ + 3,
+    spans.mechanical.maxZ - 2.5,
     spans.mechanical.center + 2.7,
     spans.mechanical.center - 2,
     spans.cargo.maxZ - 1.5,
@@ -1054,7 +1056,15 @@ export function createTimewreckLevel({
     restoreSnapshot: (s) => { ramT = s.ramT; applyRams() }
   }))
 
+  const connector = createWreckConnector({ root, spans, player, timeSystem, unregisters,
+    warn() {
+      wreckAudio.snap()
+      hud.showToast(`Connector hinges are buckling. Cross now, or retreat and ${bindingLabel(settings.getBinding('rewind'))} repair, then ${bindingLabel(settings.getBinding('freeze'))} hold the flat deck.`, 5000)
+    }
+  })
   const spatial = createWreckSpatial({ root, spans, player, obstacles: blastObstacles })
+  // N4's intact Convergence floor support must stop at the new real lip.
+  spatial.supports.find(s => s.minZ === spans.convergence.minZ).minZ = connector.gap.maxZ
   const wreckRoutes = createWreckRoutes({ root, spans, player, timeSystem, unregisters, obstacles: blastObstacles })
 
   // ============================================================
@@ -1279,8 +1289,8 @@ export function createTimewreckLevel({
     span: spans.security, halfWidth: WRECK_WALL_X })
   const { minZ: gapMinZ, maxZ: gapMaxZ } = securityCrossing.layout
   const slabMat = securityCrossing.material
-  const slabSupports = [...spatial.supports, ...cargoGangway.supports]
-  const gapVoids = [cargoGap, ...securityCrossing.layout.holes]
+  const slabSupports = [...spatial.supports, ...connector.supports, ...cargoGangway.supports]
+  const gapVoids = [connector.gap, cargoGap, ...securityCrossing.layout.holes]
   let slabSettle = 0
   unregisters.push(timeSystem.register(securityCrossing.group, {
     onUpdate: dt => securityCrossing.stepClock(dt),
@@ -2414,12 +2424,13 @@ export function createTimewreckLevel({
       applyRams()
       loopT = 0
       applyLoop()
+      connector.reset()
       cargoGangway.state.reset()
       cargoGangway.apply()
       securityCrossing.reset()
       slabSettle = 0
       slabSupports.length = 0
-      slabSupports.push(...spatial.supports, ...cargoGangway.supports, ...securityCrossing.supports)
+      slabSupports.push(...spatial.supports, ...connector.supports, ...cargoGangway.supports, ...securityCrossing.supports)
       collapseArmed = saved.collapseArmed
       collapseLive = saved.collapseLive
       collapseFallT = 0
@@ -2498,7 +2509,7 @@ export function createTimewreckLevel({
   }
 
   const initialZ = ['convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger'].includes(startCarriage)
-    ? spans[startCarriage].maxZ - 1.5 : spans.vault.center + 3
+    ? spans[startCarriage].maxZ - (startCarriage === 'mechanical' ? 2.5 : 1.5) : spans.vault.center + 3
   const visibility = createWreckVisibility({ root, carriages, spans,
     wallX: WRECK_WALL_X, ceilingY: CARRIAGE_CEILING_Y,
     enabled: () => !disposed && !braking })
@@ -2599,6 +2610,10 @@ export function createTimewreckLevel({
       wreckRoutes.update()
       passengerRack.update()
       expansionHazards.update(!braking && !respawn.isFailing())
+      connector.update(!braking && !respawn.isFailing())
+      if (pp.z > connector.gap.minZ && pp.z < connector.gap.maxZ && pp.y < -0.65) {
+        failSoft('The connector folded. Rewind from solid floor, then Freeze its flat hinges.', 'fell')
+      }
       if (vaultActive && !braking) updateVaultGates(envDt, pp)
       if (surgeActive) updateElectricalSurges(envDt, pp)
       if (blastActive) updateBlastDoors(delta, pp)
@@ -2827,6 +2842,8 @@ export function createTimewreckLevel({
 
       // --- Rolling checkpoints (descending z) -----------------------------
       for (const z of checkpointZs) {
+        const connectorCheckpoint = z === spans.convergence.minZ + 3 || z === spans.mechanical.maxZ - 2.5
+        if (connectorCheckpoint && (player.isAirborne() || Math.abs(pp.y) > 0.06)) continue
         if (pp.z < z && z < lastCheckpointZ) {
           lastCheckpointZ = z
           respawn.setCheckpoint(new THREE.Vector3(0, 0, z), Math.PI, {
@@ -2902,7 +2919,7 @@ export function createTimewreckLevel({
       securityCrossing.update(delta, frozen)
       slabSettle = securityCrossing.settle
       slabSupports.length = 0
-      slabSupports.push(...spatial.supports, ...cargoGangway.supports, ...securityCrossing.supports)
+      slabSupports.push(...spatial.supports, ...connector.supports, ...cargoGangway.supports, ...securityCrossing.supports)
       // Test actual falling rather than killing every non-Freeze body in a Z
       // interval. The island is safe, and reasonable jumps remain possible.
       if (walkwayActive && pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.65) {
@@ -2977,7 +2994,12 @@ export function createTimewreckLevel({
         // The floor behind goes with them — no walking back into the void.
         // Never clamp ahead of where the player actually is, or the collapse
         // would yank them forward instead of closing off behind them.
-        if (breakupT > 1.0) bounds.maxZ = Math.min(bounds.maxZ, spans.passenger.maxZ - 0.5)
+        if (breakupT > 1.0) {
+          bounds.maxZ = Math.min(bounds.maxZ, spans.passenger.maxZ - 0.5)
+          // Retire the inaccessible connector before Mechanical detaches; its
+          // root-owned hinges must not float beside a departing carriage.
+          connector.group.visible = false
+        }
         if (breakupT > 3.2) {
           bounds.maxZ = Math.min(
             bounds.maxZ,
@@ -3026,6 +3048,9 @@ export function createTimewreckLevel({
     dispose() {
       disposed = true
       spatial.dispose(slabSupports)
+      for (let i = slabSupports.length - 1; i >= 0; i--) if (connector.supports.includes(slabSupports[i])) slabSupports.splice(i, 1)
+      const connectorVoidIndex = gapVoids.indexOf(connector.gap)
+      if (connectorVoidIndex >= 0) gapVoids.splice(connectorVoidIndex, 1)
       wreckAudio.dispose()
       hazardAudio.dispose()
       removeVisibility()

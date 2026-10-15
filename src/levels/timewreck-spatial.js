@@ -1,8 +1,9 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
 
-// N4/N5: static, L3-owned solids. Geometry and collision share component bounds;
-// only the low threshold uses feet-height gating. No shared/L2 collision changes.
+// N4/N5/N6: static, L3-owned solids. Geometry and collision share component bounds;
+// height gating lets the low threshold use the existing jump controller.
+// No shared/L2 collision changes.
 export function createWreckSpatial({ root, spans, player, obstacles }) {
   const supports = []
   const ownedObstacles = new Set()
@@ -19,8 +20,24 @@ export function createWreckSpatial({ root, spans, player, obstacles }) {
     root.add(group); groups.push(group)
     const batches = new Map()
     const c = spans[key].center
-    function box(mat, w, h, d, x, y, z, rotation = [0, 0, 0], solid = false) {
-      const geometry = new THREE.BoxGeometry(w, h, d)
+    function box(mat, w, h, d, x, y, z, rotation = [0, 0, 0], solid = false, rounded = false) {
+      let geometry = new THREE.BoxGeometry(w, h, d)
+      if (rounded) {
+        geometry.dispose()
+        const r = 0.12, shape = new THREE.Shape()
+        shape.moveTo(-w / 2 + r, -d / 2)
+        shape.lineTo(w / 2 - r, -d / 2)
+        shape.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r)
+        shape.lineTo(w / 2, d / 2 - r)
+        shape.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2)
+        shape.lineTo(-w / 2 + r, d / 2)
+        shape.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r)
+        shape.lineTo(-w / 2, -d / 2 + r)
+        shape.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2)
+        const extruded = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 3 })
+        geometry = mergeVertices(extruded); extruded.dispose()
+        geometry.rotateX(-Math.PI / 2); geometry.translate(0, -h / 2, 0)
+      }
       pose.position.set(x, y, c + z); pose.rotation.set(...rotation); pose.updateMatrix()
       geometry.applyMatrix4(pose.matrix)
       if (!batches.has(mat)) batches.set(mat, [])
@@ -89,6 +106,21 @@ export function createWreckSpatial({ root, spans, player, obstacles }) {
     for (const s of [-1, 1]) {
       box('brass', 0.12, 0.65, 0.18, s * 2.35, 2.8, 0.6, [0, 0, s * 0.25])
       box('teal', 0.5, 0.12, 0.4, s * 2.1, 3.05, 0.5, [0.12, 0, s * 0.18])
+    }
+  })
+  carriage('passenger', box => {
+    // Shallow deflections preserve the established right-then-centre sprint.
+    // Broad wooden ends stay inside each visible solid, without sharp horns.
+    for (const [x, z, w] of [[-1.25, 7.5, 2.5], [1.95, 3.5, 1.1]]) {
+      box('wood', w, 1.2, 0.32, x, 0.6, z, undefined, true, true)
+      box('lining', w - 0.12, 1.08, 0.34, x, 0.6, z, undefined, false, true)
+      box('brass', w - 0.08, 0.045, 0.34, x, 1.18, z)
+    }
+    for (const z of [-4.3, -7]) for (const s of [-1, 1]) {
+      box('wood', 0.38, 0.55, 1.1, s * 2.25, 0.275, z)
+      box('lining', 0.32, 0.12, 1, s * 2.25, 0.61, z)
+      box('lining', 0.08, 0.7, 0.45, s * 2.4, 2.8, z, [0, 0, s * 0.12])
+      box('teal', 0.4, 0.12, 1.15, s * 2.15, 3.08, z, [0.1, 0, s * 0.12])
     }
   })
   return { groups, supports, dispose(supportArray = []) {
