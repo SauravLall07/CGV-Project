@@ -28,6 +28,7 @@ import { createDistractionSystem } from '../systems/distraction.js'
 import { disposeObject } from '../core/dispose.js'
 import { createLightPool, POINT_LIGHT_POOL_SIZE, TORCH_SPOT_POOL_SIZE } from '../core/light-pool.js'
 import { createLandingScene } from '../environment/landing/index.js'
+import { entranceStairHeightAt } from '../environment/landing/facade.js'
 import { CENTER_Z, FACADE_X, LANDING_FIGURE, PLAZA } from '../environment/landing/layout.js'
 import { createZoneVisibility } from './boarding-zones.js'
 import { capRegionLights } from './boarding-lighting.js'
@@ -953,7 +954,9 @@ export function createBoardingLevel({
 
   const door = new THREE.Object3D()
   door.name = 'landing-door'
-  door.position.set(FACADE_X - 3.05, 1.15, CENTER_Z)
+  // Position the E interaction directly in front of the centre entrance door.
+  // Leave its range, callback and station-entry transition unchanged.
+  door.position.set(FACADE_X - 0.30, 1.55, CENTER_Z)
   landing.group.add(door)
 
   let enteredStation = false
@@ -1018,7 +1021,10 @@ export function createBoardingLevel({
       if (
         x >= PLAZA.minX - 0.4 && x <= FACADE_X + 0.4 &&
         z >= PLAZA.minZ - 0.4 && z <= PLAZA.maxZ + 0.4
-      ) return PLAZA.y
+      ) {
+        const stairHeight = entranceStairHeightAt(x, z)
+        return stairHeight ?? PLAZA.y
+      }
 
       const bridgeHeight = bridgePassage.getGroundHeight(x, z, Number.NaN)
       if (Number.isFinite(bridgeHeight)) return bridgeHeight

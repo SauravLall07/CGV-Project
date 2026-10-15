@@ -377,6 +377,26 @@ export function buildFacade(parent, materials, stats) {
   return facadeColliders(canopyW)
 }
 
+// Keep the player's feet on the actual horizontal tops of the visible steps.
+// The steps are individual boxes, not a ramp: interpolating between tread
+// heights lets the feet sink through each step as the player crosses it.
+export function entranceStairHeightAt(x, z) {
+  const depth = 0.72
+  const canopyW = (1.38 + 0.42) * 2 + 1.38 + 1.1
+  for (let i = 0; i < 4; i += 1) {
+    const front = FACADE_X - 0.35 - (i + 1) * depth
+    const back = front + depth
+    const width = canopyW - 0.4 + i * 0.35
+    if (x >= front && x <= back && Math.abs(z - CENTER_Z) <= width / 2) {
+      // Use exactly the same box centre Y and thickness as buildFacade().
+      const centreY = 0.1 + (3 - i) * 0.14
+      const thickness = 0.16 + i * 0.02
+      return centreY + thickness / 2
+    }
+  }
+  return null
+}
+
 function facadeColliders(canopyW) {
   const boxes = [{
     minX: FACADE_X - 0.25,
@@ -384,20 +404,7 @@ function facadeColliders(canopyW) {
     minZ: Z_MIN - 0.3,
     maxZ: Z_MAX + 0.3
   }]
-  const depth = 0.72
-  let minX = Infinity
-  let maxX = -Infinity
-  let minZ = Infinity
-  let maxZ = -Infinity
-  for (let i = 0; i < 4; i += 1) {
-    const x = FACADE_X - 0.35 - i * depth - depth / 2
-    const width = canopyW - 0.4 + i * 0.35
-    minX = Math.min(minX, x - depth / 2)
-    maxX = Math.max(maxX, x + depth / 2)
-    minZ = Math.min(minZ, CENTER_Z - width / 2)
-    maxZ = Math.max(maxZ, CENTER_Z + width / 2)
-  }
-  boxes.push({ minX, maxX, minZ, maxZ })
+  // The rendered steps are traversable ground, not an impassable wall.
   for (const side of [-1, 1]) {
     const z = CENTER_Z + side * (canopyW / 2 - 0.2)
     boxes.push({
