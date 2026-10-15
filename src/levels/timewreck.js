@@ -637,6 +637,146 @@ export function createTimewreckLevel({
   electricalSurges[0].group.scale.x = 0.59
   electricalSurges[0].group.position.x = -0.72
 
+  // Runaway service carts — open Convergence floor past the fork (well after surge ~center+4).
+  // Four staggered dashes from the walls: +X, −X, and both diagonals (covers all directions).
+  const CART_PERIOD = 5.0
+  const CART_WARN = 0.65
+  const CART_MOVE = 0.48
+  const CART_HALF_X = 0.38
+  const CART_HALF_Z = 0.32
+  const CART_HALF_Y = 0.48
+  const _cartC = spans.convergence.center
+  const CART_SPECS = [
+    { parkX: -2.15, parkZ: _cartC - 5.0, endX: 2.05, endZ: _cartC - 5.0 },   // across +X
+    { parkX: 2.15, parkZ: _cartC - 7.2, endX: -2.05, endZ: _cartC - 7.2 },   // across −X
+    { parkX: -2.15, parkZ: _cartC - 4.8, endX: 2.05, endZ: _cartC - 8.8 },   // diagonal +X/−Z
+    { parkX: 2.15, parkZ: _cartC - 10.2, endX: -2.05, endZ: _cartC - 5.4 }   // diagonal −X/+Z
+  ]
+  let cartClock = 0
+  const cartWood = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, roughness: 0.72, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.1
+  })
+  const cartBrass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.16
+  })
+  const cartCloth = new THREE.MeshStandardMaterial({
+    color: 0x6e1c28, roughness: 0.9, metalness: 0.02, emissive: 0x1a0608, emissiveIntensity: 0.08
+  })
+  function createRunawayCart(spec, index) {
+    const warnMat = new THREE.MeshBasicMaterial({ color: 0xe49a30 })
+    const group = new THREE.Group()
+    group.name = index === 0 ? 'convergence-runaway-cart' : `convergence-runaway-cart-${index + 1}`
+    const facing = Math.atan2(spec.endX - spec.parkX, spec.endZ - spec.parkZ)
+    group.position.set(spec.parkX, 0, spec.parkZ)
+    group.rotation.y = facing
+    function cartBox(w, h, d, mat, x, y, lz) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+      m.position.set(x, y, lz)
+      group.add(m)
+      return m
+    }
+    cartBox(0.72, 0.1, 0.58, cartWood, 0, 0.42, 0)
+    cartBox(0.68, 0.55, 0.08, cartWood, 0, 0.72, -0.25)
+    cartBox(0.08, 0.55, 0.5, cartWood, -0.32, 0.72, 0)
+    cartBox(0.08, 0.55, 0.5, cartWood, 0.32, 0.72, 0)
+    cartBox(0.62, 0.04, 0.4, cartCloth, 0, 0.5, 0.02)
+    cartBox(0.76, 0.03, 0.62, cartBrass, 0, 0.98, 0)
+    for (const x of [-0.34, 0.34]) cartBox(0.04, 0.04, 0.56, cartBrass, x, 0.72, 0)
+    for (const [x, wz] of [[-0.28, -0.22], [0.28, -0.22], [-0.28, 0.22], [0.28, 0.22]]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 8), cartBrass)
+      wheel.rotation.z = Math.PI / 2
+      wheel.position.set(x, 0.08, wz)
+      group.add(wheel)
+    }
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.08), warnMat)
+    lamp.name = index === 0 ? 'runaway-cart-warn-lamp' : `runaway-cart-warn-lamp-${index + 1}`
+    lamp.position.set(0, 1.05, 0.28)
+    group.add(lamp)
+    group.traverse((n) => { n.userData.noCameraCollision = true })
+    root.add(group)
+    return {
+      group, lamp, warnMat, facing,
+      parkX: spec.parkX, parkZ: spec.parkZ, endX: spec.endX, endZ: spec.endZ,
+      // Start every cart in idle so the open floor is clear when the room loads.
+      phaseOffset: CART_WARN + CART_MOVE + 0.2 + index * 1.15
+    }
+  }
+  const runawayCarts = CART_SPECS.map((spec, i) => createRunawayCart(spec, i))
+
+  function cartPhase(cart) {
+    const p = (((cartClock + cart.phaseOffset) % CART_PERIOD) + CART_PERIOD) % CART_PERIOD
+    if (p < CART_WARN) return { mode: 'warn', u: p / CART_WARN, p }
+    if (p < CART_WARN + CART_MOVE) return { mode: 'move', u: (p - CART_WARN) / CART_MOVE, p }
+    return { mode: 'idle', u: 0, p }
+  }
+
+  function applyRunawayCart(cart) {
+    const { mode, u } = cartPhase(cart)
+    const t = cartClock + cart.phaseOffset
+    if (mode === 'move') {
+      const ease = u * u * (3 - 2 * u)
+      cart.group.position.x = cart.parkX + (cart.endX - cart.parkX) * ease
+      cart.group.position.z = cart.parkZ + (cart.endZ - cart.parkZ) * ease
+      cart.group.rotation.y = cart.facing
+      cart.group.rotation.z = Math.sin(u * Math.PI * 6) * 0.04
+      cart.group.position.y = Math.abs(Math.sin(u * Math.PI * 8)) * 0.02
+      cart.warnMat.color.setHex(0xff2a2a)
+      cart.lamp.scale.setScalar(1.15 + Math.sin(t * 28) * 0.2)
+    } else if (mode === 'warn') {
+      cart.group.position.x = cart.parkX
+      cart.group.position.z = cart.parkZ
+      cart.group.position.y = 0
+      cart.group.rotation.y = cart.facing + Math.sin(t * 17) * 0.05
+      cart.group.rotation.z = Math.sin(t * 22) * 0.08
+      cart.warnMat.color.setHex(Math.sin(t * 16) > 0 ? 0xffb060 : 0xe49a30)
+      cart.lamp.scale.setScalar(1.25 + Math.sin(t * 20) * 0.35)
+    } else {
+      cart.group.position.x = cart.parkX
+      cart.group.position.z = cart.parkZ
+      cart.group.position.y = 0
+      cart.group.rotation.y = cart.facing
+      cart.group.rotation.z = 0
+      cart.warnMat.color.setHex(0xe49a30)
+      cart.lamp.scale.setScalar(1)
+    }
+  }
+
+  function applyRunawayCarts() {
+    for (const cart of runawayCarts) applyRunawayCart(cart)
+  }
+
+  function updateRunawayCart(playerPos) {
+    applyRunawayCarts()
+    if (!playerPos) return
+    for (const cart of runawayCarts) {
+      if (cartPhase(cart).mode !== 'move') continue
+      const cx = cart.group.position.x
+      const cz = cart.group.position.z
+      const cy = CART_HALF_Y
+      const overlapsX = Math.abs(playerPos.x - cx) <= CART_HALF_X + 0.18
+      const overlapsZ = Math.abs(playerPos.z - cz) <= CART_HALF_Z + 0.18
+      const bodyTop = playerPos.y + (player.isCrouching() ? 1.15 : 1.85)
+      const overlapsY = playerPos.y < cy + CART_HALF_Y && bodyTop > cy - CART_HALF_Y
+      if (overlapsX && overlapsZ && overlapsY) {
+        failSoft('A runaway service cart caught you! Sidestep the open-floor rolls or Slow to cross.')
+        return
+      }
+    }
+  }
+
+  applyRunawayCarts()
+  unregisters.push(timeSystem.register(runawayCarts[0].group, {
+    onUpdate(scaledDelta) {
+      cartClock += scaledDelta
+      applyRunawayCarts()
+    },
+    getSnapshot: () => ({ cartClock }),
+    restoreSnapshot(s) {
+      cartClock = s.cartClock ?? 0
+      applyRunawayCarts()
+    }
+  }))
+
   function updateSurgeSparks(surge, seed, active, strong) {
     const arr = surge.sparkPos
     const n = strong ? SURGE_SPARK_COUNT : Math.floor(SURGE_SPARK_COUNT * 0.45)
@@ -2467,7 +2607,10 @@ export function createTimewreckLevel({
       updateVaultGates(0, null)
       surgeT = 0
       updateElectricalSurges(0, null)
+      cartClock = 0
+      applyRunawayCarts()
       ramT = 0
+
       applyRams()
       loopT = 0
       applyLoop()
@@ -2669,6 +2812,7 @@ export function createTimewreckLevel({
       }
       if (vaultActive && !braking) updateVaultGates(envDt, pp)
       if (surgeActive) updateElectricalSurges(envDt, pp)
+      if (!braking && !respawn.isFailing()) updateRunawayCart(pp)
       if (blastActive) updateBlastDoors(delta, pp)
       const modeInt = MODE_INT[mode] ?? 0
 
@@ -2920,6 +3064,8 @@ export function createTimewreckLevel({
       hint('convergence-surges', pp.z, spans.convergence.center + 11.5,
         `Choose before the split: brass DIRECT is fast but exposed to surges. Cyan MAINTENANCE is sheltered but slower: ${bindingLabel(settings.getBinding('duck'))} crouch, ${bindingLabel(settings.getBinding('rewind'))} repair the shutter, then ${bindingLabel(settings.getBinding('freeze'))} hold it open.`,
         6000)
+      hint('convergence-cart', pp.z, spans.convergence.center - 2.5,
+        `Open floor ahead: four runaway service carts cross in every direction. Flashing amber means a fast roll. Sidestep or ${bindingLabel(settings.getBinding('slow'))} Slow to cross.`, 5200)
       hint('mechanical', pp.z, spans.mechanical.center + 9.3,
         `${bindingLabel(settings.getBinding('slow'))} Slow the first luggage bank. Stop inside the teal brackets on solid floor; release time control to recharge. Then ${bindingLabel(settings.getBinding('rewind'))} repair the shutter and ${bindingLabel(settings.getBinding('freeze'))} hold it open. Another bank follows.`, 6500)
       if (pp.z > spans.mechanical.center + 9 && pp.z < spans.mechanical.maxZ) {

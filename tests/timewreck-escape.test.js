@@ -166,6 +166,10 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
         move('z', center(stage) - 1.3, { duck: true })
         move('x', -0.6)
       }
+      // Open-floor carts past the fork — Freeze holds every direction of roll.
+      h.time.triggerFreeze()
+      move('z', center(stage) - 12)
+      h.time.setMode('NORMAL')
       stage = 'mechanical'
       move('z', center(stage) + 12.8)
       waitUntil(() => Math.abs(h.scene.getObjectByName('steam-clearance-signal').rotation.z) < 0.01)
@@ -483,6 +487,79 @@ test('Convergence: direct timed aisle and crouched maintenance fork both rejoin 
       assert.equal(h.respawn.isFailing(), false, JSON.stringify({fps, pos:h.player.mesh.position, messages:h.messages}))
     } finally { h.dispose() }
   }
+})
+
+test('Convergence: four open-floor runaway carts move in all directions and Slow stretches them', () => {
+  const h = levelHarness('convergence')
+  try {
+    const carts = [1, 2, 3, 4].map((n) => h.scene.getObjectByName(
+      n === 1 ? 'convergence-runaway-cart' : `convergence-runaway-cart-${n}`
+    ))
+    assert.ok(carts.every(Boolean), 'four runaway carts should exist')
+    // Well past the surge (~center+4) in the open shared floor.
+    for (const cart of carts) {
+      assert.ok(cart.position.z < h.center - 3.5, 'carts must sit in open floor past the fork')
+      assert.ok(cart.position.z > h.center - 12, 'carts must stay inside Convergence')
+    }
+    assert.ok(h.scene.getObjectByName('runaway-cart-warn-lamp'))
+    assert.ok(h.scene.getObjectByName('runaway-cart-warn-lamp-4'))
+    const cart = carts[0]
+    const cart2 = carts[1]
+    const cart3 = carts[2]
+    const cart4 = carts[3]
+    // Parked at walls at cycle start (all offsets begin in idle).
+    assert.ok(cart.position.x < -1.8)
+    assert.ok(cart2.position.x > 1.8)
+    assert.ok(cart3.position.x < -1.8)
+    assert.ok(cart4.position.x > 1.8)
+    // First cart offset is WARN+MOVE+0.2 — advance into its warn+move.
+    const firstMoveAt = 5.0 - (0.65 + 0.48 + 0.2) + 0.65 + 0.25 // into first cart move
+    h.tick(firstMoveAt)
+    assert.ok(cart.position.x > -1.5, 'cart must leave its park during the move phase')
+    // Compare Slow vs Normal over the same real duration on a fresh cycle.
+    h.respawn.cancel()
+    h.respawn.respawn()
+    h.tick(firstMoveAt - 0.1)
+    const before = cart.position.x
+    h.time.triggerSlow()
+    h.tick(0.3)
+    const afterSlow = cart.position.x
+    h.time.setMode('NORMAL')
+    const slowDelta = afterSlow - before
+    h.respawn.cancel()
+    h.respawn.respawn()
+    h.tick(firstMoveAt - 0.1)
+    const beforeNormal = cart.position.x
+    h.tick(0.3)
+    const normalDelta = cart.position.x - beforeNormal
+    assert.ok(slowDelta >= -0.01, 'Slow must not fling the cart backward')
+    assert.ok(slowDelta < normalDelta * 0.45, 'Slow must stretch the dash vs Normal speed')
+    // Opposite-direction / diagonal carts are phase-staggered.
+    h.respawn.cancel()
+    h.respawn.respawn()
+    h.tick(firstMoveAt)
+    assert.ok(cart2.position.x > 1.5, '−X cart should still be near its right-wall park while +X rolls')
+    // Diagonal cart rolls in both X and Z.
+    h.respawn.cancel()
+    h.respawn.respawn()
+    const diagMoveAt = 5.0 - (0.65 + 0.48 + 0.2 + 2 * 1.15) + 0.65 + 0.25
+    h.tick(diagMoveAt)
+    assert.ok(cart3.position.x > -1.5, 'diagonal cart must leave the left wall')
+    assert.ok(cart3.position.z < h.center - 5.0, 'diagonal cart must also travel toward cab')
+    // Standing in the first cart's path during its roll fails.
+    h.respawn.cancel()
+    h.respawn.respawn()
+    pose(h, 0, h.center - 5.0)
+    h.tick(firstMoveAt)
+    assert.equal(h.respawn.isFailing(), true, 'standing in an open-floor roll must fail')
+    h.respawn.cancel()
+    h.respawn.respawn()
+    pose(h, 0, h.center - 2.8)
+    h.tick(0.05)
+    const cartHint = h.messages.find(m => /runaway service cart/i.test(m))
+    assert.ok(cartHint, 'cart hint should teach the dodge')
+    assert.ok(/slow|sidestep|every direction/i.test(cartHint))
+  } finally { h.dispose() }
 })
 
 test('Passenger: warned rack, real separating floor, Freeze chase and controllable sprint reach brake', () => {
