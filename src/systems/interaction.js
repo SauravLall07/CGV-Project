@@ -104,7 +104,7 @@ function createPromptElement() {
   return el
 }
 
-export function createInteractionSystem({ camera, input } = {}) {
+export function createInteractionSystem({ camera, input, onTap } = {}) {
   // Keyed by the registered Object3D. A Group or a Mesh both work — its world
   // position is the point range and facing are measured against.
   const registry = new Map()
@@ -120,6 +120,18 @@ export function createInteractionSystem({ camera, input } = {}) {
   let blockersUpdated = -1 // near-set version whose matrices are current this frame
 
   const prompt = createPromptElement()
+  const progress = document.createElement('div')
+  const progressFill = document.createElement('div')
+  Object.assign(progress.style, { position: 'fixed', left: '50%', bottom: 'calc(18% - 12px)',
+    transform: 'translateX(-50%)', width: '220px', height: '5px',
+    background: 'rgba(18,16,22,0.85)', border: '1px solid #b59961', display: 'none',
+    borderRadius: '3px', pointerEvents: 'none', zIndex: '10' })
+  Object.assign(progressFill.style, { height: '100%', width: '0%', background: '#ffdc99' })
+  progress.appendChild(progressFill)
+  document.body.appendChild(progress)
+  let holdEntry = null
+  let holdProgress = 0
+  let holdActive = false
   let focused = null
   let enabled = true
   let flashUntil = 0
@@ -134,9 +146,14 @@ export function createInteractionSystem({ camera, input } = {}) {
     isEligible,
     selectionMode = 'forgiving',
     aimMin = 0.72,
-    onFocusChange
+    onFocusChange,
+    holdSeconds = 0,
+    onHoldStart,
+    onHoldProgress,
+    onHoldCancel,
+    onHoldComplete
   } = {}) {
-    if (!object || typeof onInteract !== 'function') {
+    if (!object || (typeof onInteract !== 'function' && !(holdSeconds > 0 && typeof onHoldComplete === 'function'))) {
       throw new Error('register(object, { prompt, onInteract }) requires an object and an onInteract callback')
     }
     const entry = {
@@ -148,11 +165,13 @@ export function createInteractionSystem({ camera, input } = {}) {
       isEligible,
       selectionMode,
       aimMin,
-      onFocusChange
+      onFocusChange,
+      holdSeconds, onHoldStart, onHoldProgress, onHoldCancel, onHoldComplete
     }
     registry.set(object, entry)
 
     return function unregister() {
+      if (holdEntry === entry) resetHold()
       registry.delete(object)
       if (focused && focused.object === object) setFocus(null)
     }
@@ -210,7 +229,7 @@ export function createInteractionSystem({ camera, input } = {}) {
     if (performance.now() < flashUntil) return // a flash message owns the DOM
     if (focused) {
       // Read the binding per render so a rebind is reflected immediately.
-      prompt.textContent = `${bindingLabel(settings.getBinding('interact'))} — ${focused.label}`
+      prompt.textContent = `${focused.holdSeconds > 0 ? 'Hold ' : ''}${bindingLabel(settings.getBinding('interact'))} — ${focused.label}`
       prompt.style.opacity = '1'
     } else {
       prompt.style.opacity = '0'
@@ -348,11 +367,49 @@ export function createInteractionSystem({ camera, input } = {}) {
   // `player` is the object detection is measured from; `yaw` is the camera
   // yaw (radians) that defines "forward". Falls back to the camera's own
   // facing if yaw is missing.
-  function update(player, yaw) {
+  function resetHold() {
+    const entry = holdEntry
+    holdEntry = null
+    holdActive = false
+    holdProgress = 0
+    progress.style.display = 'none'
+    entry?.onHoldCancel?.({ reset: true })
+    entry?.onHoldProgress?.(0)
+  }
+
+  function update(player, yaw, delta = 0) {
     lastPlayer = player ?? null
     lastYaw = yaw
 
     setFocus(findBestCandidate(lastPlayer, lastYaw))
+    const holding = enabled && input?.state?.interact && focused?.holdSeconds > 0
+    if (holdActive && (!holding || focused !== holdEntry)) {
+      holdActive = false
+      holdEntry.onHoldCancel?.({ reset: false })
+    }
+    if (holding && holdEntry !== focused) {
+      resetHold()
+      holdEntry = focused
+    }
+    if (holding && !holdActive) {
+      holdActive = true
+      holdEntry.onHoldStart?.()
+    }
+    if (!holdEntry) return
+    holdProgress = Math.max(0, Math.min(1, holdProgress + (holding ? 1 : -2) * delta / holdEntry.holdSeconds))
+    holdEntry.onHoldProgress?.(holdProgress)
+    progress.style.display = enabled && (holdProgress > 0 || holding) ? 'block' : 'none'
+    progressFill.style.width = `${holdProgress * 100}%`
+    if (holdProgress >= 1 && holdActive) {
+      const completed = holdEntry
+      holdActive = false
+      holdEntry = null
+      holdProgress = 0
+      progress.style.display = 'none'
+      completed.onHoldComplete?.()
+    } else if (!holdActive && holdProgress === 0) {
+      holdEntry = null
+    }
   }
 
   // Fire the focused interactable, if there is one. Wired to the keyboard's
@@ -367,6 +424,8 @@ export function createInteractionSystem({ camera, input } = {}) {
     if (!focused) return false
 
     const entry = focused
+    if (entry.holdSeconds > 0) return true
+    onTap?.({ object: entry.object, player: lastPlayer })
     entry.onInteract({ object: entry.object, entry, player: lastPlayer })
     return true
   }
@@ -374,17 +433,20 @@ export function createInteractionSystem({ camera, input } = {}) {
   const unbindInteract = input ? input.onAction('interact', () => interact()) : null
 
   function setEnabled(value) {
+    if (!value) resetHold()
     enabled = value
     if (!value) setFocus(null)
   }
 
   function dispose() {
+    resetHold()
     if (unbindInteract) unbindInteract()
     if (focused) {
       applyHighlight(focused, false)
       focused.onFocusChange?.(false)
     }
     prompt.remove()
+    progress.remove()
     registry.clear()
     blockerRegistry.clear()
     focused = null
@@ -398,6 +460,7 @@ export function createInteractionSystem({ camera, input } = {}) {
     interact,
     flashPrompt,
     setEnabled,
+    resetHold,
     dispose,
     getFocused: () => focused && focused.object
   }

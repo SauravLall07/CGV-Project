@@ -439,7 +439,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       `textures    ${pass.textures}`,
       `minimap draws  ${minimapPass.calls}`,
       `minimap tris   ${minimapPass.triangles}`,
-      active.length ? active.join('\n') : 'toggles off  Shift+[1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 spawn · 8 post · 9 glows · 0 unlit]'
+      active.length ? active.join('\n') : 'toggles off  Shift+[1 px · 2 shadows · 3 lights · 4 scenery · 5 minimap · 6 train · 7 door · 8 post · 9 glows · 0 unlit]'
     ].join('\n')
   }
 
@@ -549,7 +549,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     } else if (index === 6) {
       devTeleport('train')
     } else if (index === 7) {
-      devTeleport('spawn')
+      devTeleport('boarding')
     } else if (index === 8) {
       if (post) {
         post.setEnabled(!post.isEnabled())
@@ -597,8 +597,14 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
 
   function devTeleport(which) {
     if (which === 'train') teleportBesideLocomotive()
+    else if (which === 'boarding') {
+      // x=3.6 lies inside luggage; x=3.95 clears its x=3.7 edge and player radius.
+      const yaw = Math.atan2(5.5 - 3.95, 43.2 - 40.5)
+      placePlayer(new THREE.Vector3(3.95, 0, 40.5), yaw, 0.12)
+      console.log('[dev overlay] teleport boarding door (3.95, 0, 40.5)')
+    }
     else if (which === 'spawn') teleportToSpawn()
-    else console.warn(`[dev overlay] devTeleport: expected 'train' or 'spawn', got ${which}`)
+    else console.warn(`[dev overlay] devTeleport: expected 'train', 'boarding' or 'spawn', got ${which}`)
   }
 
   window.devTeleport = devTeleport

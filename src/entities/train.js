@@ -8,9 +8,9 @@ import { addFloorGlows } from '../environment/landing/light-pools.js'
 // carriages with gold lining, panelled sides, curved roofs, bogies and
 // underframe gear, lamplit windows with red curtains, and a steam locomotive.
 //
-// The front car's forward door stands open with steps down to the platform.
+// The last car's rear doorway has steps down to the platform.
 // That doorway is the boarding interaction. The group sits on the station
-// track and the departure cinematic slides it along +Z, so the steam rolls
+// track and the departure cinematic slides it along -Z, so the steam rolls
 // away with it. Train-local y = 0 is the rail head; the platform is y = 1.
 
 export const TRACK_X = 7
@@ -41,17 +41,20 @@ const ROOF_RISE = ROOF_RADIUS * (1 - Math.cos(ROOF_ANGLE))
 const BOGIE_Z = 7
 const AXLE_HALF = 1.25
 const WHEEL_RADIUS = 0.46
-const DOOR_OPEN_ANGLE = 0.65
+const DOOR_OPEN_ANGLE = 1.4
+const DOOR_ANIMATION_SECONDS = 0.6
 const PLATFORM_END_Z = 62
 
 export const TRAIN_LENGTH = CAR_COUNT * CAR_LENGTH + (CAR_COUNT - 1) * CAR_GAP
 
-// Front-car doorway at world z=43.2, clear of columns and cover clusters.
-const BOARDING_CAR = 0
+// Last-car rear doorway remains at world z=43.2 after the consist turns.
+const BOARDING_CAR = 3
+const BOARDING_DOOR_Z = -DOOR_Z
 // Fixed independently of which carriage is boarded: never slide the consist
 // when relocating its open doorway.
-export const TRAIN_FRONT_Z = 44.3
-export const TRAIN_Z = TRAIN_FRONT_Z - TRAIN_LENGTH / 2
+// Legacy geometry anchor before the group is rotated; not the engine nose.
+const CARRIAGE_GEOMETRY_END_Z = 44.3
+export const TRAIN_Z = CARRIAGE_GEOMETRY_END_Z - TRAIN_LENGTH / 2
 
 function carZ(index) {
   return TRAIN_LENGTH / 2 - HALF - index * (CAR_LENGTH + CAR_GAP)
@@ -352,7 +355,7 @@ function createBoardingDoor(k) {
   const hinge = new THREE.Group()
   hinge.name = 'boarding-door-leaf'
   hinge.position.set(-BODY_HALF, 0, W / 2)
-  hinge.rotation.y = DOOR_OPEN_ANGLE
+  hinge.rotation.y = 0
   content.add(hinge)
   const leafHeight = DOOR_TOP - BODY_BOTTOM - 0.02
   const leafY = (BODY_BOTTOM + DOOR_TOP) / 2
@@ -381,13 +384,14 @@ function createBoardingDoor(k) {
   return { door, hinge }
 }
 
-function addSteam(train) {
+function addSteam(train, stationSteam) {
   const steams = []
-  const emit = (x, y, z, options) => {
+  const emit = (x, y, z, options, stationary = false) => {
     const steam = createSteam(options)
     steam.points.position.set(x, y, z)
+    if (stationary) steam.points.position.add(new THREE.Vector3(TRACK_X, TRACK_LEVEL, TRAIN_Z))
     steam.points.name = 'train-steam'
-    train.add(steam.points)
+    ;(stationary ? stationSteam : train).add(steam.points)
     steams.push(steam)
   }
   // Leaking from under every car, curling out over the platform edge and
@@ -395,16 +399,16 @@ function addSteam(train) {
   for (let i = 0; i < CAR_COUNT; i += 1) {
     emit(0.3, 0.35, carZ(i) + 4, {
       count: 22, height: 1.4, spread: 1.3, period: 8, size: 2.6,
-      color: 0xa7adb5, opacity: 0.2, wind: new THREE.Vector3(-1.8, 0, -3.0), seed: 31 + i
+      color: 0xa7adb5, opacity: 0.2, wind: new THREE.Vector3(1.8, 0, -3.0), seed: 31 + i
     })
   }
-  // A bank past the platform end that swallows the front of the train.
+  // Station fog stays in world space beside the platform, independent of departure.
   const banks = [
     { z: PLATFORM_END_Z + 3 - TRAIN_Z, color: 0x8d939b, opacity: 0.4, seed: 51 },
     { z: 54 - TRAIN_Z, color: 0x6a7079, opacity: 0.46, seed: 52 },
     { z: 60 - TRAIN_Z, color: 0x3c4048, opacity: 0.55, seed: 53 }
   ]
-  // Locomotive chimney/cylinders. All emitters move with the departing train.
+  // Chimney emitter follows the rotated locomotive.
   emit(0, 4.7, 56.5 - TRAIN_Z, {
     count: 34, height: 7, spread: 2, period: 9, size: 4.5,
     color: 0x9da9b5, opacity: 0.36, wind: new THREE.Vector3(-0.8, 0, -2), seed: 63
@@ -412,17 +416,17 @@ function addSteam(train) {
   emit(-7, 0.9, 63 - TRAIN_Z, {
     count: 28, height: 3.5, spread: 5.5, period: 13, size: 5,
     color: 0x667c91, opacity: 0.28, wind: new THREE.Vector3(-0.1, 0, -0.8), seed: 64
-  })
+  }, true)
   for (const bank of banks) {
-    emit(0.4, 2.6, bank.z, {
+    emit(-0.4, 2.6, bank.z, {
       count: 46, height: 6.5, spread: 2.4, period: 11, size: 5.5,
       color: bank.color, opacity: bank.opacity, wind: new THREE.Vector3(-1.2, 0, -2.4), seed: bank.seed
-    })
+    }, true)
   }
   emit(-0.6, 0.8, PLATFORM_END_Z - 1.5 - TRAIN_Z, {
     count: 30, height: 2.2, spread: 1.8, period: 9, size: 3.4,
     color: 0x9aa1ab, opacity: 0.28, wind: new THREE.Vector3(-1.4, 0, -3.2), seed: 57
-  })
+  }, true)
   return steams
 }
 
@@ -494,10 +498,10 @@ function createBoardingMarker(doorZ) {
   }
   const floor = addCue('boarding-objective-floor', 0.9, 1.6, 1, 0.42)
   floor.rotation.x = -Math.PI / 2
-  floor.position.set(4.45 - TRACK_X, 0.025 - TRACK_LEVEL, doorZ)
+  floor.position.set(TRACK_X - 4.45, 0.025 - TRACK_LEVEL, doorZ)
   const shimmer = addCue('boarding-objective-doorway', DOOR_WIDTH - 0.06, DOOR_TOP - BODY_BOTTOM, 0, 0.18)
   shimmer.rotation.y = -Math.PI / 2
-  shimmer.position.set(-BODY_HALF - 0.08, (DOOR_TOP + BODY_BOTTOM) / 2, doorZ)
+  shimmer.position.set(BODY_HALF + 0.08, (DOOR_TOP + BODY_BOTTOM) / 2, doorZ)
   return { group, update: delta => { time.value += delta } }
 }
 
@@ -509,11 +513,11 @@ export function createTrain() {
   let b = createKitBuilder()
   const visual = new THREE.Group()
   visual.name = 'chrono-express-visual'
-  const doorZ = carZ(BOARDING_CAR) + DOOR_Z
+  const doorZ = carZ(BOARDING_CAR) + BOARDING_DOOR_Z
   for (let i = 0; i < CAR_COUNT; i += 1) {
     const M = translate(0, 0, carZ(i))
-    bodyside(b, k, M, -1, i === BOARDING_CAR ? DOOR_Z : null)
-    bodyside(b, k, M, 1, null)
+    bodyside(b, k, M, -1, null)
+    bodyside(b, k, M, 1, i === BOARDING_CAR ? BOARDING_DOOR_Z : null)
     roofAndEnds(b, k, M, i === 0, i === CAR_COUNT - 1)
     underframe(b, k, M)
     for (const z of [-BOGIE_Z, BOGIE_Z]) bogie(b, k, translate(0, 0, carZ(i) + z))
@@ -563,6 +567,8 @@ export function createTrain() {
   train.add(engine)
 
   const { door, hinge } = createBoardingDoor(k)
+  door.position.x *= -1
+  door.rotation.y = Math.PI
   door.position.z = doorZ
   train.add(door)
   const boardingMarker = createBoardingMarker(doorZ)
@@ -580,19 +586,26 @@ export function createTrain() {
     train.add(box)
   }
 
-  const steams = addSteam(train)
+  const stationSteam = new THREE.Group()
+  stationSteam.name = 'station-steam'
+  const steams = addSteam(train, stationSteam)
 
   train.traverse((node) => {
     if (node.isMesh && !node.userData.interactionCollider) node.userData.noInteractionBlocker = true
   })
   train.position.set(TRACK_X, TRACK_LEVEL, TRAIN_Z)
+  train.rotation.y = Math.PI
   train.updateMatrixWorld(true)
 
   const stats = countVisual(train)
   train.userData.drawCalls = stats.drawCalls
   train.userData.triangles = stats.triangles
 
-  let doorTarget = DOOR_OPEN_ANGLE
+  let doorTarget = 0
+  function openDoor() {
+    boardingMarker.group.visible = false
+    doorTarget = DOOR_OPEN_ANGLE
+  }
   function closeDoor() {
     boardingMarker.group.visible = false
     doorTarget = 0
@@ -601,8 +614,9 @@ export function createTrain() {
   function update(delta) {
     boardingMarker.update(delta)
     for (const steam of steams) steam.update(delta)
-    if (hinge.rotation.y > doorTarget) hinge.rotation.y = Math.max(doorTarget, hinge.rotation.y - delta * 3.4)
+    const step = delta * DOOR_OPEN_ANGLE / DOOR_ANIMATION_SECONDS
+    hinge.rotation.y += THREE.MathUtils.clamp(doorTarget - hinge.rotation.y, -step, step)
   }
 
-  return { train, boardingDoor: door, closeDoor, update }
+  return { train, stationSteam, boardingDoor: door, openDoor, closeDoor, update }
 }

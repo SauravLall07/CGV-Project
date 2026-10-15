@@ -237,7 +237,12 @@ canvas.addEventListener('click', () => {
 })
 console.log('Audio click listener attached to: ' + canvas.tagName)
 
-const interaction = createInteractionSystem({ camera, input: keyboard })
+const interaction = createInteractionSystem({ camera, input: keyboard,
+  onTap: () => {
+    if (getInputState() === 'PLAYING') player.playPoint()
+  }
+})
+player.onPoseReset(() => interaction.resetHold())
 const timeSystem = createTimeSystem({
   scene,
   player,
@@ -509,6 +514,11 @@ function getInputState() {
 
 function syncInputState() {
   const enabled = getInputState() === 'PLAYING' && !benchmark?.isHolding()
+  if (!enabled) {
+    player.stopPoint()
+    // Successful boarding keeps its reversing pull alive during the cinematic.
+    if (getInputState() !== 'CINEMATIC') player.resetInteractionAnimation()
+  }
   keyboard.setEnabled(enabled)
   interaction.setEnabled(enabled)
   playerView.setEnabled(enabled)
@@ -730,6 +740,7 @@ const loop = createLoop({
   }
 })
 
+let boardingCameraHold = null
 loop.add((delta) => {
   renderQuality.update(performance.now())
   benchmark?.update()
@@ -803,6 +814,23 @@ loop.add((delta) => {
   // Cinematics and other non-playing states may still need level animation,
   // but movement and interaction must not resume during the same frame.
   if (getInputState() !== 'PLAYING') {
+    const view = player.getCinematicView()
+    if (view?.mode === 'follow') {
+      boardingCameraHold = null
+      playerView.update(delta, player.mesh, scene, { crouching: false })
+      // Keep the camera on the platform while the detective enters the car.
+      camera.position.x = Math.min(camera.position.x, 4)
+      camera.lookAt(player.mesh.position.x, player.mesh.position.y + 1.3, player.mesh.position.z)
+    } else if (view?.mode === 'hold') {
+      if (!boardingCameraHold) {
+        boardingCameraHold = camera.position.clone()
+        boardingCameraHold.x = Math.min(boardingCameraHold.x, 4)
+      }
+      camera.position.copy(boardingCameraHold)
+      camera.lookAt(view.target)
+    } else {
+      boardingCameraHold = null
+    }
     syncInputState()
     return
   }
@@ -823,7 +851,8 @@ loop.add((delta) => {
     crouching: player.isCrouching()
   })
 
-  interaction.update(player.mesh, playerView.getYaw())
+  boardingCameraHold = null
+  interaction.update(player.mesh, playerView.getYaw(), delta)
   respawn.update()
 
   hud.updateTimeState({

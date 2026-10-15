@@ -33,6 +33,15 @@ import { createZoneVisibility } from './boarding-zones.js'
 import { capRegionLights } from './boarding-lighting.js'
 import { resetKitMaterials } from '../environment/level1-kit/kit-materials.js'
 
+const BOARDING_HOLD_SECONDS = 5
+const BOARDING_RETURN_TIMEOUT = 2
+const BOARDING_OPEN_SECONDS = 0.6
+const BOARDING_WALK_SECONDS = 1.6
+const BOARDING_CLOSE_SECONDS = 0.6
+const BOARDING_PAUSE_SECONDS = 0.5
+const BOARDING_DEPART_SECONDS = 2.4
+const BOARDING_ACCELERATION = 6.5
+
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
 // - Wall-mounted sweeping security cameras with vision cone projections
@@ -130,7 +139,7 @@ export function createBoardingLevel({
     { minX: PLAZA.minX - 0.3, maxX: FACADE_X + 0.4, minZ: PLAZA.maxZ - 0.05, maxZ: 90 }
   )
 
-  const { train, boardingDoor, closeDoor, update: updateTrain } = createTrain()
+  const { train, stationSteam, boardingDoor, openDoor, closeDoor, update: updateTrain } = createTrain()
   const lights = createStationLighting()
   const sunlight = lights.find((node) => node.name === 'station-sun')
   const skyFill = lights.find((node) => node.name === 'station-sky')
@@ -357,7 +366,7 @@ export function createBoardingLevel({
     terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 2
   })
 
-  scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, landing.group, ...lights)
+  scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights)
 
   // Capture each look once. Retain the original environment map everywhere
   // outside the platform; no per-frame capture or forecourt reflection change.
@@ -808,14 +817,56 @@ export function createBoardingLevel({
   // -------------------------------------------------------------
   let isBoardingCinematic = false
   let cinematicTimer = 0
+  let boardingPhase = null
+  let boardingReturn = null
+  const departureStartZ = train.position.z
+  const boardingTarget = new THREE.Vector3()
 
-  // Front carriage, world z=43.2; departure sequencing stays shared with Level 2.
-  const unregisterBoarding = interaction.register(boardingDoor, {
-    prompt: 'Sneak aboard',
-    onInteract: () => {
-      if (isBoardingCinematic) return
-      isBoardingCinematic = true
+  function beginBoardingPhase(phase) {
+    boardingPhase = phase
+    cinematicTimer = 0
+  }
+
+  function startBoardingWalk() {
+    beginBoardingPhase('walking')
+    boardingDoor.getWorldPosition(boardingTarget)
+    const z = boardingTarget.z
+    player.startScriptedWalk([
+      player.mesh.position.clone(),
+      new THREE.Vector3(4.55, 0.05, z),
+      new THREE.Vector3(5.05, 0.24, z),
+      new THREE.Vector3(6.05, 0.55, z)
+    ], BOARDING_WALK_SECONDS, () => {
+      player.mesh.visible = false
+      player.setCinematicView({ mode: 'hold', target: new THREE.Vector3(5.5, 1.4, z) })
       closeDoor()
+      beginBoardingPhase('closing')
+    })
+  }
+
+  // Last carriage, world z=43.2; departure sequencing stays shared with Level 2.
+  const unregisterBoarding = interaction.register(boardingDoor, {
+    prompt: 'Force the door',
+    holdSeconds: BOARDING_HOLD_SECONDS,
+    isEligible: () => {
+      boardingDoor.getWorldPosition(boardingTarget)
+      const p = player.mesh.position
+      return !isBoardingCinematic && !respawn.isFailing() &&
+        !player.isAirborne() && Math.abs(p.y) < 0.15 &&
+        p.x >= 3.8 && Math.abs(p.z - boardingTarget.z) <= 0.6
+    },
+    onHoldStart: () => player.startInteractionPull?.(boardingDoor),
+    onHoldCancel: ({ reset }) => {
+      if (reset) player.resetInteractionAnimation?.()
+      else player.returnInteractionPull?.()
+    },
+    onHoldComplete: () => {
+      if (isBoardingCinematic || respawn.isFailing()) return
+      isBoardingCinematic = true
+      beginBoardingPhase('returning')
+      boardingReturn = player.returnInteractionPull?.(true)
+      camera?.setMode?.('third', { announce: false })
+      player.setCinematicView({ mode: 'follow' })
       beginCinematic?.()
       interaction.flashPrompt('Boarding the Chrono Express…')
       if (hud) hud.setObjective('Departing station… hold on!')
@@ -831,9 +882,9 @@ export function createBoardingLevel({
   let approachZoneIndex = -1
 
   const zoneNames = [
-    'Reach the front carriage — use luggage as cover',
+    'Reach the last carriage at the far end — use luggage as cover',
     'Keep low and watch the patrols',
-    'The front carriage door is ahead — sneak aboard'
+    'The last carriage door is ahead at the far end — hold to force it open'
   ]
   let zoneIndex = -1
   let platformCheckpointActive = false
@@ -915,7 +966,7 @@ export function createBoardingLevel({
   zones.addRegion('p3', bridgePassage.group, regionLights[2].pools)
   zones.addRegion('p4', hallRegion, hallDressing, regionLights[3].pools)
   zones.addRegion('platform', platformRegion, regionLights[4].pools)
-  zones.addRegion('train', train)
+  zones.addRegion('train', train, stationSteam)
   zones.addRegion('landing', landing.group)
   zones.addRegion('outdoor', outdoorEnv.group)
   zones.addRegion('platform-backdrop', platformBackdrop)
@@ -1130,7 +1181,7 @@ export function createBoardingLevel({
         if (crossed !== zoneIndex) {
           zoneIndex = crossed
           if (hud) hud.showToast(zoneNames[zoneIndex], 2200)
-          hud?.setObjective('Reach the open door on the front carriage — Sneak aboard')
+          hud?.setObjective('Reach the last carriage at the far end of the platform — Force the door')
         }
         if (!platformCheckpointActive && p.z >= 6) {
           platformCheckpointActive = true
@@ -1156,13 +1207,26 @@ export function createBoardingLevel({
 
       if (isBoardingCinematic) {
         cinematicTimer += delta
-        // Same +Z roll as before (~19 m over 2.4 s). The track is centered on
-        // the scaled consist, so the nose still has rail under it as it leaves.
-        train.position.z += delta * (cinematicTimer * 6.5)
+        if (boardingPhase === 'returning' && (!boardingReturn || boardingReturn.finished || cinematicTimer >= BOARDING_RETURN_TIMEOUT)) {
+          player.resetInteractionAnimation?.()
+          openDoor()
+          beginBoardingPhase('opening')
+        } else if (boardingPhase === 'opening' && cinematicTimer >= BOARDING_OPEN_SECONDS) {
+          startBoardingWalk()
+        } else if (boardingPhase === 'walking') {
+          player.updateScriptedWalk(delta)
+        } else if (boardingPhase === 'closing' && cinematicTimer >= BOARDING_CLOSE_SECONDS) {
+          beginBoardingPhase('pause')
+        } else if (boardingPhase === 'pause' && cinematicTimer >= BOARDING_PAUSE_SECONDS) {
+          beginBoardingPhase('departing')
+        } else if (boardingPhase === 'departing') {
+          const t = Math.min(cinematicTimer, BOARDING_DEPART_SECONDS)
+          train.position.z = departureStartZ - 0.5 * BOARDING_ACCELERATION * t * t
+        }
         pointPool.update(player.mesh.position, delta)
         torchPool.update(player.mesh.position, delta)
 
-        if (cinematicTimer >= 2.4) {
+        if (boardingPhase === 'departing' && cinematicTimer >= BOARDING_DEPART_SECONDS) {
           isBoardingCinematic = false
           advance()
         }
@@ -1175,6 +1239,10 @@ export function createBoardingLevel({
     },
 
     dispose() {
+      player.setCinematicView(null)
+      player.cancelScriptedWalk()
+      player.resetInteractionAnimation?.()
+      if (boardingPhase) player.mesh.visible = true
       unregisterRespawnSuspicionReset()
       unregisterStationBlocker()
       unregisterTrainBlocker()
@@ -1201,8 +1269,8 @@ export function createBoardingLevel({
       }
       platformSkyTarget?.dispose()
       platformSkyTarget = null
-      scene.remove(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, landing.group, ...lights, lightPools, lampPools)
-      disposeObject([station, hallDressing, train, landing.group, ...lights, lightPools, lampPools])
+      scene.remove(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights, lightPools, lampPools)
+      disposeObject([station, hallDressing, train, stationSteam, landing.group, ...lights, lightPools, lampPools])
     }
   }
 }

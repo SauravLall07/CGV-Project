@@ -205,7 +205,7 @@ export const ACTIONS = [
   // as held in Hold mode and as a key-down edge (consumePress) in Toggle mode.
   { id: 'jump', label: 'Jump', group: 'Movement', held: true },
   { id: 'duck', label: 'Crouch', group: 'Movement', held: true },
-  { id: 'interact', label: 'Interact', group: 'Actions' },
+  { id: 'interact', label: 'Interact', group: 'Actions', held: true },
   { id: 'distract', label: 'Throw Distractor', group: 'Actions' },
   { id: 'toggleView', label: 'First / Third Person', group: 'Actions' },
   { id: 'slow', label: 'Slow Time', group: 'Time Abilities' },

@@ -5,6 +5,10 @@ import * as THREE from 'three'
 
 const MIXAMO_CM_SCALE = 0.01
 const CROSSFADE = 0.3
+const POINTING_SPEED = 1.0
+const POINTING_FADE_IN = 0.12
+const POINTING_FADE_OUT = 0.25
+const PULL_RETURN_SPEED = 1.5
 // The crouch transitions last ~0.3s once sped up, so a full CROSSFADE would
 // hide them; they fade in and out faster.
 const CROUCH_FADE = 0.12
@@ -15,6 +19,9 @@ const JUMP_AIR_TIME = (2 * 6.4) / 18
 const FILES = {
   idle: new URL('../assets/models/detective/Idle.fbx', import.meta.url),
   run: new URL('../assets/models/detective/Running.fbx', import.meta.url),
+  walk: new URL('../assets/models/detective/Walking.fbx', import.meta.url),
+  point: new URL('../assets/models/detective/Pointing.fbx', import.meta.url),
+  pull: new URL('../assets/models/detective/Pull Pilot From Seat.fbx', import.meta.url),
   jumpIdle: new URL('../assets/models/detective/Jump.fbx', import.meta.url),
   jumpRun: new URL('../assets/models/detective/Standing Jump Running.fbx', import.meta.url),
   cast: new URL('../assets/models/detective/Standing 1H Cast Spell 01.fbx', import.meta.url),
@@ -299,7 +306,7 @@ function prepareModel(model) {
 export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettleTime = 0 } = {}) {
   const [
     idleFbx, runFbx, jumpIdleFbx, jumpRunFbx, castFbx,
-    standToCrouchFbx, crouchIdleFbx, crouchWalkFbx, crouchToStandFbx, throwFbx
+    standToCrouchFbx, crouchIdleFbx, crouchWalkFbx, crouchToStandFbx, throwFbx, walkFbx, pointFbx, pullFbx
   ] = await Promise.all([
     assets.loadFbx(FILES.idle.href),
     loadOptionalFbx(assets, FILES.run.href),
@@ -310,7 +317,10 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     loadOptionalFbx(assets, FILES.crouchIdle.href),
     loadOptionalFbx(assets, FILES.crouchWalk.href),
     loadOptionalFbx(assets, FILES.crouchToStand.href),
-    loadOptionalFbx(assets, FILES.throw.href)
+    loadOptionalFbx(assets, FILES.throw.href),
+    loadOptionalFbx(assets, FILES.walk.href),
+    loadOptionalFbx(assets, FILES.point.href),
+    loadOptionalFbx(assets, FILES.pull.href)
   ])
 
   const info = prepareModel(idleFbx)
@@ -325,6 +335,8 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   const clips = {
     idle: firstClip(idleFbx, 'idle'),
     run: firstClip(runFbx, 'run'),
+    walk: firstClip(walkFbx, 'walk'),
+    pull: firstClip(pullFbx, 'pull'),
     jumpIdle: firstClip(jumpIdleFbx, 'jumpIdle'),
     jumpRun: firstClip(jumpRunFbx, 'jumpRun'),
     cast: firstClip(castFbx, 'cast'),
@@ -336,9 +348,12 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   const crouchWalkTravel = rootTravel(clips.crouchWalk, info.scale)
+  const pointClip = firstClip(pointFbx, 'point')
+  stripRootMotion(pointClip)
+  if (import.meta.env.DEV && pointClip) console.info(`[detective] point duration=${pointClip.duration.toFixed(3)}s`)
 
   const rootMotionClips = [
-    'run', 'jumpIdle', 'jumpRun',
+    'run', 'walk', 'pull', 'jumpIdle', 'jumpRun',
     'standToCrouch', 'crouchIdle', 'crouchWalk', 'crouchToStand', 'throw'
   ]
   for (const name of rootMotionClips) {
@@ -370,7 +385,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
   if (clips.jumpRun) clips.jumpRun = trimJumpAnticipation(clips.jumpRun)
 
-  const looping = new Set(['idle', 'run', 'crouchIdle', 'crouchWalk'])
+  const looping = new Set(['idle', 'run', 'walk', 'crouchIdle', 'crouchWalk'])
   const actions = {}
   for (const [name, clip] of Object.entries(clips)) {
     if (!clip) {
@@ -460,6 +475,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
 
   let current = null
   let currentName = null
+  let scriptedWalking = false
   let casting = false
   let throwing = null
   const throwHand = idleFbx.getObjectByName('mixamorigRightHand')
@@ -476,6 +492,128 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   let lastCrouching = false
   // Last logged sub-state: 'standing', a transition, 'crouchIdle' or 'crouchWalk'.
   let crouchState = 'standing'
+
+  // A detached bone-only rig samples the absolute pointing pose. It never
+  // competes with locomotion in PropertyMixer's normalized weighted average.
+  const pointRig = new THREE.Group()
+  idleFbx.traverse(node => {
+    if (node.isBone && !node.parent?.isBone) pointRig.add(node.clone(true))
+  })
+  const upperBody = /(?:Spine\d*|Neck\d*|Head(?:Top_End)?|(?:Left|Right)(?:Shoulder|Arm|ForeArm|Hand.*))$/
+  const pointBones = []
+  if (pointClip) {
+    pointClip.tracks = pointClip.tracks.filter(track => {
+      const name = THREE.PropertyBinding.parseTrackName(track.name).nodeName
+      return upperBody.test(name) && Boolean(pointRig.getObjectByName(name))
+    })
+    const names = new Set(pointClip.tracks.map(track => THREE.PropertyBinding.parseTrackName(track.name).nodeName))
+    for (const name of names) {
+      const bone = idleFbx.getObjectByName(name)
+      if (bone) pointBones.push({ bone, sample: pointRig.getObjectByName(name),
+        position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), scale: new THREE.Vector3() })
+    }
+  }
+  const pointMixer = new THREE.AnimationMixer(pointRig)
+  const pointAction = pointClip?.tracks.length ? pointMixer.clipAction(pointClip) : null
+  if (pointAction) {
+    pointAction.setLoop(THREE.LoopOnce, 1)
+    pointAction.clampWhenFinished = true
+  }
+  let pointElapsed = null
+  let pointApplied = false
+  let pulling = null
+
+  function restorePointBase() {
+    if (!pointApplied) return
+    for (const pose of pointBones) {
+      pose.bone.position.copy(pose.position)
+      pose.bone.quaternion.copy(pose.quaternion)
+      pose.bone.scale.copy(pose.scale)
+    }
+    pointApplied = false
+  }
+
+  function stopPoint() {
+    restorePointBase()
+    pointElapsed = null
+    pointAction?.stop()
+  }
+
+  function playPoint() {
+    if (!pointAction || throwing || casting || pulling || scriptedWalking) return
+    stopPoint()
+    pointElapsed = 0
+    pointAction.reset().setEffectiveWeight(1).setEffectiveTimeScale(POINTING_SPEED).play()
+  }
+
+  function updatePoint(delta) {
+    if (pointElapsed == null) return
+    pointElapsed += delta
+    const end = pointClip.duration / POINTING_SPEED
+    const weight = Math.max(0, Math.min(1, pointElapsed / POINTING_FADE_IN,
+      (end + POINTING_FADE_OUT - pointElapsed) / POINTING_FADE_OUT))
+    if (weight <= 0) { stopPoint(); return }
+    pointMixer.update(delta)
+    for (const pose of pointBones) {
+      pose.position.copy(pose.bone.position)
+      pose.quaternion.copy(pose.bone.quaternion)
+      pose.scale.copy(pose.bone.scale)
+      pose.bone.position.lerp(pose.sample.position, weight)
+      pose.bone.quaternion.slerp(pose.sample.quaternion, weight)
+      pose.bone.scale.lerp(pose.sample.scale, weight)
+    }
+    pointApplied = true
+  }
+
+  function startPull() {
+    stopPoint()
+    cancelThrow()
+    casting = false
+    crouchTransition = null
+    airborneJump = null
+    wasCrouching = false
+    wanted = 'idle'
+    if (pulling) pulling.finished = true
+    pulling = { phase: 'forward', finished: false }
+    if (actions.pull) {
+      actions.pull.setEffectiveTimeScale(1)
+      fadeTo('pull', 0.12, { restart: true })
+    }
+    return pulling
+  }
+
+  function returnPull(completed = false) {
+    if (!pulling) return { finished: true }
+    if (!actions.pull || actions.pull.time <= 0) {
+      resetInteractionAnimation()
+      return { finished: true }
+    }
+    pulling.phase = 'reverse'
+    const action = actions.pull
+    // Do not reset()/fadeTo(): early release must reverse from the current time.
+    action.paused = false
+    action.enabled = true
+    action.stopFading().setEffectiveWeight(1)
+    action.setEffectiveTimeScale(completed ? -PULL_RETURN_SPEED : -1).play()
+    return pulling
+  }
+
+  function resetInteractionAnimation() {
+    stopPoint()
+    if (!pulling) return
+    pulling.finished = true
+    pulling = null
+    actions.pull?.stop().setEffectiveTimeScale(1)
+    current = null
+    currentName = null
+    mixer.stopAllAction()
+    crouchTransition = null
+    airborneJump = null
+    wasCrouching = false
+    wanted = 'idle'
+    fadeTo('idle', 0)
+    mixer.update(0)
+  }
 
   function pickJumpClip(moving) {
     const fromRun = moving || currentName === 'run' || (actions.run?.getEffectiveWeight() ?? 0) > 0.45
@@ -513,6 +651,17 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   mixer.addEventListener('finished', (event) => {
+    if (event.action === actions.pull && pulling) {
+      if (event.direction < 0) {
+        pulling.finished = true
+        pulling = null
+        actions.pull.setEffectiveTimeScale(1)
+        fadeTo(wanted, 0.12)
+      } else {
+        pulling.phase = 'held'
+      }
+      return
+    }
     if (crouchTransition && event.action === actions[crouchTransition]) {
       crouchTransition = null
       wanted = lastCrouching ? crouchLoop(lastMoving) : standLoop(lastMoving)
@@ -564,11 +713,16 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
 
   // Returns why the crouch sub-state may have changed, for the log.
   function updateLocomotion({ moving, airborne, crouching, jumpStarted }) {
+    if (scriptedWalking) return 'scripted walk'
     const crouchStarted = crouching && !wasCrouching
     const crouchEnded = !crouching && wasCrouching
     wasCrouching = crouching
     lastMoving = moving
     lastCrouching = crouching
+    if (pulling) {
+      wanted = crouching ? crouchLoop(moving) : standLoop(moving)
+      return 'pulling'
+    }
     let why = crouchStarted ? 'crouch pressed' : crouchEnded ? 'stand' : 'input'
 
     // Keep physical movement running, but let the full-body throw finish.
@@ -671,17 +825,21 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   // One-shot ability pose. Standing: play the clip. Moving/airborne: skip so
   // run/jump are not held for the cast duration.
   function playCast() {
+    if (pulling || scriptedWalking) return
     if (throwing) return
     if (!actions.cast) return
     if (wanted !== 'idle') return
+    stopPoint()
     casting = true
     fadeTo('cast', CROSSFADE)
   }
 
   function playThrow() {
+    if (pulling || scriptedWalking) return null
     if (throwing) return null
     // Preserve the existing mechanic if this optional clip failed to load.
     if (!actions.throw) return { released: true, finished: true, cancelled: false }
+    stopPoint()
     casting = false
     crouchTransition = null
     airborneJump = null
@@ -702,8 +860,22 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     fadeTo(wanted, CROSSFADE)
   }
 
+  function setScriptedWalking(value) {
+    stopPoint()
+    scriptedWalking = value
+    casting = false
+    cancelThrow()
+    crouchTransition = null
+    airborneJump = null
+    wanted = 'idle'
+    fadeTo(value ? 'walk' : 'idle', 0.12)
+  }
+
   let mixerFrames = 0
   function update(delta) {
+    // Restore last frame's base even when idle tracks have not changed; the
+    // main mixer may otherwise skip writing a constant property this frame.
+    restorePointBase()
     if (throwing?.cancelled) cancelThrow()
     const activeThrow = throwing
     mixer.update(delta)
@@ -717,6 +889,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
       activeThrow.released = true
     }
     syncJumpIdleTimeScale()
+    updatePoint(delta)
     mixerFrames += 1
     if (mixerFrames === 1 || mixerFrames % 60 === 0) {
       const w = (name) => (actions[name]?.getEffectiveWeight() ?? 0).toFixed(2)
@@ -734,10 +907,15 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   function dispose() {
+    resetInteractionAnimation()
+    pointMixer.stopAllAction()
+    pointMixer.uncacheRoot(pointRig)
     cancelThrow()
     mixer.stopAllAction()
     mixer.uncacheRoot(idleFbx)
   }
 
-  return { root: info.wrapper, mixer, actions, setLocomotion, playCast, playThrow, cancelThrow, noteJumpAirtime, update, dispose }
+  return { root: info.wrapper, mixer, actions, setLocomotion, playCast, playThrow, cancelThrow,
+    playPoint, stopPoint, startPull, returnPull, resetInteractionAnimation,
+    setScriptedWalking, noteJumpAirtime, update, dispose }
 }

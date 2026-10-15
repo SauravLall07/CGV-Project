@@ -3,7 +3,7 @@
 // Nothing outside this module knows about key codes any more: the code →
 // action map is derived from the rebindable bindings in core/settings.js and
 // rebuilt whenever the player changes one in the settings screen. Held
-// actions (movement, run) land in `state` for the player to read each frame;
+// actions (movement, run, interact) land in `state` for per-frame consumers;
 // everything else is delivered through onAction(), which fires once per press
 // — that is what the time abilities, interact and restart-level hook into.
 // consumePress(action) is the polled form of the same edge: true once per
@@ -93,7 +93,7 @@ export function createKeyboardState() {
       // Held actions still track the key, so W pressed while a modifier is
       // held as a game key (crouch rebound to Ctrl) moves the player. Only
       // presses (Ctrl+R restart) are blocked.
-      if (action && action in state) state[action] = true
+      if (action && action !== 'interact' && action in state) state[action] = true
       return
     }
 
