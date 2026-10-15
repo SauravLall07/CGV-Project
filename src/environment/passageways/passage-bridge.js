@@ -943,7 +943,7 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
   }
 }
 
-export function createBridgePassage({ scene, interaction, hud, player, respawn, camera, distractionInventory } = {}) {
+export function createBridgePassage({ scene, interaction, hud, player, respawn, camera, distractionInventory, worldObstacles = [] } = {}) {
   const group = new THREE.Group()
   group.name = 'passage-bridge'
   const colliders = []
@@ -1500,6 +1500,7 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
       stealth,
       hud,
       groundHeightAt: getGroundHeight,
+      obstacles: worldObstacles,
       isEnabled: () => isInsidePassage(),
       hearingRadius: 9.5,
       inventory: sharedInventory

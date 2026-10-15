@@ -284,7 +284,10 @@ export function createStealthSystem({
       investigateBuffer: new THREE.Vector3(),
       investigateTimer: 0,
       investigateGiveUpTimer: 0,
-      investigateArrived: false
+      investigateArrived: false,
+      investigateBlockedTime: 0,
+      walkAnimationHold: 0,
+      lastNoiseId: 0
     }
 
     function attachPrimitive() {
@@ -356,6 +359,7 @@ export function createStealthSystem({
 
     // Keep thrown items and Time Ghost lures on the same target point.
     distraction.position.copy(position)
+    distraction.noiseId += 1
     distraction.timer = Math.max(distraction.timer, duration)
 
     guards.forEach((guard) => {
@@ -370,6 +374,8 @@ export function createStealthSystem({
       guard.investigateTimer = duration
       guard.investigateGiveUpTimer = Math.max(9, duration + 6)
       guard.investigateArrived = false
+      guard.investigateBlockedTime = 0
+      guard.lastNoiseId = distraction.noiseId
       guard.waitTimer = 0
       guard.lookAroundTimer = 0
       responders += 1
@@ -920,7 +926,7 @@ export function createStealthSystem({
   // level feeds the Time Ghost's position in here every frame while it replays,
   // and the short default lifetime means it expires on its own when the ghost
   // fades rather than needing an explicit clear.
-  const distraction = { position: new THREE.Vector3(), timer: 0 }
+  const distraction = { position: new THREE.Vector3(), timer: 0, noiseId: 0 }
 
   function setDistraction(position, duration = 0.4) {
     if (!position) {
@@ -967,7 +973,9 @@ export function createStealthSystem({
     guards.forEach((guard) => {
       // A shielded guard ignores the chrono field entirely.
       const gd = guard.shielded ? delta : scaledDelta
-      const prevStride = guard.stridePhase
+      // Measure real displacement, rather than using phase changes to switch FBX clips.
+      const movementX = guard.group.position.x
+      const movementZ = guard.group.position.z
 
       const isSeeingPlayer = checkGuardDetection(guard, playerPos)
       const isLockedRange = checkGuardLockOn(guard, playerPos)
@@ -979,6 +987,7 @@ export function createStealthSystem({
       const lured =
         distraction.timer > 0 &&
         guard.distractible &&
+        (distraction.noiseId === 0 || guard.lastNoiseId !== distraction.noiseId) &&
         guard.group.position.distanceTo(distraction.position) < DISTRACTION_RADIUS
 
       if (isLockedRange) {
@@ -1007,6 +1016,8 @@ export function createStealthSystem({
         guard.investigateTimer = 3.2
         guard.investigateGiveUpTimer = 9.2
         guard.investigateArrived = false
+        guard.investigateBlockedTime = 0
+        guard.lastNoiseId = distraction.noiseId
         guard.waitTimer = 0
         guard.lookAroundTimer = 0
       }
@@ -1053,11 +1064,38 @@ export function createStealthSystem({
           guard.group.rotation.y = guard.facing
 
           if (Math.abs(diff) <= GUARD_PATROL_TURN_TOLERANCE) {
-            const step = Math.min(guard.speed * 1.08 * delta, distToTarget)
+            const step = Math.min(guard.speed * 1.08 * gd, distToTarget)
+            const beforeX = guard.group.position.x
+            const beforeZ = guard.group.position.z
             guard.group.position.x += (gx / distToTarget) * step
             guard.group.position.z += (gz / distToTarget) * step
             resolveBoxCollision(guard.group.position, obstacles)
-            guard.stridePhase += step * STRIDE_FREQUENCY
+
+            // A wall can separate the thrown item's landing point from the
+            // guard. Don't play a walking animation for motion collision
+            // immediately cancels, or keep marching into that wall forever.
+            const travelled = Math.hypot(
+              guard.group.position.x - beforeX,
+              guard.group.position.z - beforeZ
+            )
+            const progress = ((guard.group.position.x - beforeX) * gx +
+              (guard.group.position.z - beforeZ) * gz) / distToTarget
+            if (step > 0.00001 && progress < step * 0.15) {
+              guard.investigateBlockedTime += gd
+            } else {
+              guard.investigateBlockedTime = 0
+            }
+            if (guard.investigateBlockedTime >= 0.35) {
+              // Investigate from the last reachable spot, then resume patrol.
+              guard.investigateArrived = true
+              guard.scanBase = guard.facing
+              guard.lookAroundTimer = 0
+              guard.stridePhase = 0
+            } else if (travelled > 0.0001) {
+              guard.stridePhase += travelled * STRIDE_FREQUENCY
+            } else {
+              guard.stridePhase *= Math.max(0, 1 - gd * 10)
+            }
           } else {
             guard.stridePhase *= Math.max(0, 1 - delta * 10)
           }
@@ -1079,6 +1117,7 @@ export function createStealthSystem({
           guard.state = 'PATROL'
           guard.investigateTarget = null
           guard.investigateArrived = false
+          guard.investigateBlockedTime = 0
           guard.lookAroundTimer = 0
           guard.waitTimer = 0.5
           guard.scanBase = guard.facing
@@ -1184,9 +1223,12 @@ export function createStealthSystem({
 
       // Vision cone occlusion along the current facing, from the torch lens.
       if (guard.visual) {
-        // Walk clip only while stridePhase is advancing. Scan/turn/alert/search
-        // decay stridePhase — play the idle looking clip instead.
-        guard.visual.setWalking(guard.stridePhase > prevStride + 1e-6)
+        // Collision and turning may pause movement for a single frame. Avoid
+        // restarting the FBX walk clip on every tiny pause or correction.
+        const moved = Math.hypot(guard.group.position.x - movementX, guard.group.position.z - movementZ)
+        if (moved > 0.001 && gd > 0) guard.walkAnimationHold = 0.18
+        else guard.walkAnimationHold = Math.max(0, guard.walkAnimationHold - delta)
+        guard.visual.setWalking(guard.walkAnimationHold > 0 && gd > 0)
         // Chrono-scaled, not raw delta: a frozen guard has to look frozen, and
         // a shielded one keeps moving at full speed as the visible tell.
         guard.visual.update(gd)

@@ -92,6 +92,7 @@ export function createBoardingLevel({
     respawn,
     camera,
     distractionInventory,
+    worldObstacles: wallColliders,
     connectedToPassage3: true
   })
   const bridgePassage = createBridgePassage({
@@ -101,7 +102,8 @@ export function createBoardingLevel({
     player,
     respawn,
     camera,
-    distractionInventory
+    distractionInventory,
+    worldObstacles: wallColliders
   })
 
   station.add(tutorialPassage.group, guardPassage.group, bridgePassage.group)
@@ -427,6 +429,7 @@ export function createBoardingLevel({
     inventory: distractionInventory,
     hearingRadius: 10.5,
     groundHeightAt: () => 0,
+    obstacles: wallColliders,
     isEnabled: () => Boolean(
       bridgePassage.isComplete() &&
       player?.mesh?.position?.y > -0.55 &&

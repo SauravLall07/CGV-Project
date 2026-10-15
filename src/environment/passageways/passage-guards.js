@@ -402,7 +402,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   }
 }
 
-export function createGuardPassage({ scene, interaction, hud, player, respawn, camera, distractionInventory, connectedToPassage3 = false } = {}) {
+export function createGuardPassage({ scene, interaction, hud, player, respawn, camera, distractionInventory, worldObstacles = [], connectedToPassage3 = false } = {}) {
   const group = new THREE.Group()
   group.name = 'passage-guards'
   const colliders = []
@@ -810,6 +810,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
       stealth,
       hud,
       groundHeightAt: getGroundHeight,
+      obstacles: worldObstacles,
       isEnabled: () => isInsidePassage(),
       hearingRadius: 10,
       inventory: sharedInventory
