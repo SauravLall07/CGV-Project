@@ -311,7 +311,7 @@ const levelManager = createLevelManager({
   onLeave: stopLevelMusic,
   onInputStateChange: () => syncInputState(),
   levels: [
-    { state: 'Boarding', create: createBoardingLevel },
+    { state: 'Boarding', create: ctx => createBoardingLevel({ ...ctx, renderCamera: camera }) },
     { state: 'MovingHeist', create: (ctx) => createMovingHeistLevel({ ...ctx, post }) },
     { state: 'Timewreck', create: createTimewreckLevel },
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
@@ -393,7 +393,7 @@ async function buildTitleBackdrop() {
   await loadBoardingAssets()
   const ctx = {
     scene, interaction, assets, hud, timeSystem, renderer,
-    player, camera: playerView, respawn,
+    player, camera: playerView, renderCamera: camera, respawn,
     advance: () => levelManager.advance(),
     beginCinematic() {
       respawn.cancel()
@@ -728,7 +728,9 @@ const loop = createLoop({
   camera,
   clock,
   render(world, view) {
-    benchmark?.beforeRender()
+    // A DEV benchmark can retain a pose after gameplay stops; it must not
+    // overwrite the boarding shot immediately before rendering.
+    if (!player.getCinematicView()) benchmark?.beforeRender()
     post.render(world, view)
   },
 
@@ -743,15 +745,8 @@ const loop = createLoop({
   }
 })
 
-let boardingCameraHold = null
-let boardingLookTarget = null
-let boardingBaseFov = null
+const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
-  if (boardingBaseFov != null && player.getCinematicView()?.mode !== 'fixed') {
-    camera.fov = boardingBaseFov
-    camera.updateProjectionMatrix()
-    boardingBaseFov = null
-  }
   renderQuality.update(performance.now())
   benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /
@@ -826,33 +821,19 @@ loop.add((delta) => {
   if (getInputState() !== 'PLAYING') {
     const view = player.getCinematicView()
     if (view?.mode === 'fixed') {
-      if (boardingBaseFov == null) boardingBaseFov = camera.fov
-      const fov = boardingBaseFov + (view.fovOffset ?? 0)
-      if (Math.abs(camera.fov - fov) > 0.001) {
-        camera.fov = fov
-        camera.updateProjectionMatrix()
+      view.moveElapsed = Math.min(view.moveSeconds, view.moveElapsed + delta)
+      const t = view.moveElapsed / view.moveSeconds
+      const ease = t * t * (3 - 2 * t)
+      camera.position.lerpVectors(view.initialPosition, view.position, ease)
+      camera.quaternion.slerpQuaternions(view.initialRotation, view.targetRotation, ease)
+      // The render camera is currently unparented. Preserve the world-space
+      // shot if a scene rig is attached later, without allocating per frame.
+      if (camera.parent) {
+        camera.parent.updateWorldMatrix(true, false)
+        camera.parent.worldToLocal(camera.position)
+        camera.parent.getWorldQuaternion(cinematicParentRotation).invert()
+        camera.quaternion.premultiply(cinematicParentRotation)
       }
-      camera.position.copy(view.position)
-      if (!boardingLookTarget) boardingLookTarget = view.target.clone()
-      boardingLookTarget.lerp(view.target, 1 - Math.exp(-view.damping * delta))
-      camera.lookAt(boardingLookTarget)
-    } else if (view?.mode === 'follow') {
-      boardingLookTarget = null
-      boardingCameraHold = null
-      playerView.update(delta, player.mesh, scene, { crouching: false })
-      // Keep the camera on the platform while the detective enters the car.
-      camera.position.x = Math.min(camera.position.x, 4)
-      camera.lookAt(player.mesh.position.x, player.mesh.position.y + 1.3, player.mesh.position.z)
-    } else if (view?.mode === 'hold') {
-      if (!boardingCameraHold) {
-        boardingCameraHold = camera.position.clone()
-        boardingCameraHold.x = Math.min(boardingCameraHold.x, 4)
-      }
-      camera.position.copy(boardingCameraHold)
-      camera.lookAt(view.target)
-    } else {
-      boardingCameraHold = null
-      boardingLookTarget = null
     }
     syncInputState()
     return
@@ -874,8 +855,6 @@ loop.add((delta) => {
     crouching: player.isCrouching()
   })
 
-  boardingCameraHold = null
-  boardingLookTarget = null
   interaction.update(player.mesh, playerView.getYaw(), delta)
   respawn.update()
 

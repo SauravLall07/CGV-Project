@@ -40,15 +40,12 @@ const BOARDING_WALK_SECONDS = 1.6
 const BOARDING_TURN_SECONDS = 0.6
 const BOARDING_CLOSE_SECONDS = 0.6
 const BOARDING_PAUSE_SECONDS = 0.4
-const BOARDING_DEPART_SECONDS = 2.2
+const BOARDING_DEPART_SECONDS = 2.6
 const BOARDING_ACCELERATION = 6.5
-const BOARDING_CAMERA_POSITION = new THREE.Vector3(2.25, 1.8, 39.2)
-const BOARDING_CAMERA_DAMPING = 5
-const BOARDING_WIDE_POSITION = new THREE.Vector3(4.85, 3.3, 18)
-const BOARDING_CAMERA_SIDE_SECONDS = 0.25
-const BOARDING_CAMERA_EASE_SECONDS = 0.8
-const BOARDING_FOV_WIDEN = 6
-const BOARDING_CAMERA_LEAD = 1.2
+// 8.35 m from the x=5.55 carriage side, below the canopy and outside cover.
+const BOARDING_CAMERA_POSITION = new THREE.Vector3(-2.8, 2.6, 35.5)
+const BOARDING_CAMERA_LOOK = new THREE.Vector3(5.8, 1.5, 45.5)
+const BOARDING_CAMERA_MOVE_SECONDS = 1.0
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -64,6 +61,7 @@ export function createBoardingLevel({
   hud,
   player,
   camera,
+  renderCamera,
   respawn,
   timeSystem,
   advance,
@@ -849,33 +847,21 @@ export function createBoardingLevel({
   const departureStartZ = train.position.z
   const boardingTarget = new THREE.Vector3()
   const boardingView = { mode: 'fixed', position: BOARDING_CAMERA_POSITION.clone(),
-    target: new THREE.Vector3(5.5, 1.4, 43.2), damping: BOARDING_CAMERA_DAMPING, allowPress: false, fovOffset: 0 }
-  const cameraCorner = new THREE.Vector3(4.85, 3.3, BOARDING_CAMERA_POSITION.z)
-  const shotRay = import.meta.env.DEV ? new THREE.Raycaster() : null
-  const shotDirection = new THREE.Vector3()
-  const shotTarget = new THREE.Vector3()
-  const shotBlockers = []
-  if (import.meta.env.DEV) station.traverse(node => {
-    if (node.isMesh && !node.userData.noCameraCollision &&
-      !(node.material?.transparent && node.material?.depthWrite === false)) shotBlockers.push(node)
-  })
-  let shotProbeTimer = 0, shotWarned = false
+    target: BOARDING_CAMERA_LOOK.clone(), allowPress: false,
+    initialPosition: new THREE.Vector3(),
+    initialRotation: new THREE.Quaternion(), targetRotation: new THREE.Quaternion(),
+    moveSeconds: BOARDING_CAMERA_MOVE_SECONDS, moveElapsed: 0 }
 
-  function checkDepartureView(delta) {
-    if (!import.meta.env.DEV || shotWarned) return
-    shotProbeTimer -= delta
-    if (shotProbeTimer > 0) return
-    shotProbeTimer = 0.2
-    shotTarget.set(5.55, 1.5, 44.3 + train.position.z - departureStartZ)
-    shotDirection.subVectors(shotTarget, boardingView.position)
-    const distance = shotDirection.length()
-    shotRay.set(boardingView.position, shotDirection.normalize())
-    shotRay.far = distance - 0.1
-    const hit = shotRay.intersectObjects(shotBlockers, false)[0]
-    if (hit) {
-      shotWarned = true
-      console.warn('[boarding camera] station occludes rear carriage', { object: hit.object.name, distance: hit.distance, trainZ: train.position.z })
-    }
+  function startBoardingCamera() {
+    // Capture before changing view mode, including the first-person eye pose.
+    renderCamera.getWorldPosition(boardingView.initialPosition)
+    renderCamera.getWorldQuaternion(boardingView.initialRotation)
+    const look = new THREE.Matrix4().lookAt(boardingView.position, boardingView.target, new THREE.Vector3(0, 1, 0))
+    boardingView.targetRotation.setFromRotationMatrix(look)
+    boardingView.moveElapsed = 0
+    camera.setMode('third', { announce: false })
+    player.mesh.visible = true
+    player.setCinematicView(boardingView)
   }
 
   function beginBoardingPhase(phase) {
@@ -885,7 +871,6 @@ export function createBoardingLevel({
 
   function startBoardingWalk() {
     beginBoardingPhase('walking')
-    player.setCinematicView(boardingView)
     boardingDoor.getWorldPosition(boardingTarget)
     const z = boardingTarget.z
     player.startScriptedWalk([
@@ -922,8 +907,7 @@ export function createBoardingLevel({
       hideBoardingCues()
       beginBoardingPhase('returning')
       boardingReturn = player.returnInteractionPull?.(true)
-      camera?.setMode?.('third', { announce: false })
-      player.setCinematicView({ mode: 'follow' })
+      startBoardingCamera()
       beginCinematic?.()
       interaction.flashPrompt('Boarding the Chrono Express…')
       if (hud) hud.setObjective('Departing station… hold on!')
@@ -1294,26 +1278,12 @@ export function createBoardingLevel({
         } else if (boardingPhase === 'closing' && cinematicTimer >= BOARDING_CLOSE_SECONDS) {
           player.mesh.visible = false
           boardingView.allowPress = false
-          beginBoardingPhase('camera-ease')
-        } else if (boardingPhase === 'camera-ease') {
-          const t = Math.min(1, cinematicTimer / BOARDING_CAMERA_EASE_SECONDS)
-          const side = Math.min(1, cinematicTimer / BOARDING_CAMERA_SIDE_SECONDS)
-          if (cinematicTimer <= BOARDING_CAMERA_SIDE_SECONDS) {
-            boardingView.position.lerpVectors(BOARDING_CAMERA_POSITION, cameraCorner, side * side * (3 - 2 * side))
-          } else {
-            const along = Math.min(1, (cinematicTimer - BOARDING_CAMERA_SIDE_SECONDS) / (BOARDING_CAMERA_EASE_SECONDS - BOARDING_CAMERA_SIDE_SECONDS))
-            boardingView.position.lerpVectors(cameraCorner, BOARDING_WIDE_POSITION, along * along * (3 - 2 * along))
-          }
-          boardingView.fovOffset = BOARDING_FOV_WIDEN * t * t * (3 - 2 * t)
-          checkDepartureView(delta)
-          if (t >= 1) beginBoardingPhase('pause')
+          beginBoardingPhase('pause')
         } else if (boardingPhase === 'pause' && cinematicTimer >= BOARDING_PAUSE_SECONDS) {
           beginBoardingPhase('departing')
         } else if (boardingPhase === 'departing') {
           const t = Math.min(cinematicTimer, BOARDING_DEPART_SECONDS)
           train.position.z = departureStartZ - 0.5 * BOARDING_ACCELERATION * t * t
-          boardingView.target.set(6, 1.6, 44.3 + train.position.z - departureStartZ - BOARDING_CAMERA_LEAD)
-          checkDepartureView(delta)
         }
         pointPool.update(player.mesh.position, delta)
         torchPool.update(player.mesh.position, delta)
