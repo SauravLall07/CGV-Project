@@ -745,7 +745,13 @@ const loop = createLoop({
 
 let boardingCameraHold = null
 let boardingLookTarget = null
+let boardingBaseFov = null
 loop.add((delta) => {
+  if (boardingBaseFov != null && player.getCinematicView()?.mode !== 'fixed') {
+    camera.fov = boardingBaseFov
+    camera.updateProjectionMatrix()
+    boardingBaseFov = null
+  }
   renderQuality.update(performance.now())
   benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /
@@ -820,6 +826,12 @@ loop.add((delta) => {
   if (getInputState() !== 'PLAYING') {
     const view = player.getCinematicView()
     if (view?.mode === 'fixed') {
+      if (boardingBaseFov == null) boardingBaseFov = camera.fov
+      const fov = boardingBaseFov + (view.fovOffset ?? 0)
+      if (Math.abs(camera.fov - fov) > 0.001) {
+        camera.fov = fov
+        camera.updateProjectionMatrix()
+      }
       camera.position.copy(view.position)
       if (!boardingLookTarget) boardingLookTarget = view.target.clone()
       boardingLookTarget.lerp(view.target, 1 - Math.exp(-view.damping * delta))

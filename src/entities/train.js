@@ -644,5 +644,43 @@ export function createTrain() {
     }
   }
 
-  return { train, stationSteam, boardingDoor: door, hideBoardingCues, openDoor, closeDoor, update }
+  function warmBoardingVisuals(renderer, scene) {
+    if (!renderer) return
+    const target = new THREE.WebGLRenderTarget(128, 128)
+    const warmCamera = new THREE.PerspectiveCamera(65, 1, 0.1, 240)
+    warmCamera.position.set(2.25, 1.8, 39.2)
+    warmCamera.lookAt(6.3, 1.6, 43.2)
+    const previousTarget = renderer.getRenderTarget()
+    const viewport = renderer.getViewport(new THREE.Vector4())
+    const scissor = renderer.getScissor(new THREE.Vector4())
+    const scissorTest = renderer.getScissorTest()
+    const visible = train.visible
+    const saved = []
+    train.traverse(node => {
+      if (node.isMesh) { saved.push([node, node.frustumCulled]); node.frustumCulled = false }
+    })
+    const angles = hinges.map(({ hinge }) => hinge.rotation.y)
+    try {
+      train.visible = true
+      hinges.forEach(({ hinge, side }) => { hinge.rotation.y = side * DOOR_OPEN_ANGLE })
+      scene.updateMatrixWorld(true)
+      renderer.compile(scene, warmCamera)
+      renderer.setRenderTarget(target)
+      renderer.render(scene, warmCamera) // Upload buffers/textures behind the loading overlay.
+    } finally {
+      hinges.forEach(({ hinge }, i) => { hinge.rotation.y = angles[i] })
+      for (const [node, culling] of saved) node.frustumCulled = culling
+      train.visible = visible
+      renderer.setRenderTarget(previousTarget)
+      renderer.setViewport(viewport)
+      renderer.setScissor(scissor)
+      renderer.setScissorTest(scissorTest)
+      target.dispose()
+      train.updateMatrixWorld(true)
+    }
+  }
+
+  return { train, stationSteam, boardingDoor: door, hideBoardingCues, openDoor, closeDoor,
+    getDoorOpenFraction: () => Math.min(Math.abs(hinges[0].hinge.rotation.y), Math.abs(hinges[1].hinge.rotation.y)) / DOOR_OPEN_ANGLE,
+    warmBoardingVisuals, update }
 }

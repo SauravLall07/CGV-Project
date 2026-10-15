@@ -303,7 +303,13 @@ export function createPlayer() {
   }
 
   function startScriptedWalk(path, duration, onDone) {
-    scriptedWalk = { path: path.map(point => point.clone()), duration, elapsed: 0, onDone }
+    const points = path.map(point => point.clone())
+    const distances = [0]
+    for (let i = 1; i < points.length; i++) {
+      distances.push(distances[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z))
+    }
+    scriptedWalk = { path: points, distances, length: distances[distances.length - 1],
+      duration, elapsed: 0, onDone }
     group.position.copy(path[0])
     visual?.setScriptedWalking(true)
   }
@@ -330,11 +336,20 @@ export function createPlayer() {
     if (!scriptedWalk) return
     const walk = scriptedWalk
     walk.elapsed += delta
-    const t = Math.min(1, walk.elapsed / walk.duration) * (walk.path.length - 1)
-    const index = Math.min(walk.path.length - 2, Math.floor(t))
+    const t = Math.min(1, walk.elapsed / walk.duration)
+    const distance = walk.length * t * t * (3 - 2 * t)
+    let index = 0
+    while (index < walk.path.length - 2 && walk.distances[index + 1] < distance) index++
     const from = walk.path[index], to = walk.path[index + 1]
-    group.position.lerpVectors(from, to, t - index)
-    turnToward(to.x - from.x, to.z - from.z, delta)
+    const u = Math.min(1, (distance - walk.distances[index]) / Math.max(1e-6, walk.distances[index + 1] - walk.distances[index]))
+    const oldX = group.position.x, oldZ = group.position.z
+    group.position.lerpVectors(from, to, u)
+    group.position.y = THREE.MathUtils.lerp(from.y, to.y, u * u * (3 - 2 * u))
+    const yaw = Math.atan2(to.x - from.x, to.z - from.z)
+    const difference = Math.atan2(Math.sin(yaw - facing), Math.cos(yaw - facing))
+    facing += difference * (1 - Math.exp(-8 * delta))
+    group.rotation.y = facing
+    visual?.setScriptedWalkSpeed(Math.hypot(group.position.x - oldX, group.position.z - oldZ) / Math.max(delta, 1e-6))
     if (walk.elapsed >= walk.duration) {
       scriptedWalk = null
       visual?.setScriptedWalking(false)

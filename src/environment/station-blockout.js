@@ -71,20 +71,30 @@ const APPROACH_Z_MAX = APPROACH_CENTER_Z + APPROACH_WIDTH / 2
 
 const DOOR_HEIGHT = 2.6
 
-// Each middle island pairs two 1.2 m cores, leaving a 0.7 m central pocket.
-// Both edge lanes are occluded; the 4 m open gaps force timed crossings.
-// At the inner faces x=±0.35, a ray from either edge to the pocket is well
-// below the 1.45 m core and within its 2 m half-length, even at full range.
+// Ordered station work areas: luggage, baggage sorting, then sparse vendors.
+// Each opaque body is also the visible LOS core; open frames are decor only.
 export const PLATFORM_COVER = [
-  ...[-22, -14, -6, 2, 10, 18, 26, 34, 40].map((z, i) => ({
-    id: `island-${i + 1}`, z, x: 0, centres: [-0.95, 0.95], pocketX: 0,
-    width: 1.2, length: 4, height: 1.45, middle: true,
-    type: ['trunks', 'trolley', 'crates'][i % 3]
-  })),
-  // The only edge shelter preserves a safe checkpoint, outside both track patrols.
-  { id: 'checkpoint-shelter', z: 6, x: 3.05, centres: [3.05], pocketX: 4.1,
-    width: 1.3, length: 3, height: 1.45, middle: false, type: 'trunks' }
-]
+  ['porter-cart', -2.35, -22, 1.5, 3.8, 1.75, 'trolley'],
+  ['steamer-trunks', 2.45, -18.5, 1.5, 3, 1.05, 'trunks'],
+  ['mail-and-scale', -0.6, -9.5, 1.6, 3.4, 1.7, 'mail'],
+  ['timetable', 2.6, -7.5, 1.4, 0.7, 1.9, 'board'],
+  ['newspaper-kiosk', -1.3, 1, 1.5, 4, 1.8, 'kiosk'],
+  ['parcel-trolley', 1.3, 2.5, 1.4, 3, 1, 'trolley'],
+  ['centre-parcels', 0, 6, 1.5, 1.8, 1.1, 'crates'],
+  ['milk-and-scale', -1.3, 8, 1.4, 3, 1.05, 'milk'],
+  ['deck-chairs', 1.3, 10.5, 1.4, 3.5, 1.7, 'chairs'],
+  ['sorting-south', -0.85, 17.1, 3.3, 0.8, 1.75, 'crates'],
+  ['sorting-west', -2.5, 18.8, 0.8, 4, 1.75, 'mail'],
+  ['sorting-east', 0.8, 18.8, 0.8, 4, 1.75, 'crates'],
+  ['flower-cart', -2, 24, 1.5, 2.8, 1.05, 'flowers'],
+  ['mail-crates', 2.25, 27, 1.4, 2.2, 1, 'crates'],
+  ['final-trunks', -1.8, 33.5, 1.5, 2.5, 1.75, 'trunks'],
+  ['final-parcel-cart', 2.35, 37.5, 1.5, 2.5, 1.05, 'trolley'],
+  ['open-bench', -2.5, 42, 1.6, 0.7, 1.2, 'bench']
+].map(([id, x, z, width, length, height, type]) => ({
+  id, x, z, centres: [x], width, length, height, type,
+  seeThrough: type === 'board' || type === 'bench'
+}))
 
 // Axis-aligned outer bounds. The west side is extended for the new
 // perpendicular infiltration wing. Solid wall colliders below keep the
@@ -99,8 +109,8 @@ export const bounds = {
 function createTrackBed() {
   const group = new THREE.Group()
   group.name = 'platform-track'
-  // Nose ends at -54.3 - 0.5*6.5*3.5² = -94.1125. The -107.5 rail
-  // endpoint leaves 13.3875 m beyond it; retain eight batched sleeper draws.
+  // The 2.2 s cut leaves the nose at -70.03; the retained -107.5 rail
+  // endpoint has 37.47 m spare. Keep eight batched sleeper draws.
   const length = Math.max(220, PLATFORM_LENGTH + 16, TRAIN_LENGTH + 48)
   const ballastMaterial = plasterMaterial({ repeat: [3, 7], base: 0x3b3830, roughness: 1 })
   const sleeperMaterial = woodMaterial({ repeat: [2, 1], light: 0x4a3826, dark: 0x241a11, roughness: 0.95 })
@@ -649,14 +659,33 @@ function createOpenPlatform() {
   for (const cover of PLATFORM_COVER) {
     const { id, centres, z, width, height, length, type } = cover
     const builder = createKitBuilder()
+    const b = sectionAt(z).b
+    if (cover.seeThrough) {
+      if (type === 'bench') {
+        for (const dz of [-0.24, 0, 0.24]) box(b, k.wood, width, 0.06, 0.16, cover.x, 0.5, z + dz)
+        for (const dx of [-width * 0.4, width * 0.4]) {
+          box(b, k.iron, 0.07, 0.5, length, cover.x + dx, 0.25, z)
+          box(b, k.iron, 0.07, height - 0.5, 0.07, cover.x + dx, (height + 0.5) / 2, z + 0.3)
+        }
+        for (const y of [0.8, 1.1]) box(b, k.wood, width, 0.09, 0.06, cover.x, y, z + 0.3)
+      }
+      else {
+        for (const side of [-1, 1]) box(b, k.iron, 0.07, height, 0.07, cover.x + side * width * 0.4, height / 2, z)
+        box(b, k.wood, width, 0.28, 0.12, cover.x, height - 0.14, z)
+        box(b, k.brass, width * 0.85, 0.02, 0.14, cover.x, height - 0.1, z)
+      }
+      colliders.push({ minX: cover.x - width / 2, maxX: cover.x + width / 2,
+        minZ: z - length / 2, maxZ: z + length / 2, kind: 'seat' })
+      continue
+    }
     for (const x of centres) {
-      builder.add(type === 'crates' ? k.crate : k.leather, kbox(width, height, length, x, height / 2, z))
+      const material = ['crates', 'kiosk', 'chairs', 'flowers'].includes(type) ? k.crate : type === 'milk' ? k.iron : type === 'mail' ? k.sack : k.leather
+      builder.add(material, kbox(width, height, length, x, height / 2, z))
     }
     const coreGroup = new THREE.Group()
     const [mesh] = builder.build(coreGroup, id)
     mesh.userData.coverId = id
     cores.set(id, mesh); group.add(coreGroup)
-    const b = sectionAt(z).b
     for (const x of centres) {
       colliders.push({ minX: x - width / 2, maxX: x + width / 2,
         minZ: z - length / 2, maxZ: z + length / 2, kind: type === 'crates' ? 'crate' : 'trunk' })
@@ -665,7 +694,38 @@ function createOpenPlatform() {
         box(b, k.brass, width + 0.012, 0.035, 0.06, x, height + 0.01, z + dz)
         for (const side of [-1, 1]) box(b, k.brass, 0.025, height, 0.06, x + side * (width / 2 + 0.01), height / 2, z + dz)
       }
-      for (const dz of [-length * 0.3, length * 0.3]) trunk(b, k, at(x, height, z + dz), 1.1, 0.32, Math.min(1.2, length * 0.35))
+      if (type === 'trunks' || type === 'trolley') {
+        for (const dz of [-length * 0.3, length * 0.3]) trunk(b, k, at(x, height - 0.32, z + dz), Math.min(width, 1.1), 0.32, Math.min(1.2, length * 0.35))
+      } else if (type === 'kiosk') {
+        box(b, k.iron, width + 0.1, 0.08, length + 0.1, x, height, z)
+        for (const dz of [-1.2, 0, 1.2]) {
+          box(b, k.paper, width + 0.02, 0.12, 0.65, x, height * 0.65, z + dz)
+          box(b, k.newsprint, width + 0.025, 0.015, 0.5, x, height * 0.65 + 0.07, z + dz)
+        }
+      } else if (type === 'milk' || type === 'mail' || type === 'flowers') {
+        for (const dz of [-length * 0.3, 0, length * 0.3]) {
+          const body = type === 'mail' ? new THREE.SphereGeometry(Math.min(width * 0.45, 0.38), 8, 6) : new THREE.CylinderGeometry(0.17, 0.24, 0.3, 10)
+          body.translate(x, height - 0.12, z + dz)
+          b.add(type === 'milk' ? k.iron : type === 'mail' ? k.sack : k.pot, body)
+          if (type === 'flowers') {
+            const bouquet = new THREE.SphereGeometry(0.22, 8, 6)
+            bouquet.translate(x, height + 0.12, z + dz)
+            b.add(k.cushion, bouquet)
+            box(b, k.green, 0.05, 0.25, 0.05, x, height, z + dz)
+          }
+        }
+        if (type !== 'flowers') {
+          box(b, k.iron, 0.3, 0.35, 0.3, x, height + 0.175, z)
+          box(b, k.brass, 0.55, 0.04, 0.5, x, height + 0.37, z)
+        }
+      } else if (type === 'chairs') {
+        for (let i = 0; i < 6; i++) {
+          box(b, k.wood, width + 0.02, 0.04, length, x, 0.2 + i * 0.25, z)
+          for (const side of [-1, 1]) box(b, k.brass, 0.04, height, 0.07, x + side * width * 0.4, height / 2, z)
+        }
+      } else {
+        for (const dz of [-length * 0.25, length * 0.25]) box(b, k.brass, width * 0.5, 0.12, 0.015, x, height * 0.65, z + dz)
+      }
       if (type === 'trolley') {
         for (const dz of [-length * 0.4, length * 0.4]) for (const side of [-1, 1]) {
           const wheel = new THREE.CylinderGeometry(0.15, 0.15, 0.06, 10)

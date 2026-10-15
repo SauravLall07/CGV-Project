@@ -353,6 +353,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   const crouchWalkTravel = rootTravel(clips.crouchWalk, info.scale)
+  const walkTravel = rootTravel(clips.walk, info.scale)
   const pointClip = firstClip(pressFbx, 'press')
   stripRootMotion(pointClip)
   if (import.meta.env.DEV && pointClip) console.info(`[detective] press duration=${pointClip.duration.toFixed(3)}s`)
@@ -906,7 +907,14 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     crouchTransition = null
     airborneJump = null
     wanted = 'idle'
-    fadeTo(value ? 'walk' : 'idle', 0.12)
+    if (value) setScriptedWalkSpeed(0)
+    fadeTo(value ? 'walk' : 'idle', 0.2)
+  }
+
+  function setScriptedWalkSpeed(speed) {
+    // Root travel is measured before stripping X/Z; 1.4 m/s is the explicit
+    // fallback for an optional in-place clip with no measurable root travel.
+    actions.walk?.setEffectiveTimeScale(Math.max(0, speed) / (walkTravel?.speed > 0.01 ? walkTravel.speed : 1.4))
   }
 
   let mixerFrames = 0
@@ -955,5 +963,5 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
 
   return { root: info.wrapper, mixer, actions, setLocomotion, playCast, playThrow, cancelThrow,
     playPress, playPickup, stopPress, startPull, returnPull, resetInteractionAnimation,
-    setScriptedWalking, noteJumpAirtime, update, dispose }
+    setScriptedWalking, setScriptedWalkSpeed, noteJumpAirtime, update, dispose }
 }
