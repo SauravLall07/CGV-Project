@@ -992,13 +992,13 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
   noCam(hangChain)
   g.add(hangChain)
 
-  // Same light budget as before (2 amber aisle + 1 violet temporal accent).
+  // Cargo identity: warm aisle + stronger violet loop accent (same 3 lights).
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(0xffc090, 7.5, 7.5, 2)
+    const l = new THREE.PointLight(0xffc090, 7.8, 7.5, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, l, true)
   }
-  const loopGlow = new THREE.PointLight(0xa855f7, 3.6, 5, 2)
+  const loopGlow = new THREE.PointLight(0xa855f7, 4.8, 5.5, 2)
   loopGlow.position.set(sites[0].side * 0.95, 1.5, sites[0].z)
   addLight(g, fx, loopGlow, true)
 }
@@ -1131,9 +1131,14 @@ function dressDamagedSecurity(g, half, shared, fx) {
     g.add(tear)
   }
 
-  // Same light budget as before (3 amber aisle fills).
-  for (const z of [-half * 0.55, 0, half * 0.55]) {
-    const l = new THREE.PointLight(0xffc090, 7.5, 7.5, 2)
+  // Security identity: warm ends + cool centre wash over the freeze walkway
+  // (same 3 PointLights — no pool growth).
+  for (const [z, hex, intensity] of [
+    [-half * 0.55, 0xffc090, 7.5],
+    [0, 0xb8d4e8, 6.8],
+    [half * 0.55, 0xffc090, 7.5]
+  ]) {
+    const l = new THREE.PointLight(hex, intensity, 7.5, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, l, true)
   }
@@ -1156,8 +1161,8 @@ function dressDamagedPassenger(g, half, shared, fx) {
 
   // Soft violet storm veils outside the hull — intensifies purple read through openings.
   const veilMat = new THREE.MeshStandardMaterial({
-    color: 0x1a0a30, emissive: 0x6d28d9, emissiveIntensity: 0.85,
-    roughness: 1, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide
+    color: 0x1a0a30, emissive: 0x7c3aed, emissiveIntensity: 1.05,
+    roughness: 1, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide
   })
   for (const s of [-1, 1]) {
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(half * 1.6, CARRIAGE_CEILING_Y * 1.2), veilMat)
@@ -1393,8 +1398,8 @@ function dressDamagedVault(g, half, shared, fx) {
     addSagCable(g, vein, c.side * (WALL_X - 0.45), 2.18, c.z - 0.3, c.side * 1.2, 0.7, c.z + 0.25, 0.24)
   }
 
-  // Existing temporal accent light — keep violet (no new PointLights).
-  const coreGlow = new THREE.PointLight(0x7c3aed, 5, 6, 2)
+  // Vault identity: stronger violet rupture wash (same single PointLight).
+  const coreGlow = new THREE.PointLight(0x8b5cf6, 6.4, 6.5, 2)
   coreGlow.position.set(0, 1.4, half - 1.2)
   addLight(g, fx, coreGlow, true)
 }
@@ -1419,9 +1424,9 @@ function dressPassenger(g, half, shared, damaged, fx) {
   strip.name = 'passenger-ceiling-strip'
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
-  // Same light budget as before (2 amber aisle fills — no new PointLights).
+  // Passenger identity: warmer aisle fills against violet storm veils/rupture.
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(0xffc090, 8.5, 6.5, 2)
+    const l = new THREE.PointLight(0xffb888, 9.0, 6.8, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, true)
   }
@@ -2072,9 +2077,9 @@ function dressDamagedRelayLuxury(g, half, shared, fx) {
     g.add(tear)
   }
 
-  // Same light budget as the old Relay dress (3 aisle fills — amber, not red).
+  // Relay identity: warmer warning amber so cyan blast scars read cooler.
   for (const z of [-half * 0.55, 0, half * 0.55]) {
-    const light = new THREE.PointLight(0xffc090, 7.5, 8, 2)
+    const light = new THREE.PointLight(0xffb070, 7.8, 8, 2)
     light.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, light, true)
   }
@@ -2341,11 +2346,11 @@ function dressDamagedMechanicalLuxury(g, half, shared, fx) {
     }
   }
 
-  // Retune existing mechanical fill lights to warm amber (same count, no new lights).
-  const boilerLight = new THREE.PointLight(0xffc090, 10, 9, 2)
+  // Warm practicals — cool storm accent is added in timewreck.js (same budget).
+  const boilerLight = new THREE.PointLight(0xffb070, 10.5, 9, 2)
   boilerLight.position.set(0, 1.6, half - 4)
   addLight(g, fx, boilerLight, true)
-  const ceil = new THREE.PointLight(0xffc090, 8, 9, 2)
+  const ceil = new THREE.PointLight(0xffc090, 8.2, 9, 2)
   ceil.position.set(0, CARRIAGE_CEILING_Y - 0.3, -half * 0.35)
   addLight(g, fx, ceil, true)
 
@@ -2354,10 +2359,11 @@ function dressDamagedMechanicalLuxury(g, half, shared, fx) {
 
 // Warm amber fill for the Timewreck Convergence car (existing 4-light budget).
 // Registered through addLight so they pick up that car's flicker only.
+// Phase-1: slightly warmer practicals so cyan surge arcs read as cool contrast.
 function addConvergenceFlickerLights(g, half, fx) {
   const spots = [-half + 5, -half * 0.35, half * 0.15, half - 3.2]
   for (const z of spots) {
-    const light = new THREE.PointLight(0xffc090, 5.2, 7.2, 2)
+    const light = new THREE.PointLight(0xffb888, 5.6, 7.2, 2)
     light.position.set(0, 2.15, z)
     addLight(g, fx, light, true)
   }
@@ -2894,8 +2900,8 @@ function dressDamagedCabLuxury(g, half, shared, fx) {
 
   // Soft violet storm veils outside the hull.
   const veilMat = new THREE.MeshStandardMaterial({
-    color: 0x1a0a30, emissive: 0x6d28d9, emissiveIntensity: 0.9,
-    roughness: 1, transparent: true, opacity: 0.58, depthWrite: false, side: THREE.DoubleSide
+    color: 0x1a0a30, emissive: 0x7c3aed, emissiveIntensity: 1.15,
+    roughness: 1, transparent: true, opacity: 0.62, depthWrite: false, side: THREE.DoubleSide
   })
   for (const s of [-1, 1]) {
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(half * 2.2, CARRIAGE_CEILING_Y * 1.25), veilMat)
@@ -3037,8 +3043,8 @@ function dressDamagedCabLuxury(g, half, shared, fx) {
     }
   ))
 
-  // Cool storm fill through the openings (one light — pool already caps at 12).
-  const stormFill = new THREE.PointLight(0x7c3aed, 4.5, 6.5, 2)
+  // Cab identity: violet storm fill vs warm firebox/brake (one light, pool-capped).
+  const stormFill = new THREE.PointLight(0x8b5cf6, 5.6, 7, 2)
   stormFill.position.set(0, 1.6, half * 0.35)
   addLight(g, fx, stormFill, false)
 }

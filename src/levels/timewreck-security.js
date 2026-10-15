@@ -78,11 +78,12 @@ export function createSecurityCrossing({ root, carriage, span, halfWidth = 2.6 }
   const group = new THREE.Group()
   group.name = 'security-two-stage-crossing'
   root.add(group)
-  const material = createChronoFieldMaterial({ baseColor: 0x4a3424, glowColor: 0x38bdf8,
+  // Ice-cyan temporal field — distinct from Passenger collapse violet.
+  const material = createChronoFieldMaterial({ baseColor: 0x3a4550, glowColor: 0x67e8f9,
     opacity: 0.92, doubleSided: true })
   const wood = new THREE.MeshStandardMaterial({ color: 0x684a30, roughness: 0.6 })
   const brass = new THREE.MeshStandardMaterial({ color: 0xc4a052, metalness: 0.85, roughness: 0.42 })
-  const cyan = new THREE.MeshStandardMaterial({ color: 0x23454a, emissive: 0x38bdf8, emissiveIntensity: 0.8 })
+  const cyan = new THREE.MeshStandardMaterial({ color: 0x1a3a42, emissive: 0x22d3ee, emissiveIntensity: 1.05 })
   const box = (parent, w, h, d, mat, x, y, z) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
     mesh.position.set(x, y, z)
@@ -144,7 +145,7 @@ export function createSecurityCrossing({ root, carriage, span, halfWidth = 2.6 }
     // Pale outlines show the intended crossing before spending any energy.
     const outline = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(tile.width, 0.03, tile.length)),
-      new THREE.LineBasicMaterial({ color: 0x8bd9e8, transparent: true, opacity: 0.45 }))
+      new THREE.LineBasicMaterial({ color: 0xa5f3fc, transparent: true, opacity: 0.58 }))
     outline.position.set(tile.x, 0.12, tile.z)
     outline.raycast = () => {}
     group.add(outline)

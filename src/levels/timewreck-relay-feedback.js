@@ -4,7 +4,7 @@ import * as THREE from 'three'
 // occupancy, collisions or lights; all resources live under the level's root.
 export function createRelayFeedback({ doors, linkage, doorZ, catchZ, brass }) {
   const material = new THREE.MeshStandardMaterial({
-    color: 0x27454b, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.65
+    color: 0x1e3a42, emissive: 0x22d3ee, emissiveIntensity: 0.85, roughness: 0.55
   })
   const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.12, 0.035), material, 8)
   bars.name = 'relay-echo-hold-bars'
@@ -35,9 +35,10 @@ export function createRelayFeedback({ doors, linkage, doorZ, catchZ, brass }) {
       bars.instanceMatrix.needsUpdate = true
       previousFill = fill
     }
-    const color = latched ? 0x55ff99 : held ? 0x38bdf8 : 0xffb060
+    const color = latched ? 0x4ade80 : held ? 0x22d3ee : 0xffb060
     if (color !== previousColor) {
       material.emissive.setHex(color)
+      material.emissiveIntensity = latched ? 1.35 : held ? 1.15 : 0.95
       previousColor = color
     }
     const releaseY = held ? 0.025 : 0.04
