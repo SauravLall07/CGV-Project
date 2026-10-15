@@ -1,10 +1,14 @@
 import * as THREE from 'three'
 import { createHumanoid } from './humanoid.js'
+import { loadDetectiveVisual } from './detective-visual.js'
 import { disposeObject } from '../core/dispose.js'
 
 // Holographic Time Ghost: a recorded temporal echo of the player.
 // Replays a window of the player's movement and actions, walking the path
 // and holding pressure plates or switches before dissolving.
+//
+// Prefer the Mixamo detective visual (same as the player). The procedural
+// humanoid remains a fallback if the FBX fails to load.
 
 const GHOST_PALETTE = {
   coat: 0x38bdf8,
@@ -19,32 +23,46 @@ const GHOST_PALETTE = {
 const STRIDE_AMPLITUDE = 0.72
 const BOB_HEIGHT = 0.035
 const HOLD_SECONDS = 8
+const MOVE_SPEED_EPS = 0.35 // m/s — above this, play the run clip
+
+function applyGhostMaterial(mesh) {
+  mesh.castShadow = false
+  mesh.receiveShadow = false
+  const sources = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+  const ghosted = sources.map((oldMat) => {
+    const ghostMat = new THREE.MeshStandardMaterial({
+      color: oldMat?.color ? oldMat.color.getHex() : 0x38bdf8,
+      map: oldMat?.map ?? null,
+      normalMap: oldMat?.normalMap ?? null,
+      emissive: 0x00d4ff,
+      emissiveMap: oldMat?.emissiveMap ?? null,
+      emissiveIntensity: 2.2,
+      roughness: 0.25,
+      metalness: 0.08,
+      transparent: true,
+      opacity: 0.62,
+      depthWrite: false,
+      skinning: Boolean(oldMat?.skinning || mesh.isSkinnedMesh),
+      morphTargets: Boolean(oldMat?.morphTargets),
+      morphNormals: Boolean(oldMat?.morphNormals)
+    })
+    if (oldMat?.name) ghostMat.name = `ghost:${oldMat.name}`
+    return ghostMat
+  })
+  mesh.material = Array.isArray(mesh.material) ? ghosted : ghosted[0]
+  return ghosted
+}
 
 export function createTimeGhost() {
   const { group, body, leftArm, rightArm, leftLeg, rightLeg } = createHumanoid(GHOST_PALETTE)
   const bodyBaseY = body.position.y
   group.name = 'time-ghost'
 
-  // Convert all meshes in the ghost hierarchy to translucent glowing hologram materials
+  // Convert humanoid meshes to translucent hologram materials (fallback look).
   const ghostMaterials = []
   group.traverse((child) => {
     if (child.isMesh) {
-      child.castShadow = false
-      child.receiveShadow = false
-      const oldMat = child.material
-      const ghostMat = new THREE.MeshStandardMaterial({
-        color: oldMat ? oldMat.color : 0x38bdf8,
-        emissive: 0x00d4ff,
-        emissiveIntensity: 2.2,
-        roughness: 0.2,
-        metalness: 0.1,
-        transparent: true,
-        opacity: 0.62,
-        wireframe: false,
-        depthWrite: false
-      })
-      child.material = ghostMat
-      ghostMaterials.push(ghostMat)
+      for (const mat of applyGhostMaterial(child)) ghostMaterials.push(mat)
     }
   })
 
@@ -66,12 +84,45 @@ export function createTimeGhost() {
   beaconLight.position.y = 1.2
   group.add(beaconLight)
 
+  let visual = null
   let trajectory = []
   let playbackTime = 0
   let isPlaying = false
   let onCompleteCallback = null
   let onTriggerCallback = null
   let elapsed = 0
+  let lastSamplePos = new THREE.Vector3()
+
+  function setHumanoidVisible(visible) {
+    body.visible = visible
+    leftArm.visible = visible
+    rightArm.visible = visible
+    leftLeg.visible = visible
+    rightLeg.visible = visible
+  }
+
+  // Separate FBX load + mixer from the player so materials and animation
+  // state never leak between them. Textures may be shared read-only.
+  async function loadVisual(assets) {
+    if (visual) return visual
+    try {
+      visual = await loadDetectiveVisual(assets, {
+        crouchSpeed: 0,
+        crouchSettleTime: 0.25
+      })
+      visual.root.traverse((child) => {
+        if (!child.isMesh) return
+        for (const mat of applyGhostMaterial(child)) ghostMaterials.push(mat)
+      })
+      group.add(visual.root)
+      setHumanoidVisible(false)
+      visual.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false })
+    } catch (error) {
+      console.warn('[time-ghost] detective FBX failed, keeping humanoid', error)
+      visual = null
+    }
+    return visual
+  }
 
   function startReplay(recordedTrajectory, { onTrigger, onComplete } = {}) {
     if (!recordedTrajectory || recordedTrajectory.length < 2) {
@@ -87,7 +138,11 @@ export function createTimeGhost() {
     const first = trajectory[0]
     group.position.copy(first.position)
     group.rotation.y = first.rotationY
+    lastSamplePos.copy(first.position)
     group.visible = true
+    if (visual) {
+      visual.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false })
+    }
   }
 
   // Programs for these emissive/transparent materials (and the beacon light)
@@ -118,6 +173,13 @@ export function createTimeGhost() {
     onTriggerCallback = null
     elapsed = 0
     ring.rotation.y = 0
+    if (visual) {
+      visual.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false })
+    } else {
+      leftLeg.rotation.x = rightLeg.rotation.x = 0
+      leftArm.rotation.x = rightArm.rotation.x = 0
+      body.position.y = bodyBaseY
+    }
   }
 
   function update(delta) {
@@ -127,7 +189,10 @@ export function createTimeGhost() {
     ringMat.opacity = pulse
     beaconLight.intensity = 2.5 + Math.sin(elapsed * 12) * 1.0
 
-    if (!isPlaying || trajectory.length < 2) return
+    if (!isPlaying || trajectory.length < 2) {
+      visual?.update(delta)
+      return
+    }
 
     playbackTime += delta
 
@@ -138,9 +203,14 @@ export function createTimeGhost() {
       const last = trajectory[trajectory.length - 1]
       group.position.copy(last.position)
       group.rotation.y = last.rotationY
-      leftLeg.rotation.x = rightLeg.rotation.x = 0
-      leftArm.rotation.x = rightArm.rotation.x = 0
-      body.position.y = bodyBaseY
+      if (visual) {
+        visual.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false })
+        visual.update(delta)
+      } else {
+        leftLeg.rotation.x = rightLeg.rotation.x = 0
+        leftArm.rotation.x = rightArm.rotation.x = 0
+        body.position.y = bodyBaseY
+      }
       if (onTriggerCallback) onTriggerCallback(group.position)
       if (playbackTime >= Math.max(0, totalDuration) + HOLD_SECONDS) stop()
       return
@@ -168,14 +238,29 @@ export function createTimeGhost() {
     while (rotDiff < -Math.PI) rotDiff += Math.PI * 2
     group.rotation.y = p0.rotationY + rotDiff * t
 
-    // Interpolate limb swings
-    const stride = p0.stridePhase !== undefined ? p0.stridePhase : 0
-    const swing = Math.sin(stride) * STRIDE_AMPLITUDE
-    leftLeg.rotation.x = swing
-    rightLeg.rotation.x = -swing
-    leftArm.rotation.x = -swing * 0.8
-    rightArm.rotation.x = swing * 0.8
-    body.position.y = bodyBaseY + Math.abs(Math.sin(stride)) * BOB_HEIGHT
+    if (visual) {
+      const step = group.position.distanceTo(lastSamplePos)
+      const speed = delta > 1e-4 ? step / delta : 0
+      lastSamplePos.copy(group.position)
+      const airborne = Math.abs((p0.position.y ?? 0) - (p1.position.y ?? 0)) > 0.08
+        || group.position.y > 0.35
+      visual.setLocomotion({
+        moving: speed > MOVE_SPEED_EPS,
+        airborne,
+        crouching: false,
+        jumpStarted: false
+      })
+      visual.update(delta)
+    } else {
+      // Procedural limb swing on the humanoid fallback.
+      const stride = p0.stridePhase !== undefined ? p0.stridePhase : 0
+      const swing = Math.sin(stride) * STRIDE_AMPLITUDE
+      leftLeg.rotation.x = swing
+      rightLeg.rotation.x = -swing
+      leftArm.rotation.x = -swing * 0.8
+      rightArm.rotation.x = swing * 0.8
+      body.position.y = bodyBaseY + Math.abs(Math.sin(stride)) * BOB_HEIGHT
+    }
 
     // Fire trigger callback to press plates / switches
     if (onTriggerCallback) {
@@ -196,6 +281,8 @@ export function createTimeGhost() {
 
   function dispose() {
     cancel()
+    visual?.dispose?.()
+    visual = null
     disposeObject(group)
   }
 
@@ -203,6 +290,7 @@ export function createTimeGhost() {
 
   return {
     mesh: group,
+    loadVisual,
     startReplay,
     stop,
     warm,

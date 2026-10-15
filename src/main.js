@@ -97,7 +97,7 @@ const clock = createClock()
 
 const assets = createAssetLoader()
 const hud = createHud()
-const startupTasks = createLoadingTasks(['detective', 'police', 'backdrop', 'presentation'])
+const startupTasks = createLoadingTasks(['detective', 'police', 'ghost', 'backdrop', 'presentation'])
 const loadingScreen = createLoadingScreen(assets, { tasks: startupTasks })
 
 // The player persists across levels; the level manager repositions it to
@@ -106,10 +106,9 @@ const player = createPlayer()
 scene.add(player.mesh)
 const detectiveReady = startupTasks.track('detective', player.loadVisual(assets))
 const policeReady = startupTasks.track('police', preloadPoliceVisual(assets))
-const charactersReady = Promise.all([detectiveReady, policeReady])
-// Observe early rejection while the backdrop is still being prepared. The
-// startup barrier below also awaits this same promise before showing the menu.
-charactersReady.catch(() => {})
+// Ghost Mixamo load starts after createTimeSystem() below; charactersReady
+// is assigned there so the menu waits for player, police, and ghost visuals.
+let charactersReady = Promise.all([detectiveReady, policeReady])
 
 const minimap = createMinimap({
   scene,
@@ -250,6 +249,11 @@ const timeSystem = createTimeSystem({
     if (musicSystem) musicSystem.setTimeDilation(scale)
   },
 })
+const ghostReady = startupTasks.track('ghost', timeSystem.loadGhostVisual(assets))
+charactersReady = Promise.all([detectiveReady, policeReady, ghostReady])
+// Observe early rejection while the backdrop is still being prepared. The
+// startup barrier below also awaits this same promise before showing the menu.
+charactersReady.catch(() => {})
 const respawn = createRespawnSystem({
   player,
   hud,
@@ -706,11 +710,11 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
   try {
     titleBackdrop = await startupTasks.track('backdrop', buildTitleBackdrop())
 
-    // Compile Ghost materials/lights while the loading overlay still covers
-    // the canvas — first Ghost press must not pay that shader cost in-game.
-    timeSystem.warmGhost(renderer, camera)
-
     await charactersReady
+
+    // Compile Ghost materials/lights after the Mixamo visual is attached so
+    // first Ghost press does not pay that shader cost in-game.
+    timeSystem.warmGhost(renderer, camera)
 
     // Keep the existing extra frame before revealing the title scene.
     requestAnimationFrame(() => {

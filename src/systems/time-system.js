@@ -620,6 +620,12 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
       }
     },
 
+    // Separate Mixamo load from the player so spectral materials and the
+    // AnimationMixer never share mutable state with the live character.
+    loadGhostVisual(assets) {
+      return ghost.loadVisual?.(assets) ?? Promise.resolve(null)
+    },
+
     update,
     dispose
   }
