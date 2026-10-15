@@ -12,6 +12,7 @@ import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
 import { createWreckRoutes, createPassengerRack } from './timewreck-routes.js'
+import { createWreckSpatial } from './timewreck-spatial.js'
 import { createSecurityCrossing } from './timewreck-security.js'
 import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
@@ -1053,6 +1054,7 @@ export function createTimewreckLevel({
     restoreSnapshot: (s) => { ramT = s.ramT; applyRams() }
   }))
 
+  const spatial = createWreckSpatial({ root, spans, player, obstacles: blastObstacles })
   const wreckRoutes = createWreckRoutes({ root, spans, player, timeSystem, unregisters, obstacles: blastObstacles })
 
   // ============================================================
@@ -1277,7 +1279,7 @@ export function createTimewreckLevel({
     span: spans.security, halfWidth: WRECK_WALL_X })
   const { minZ: gapMinZ, maxZ: gapMaxZ } = securityCrossing.layout
   const slabMat = securityCrossing.material
-  const slabSupports = [...cargoGangway.supports]
+  const slabSupports = [...spatial.supports, ...cargoGangway.supports]
   const gapVoids = [cargoGap, ...securityCrossing.layout.holes]
   let slabSettle = 0
   unregisters.push(timeSystem.register(securityCrossing.group, {
@@ -2417,7 +2419,7 @@ export function createTimewreckLevel({
       securityCrossing.reset()
       slabSettle = 0
       slabSupports.length = 0
-      slabSupports.push(...cargoGangway.supports, ...securityCrossing.supports)
+      slabSupports.push(...spatial.supports, ...cargoGangway.supports, ...securityCrossing.supports)
       collapseArmed = saved.collapseArmed
       collapseLive = saved.collapseLive
       collapseFallT = 0
@@ -2837,6 +2839,8 @@ export function createTimewreckLevel({
         `Teal pads are safe to observe. A horizontal green lamp means standing clearance; upright amber means wait. ${bindingLabel(settings.getBinding('slow'))} slows the racks; ${bindingLabel(settings.getBinding('freeze'))} holds their current pose.`, 5500)
       hint('vault-reassess', pp.z, spans.vault.center - 2.7,
         `Reassess the SECOND rack from this pad. Freeze holds dangerous beams too. Wait for its horizontal lamp, or watch clearance while using ${bindingLabel(settings.getBinding('duck'))} to crouch.`, 5000)
+      hint('convergence-threshold', pp.z, spans.convergence.center + 16.5,
+        `Broken threshold: ${bindingLabel(settings.getBinding('jump'))} jump the low brass edge. Pass the open right end of the trolley, then choose either aisle.`, 4500)
       hint('convergence-surges', pp.z, spans.convergence.center + 11.5,
         `Choose before the split: brass DIRECT is fast but exposed to surges. Cyan MAINTENANCE is sheltered but slower: ${bindingLabel(settings.getBinding('duck'))} crouch, ${bindingLabel(settings.getBinding('rewind'))} repair the shutter, then ${bindingLabel(settings.getBinding('freeze'))} hold it open.`,
         6000)
@@ -2857,7 +2861,7 @@ export function createTimewreckLevel({
       hint('cargo-landing', pp.z, cargoGap.minZ - 0.25,
         'Intact landing — recharge here. Watch the bulkhead ring; green means the door and overhead load are clear.', 4800)
       hint('relay-emergency-release', pp.z, releasePos.z + 2,
-        `Weight the brass platform to pull the door linkage. Summon ${bindingLabel(settings.getBinding('ghost'))} Ghost: the eight bars drain with its hold. Cross, then ${bindingLabel(settings.getBinding('interact'))} latch the far-side catch; it works even after the echo fades.`, 6500)
+        `Weight the brass platform to pull the door linkage. Summon ${bindingLabel(settings.getBinding('ghost'))} Ghost: the eight bars drain with its hold. Walk right around the cabinet, return to the centre seam, then ${bindingLabel(settings.getBinding('interact'))} latch the far-side catch; it works even after the echo fades.`, 6500)
       hint('security', pp.z, gapMaxZ + 3,
         `${bindingLabel(settings.getBinding('freeze'))} settles the broad debris decks. Enter on the left, follow brass chevrons to the right, then reach the intact recharge island. Pale outlines alone cannot support you.`, 5500)
       hint('security-island', pp.z, spans.security.center + 0.8,
@@ -2898,7 +2902,7 @@ export function createTimewreckLevel({
       securityCrossing.update(delta, frozen)
       slabSettle = securityCrossing.settle
       slabSupports.length = 0
-      slabSupports.push(...cargoGangway.supports, ...securityCrossing.supports)
+      slabSupports.push(...spatial.supports, ...cargoGangway.supports, ...securityCrossing.supports)
       // Test actual falling rather than killing every non-Freeze body in a Z
       // interval. The island is safe, and reasonable jumps remain possible.
       if (walkwayActive && pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.65) {
@@ -3021,6 +3025,7 @@ export function createTimewreckLevel({
 
     dispose() {
       disposed = true
+      spatial.dispose(slabSupports)
       wreckAudio.dispose()
       hazardAudio.dispose()
       removeVisibility()

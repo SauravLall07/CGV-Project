@@ -6,7 +6,13 @@ batch. No conversation history is required.
 
 ## Authorization and current state
 
-Latest instruction (2026-10-15): implement **N2 and N3 only**. N1 is absent from
+Latest instruction (2026-10-15): implement **N4 and N5 only**. This batch is
+implemented and automatically checked; rendered acceptance remains pending.
+Starting HEAD `95f1128`, clean working tree. N1 remains NOT STARTED. Preserve
+N2/N3 and all older completed work. N6-N9 are not authorized in this batch.
+See the N4/N5 handover and latest exact next-batch prompt at the end.
+
+Historical N2/N3 instruction (2026-10-15): implement **N2 and N3 only**. N1 is absent from
 this checkout and remains NOT STARTED; the explicit request permits these two
 encounters to proceed using the current material vocabulary, without doing N1
 or starting N4. Starting working tree: only this N0 plan was untracked. Preserve it.
@@ -280,7 +286,8 @@ clarity in both views, and prove safe spots before/after all new danger.
 
 ### N4 - Vault and Convergence destruction/traversal
 
-Status: NOT STARTED. Depends on N3; use N1's candidate/verified status honestly.
+Status: IMPLEMENTED; automated/static verification passed, rendered/human acceptance
+pending. See N4/N5 handover. N1 remains an unverified, unimplemented benchmark.
 
 **Vault:** enlarge the broken containment composition around the existing empty
 crown, with fractured plinth and a broken floor-mounted arm near -2.1 between
@@ -316,7 +323,8 @@ players should identify the route tradeoff before committing.
 
 ### N5 - Relay equipment route and Security island obstruction
 
-Status: NOT STARTED. Depends on N4. Both are short spatial additions, not new puzzles.
+Status: IMPLEMENTED; automated/static verification passed, rendered/human acceptance
+pending. See N4/N5 handover. Both are short spatial additions, not new puzzles.
 
 **Relay:** fallen operator cabinet/relay housing near -0.8..-1.7 (between pad +2
 and door -2.6), biased to one side, leaves a generous short stagger toward the
@@ -556,7 +564,9 @@ depend on chat memory or silently discard deferred checks after compaction.
 - [ ] N1 visual benchmark implementation and rendered approval.
 - [x] N2/N3 implementation and automated/static verification (see results below).
 - [ ] N2/N3 rendered, audible, human and measured performance acceptance.
-- [ ] N4-N9 implementation; do not begin without their requested scope.
+- [x] N4/N5 implementation and automated/static verification (see handover below).
+- [ ] N4/N5 rendered, human, audio and measured performance acceptance.
+- [ ] N6-N9 implementation; do not begin without their requested scope.
 - [ ] Fresh rendered/audio/human/performance acceptance, including A1-A9.
 
 N0 changes only this new Markdown file. Historical latest refinement result is
@@ -676,7 +686,7 @@ Pending acceptance and next steps:
    implemented N2/N3 footprints and safe spots. After N1, proceed to N4 only on
    its requested instruction. N4-N9 remain untouched. No publication performed.
 
-## Exact next-batch prompt
+## Historical next-batch prompt after N2/N3 (superseded by explicit N4/N5 request)
 
 ```text
 Use Game Studio. Complete N1 only from reports/level-3-expansion-plan.md.
@@ -710,4 +720,158 @@ Do not claim a visual improvement or runtime speedup from static counts alone.
 Update reports/level-3-expansion-plan.md with changed files, final placements,
 resource deltas, fresh checks, remaining acceptance and the exact N4 prompt.
 Carry A1-A9 forward. Complete N1 only, then stop with an honest handover.
+```
+
+## N4/N5 implementation and verification (2026-10-15)
+
+Starting HEAD `95f1128`, clean working tree. Read this plan and current route,
+laser, Relay, Security, landmark, player, support, collision and lifecycle source.
+Used Game Studio's Three.js and playtest workflows with the existing JavaScript
+stack. The user's explicit N4/N5 request superseded the historical N1 prompt.
+N1 remains NOT STARTED; this batch uses the existing wood/brass/teal/burgundy
+vocabulary without claiming N1 approval. N2/N3, old puzzles, Level 2, power costs,
+movement, camera settings, wave and finale parameters are preserved. No staging,
+commits, dependency changes or publication. N6-N9 were not started.
+
+Changed files:
+
+- `src/levels/timewreck-spatial.js`: L3-owned merged static compositions for four
+  carriages, eight component solids and two Convergence support rectangles.
+  Collision enable getters read actual feet/body height during player collision
+  substeps. The threshold is jumpable; its top is a real support. The maintenance
+  fascia reuses the existing low-roof rule. No shared collision changes.
+- `src/levels/timewreck.js`: construct the owner, retain its supports in initial,
+  frame and checkpoint rebuilding paths, remove owned collision/support entries
+  at teardown, and provide binding-aware jump/Relay detour hints. Existing root
+  disposal deduplicates the new GPU resources.
+- `tests/timewreck-spatial.test.js`: actual-player Vault lane/pad and Security
+  clearance checks, geometry-to-support ray checks, and owned-entry/resource
+  teardown checks, including idempotent collision cleanup and single disposal.
+- `tests/timewreck-escape.test.js`: continuous Vault-to-brake route walks the
+  containment lane, jumps the threshold, passes the trolley's open end and walks
+  the Relay detour. Added real-level threshold/checkpoint repeats at 30/60/144 FPS
+  and mixed steps, plus hold/toggle crouch release/jump-to-stand checks. Existing
+  Vault Freeze/Slow routes now use the actual clear lane instead of crossing
+  the new solid arm. Original failure assertions remain.
+- `tests/timewreck-relay.test.js`: real walking detour to seam/catch, measured
+  echo/energy margin, and sprint detour for the no-Ghost negative test. Closed-door
+  probes start beyond the cabinet to test the door itself. Cancellation, expiry,
+  depletion, shared powers, seam protection, far-side recovery and retries remain.
+
+Final placement decisions (Z relative to the named carriage centre):
+
+| Addition | Accepted bounds and integration |
+| --- | --- |
+| Vault containment | Fractured teal base X +0.825..+2.175, Z -2.35..-1.85, Y 0..0.52; broad snapped brass arm X -0.15..+2.2, Z -2.3..-1.9, Y 0.53..0.71, with wood fracture. Arm extends farther inward than the +0.8 candidate to make the lane change real. X -0.5 clears it; about 2.45 m remains to the left wall. Both rack slices (-1.2/-4.6), centre pad -2.9 and entry +0.8 remain clear. Added attached, broken overhead pieces around the existing crown at +6.4, Y above 2.5. |
+| Convergence threshold | Full-width X -2.6..+2.6, Z +13.87..+14.13, Y 0..0.24. Brass inset finishes flush with the 0.24 m support top. A second full-carriage support at Y 0 lowers feet back to intact floor after leaving the top. No floor cut/void or checkpoint change. Jump from the generous solid approach; +11 checkpoint remains after the threshold. |
+| Convergence trolley/arch | Three stepped solids: X -2.5..0 at +12.1; -2.35..-1.15 at +11.5; -2.35..-1.75 at +10.7. Each has Z half-depth 0.24 and body top 1.15 m, with brass rails/burgundy torn lining. Components create a diagonal silhouette without a large enclosing collider. X +0.65 passes the open right end, then both branch entrances remain reachable near +10. Original +11 and -3 checkpoints, direct surge +4, partition, repair shutter and rejoin are unchanged. Broken overhead arch pieces remain above 2.7 m. |
+| Maintenance beam | Brass fascia X +0.92..+2.6, Z +6.88..+7.12, underside Y 1.34 matching the existing roof. Bent teal cap and attached torn lining stay above that underside. No new collider, crouch mechanic or registration. Existing hold/toggle low-pose ownership prevents standing/jumping into it. |
+| Relay cabinet | X -2.5..+0.25, Z -1.575..-0.825, body Y 0..1.05, with wooden fascia, brass controls and burgundy panel insets. Short open lane to the right is 2.35 m wide. Walking route: pad X 0/+2 -> X +0.7 -> Z -1.95 -> X 0 -> catch -4.4. Door -2.6, spring body-protection zone, release/linkage, expiry bars and far catch remain unchanged. Attached wall-side damage stays above body height. |
+| Security locker | X -2.3..-1.3, Z -0.6..+0.6, main body Y 0..1.15, with damaged wood/brass cap and torn overhead ribs. Entire footprint lies on permanent island floor. Both 0.8 m landing/takeoff bands to island edges +/-1.4, centre checkpoint, recharge and rightward departure remain clear. No new platform/support or overhang across either hole; five decks retain their dimensions. |
+
+The walking Relay execution takes **1.95 s** from movement after summon to catch
+position (7.8 m at 4 m/s, including lateral segments), verified with actual player
+movement at 30/60/144 FPS. With the 0.05 s post-summon update it retains **>5.9 s**
+of the eight-second hold and energy falls below 63 from the post-summon ~65;
+Ghost recharge is still disabled. These are automated execution timings, not
+first-time human aiming/comprehension times. Continuous integration still reaches
+brake completion at all three frame rates without new room teleports.
+
+Resource delta, measured from the new owner's actual scene subtree:
+
+| Carriage | Meshes/geometries | Triangles | Referenced materials |
+| --- | --- | --- | --- |
+| Vault | 3 / 3 | 84 | 3 |
+| Convergence | 4 / 4 | 192 | 4 |
+| Relay | 4 / 4 | 120 | 4 |
+| Security | 3 / 3 | 120 | 3 |
+
+Combined **14 meshes, 14 merged geometries, 516 triangles, four unique materials**.
+Zero added textures, source lights, shadow casters, time registrations, particles,
+audio voices or post passes. Static assembly intermediate geometries are disposed
+after merging. Eight owned collision boxes and two static support rectangles;
+no new voids. Collision/support entries are removed on disposal; shared materials
+are freed once by the root owner. These counts and CPU lifecycle checks do not
+prove GPU memory stability, frame rate, camera readability or improved visual quality.
+
+Fresh final evidence:
+
+| Check | Result |
+| --- | --- |
+| `npm.cmd test` | PASS: 152 passed, zero failed/skipped, about 14.45 s. Includes continuous route, both existing branches and repair histories, new threshold/retries, crouch modes, Relay detour/negative sprint/seam/recovery, Security crossings/recharge/retries, L2 regressions and complete level restart/unload disposal. |
+| `node --import ./scripts/register-test-assets.mjs tests/timewreck-spatial.test.js` | Initial focused three tests passed; final four-test version, adding teardown, passes in the full suite. |
+| `node --import ./scripts/register-test-assets.mjs tests/timewreck-relay.test.js` | Initial eight tests passed; final strengthened route/margin/negative tests pass in the full suite. |
+| `npm.cmd run build` | PASS, final build about 1.4 s; existing >500 kB chunk warning remains. |
+| `node scripts/check-production.mjs` | PASS after final build: 57 files, 72.65 MiB, 56 case-sensitive local subdirectory asset references. |
+| Geometry/resource probe | PASS: measured subtree counts above; threshold top ray intersections match support height across the width. No new lights/shadows. |
+| `git diff --check`, new-file whitespace/conflict checks | PASS at handover. |
+| Browser inventory / launch | `apps: []`, `browsers: []`; attempted in-app game URL and received `Browser is not available: iab`. No rendered game session or screenshot obtained. |
+
+A sandboxed multi-file Node worker attempt failed with `spawn EPERM`; the final
+suite and Vite build ran with approved child-process access. Existing non-indexed
+geometry and headless ability-audio timer warnings remain. Intermediate failures
+were corrected: old straight-line Vault tests now use the visible lane, and the
+new threshold test allows sufficient walking after landing to reach the trolley
+opening. No movement/hazard rules were changed to satisfy tests. Ignored logs:
+`reports/expansion-n45-{escape,relay,spatial,tests,build}.log`.
+
+Implemented versus verified:
+
+- **Implemented and automatically/static checked:** N4 and N5 only, as above.
+- **Not visually verified:** containment composition, threshold/trolley and fork
+  readability, bent beam/crouch camera clearance, Relay signs/linkage/countdown/
+  interaction ray/cabinet silhouette, Security locker/deck-edge views in either
+  camera or Normal/Freeze. CPU geometry rays are not rendered screenshots.
+- **A1-A9 remain open.** No browser shader/console/network capture, native input,
+  audible balance, hardware frame/GPU/heap measurements, both-view human retries
+  or first-time comprehension evidence was obtained. No claim of speedup, visual
+  improvement or tuned difficulty. Older Batch 6/R7 acceptance stays unresolved.
+- When rendering is available, inspect both cameras through the threshold jump,
+  trolley fork choice and maintenance beam with hold/toggle crouch. Observe both
+  Vault pads/laser modes and left lane; check Relay aiming around the cabinet,
+  actual eight-bar countdown and three retries; land on Security island, circle
+  the locker, recharge and jump the unchanged departure. Capture identical
+  settings/poses and moving runs; check culling, shadow/minimap paths and resource
+  stability. No fresh camera/performance approval can be inferred from tests.
+- Next sequential implementation batch is **N6 only**, on a new explicit request.
+  The skipped N1 visual benchmark remains separate pending scope. Stop here.
+
+## Exact next-batch prompt
+
+```text
+Use Game Studio. Complete N6 only from reports/level-3-expansion-plan.md.
+
+Read the plan and relevant current Passenger, player, time, wave, checkpoint,
+guidance, support/collision and test source first. Inspect git status and preserve
+existing changes and completed work. N2/N3 and N4/N5 are implemented and
+automatically checked. N1 remains NOT STARTED; do not implement it in this batch.
+Read the latest handovers and keep implementation distinct from rendered approval.
+
+Implement the Passenger seat weave and chase integration: small static seat-back
+deflections near +7.5 and +3.5, right around the existing rack at +5.8 then back
+toward the centre before the hole at +1.4, plus side-only destruction after -3
+with a clear cab destination. Resolve bounds against current geometry first.
+Keep generous turns and visible collision; add no forced crouch/jump or moving
+hazard. Adjust additions if minimum-energy retries become unreliable. Preserve
+the existing rack/floor/wave, power/movement/energy parameters, checkpoints,
+camera/finale, Level 2 and all N2-N5 footprints and safe spots.
+
+Use existing materials, merge compatible static pieces and retain correct
+ownership/reset/disposal. Add no lights/shadows/post passes by default. Update
+the actual traversal routes to navigate the seats; do not bypass them with
+teleports or weaken assertions. Prove timed arrival and three minimum-energy
+retries at 30/60/144 FPS and mixed steps, including misalignment recovery and
+rebound controls. Record time, energy and wave clearance as well as success.
+
+Run appropriate tests, build, production packaging and geometry/resource/diff
+checks. Attempt rendered verification in both views and Normal/Freeze, checking
+warning footprint, seat ends, centre return, stasis and cab visibility. If browser
+access is unavailable, complete independently checkable work and leave rendered,
+audible, human and performance acceptance explicitly pending. Carry A1-A9 and
+older Batch 6/R7 acceptance forward without treating automation as visual proof.
+
+Update reports/level-3-expansion-plan.md with changed files, final bounds/reasons,
+resource deltas, fresh evidence, unresolved issues, implemented versus visually
+verified status and the exact N7 prompt. Complete N6 before stopping. Do not
+begin N7 or any other batch, publish, or silently complete the skipped N1.
 ```

@@ -60,6 +60,16 @@ function summon(h) {
   assert.ok(h.time.getGhost().isOccupying(h.pad, 0.56))
 }
 
+// Walk around the visible cabinet, then return to the centre seam/catch.
+// No sprint, crouch, jump, or pose shortcut while the real-time echo runs.
+function walkReleasedDoor(h, target = -4.4, run = false) {
+  const multiplier = run ? 1.7 : 1
+  h.tick(0.175 / multiplier, { right: true, run })
+  h.tick(0.9875 / multiplier, { forward: true, run })
+  h.tick(0.175 / multiplier, { left: true, run })
+  h.tick((-1.95 - target) / (4 * multiplier), { forward: true, run })
+}
+
 test('Relay: Ghost holds release while the real player walks to the catch with energy/time margin', () => {
   for (const fps of [30, 60, 144]) {
     const h = levelHarness(fps)
@@ -67,7 +77,9 @@ test('Relay: Ghost holds release while the real player walks to the catch with e
       assert.equal(leafX(h), 0.75)
       summon(h)
       assert.ok(h.time.getEnergy() >= 64 && h.time.getEnergy() <= 65)
-      h.tick(1.55, { forward: true })
+      walkReleasedDoor(h)
+      assert.ok(h.time.getGhost().getRemainingSeconds() > 5.9, 'walking detour takes under four seconds of the eight-second hold')
+      assert.ok(h.time.getEnergy() < 63, 'holding Ghost continues to drain without recharge')
       assert.ok(h.player.mesh.position.z < h.doorZ - 1, `${fps}: real player crosses`)
       assert.ok(h.player.mesh.position.y >= 0)
       const catchControl = h.interactions.get('relay-manual-catch')
@@ -94,7 +106,7 @@ test('Relay: closed door blocks walking, wall routes and jumping; catch rejects 
   try {
     const catchControl = h.interactions.get('relay-manual-catch')
     for (const x of [-2, 0, 2]) {
-      h.player.setPose(new THREE.Vector3(x, 0, h.doorZ + 1), Math.PI)
+      h.player.setPose(new THREE.Vector3(x, 0, h.doorZ + 0.5), Math.PI)
       catchControl.onInteract()
       h.tick(0.5, { forward: true, run: true, jump: true })
       assert.ok(h.player.mesh.position.z > h.doorZ, 'no shut door bypass')
@@ -155,7 +167,7 @@ test('Relay: solo sprint cannot outrun the spring door at 30/60/144 FPS', () => 
     try {
       h.player.setPose(h.pad, Math.PI)
       h.tick(0.5)
-      h.tick(1.4, { forward: true, run: true })
+      walkReleasedDoor(h, -4.4, true)
       assert.ok(h.player.mesh.position.z > h.doorZ, `${fps}: release needs an echo`)
     } finally { h.dispose() }
   }
@@ -217,7 +229,7 @@ test('Relay: level teardown unregisters the pad and a fresh restart clears durab
   let restarted
   try {
     summon(h)
-    h.tick(1.55, { forward: true })
+    walkReleasedDoor(h)
     h.interactions.get('relay-manual-catch').onInteract()
     h.level.dispose()
     h.player.setPose(h.pad, Math.PI)
@@ -246,7 +258,7 @@ test('Relay: cancellation in the seam cannot crush the player; far-side catch re
   const h = levelHarness()
   try {
     summon(h)
-    h.tick(1.15, { forward: true })
+    walkReleasedDoor(h, -2.6)
     assert.ok(Math.abs(h.player.mesh.position.z - h.doorZ) < 0.2)
     h.time.triggerGhost()
     h.tick(0.6)

@@ -82,6 +82,7 @@ test('Integration: continuous Vault-to-brake route preserves solvable checkpoint
     const recharge = () => { h.time.setMode('NORMAL'); h.tick(7); check() }
     try {
       const gates = []
+      move('x', -0.5) // visible left lane around the broken containment arm
       h.scene.traverse(n => {if(n.name === 'vault-security-gate') gates.push(n)})
       gates.sort((a,b) => b.position.z - a.position.z)
       for (const gate of gates) {
@@ -91,6 +92,10 @@ test('Integration: continuous Vault-to-brake route preserves solvable checkpoint
         recharge()
       }
       stage = 'convergence'
+      move('z', center(stage) + 15.1)
+      h.tick(0.75, { forward: true, jump: true })
+      check()
+      move('x', 0.65) // open end of the diagonal trolley
       move('z', center(stage) + 10)
       move('x', -0.6)
       move('z', center(stage) + 6.2)
@@ -130,6 +135,9 @@ test('Integration: continuous Vault-to-brake route preserves solvable checkpoint
       stage = 'relay'
       move('z', center(stage) + 2)
       recharge(); h.time.triggerGhost(); h.tick(0.05)
+      move('x', 0.7)
+      move('z', center(stage) - 1.95)
+      move('x', 0)
       move('z', center(stage) - 4.4)
       assert.ok(h.interactions.get('relay-manual-catch').isEligible())
       h.interactions.get('relay-manual-catch').onInteract()
@@ -162,6 +170,52 @@ test('Integration: continuous Vault-to-brake route preserves solvable checkpoint
   }
 })
 function pose(h, x, z, y = 0) { h.player.setPose(new THREE.Vector3(x, y, z), Math.PI) }
+
+test('N4: threshold blocks walking, permits a modest jump and leaves both fork entrances reachable', () => {
+  for (const fps of [30, 60, 144, [1/144, 1/30, 0.1, 1/60]]) {
+    const h = levelHarness('convergence', fps)
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        h.respawn.cancel(); h.respawn.respawn()
+        pose(h, 0.65, h.center + 15.2)
+        h.tick(0.5, { forward: true })
+        assert.ok(h.player.mesh.position.z >= h.center + 14.3, 'cannot auto-step the threshold')
+        h.tick(0.75, { forward: true, jump: true })
+        h.tick(0.4, { forward: true })
+        assert.ok(h.player.mesh.position.z < h.center + 11, 'open end passes trolley components')
+        assert.equal(h.player.mesh.position.y, 0, 'returns to real floor after top')
+        h.tick(0.1)
+        // At +10.5 the direct (-X) and maintenance (+X) entrances are both open.
+        const z = h.player.mesh.position.z
+        h.tick(0.3, { left: true })
+        assert.ok(h.player.mesh.position.x < -0.5)
+        h.tick(0.6, { right: true })
+        assert.ok(h.player.mesh.position.x > 1.7)
+        assert.ok(Math.abs(h.player.mesh.position.z - z) < 0.03)
+        assert.equal(h.respawn.isFailing(), false)
+      }
+    } finally { h.dispose() }
+  }
+})
+
+test('N4: maintenance beam retains crouch on release and jump-to-stand for hold and toggle settings', () => {
+  for (const mode of ['hold', 'toggle']) {
+    settings.set('crouchMode', mode)
+    const h = levelHarness('convergence')
+    try {
+      pose(h, 1.75, h.center + 8.7)
+      h.tick(0.3, { forward: true, jump: true })
+      h.tick(0.8)
+      assert.ok(h.player.mesh.position.z > h.center + 8, 'jump does not bypass low entrance')
+      h.tick(1, { forward: true, duck: true })
+      assert.ok(h.player.mesh.position.z < h.center + 7.5)
+      h.tick(0.1)
+      h.tick(0.2, { jump: true })
+      assert.equal(h.player.isCrouching(), true)
+      assert.equal(h.player.mesh.position.y, 0)
+    } finally { h.dispose(); settings.resetAll() }
+  }
+})
 
 test('R1 visibility: actual L3 panels cull only ray-occluded bounds, restore each pass and release hooks on unload', () => {
   let totalHidden = 0
@@ -343,7 +397,7 @@ test('Vault: both clearance windows can be observed, held and crossed with real 
       h.scene.traverse(n => { if (n.name === 'vault-security-gate') gates.push(n) })
       gates.sort((a, b) => b.position.z - a.position.z)
       for (const gate of gates) {
-        pose(h, 0, gate.position.z + 1.4)
+        pose(h, -0.5, gate.position.z + 1.4)
         let wait = 0
         while (gate.getObjectByName('vault-clearance-signal').material.color.getHex() !== 0x42dfad && wait < 8) {
           h.tick(1 / fps); wait += 1 / fps
@@ -400,7 +454,7 @@ test('Vault: Freeze preserves a dangerous rack pose and its upright warning', ()
     const gates = []
     h.scene.traverse(n => { if (n.name === 'vault-security-gate') gates.push(n) })
     const gate = gates.sort((a, b) => b.position.z - a.position.z)[0]
-    pose(h, 0, gate.position.z + 1.4)
+    pose(h, -0.5, gate.position.z + 1.4)
     h.tick(1 / 60)
     const signal = gate.getObjectByName('vault-clearance-signal')
     assert.equal(signal.material.color.getHex(), 0xe49a30)
@@ -781,7 +835,7 @@ test('Vault alternate: Slow holds each observed clear window long enough for a s
       h.scene.traverse(n=>{if(n.name==='vault-security-gate')gates.push(n)})
       gates.sort((a,b)=>b.position.z-a.position.z)
       for(const gate of gates) {
-        pose(h,0,gate.position.z+1.4)
+        pose(h,-0.5,gate.position.z+1.4)
         let waited=0
         while(gate.getObjectByName('vault-clearance-signal').material.color.getHex()!==0x42dfad && waited<8) {
           h.tick(1/fps); waited+=1/fps
