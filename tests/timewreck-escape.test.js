@@ -341,6 +341,8 @@ test('Vault: both clearance windows can be observed, held and crossed with real 
           h.tick(1 / fps); wait += 1 / fps
         }
         assert.ok(wait < 8)
+        const signal = gate.getObjectByName('vault-clearance-signal')
+        assert.ok(signal.scale.x > signal.scale.y, 'clearance is also a horizontal shape')
         h.time.triggerFreeze(); h.tick(0.5, { forward: true, run: true })
         assert.ok(h.player.mesh.position.z < gate.position.z - 1)
         assert.equal(h.respawn.isFailing(), false)
@@ -348,6 +350,60 @@ test('Vault: both clearance windows can be observed, held and crossed with real 
       }
     } finally { h.dispose() }
   }
+})
+
+test('R4: fork instructions arrive before entry and switching prompts use rebound powers', () => {
+  const saved = structuredClone(settings.getBindings())
+  let h
+  try {
+    for (const [action, code] of [['duck', 'KeyU'], ['rewind', 'KeyO'], ['freeze', 'KeyP']]) {
+      settings.setBinding(action, 0, code); settings.setBinding(action, 1, null)
+    }
+    h = levelHarness('convergence')
+    pose(h, 0, h.center + 11.4)
+    h.tick(1 / 60)
+    assert.ok(h.player.mesh.position.z > h.center + 9, 'still before the partition')
+    const forkHint = h.messages.find(m => m.includes('Choose before the split'))
+    assert.ok(forkHint)
+    for (const token of ['fast', 'exposed', 'sheltered', 'slower', 'U', 'O', 'P']) assert.ok(forkHint.includes(token), token)
+    for (const name of ['fork-direct-sign', 'fork-maintenance-sign']) {
+      const sign = h.scene.getObjectByName(name)
+      assert.ok(sign)
+      assert.equal(sign.userData.noCameraCollision, true)
+    }
+    h.dispose(); h = levelHarness('mechanical')
+    pose(h, 1.75, h.center + 2.7)
+    h.tick(1 / 60)
+    const recessHint = h.messages.find(m => m.startsWith('Safe switching recess:'))
+    assert.ok(recessHint?.includes('O restores') && recessHint.includes('P while it is open'))
+    const count = h.messages.filter(m => m.startsWith('Safe switching recess:')).length
+    h.tick(0.5)
+    assert.equal(h.messages.filter(m => m.startsWith('Safe switching recess:')).length, count, 'prompt does not repeat each frame')
+    assert.equal(h.respawn.isFailing(), false)
+  } finally {
+    h?.dispose()
+    for (const [action, codes] of Object.entries(saved)) codes.forEach((code, slot) => settings.setBinding(action, slot, code))
+  }
+})
+
+test('Vault: Freeze preserves a dangerous rack pose and its upright warning', () => {
+  const h = levelHarness('vault')
+  try {
+    const gates = []
+    h.scene.traverse(n => { if (n.name === 'vault-security-gate') gates.push(n) })
+    const gate = gates.sort((a, b) => b.position.z - a.position.z)[0]
+    pose(h, 0, gate.position.z + 1.4)
+    h.tick(1 / 60)
+    const signal = gate.getObjectByName('vault-clearance-signal')
+    assert.equal(signal.material.color.getHex(), 0xe49a30)
+    assert.ok(signal.scale.y > signal.scale.x)
+    h.time.triggerFreeze()
+    h.tick(0.1)
+    assert.ok(signal.scale.y > signal.scale.x)
+    pose(h, 0, gate.position.z)
+    h.tick(1 / 60)
+    assert.equal(h.respawn.isFailing(), true, 'holding time must not make an intersecting beam safe')
+  } finally { h.dispose() }
 })
 
 test('Passenger: unheld and wall-side floors fall; depleted retries reset wave, rack and energy three times', () => {

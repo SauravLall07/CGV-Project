@@ -335,7 +335,12 @@ export function createTimewreckLevel({
     for (const gate of vaultGates) {
       const lift = (0.5 + 0.5 * Math.sin(vaultGateT * gate.speed + gate.phase)) * VAULT_BEAM_LIFT
       if (gate.laserMat.customUniforms) gate.laserMat.customUniforms.uTime.value += dt
-      gate.signal.material.color.setHex(VAULT_BEAM_BASES[0] + lift - VAULT_HIT_HALF_Y > 1.85 ? 0x42dfad : 0xe49a30)
+      const standingClear = VAULT_BEAM_BASES[0] + lift - VAULT_HIT_HALF_Y > VAULT_BODY_HEIGHT
+      gate.signal.material.color.setHex(standingClear ? 0x42dfad : 0xe49a30)
+      // Same lamp/mesh: horizontal bar = standing clearance, upright = wait.
+      // Shape remains readable when colour is hard to distinguish; Freeze
+      // preserves the actual clearance pose rather than disabling damage.
+      gate.signal.scale.set(standingClear ? 1.7 : 0.55, standingClear ? 0.55 : 1.7, 1)
       const openAmt = lift / VAULT_BEAM_LIFT
       gate.wash.intensity = 0.7 + (1 - openAmt) * 2.4
       vaultPostMat.emissiveIntensity = 0.18 + (1 - openAmt) * 0.35
@@ -2775,12 +2780,18 @@ export function createTimewreckLevel({
       }
 
       hint('vault-lasers', pp.z, spans.vault.center + 0.6,
-        `Watch BOTH rack lamps from the teal pads: green means standing clearance. Slow with ${bindingLabel(settings.getBinding('slow'))} or Freeze a clear rack with ${bindingLabel(settings.getBinding('freeze'))}; observe again between them.`)
-      hint('convergence-surges', pp.z, electricalSurges[0].z + 4.5,
-        `One fork: brass direct aisle has a short surge window. Cyan maintenance passage needs ${bindingLabel(settings.getBinding('duck'))} crouching; Rewind its shutter, then Freeze to pass.`,
-        4800)
+        `Teal pads are safe to observe. A horizontal green lamp means standing clearance; upright amber means wait. ${bindingLabel(settings.getBinding('slow'))} slows the racks; ${bindingLabel(settings.getBinding('freeze'))} holds their current pose.`, 5500)
+      hint('vault-reassess', pp.z, spans.vault.center - 2.7,
+        `Reassess the SECOND rack from this pad. Freeze holds dangerous beams too. Wait for its horizontal lamp, or watch clearance while using ${bindingLabel(settings.getBinding('duck'))} to crouch.`, 5000)
+      hint('convergence-surges', pp.z, spans.convergence.center + 11.5,
+        `Choose before the split: brass DIRECT is fast but exposed to surges. Cyan MAINTENANCE is sheltered but slower: ${bindingLabel(settings.getBinding('duck'))} crouch, ${bindingLabel(settings.getBinding('rewind'))} repair the shutter, then ${bindingLabel(settings.getBinding('freeze'))} hold it open.`,
+        6000)
       hint('mechanical', pp.z, spans.mechanical.maxZ,
-        `Slow the first luggage bank with ${bindingLabel(settings.getBinding('slow'))}. Stop on the teal recess, recharge, then Rewind the shutter and Freeze it open. The next bank is beyond it.`, 6500)
+        `${bindingLabel(settings.getBinding('slow'))} Slow the first luggage bank. Stop inside the teal brackets on solid floor; release time control to recharge. Then ${bindingLabel(settings.getBinding('rewind'))} repair the shutter and ${bindingLabel(settings.getBinding('freeze'))} hold it open. Another bank follows.`, 6500)
+      if (Math.abs(pp.x - 1.75) < 0.55 && Math.abs(pp.z - wreckRoutes.recessZ) < 0.8) {
+        hint('mechanical-recess', pp.z, Infinity,
+          `Safe switching recess: release time control to recharge. ${bindingLabel(settings.getBinding('rewind'))} restores the shutter; switch to ${bindingLabel(settings.getBinding('freeze'))} while it is open.`, 4500)
+      }
       hint('cargo', pp.z, spans.cargo.maxZ,
         'Cargo — the emergency gangway is buckling. The pale frame marks its earlier position.', 4400)
       hint('cargo-gangway', pp.z, cargoGap.maxZ + 1.3,

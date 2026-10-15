@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { addMechanicalReference } from './mechanical-reference.js'
+import { refineWreckLandmark } from './wreck-landmarks.js'
 import {
   carpetMaterial,
   metalMaterial,
@@ -3490,7 +3491,10 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     else if (cfg.key === 'vault' && !damaged) dressVintageVault(group, half, shared, fx)
     else if (cfg.key === 'vault') parts.vault = dressVault(group, half, shared, damaged, fx)
 
-    if (damaged) addWreckage(group, half, shared, fx, cfg.key)
+    if (damaged) {
+      addWreckage(group, half, shared, fx, cfg.key)
+      refineWreckLandmark(group, cfg.key, half, WALL_X)
+    }
 
     cursor += cfg.length
   })

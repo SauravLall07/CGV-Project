@@ -15,10 +15,32 @@ repository search. R0 changes only this plan and ignored diagnostic logs.
 
 The user subsequently explicitly authorized R1 and then R2 in separate requests.
 Both independently checkable implementations are complete; rendered acceptance
-and profiling remain pending (see results below). R3 has not started and requires
-the next user request.
+and profiling remain pending (see results below). The latest request authorized
+R3 and R4 only; both implementations and automated/static checks are now complete.
+Their rendered/human/performance acceptance remains pending. R5 has not started.
 Do not repeat completed upgrade mechanics or treat historical test counts as fresh verification.
 Implement only the requested batch, validate, update this handover, then stop.
+
+## Current R3/R4 scope (2026-10-15, recorded before editing)
+
+The latest request mentions R2, which is already implemented, and explicitly
+authorizes R3 and R4 only, stopping before R5. Preserve all existing working-tree
+changes. Use Mechanical as an unrendered candidate reference, not approved art.
+
+R3 sub-batches: (a) Vault containment and Convergence split-junction framing;
+(b) Cargo folded header and Relay operator-station framing; (c) Security torn
+overhead ribs and Passenger outward-torn bridge framing. Replace the six existing
+generic violet rupture strips with merged, carriage-specific structural landmarks,
+retaining mesh/light counts and keeping new geometry clear of traversable space.
+Existing gangway, linkage, island and suspended decks remain the dominant playable
+forms; no R5 encounter, alignment, occupancy or timing work is authorized.
+
+R4: improve pre-entry route signs, pair Vault clearance colour with a changing
+shape, and refine binding-aware observation/switching hints. Preserve every
+gameplay value, collision/support shape, timing, checkpoint and alternate solution.
+Run geometry/budget comparisons and gameplay regressions. Browser inventory is
+again empty; rendered, human-readability and performance approval remain pending,
+including every R1 and R2 follow-up below. Do not begin R5.
 
 ## Intended experience
 
@@ -213,8 +235,9 @@ L2, stable budget against R1. Rendered review required for visual approval.
 
 ### R3 - Extend carriage-specific visual composition
 
-Status: NOT STARTED. Depends on R2's established visual direction. Split into
-smaller carriage batches if needed; record explicit sub-batches before expanding.
+Status: IMPLEMENTED; automated/static checks passed. Rendered composition, camera
+review and runtime budget acceptance PENDING. R2 remains a candidate reference.
+The three explicit sub-batches are recorded above; results are below.
 
 Vault: ruptured containment around empty Core mount. Convergence: split junction,
 readable branch signs. Cargo: folded gangway/loop bulkhead dominate. Relay:
@@ -231,8 +254,9 @@ budget comparisons at the same poses, Level 2 unaffected.
 
 ### R4 - Vault, Convergence and Mechanical encounter refinement
 
-Status: NOT STARTED. Depends on R3 cues and browser-observed player behaviour for
-difficulty/timing changes. Can inspect/fix demonstrated correctness independently.
+Status: IMPLEMENTED for cues/instructions and automated correctness; first-time
+human readability and rendered acceptance PENDING. Difficulty/timing changes were
+not made: no browser-observed player evidence exists and parameters are preserved.
 
 Vault: assess two phased racks from safe observation positions, reassess between
 them; freezing a dangerous pose stays dangerous; retain Slow/crouch alternatives.
@@ -313,8 +337,10 @@ credits identities and trailer are separate deferred deliverables unless request
 - [ ] R1 rendered visibility acceptance and measured rendering-cost comparisons.
 - [x] R2 Mechanical visual-reference implementation and automated/static checks.
 - [ ] R2 rendered first/third-person/Freeze review and runtime budget comparison.
-- [ ] R3 remaining carriage visuals.
-- [ ] R4 Vault/Convergence/Mechanical encounters.
+- [x] R3 carriage-specific landmark implementation and static/regression checks.
+- [ ] R3 rendered distinctiveness, both cameras/Freeze and runtime budget review.
+- [x] R4 Vault/Convergence/Mechanical cues/instructions and correctness checks.
+- [ ] R4 first-time human comprehension, rendered/retry review and difficulty acceptance.
 - [ ] R5 Cargo/Relay/Security encounters.
 - [ ] R6 Passenger/finale/audio.
 - [ ] R7 production integration and final verification.
@@ -495,29 +521,129 @@ Pending acceptance and manual next checks:
 6. Compare L2's Mechanical in browser and complete the production route before
    claiming visual parity/no regression. Preserve the plan's full-run requirements.
 
-Next action: R3 only after a user request. Its broad visual propagation should use
+Historical R2 next action (subsequently authorized and implemented below): R3's visual propagation should use
 this implementation as a candidate reference, retaining the explicit rendered
 review deferral; do not represent an unseen style as visually approved. If browser
 access becomes available, review Mechanical before extending the treatment.
 
+## R3/R4 results (2026-10-15)
+
+R2 was already implemented when this request arrived. Followed the explicit
+R3/R4-only instruction, preserving existing visibility/reference work and all
+Level 2 and gameplay parameters. HEAD was `145db29` at final review; no commits,
+resets or staging operations were performed by this pass. R5 has not started.
+
+Changed files and decisions:
+
+- `src/environment/wreck-landmarks.js` and damaged-only integration in
+  `carriages.js`: replace the six existing generic violet rupture strips with
+  single merged brass batches. Vault has an empty broken armillary containment
+  crown at L2's Core-display Z; Convergence has a split junction header; Cargo a
+  folded luggage fascia by the wall; Relay a broken operator-station surround;
+  Security sheared ribs framing the intact island; Passenger a saloon arch torn
+  outward at the forward end. Existing real gangway, platform/linkage, broad
+  decks/island and bridge remain the playable landmarks. Existing warm fixtures,
+  wood, teal, luggage and benches are retained. No new motion system: each batch
+  follows its actual carriage; Vault retains existing fracture material ownership.
+- Replacement disposes the old strip geometry, reuses its material, and retains
+  one mesh per carriage. All new bounds are above 2.55 m, with no camera collision
+  or shadows. These are overhead remains, not floor/support/repair targets; no
+  occluder metadata was added. Mechanical's R2 geometry is unchanged.
+- `timewreck-routes.js`: two static approach-facing signs above the actual fork
+  identify DIRECT / FAST / EXPOSED and LOW / SHELTERED. They reuse the procedural
+  sign factory and brass/cyan vocabulary, have no lights/shadows/camera collision,
+  and introduce no route, collision, shutter or support changes.
+- `timewreck.js`: existing Vault lamp becomes a horizontal green bar for standing
+  clearance and an upright amber bar otherwise. The predicate is unchanged; Freeze
+  holds the real dangerous pose too. Hints explain observation and reassessment
+  between racks, retaining Slow/crouch alternatives. The fork hint now arrives at
+  centre + 11.5 m, before the partition starts at +9 m, and explains the tradeoff
+  using rebound crouch/Rewind/Freeze keys. Mechanical's entry hint describes solid
+  floor within the brackets and release/recharge/repair/hold sequence. A one-shot
+  prompt appears only inside the existing safe recess. Text display durations are
+  adjusted; encounter windows, costs, speeds, cooldowns and checkpoint logic are not.
+- `tests/timewreck-escape.test.js`: extend the existing clearance crossing test to
+  check the non-colour signal; add dangerous-pose Freeze collision coverage and
+  pre-entry/rebound-key/recess prompt integration. Existing multi-rate traversal,
+  both fork routes, waiting/retained repair history, early interception, retries,
+  depletion, visibility and teardown coverage remains passing. No R5 cue or puzzle
+  logic was changed.
+
+Static shell budget vs the captured pre-edit builders:
+
+| L3 shell | Triangle delta | Mesh/light/shadow/material/geometry count delta |
+| --- | --- | --- |
+| Vault | +228 | 0 |
+| Convergence | +24 | 0 |
+| Cargo | +24 | 0 |
+| Relay | +24 | 0 |
+| Security | +36 | 0 |
+| Passenger | +36 | 0 |
+| Mechanical / cab | 0 | 0 |
+
+Total landmark increase: 372 triangles. Level 2 counts match the pre-edit capture
+for every carriage. Separately, the level-owned signs add two meshes, four
+triangles, two materials and two 1024 x 128 procedural canvas sources (map and
+emissive-map clones use each source). No new lights, shadows, full-screen effects,
+assets, downloads or dependencies. Lamp shape changes add no resources. These
+are structural counts, not measured draw calls, GPU memory, cost parity or speedup.
+
+Fresh final validation:
+
+| Command/check | Result |
+| --- | --- |
+| `npm.cmd test` | PASS: 87 passed, 0 failed, 0 skipped; about 30.1 s |
+| `npm.cmd run build` | PASS; existing >500 kB chunk warning |
+| `node scripts/check-production.mjs` | PASS: 53 files, 72.62 MiB, 52 case-sensitive subdirectory asset references |
+| Before/after actual builder inventory and geometry probe | PASS: all six landmarks above 2.55 m, no new shadows/camera collision; L2 counts unchanged; L3 shell resource counts unchanged |
+| `git diff --check` | PASS |
+| Browser surface inventory | `apps: []`, `browsers: []`; no rendered review available |
+
+The initial sandbox suite attempt hit Node worker `spawn EPERM`; final tests and
+Vite build passed with approved child-process access. Ignored logs:
+`reports/refinement-r34-{tests,build,production,static-before,geometry}.log`.
+Existing geometry/headless-audio warnings persist. No pixels or native camera
+input were produced by the Node geometry checks.
+
+Pending acceptance and exact next steps:
+
+1. **R1 remains pending in full:** both-camera doorway/open-side/hole/boundary
+   review, main/shadow/minimap/exterior/finale correctness, culling CPU/GPU
+   distributions/draw calls/resources/heap, controlled 12-vs-8 light comparison,
+   exterior/transparency/post attribution, and full production run. No verified
+   rendering speedup is claimed. R2's Mechanical rendered/budget review also remains.
+2. Review Mechanical first, then capture the six R3 carriages from real first- and
+   third-person gameplay in Normal/Freeze at identical settings/poses. Confirm
+   landmarks distinguish sections, do not overlap wreck dressing or obscure hazards,
+   and remain comfortable under shake, culling, pooled lighting and fracture FX.
+3. Check the signs' text size, lighting, approach angles and camera clearance in
+   WebGL. Ask first-time players to explain the fork tradeoff, horizontal/upright
+   rack lamps, danger retained during Freeze, and Mechanical switching sequence.
+   Check checkpoints/retries in both views. Automated routes do not establish human
+   comprehension or improved difficulty; no such approval is claimed.
+4. Compare resources/frame distributions at R0/R1 poses and during a production
+   full run/restarts. Static counts do not establish shader compilation, FPS or
+   resource stability. No timing changes are justified before that evidence.
+5. Stop here. R5 implementation requires the next request; R6/R7 remain untouched.
+
 ## Exact next-batch prompt
 
 ```text
-Use Game Studio. Complete R3 of the Level 3 refinement pass described in
+Use Game Studio. Complete R5 of the Level 3 refinement pass described in
 reports/level-3-refinement-plan.md.
 
 Read the plan and relevant current source first. Preserve existing user changes,
 completed upgrades, Level 2 behaviour, and current gameplay/ability parameters.
-Extend the carriage-specific visual composition described in R3, using Mechanical
-as a candidate reference. Keep R1 and R2's pending rendered/performance checks
-explicit; review Mechanical first if browser access becomes available. Preserve
-distinct landmarks, safe-floor readability and current encounter timing. Do not
-add an unmeasured lighting/effect budget. Split R3 into explicit carriage
-sub-batches if needed and record the exact scope before editing.
+Refine Cargo, Relay and Security as described in R5. Keep R1's pending rendered
+visibility/performance checks and R2-R4's rendered/human acceptance explicit.
+Review Mechanical and the new cues first if browser access becomes available.
+Preserve actual floor cuts/supports, alternate solutions, retained repair history,
+Ghost/retry safety, energy parameters and current encounter timing. Require human
+playtest evidence before claiming difficulty improved or changing windows.
 
 Run appropriate regression/build/packaging checks and rendered verification where
 available. If browser access is unavailable, continue independently checkable work
 and record precisely which visual/performance acceptance criteria remain pending.
 Update the plan with changes, decisions, fresh validation and exact next steps.
-Complete R3 only; do not begin R4. Finish with a concise handover and next prompt.
+Complete R5 only; do not begin R6. Finish with a concise handover and next prompt.
 ```

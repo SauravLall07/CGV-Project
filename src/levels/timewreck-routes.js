@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { switchingRecessGeometry } from '../environment/mechanical-reference.js'
+import { signMaterial } from '../environment/textures.js'
 
 // One-shot failures keep their intact baseline while the player observes.
 export function createMaintenanceShutter({ root, timeSystem, unregisters, obstacles, player, z, minX, maxX, name }) {
@@ -64,6 +65,20 @@ export function createWreckRoutes({ root, spans, player, timeSystem, unregisters
   const low = { minX: 0.92, maxX: 2.6, minZ: c, maxZ: c + 8, enabled: true }
   obstacles.push(low)
   for (const x of [-0.5, 1.75]) box(0.5, 0.015, 1, x, 0.012, near + 1, x < 0 ? brass : cyan, 'fork-route-marker')
+  // Read from the approach (+Z), above the real partition/low passage. Static
+  // signs explain the tradeoff without inventing a second route mechanic.
+  for (const [x, width, text, foreground] of [
+    [-1.0, 2.9, 'DIRECT / FAST / EXPOSED', 0xd9b45e],
+    [1.75, 1.6, 'LOW / SHELTERED', 0x8bd9e8]
+  ]) {
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.32), signMaterial({
+      text, foreground, background: 0x1b2927, emissiveIntensity: 0.2, width: 1024
+    }))
+    sign.name = x < 0 ? 'fork-direct-sign' : 'fork-maintenance-sign'
+    sign.position.set(x, 2.98, near + 0.2)
+    sign.userData.noCameraCollision = true
+    group.add(sign)
+  }
   const recessZ = spans.mechanical.center + 2.7
   const recessMaterial = new THREE.MeshStandardMaterial({
     color: 0x39797c, emissive: 0x69bdcd, emissiveIntensity: 0.3, roughness: 0.72
