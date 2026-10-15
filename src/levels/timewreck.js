@@ -10,6 +10,7 @@ import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
+import { createSecurityCrossing } from './timewreck-security.js'
 import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
 import {
   createCarriageShake,
@@ -1226,117 +1227,17 @@ export function createTimewreckLevel({
   // ============================================================
   // SECURITY — FROZEN CAR: suspended wreckage becomes a walkway
   // ============================================================
-  const gapMinZ = spans.security.center - 3
-  const gapMaxZ = spans.security.center + 3
-
-  // Deep purple well suggests the temporal void under the gap (visual only).
-  const voidBox = new THREE.Mesh(
-    new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.3, 3.4, gapMaxZ - gapMinZ),
-    new THREE.MeshStandardMaterial({
-      color: 0x1a0a28, roughness: 1, metalness: 0,
-      emissive: 0x4c1d95, emissiveIntensity: 0.35
-    })
-  )
-  voidBox.position.set(0, -1.68, (gapMinZ + gapMaxZ) / 2)
-  voidBox.userData.noCameraCollision = true
-  root.add(voidBox)
-
-  // Torn floor lips — wood + cyan fracture (same footprint / placement).
-  const lipWood = new THREE.MeshStandardMaterial({
-    color: 0x5a3a22, roughness: 0.62, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.08
-  })
-  const lipCyan = new THREE.MeshStandardMaterial({
-    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
-  })
-  const lipBrass = new THREE.MeshStandardMaterial({
-    color: 0xc4a052, metalness: 0.88, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.12
-  })
-  for (const z of [gapMinZ, gapMaxZ]) {
-    const lip = new THREE.Group()
-    const board = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.2, 0.12, 0.35), lipWood)
-    lip.add(board)
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.15, 0.03, 0.05), lipCyan)
-    edge.position.set(0, 0.06, (z === gapMinZ ? 1 : -1) * 0.14)
-    lip.add(edge)
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.18, 0.02, 0.06), lipBrass)
-    trim.position.set(0, 0.04, 0)
-    lip.add(trim)
-    lip.position.set(0, 0.02, z)
-    lip.rotation.x = (z === gapMinZ ? 1 : -1) * 0.18
-    lip.traverse((o) => { o.userData.noCameraCollision = true })
-    root.add(lip)
-  }
-
-  // Chrono field kept under wood dress so FREEZE intensity feedback stays wired.
-  const slabMat = createChronoFieldMaterial({
-    baseColor: 0x4a3424, glowColor: 0x38bdf8, opacity: 0.92, doubleSided: true
-  })
-  const SLAB_HALF_X = 1.15 / 2
-  const SLAB_HALF_Y = 0.16 / 2
-  const SLAB_HALF_Z = 1.05 / 2
-  const slabWood = new THREE.MeshStandardMaterial({
-    color: 0x5a3a22, roughness: 0.58, metalness: 0.06, emissive: 0x1a1008, emissiveIntensity: 0.1
-  })
-  const slabBrass = new THREE.MeshStandardMaterial({
-    color: 0xc4a052, metalness: 0.88, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.12
-  })
-  const slabCyan = new THREE.MeshStandardMaterial({
-    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.7, roughness: 0.35
-  })
-  const slabRug = new THREE.MeshStandardMaterial({
-    color: 0x6a1824, roughness: 0.92, metalness: 0, emissive: 0x1a0608, emissiveIntensity: 0.08
-  })
-  const slabs = []
+  const securityCrossing = createSecurityCrossing({ root, carriage: carriages.security,
+    span: spans.security, halfWidth: WRECK_WALL_X })
+  const { minZ: gapMinZ, maxZ: gapMaxZ } = securityCrossing.layout
+  const slabMat = securityCrossing.material
   const slabSupports = [...cargoGangway.supports]
-  const gapVoids = [cargoGap, { minX: -INTERIOR_HALF_WIDTH, maxX: INTERIOR_HALF_WIDTH, minZ: gapMinZ, maxZ: gapMaxZ }]
-  for (let i = 0; i < 5; i++) {
-    const slab = new THREE.Group()
-    slab.name = `security-freeze-tile-${i}`
-    // Core deck — exact 1.15 × 0.16 × 1.05 collision footprint (chrono feedback).
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.05), slabMat)
-    deck.castShadow = true
-    slab.add(deck)
-    // Wood plank strips on top (decorative — follow the tile).
-    for (const x of [-0.42, -0.14, 0.14, 0.42]) {
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.03, 0.98), slabWood)
-      plank.position.set(x, 0.09, 0)
-      slab.add(plank)
-    }
-    // Brass edging + cyan fracture rim.
-    const brassFrame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.04, 1.1), slabBrass)
-    brassFrame.position.set(0, -0.08, 0)
-    slab.add(brassFrame)
-    for (const [w, d, x, z] of [
-      [1.18, 0.04, 0, -0.52], [1.18, 0.04, 0, 0.52],
-      [0.04, 1.02, -0.58, 0], [0.04, 1.02, 0.58, 0]
-    ]) {
-      const rim = new THREE.Mesh(new THREE.BoxGeometry(w, 0.025, d), slabCyan)
-      rim.position.set(x, 0.1, z)
-      slab.add(rim)
-    }
-    const joist = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 1.0), slabBrass)
-    joist.position.set(i % 2 ? -0.38 : 0.38, -0.12, 0)
-    slab.add(joist)
-    // Occasional small rug accent (reference detail — every other tile).
-    if (i % 2 === 0) {
-      const rug = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.02, 0.45), slabRug)
-      rug.position.set(0, 0.11, 0)
-      slab.add(rug)
-    }
-    slab.userData.seed = i * 1.7
-    slab.traverse((o) => { o.userData.noCameraCollision = true })
-    slab.position.set(0, 0.06, gapMinZ + 0.6 + i * 1.2)
-    slab.userData.restZ = slab.position.z
-    root.add(slab)
-    slabs.push(slab)
-  }
-
-  let slabDriftT = 0
+  const gapVoids = [cargoGap, ...securityCrossing.layout.holes]
   let slabSettle = 0
-  unregisters.push(timeSystem.register(slabs[0], {
-    onUpdate(scaledDelta) { slabDriftT += scaledDelta },
-    getSnapshot: () => ({ slabDriftT }),
-    restoreSnapshot: (s) => { slabDriftT = s.slabDriftT }
+  unregisters.push(timeSystem.register(securityCrossing.group, {
+    onUpdate: dt => securityCrossing.stepClock(dt),
+    getSnapshot: securityCrossing.snapshot,
+    restoreSnapshot: securityCrossing.restore
   }))
 
   const walkwayGlow = new THREE.PointLight(0x7dd3fc, 0, 9, 2)
@@ -2365,8 +2266,10 @@ export function createTimewreckLevel({
       applyLoop()
       cargoGangway.state.reset()
       cargoGangway.apply()
-      slabDriftT = 0
+      securityCrossing.reset()
       slabSettle = 0
+      slabSupports.length = 0
+      slabSupports.push(...cargoGangway.supports, ...securityCrossing.supports)
       collapseArmed = saved.collapseArmed
       collapseLive = saved.collapseLive
       collapseFallT = 0
@@ -2435,7 +2338,7 @@ export function createTimewreckLevel({
     }
   }
 
-  const initialZ = ['cargo', 'relay'].includes(startCarriage)
+  const initialZ = ['cargo', 'relay', 'security'].includes(startCarriage)
     ? spans[startCarriage].maxZ - 1.5 : spans.vault.center + 3
   return {
     objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
@@ -2739,6 +2642,20 @@ export function createTimewreckLevel({
         shakeY: root.position.y
       })
 
+      if (!player.isAirborne() && Math.abs(pp.y) < 0.25) {
+        const islandZ = spans.security.center
+        const onIsland = pp.z > islandZ - 1 && pp.z < islandZ + 1
+        const exitZ = gapMinZ - 0.8
+        const atExit = pp.z < exitZ && pp.z > spans.security.minZ
+        const safeZ = onIsland ? islandZ : atExit ? exitZ : null
+        if (safeZ !== null && safeZ < lastCheckpointZ) {
+          lastCheckpointZ = safeZ
+          respawn.setCheckpoint(new THREE.Vector3(0, 0, safeZ), Math.PI, {
+            restore: captureCheckpointRestore(safeZ)
+          })
+        }
+      }
+
       // --- Rolling checkpoints (descending z) -----------------------------
       for (const z of checkpointZs) {
         if (pp.z < z && z < lastCheckpointZ) {
@@ -2764,8 +2681,10 @@ export function createTimewreckLevel({
         'Intact landing — recharge here. Watch the bulkhead ring; green means the door and overhead load are clear.', 4800)
       hint('relay-emergency-release', pp.z, releasePos.z + 2,
         `Stand on the brass platform, summon ${bindingLabel(settings.getBinding('ghost'))} Ghost, then cross and use ${bindingLabel(settings.getBinding('interact'))} on the far-side catch. Echo holds for 8 seconds.`, 6500)
-      hint('security', pp.z, spans.security.maxZ,
-        'Security car — the floor is gone. [2]/F FREEZE the suspended wreckage into a walkway.')
+      hint('security', pp.z, gapMaxZ + 3,
+        `Use ${bindingLabel(settings.getBinding('freeze'))} to settle the marked debris. Steer left then right to the intact recharge island.`, 5500)
+      hint('security-island', pp.z, spans.security.center + 0.8,
+        `Safe island: release Freeze and recharge. The next path is to the right; use ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across its short break.`, 6000)
       hint('passenger', pp.z, spans.passenger.maxZ,
         'The train is coming apart behind you — do not stop.')
 
@@ -2799,35 +2718,14 @@ export function createTimewreckLevel({
 
       // --- FROZEN CAR: suspended wreckage as a walkway ---------------------
       const frozen = mode === 'FREEZE'
+      securityCrossing.update(delta, frozen)
+      slabSettle = securityCrossing.settle
       slabSupports.length = 0
-      slabSupports.push(...cargoGangway.supports)
-      if (walkwayActive) {
-        slabSettle += ((frozen ? 1 : 0) - slabSettle) * Math.min(1, delta * 7)
-        for (const slab of slabs) {
-          const seed = slab.userData.seed
-          const driftY = 0.8 + Math.sin(slabDriftT * 1.2 + seed) * 0.32
-          const driftX = Math.sin(slabDriftT * 0.8 + seed) * 0.5
-          slab.position.y = THREE.MathUtils.lerp(driftY, 0.06, slabSettle)
-          slab.position.x = THREE.MathUtils.lerp(driftX, 0, slabSettle)
-          slab.rotation.z = THREE.MathUtils.lerp(Math.sin(slabDriftT + seed) * 0.5, 0, slabSettle)
-          slab.rotation.x = THREE.MathUtils.lerp(Math.cos(slabDriftT * 0.9 + seed) * 0.4, 0, slabSettle)
-        }
-        if (frozen) {
-          for (const slab of slabs) {
-            slabSupports.push({
-              minX: slab.position.x - SLAB_HALF_X - 0.3,
-              maxX: slab.position.x + SLAB_HALF_X + 0.3,
-              minZ: slab.position.z - SLAB_HALF_Z - 0.12,
-              maxZ: slab.position.z + SLAB_HALF_Z + 0.12,
-              y: slab.position.y + SLAB_HALF_Y
-            })
-          }
-        }
-        if (pp.z > gapMinZ && pp.z < gapMaxZ && !frozen) {
-          failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
-        } else if (pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.3) {
-          failSoft('The floor is gone — FREEZE the wreckage into a walkway!', 'fell')
-        }
+      slabSupports.push(...cargoGangway.supports, ...securityCrossing.supports)
+      // Test actual falling rather than killing every non-Freeze body in a Z
+      // interval. The island is safe, and reasonable jumps remain possible.
+      if (walkwayActive && pp.z > gapMinZ && pp.z < gapMaxZ && pp.y < -0.65) {
+        failSoft('Freeze the marked debris; recharge on the intact island before the second crossing.', 'fell')
       }
 
       // --- PASSENGER collapse: Freeze stepping-stones across the hole ------

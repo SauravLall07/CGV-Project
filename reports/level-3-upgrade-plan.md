@@ -11,6 +11,7 @@ Slow/Freeze/Rewind share one mode over registered objects; combinations must be 
 ## Source map and baseline
 
 - src/levels/timewreck.js: existing L3 factory, hazard registration, rolling checkpoints, supports/voids, breakup and finale. Player travels toward decreasing Z.
+- src/levels/timewreck-security.js: Batch 3 two-stage layout, floor cuts, deterministic debris and exact supports.
 - src/levels/timewreck-cargo.js: Batch 1 Cargo simulation and gangway builder (added during this batch).
 - src/levels/moving-heist.js: L2 one-shot Rewind machinery, selective recordWhen history, tracked collision, Ghost platforms and roof combinations.
 - src/systems/time-system.js: registration snapshots, recordWhen, shared modes, energy and checkpoint reset; baseline snapshot is captured on registration and checkpoint reset.
@@ -66,7 +67,10 @@ Play the entire production build without shortcuts, then repeat deaths/restarts/
 - [x] Implement Batch 2 Relay Ghost release, far-side permanent catch and safe checkpoints.
 - [x] Verify Batch 2 simulation/integration and restart lifecycle; 48/48 suite tests pass and production build passes.
 - [ ] Batch 2 rendered browser QA remains unavailable; do not treat automated checks as visual or hands-on approval.
-- [ ] Batches 3-6 remain pending and are not authorized by this request.
+- [x] Implement Batch 3 Security two-stage crossing, full-width recharge island and grounded island/exit checkpoints.
+- [x] Verify Batch 3 automated traversal, energy, falls, retries and rebuild: 55/55 suite tests pass; production build passes.
+- [ ] Batch 3 rendered QA in first/third person remains unavailable.
+- [ ] Batches 4-6 remain pending and are not authorized by this request.
 
 ## Decisions
 
@@ -81,7 +85,7 @@ Play the entire production build without shortcuts, then repeat deaths/restarts/
 
 ## Verification, known issues and next step
 
-Batch 1 implementation is complete. Batch 2 implementation and automated verification are complete, with rendered browser QA still pending. Batches 3-6 remain untouched. The Batch 2 starting working tree was clean; prior completed work was preserved.
+Batch 1 implementation is complete. Batch 2 implementation and automated verification are complete, with rendered browser QA still pending. Batch 3 implementation and automated verification are complete; its rendered QA remains pending. Batches 4-6 remain untouched. The Batch 2 starting working tree was clean; prior completed work was preserved.
 
 Batch 1 verification on 2026-10-15:
 
@@ -127,4 +131,41 @@ Local Relay playtest when a browser is available:
 3. Cancel Ghost before crossing and wait for expiry on another attempt. Confirm the door blocks safely, safe floor permits recharge, and a retry restores the entry setup. Cancel while inside the seam and confirm no crushing or trapping.
 4. After latching, deliberately die and confirm the far-side spawn and open door. Press R and confirm a fresh unlatched puzzle with no echo. Repeat in both views and with rebound controls; check the catch prompt and brass linkage visually.
 
-Remaining issues: browser and visual checks above are outstanding for Batches 1 and 2. Full production-route integration and tuning belong to Batch 6. Next implementation batch, only on a new request: Batch 3, Security two-stage crossing. Stop after this Batch 2 handover.
+Batch 2 handover: browser and visual checks above remain outstanding. Batch 3 was subsequently authorized and is recorded below.
+
+
+## Batch 3 results (2026-10-15)
+
+Implemented only Security's two-stage crossing. Previous Cargo/Relay work is preserved; shared carriage builders, player physics, power costs and Level 3's disabled strain are unchanged. The starting working tree was clean.
+
+Layout and behavior:
+
+- Travel remains toward decreasing Z. Security has two actual full-width floor openings: center +1.4 to +6.8 and center -6.8 to -1.4. The intact 2.8 m island spans the entire 5.2 m shell width. Approach/exit lips have brass/cyan markings wholly on solid floor.
+- Cut only the L3 Security floor and split its decorative floor strips at both holes; removed the old solid purple well surface that visually covered the opening. The shared L2 environment remains unchanged.
+- First leg uses three broad wood/brass decks, 1.6 m wide, with overlapping ends and lateral offsets from -1.0 to +0.8 m. This requires steering from left to right. Second leg begins to the right and has a 2.2 m break before a 1.6 x 1.4 m landing. One sprint jump clears it with margin; simply running across fails at 30/60/144 FPS.
+- Retained the existing Freeze-to-settle vocabulary: deterministic suspended debris levels onto its marked outlines over 0.2 s. Only fully level decks support the player. Supports match the rendered wood top (0.12 m) and deck footprint exactly, without the old invisible padding. The level's existing cosmetic train shake remains separate from gameplay coordinates.
+- The initial shorter break could be skipped through the player's existing falling/landing behavior; the final 2.2 m break was verified with the actual player rather than estimated from speed alone. A complete tested first leg consumes about 59 energy; the second consumes about 69, including settling and extra landing time. Tests require over 38 and 28 energy remaining respectively, from 100. Release Freeze on the island and wait up to 4.5 s to fully recharge.
+- Added explicit static floor tops at approach, island and exit to lower feet from the raised debris onto the visible floor. This fixes the player's inherited last-support height locally without changing global movement.
+- Removed the old instant failure merely for being in Security without Freeze. Failure now follows a real fall below -0.65 m, preserving legitimate jumps and the safe island. Binding-aware hints explain steering, recharge and sprint+jump.
+- Existing entry checkpoint remains before both holes. Added island and exit checkpoints only after the actual player is grounded at floor/deck height in those safe areas. Island retries spawn at its centre in NORMAL time with at least the existing 50-energy recovery floor; players can recharge safely before repeating leg two.
+- Checkpoint restore immediately resets drift, settling and support lists before the time system rebuilds history. Full level teardown disposes crossing geometry and unregisters its timeline. A new run rebuilds the initial entry setup.
+- Added development-only `?start=level3-security`, using the same restart routing as Cargo/Relay. Normal production progression is unchanged.
+
+Verification:
+
+- `npm.cmd test`: **55 passed, zero failures**, including seven new Security integration tests and all Cargo/Relay tests. Ran with approved Node worker-process access.
+- Successful real-player first leg, island recharge and sprint-jump second leg at 30/60/144 FPS. Covered energy depletion while crossing and on the island; normal-time and wall-side falls; three entry and three island retries; recovery followed by another successful crossing; restart disposal and fresh temporal registration.
+- Raycasts verify both floor holes across the shell, missing decorative strips over the holes, solid island floor, and rendered deck heights against exact support footprints. Cosmetic root transforms are accounted for in deck raycasts.
+- `npm.cmd run build`: passed. Existing >500 kB bundle warning remains; existing environment geometry warnings remain in headless tests.
+- `git diff --check`: passed.
+- Browser inventory was empty, and opening the in-app browser returned `Browser is not available: iab`. Screenshots, first/third-person playtests, runtime shader compilation, camera clearance, rebound controls and hands-on difficulty remain **unverified**. Automated results do not certify either view.
+
+Manual checks when a browser is available:
+
+1. Run `npm run dev`, open `http://127.0.0.1:5173/?start=level3-security`, and select NEW GAME.
+2. Observe the first gap from the intact lip. Freeze, allow the decks to settle, steer left then right across the overlapping decks, and stop on the marked island.
+3. Release Freeze and recharge. Align to the right-hand second deck, Freeze again, then sprint+jump across the short break to the broad landing and exit.
+4. Fall before the island and repeat from the entry checkpoint. Fall after reaching the island and repeat from its centre. Deliberately deplete energy on the island and on a crossing; confirm safe recharge and recovery.
+5. Press R to verify a fresh entry start with drifting debris and no duplicated geometry. Repeat traversal/falls in both first and third person and with rebound controls; inspect floor visibility, outlines, jump readability and camera clearance.
+
+Remaining issues: rendered and hands-on verification remains outstanding for Batches 1-3 because no browser is connected. Full production-route testing/performance tuning remains Batch 6. Next implementation batch, only on a new request: Batch 4, Mechanical combination and Convergence route choice. Stop after this Batch 3 handover.
