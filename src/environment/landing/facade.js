@@ -341,6 +341,12 @@ export function buildFacade(parent, materials, stats) {
     rails.push(box(2.6, 0.06, 0.06, FACADE_X - 1.7, 1.05, z))
     rails.push(box(0.06, 0.85, 0.06, FACADE_X - 0.5, 0.55, z))
     rails.push(box(0.06, 0.55, 0.06, FACADE_X - 2.9, 0.4, z))
+    // Give the lantern a proper iron upright tied into the handrail.
+    // Its top meets the lantern cage; the lower section reaches the stair.
+    const lampX = FACADE_X - 1.2
+    rails.push(box(0.12, 1.73, 0.12, lampX, 1.29, z))
+    rails.push(box(0.20, 0.09, 0.20, lampX, 2.12, z))
+    rails.push(box(0.22, 0.12, 0.22, lampX, 0.48, z))
   }
   addMesh(parent, mergeParts(rails), materials.iron, { name: 'landing-step-rails' }, stats)
 
@@ -405,6 +411,19 @@ function facadeColliders(canopyW) {
     maxZ: Z_MAX + 0.3
   }]
   // The rendered steps are traversable ground, not an impassable wall.
+  // Match the two thin handrails along the stair edges with horizontal
+  // blockers. The player uses X/Z collision, so each rail needs one continuous
+  // footprint (including the gap between its posts), not just post colliders.
+  // Keep the middle of the stairs completely unobstructed.
+  for (const side of [-1, 1]) {
+    const railZ = CENTER_Z + side * (canopyW / 2 + 0.15)
+    boxes.push({
+      minX: FACADE_X - 3.03,
+      maxX: FACADE_X - 0.37,
+      minZ: railZ - 0.09,
+      maxZ: railZ + 0.09
+    })
+  }
   for (const side of [-1, 1]) {
     const z = CENTER_Z + side * (canopyW / 2 - 0.2)
     boxes.push({
