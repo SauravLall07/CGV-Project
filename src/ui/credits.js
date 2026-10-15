@@ -139,6 +139,9 @@ function buildRollContent() {
 
   // --- PLACEHOLDER: team credits ---
   // Replace the lines below with names and roles before shipping.
+  // Deferred at the user's request (2026-10-15): keep this placeholder until
+  // the team supplies exact display names and contribution roles. Trailer and
+  // hosted-game URLs also await confirmation; do not infer them from Git authors.
   addBlock(roll, [
     label('Cast & Crew'),
     line('[ Placeholder: add team names and roles here ]', { italic: true, dim: true })

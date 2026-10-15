@@ -189,3 +189,16 @@ test('Cargo integration: gap falls and repeated checkpoint resets restore usable
     assert.ok(h.level.supports.some((s) => s.minZ > h.gap.minZ && s.maxZ < h.gap.maxZ && s.maxX > s.minX))
   } finally { h.dispose() }
 })
+
+test('Cargo alternate: early Freeze preserves intact gangway for an actual sprint crossing', () => {
+  const h = levelHarness()
+  try {
+    h.time.triggerFreeze()
+    h.tick(1.5, {forward:true,run:true})
+    assert.ok(h.player.mesh.position.z<h.gap.minZ)
+    assert.ok(h.player.mesh.position.z>h.center+2.2,'stops on landing before bulkhead')
+    assert.ok(h.player.mesh.position.y>=0)
+    assert.equal(h.respawn.isFailing(),false)
+    assert.ok(h.time.getEnergy()>55)
+  } finally {h.dispose()}
+})

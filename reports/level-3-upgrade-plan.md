@@ -191,7 +191,7 @@ Batch 5:
 - The pursuing wave now starts before the Passenger obstacles, at entry -1.8 m, with a 12 m lead. Speed remains 6.2 m/s against the real 6.8 sprint; it was not increased. Freeze pauses the wave, registered hazards/physics and exterior/environment motion while the player retains movement and view control. Global stasis is energy-limited by the unchanged 28/s Freeze drain (at most about 3.57 seconds from 100 energy per continuous use).
 - Passenger retries return to safe entry floor, reset the rack warning/floor/fail-burst, restore wave lead and the captured ability availability, and recover at least the shared 50-energy floor. They clear queued hints and reconstruct histories. The depleted checkpoint intentionally keeps only Freeze available.
 - Added broken bridge decks/rails ahead, separated by a visible missing span, and an exterior teal/brass locomotive silhouette in front of the existing cab. Pulling the brake ends player input ownership; the level owns a fixed 4.8-second exterior camera reveal, lever pull, deceleration, warm exit and dawn transition. Both outdoor scenery systems actually decelerate to zero over 2.5 seconds. Cosmetic rigid debris decelerates too. The locomotive stops before the broken edge.
-- The reveal has no separate skip control; it advances automatically after 4.8 seconds through the existing level manager. Existing restart/quit lifecycle remains the recovery path, with no new persistent cinematic state. Player-view snap restores first-person body visibility after an exterior reveal. Camera composition and UI recovery require browser verification.
+- Original Batch 5 reveal advanced automatically after 4.8 seconds without a separate skip control; the follow-up below adds one. Existing restart/quit lifecycle remains the recovery path, with no new persistent cinematic state. Player-view snap restores first-person body visibility after an exterior reveal. Camera composition and UI recovery require browser verification.
 
 Verification:
 
@@ -211,3 +211,40 @@ Local manual checks still required:
 5. Verify the global freeze is visible outside, player camera/input remain available until the brake, the bridge gap and locomotive read clearly in the exterior shot, scenery settles, and completion happens once. Check pause/restart/quit during the reveal and first-person visibility after recovery.
 
 Remaining issues: rendered/hands-on QA is outstanding for all upgraded batches due to unavailable browser access. Bridge shot composition, roof/camera clearance, alternate abilities, rebindings and human chase fairness need that pass. The full production-route run, performance/resource checks and wider difficulty tuning remain Batch 6. Stop here; do not begin Batch 6 without a new request.
+
+
+## Pre-Batch-6 verification follow-up (2026-10-15)
+
+User requested completing feasible outstanding checks before Batch 6 and deferring names/roles/trailer/hosted URLs. This follow-up does not certify a production playthrough or start difficulty/performance tuning.
+
+Completed:
+
+- Left the requested source note next to the team placeholder in `src/ui/credits.js`. Exact team names/roles and trailer/hosted URLs remain deferred. No identities were inferred and no external completion was claimed.
+- Added a dedicated native **Skip finale** button during the brake reveal, supporting pointer and standard focused-button keyboard activation independently of disabled gameplay bindings. The automatic 4.8-second completion remains. Skip and automatic completion share one guarded transition. Hiding, checkpoint recovery and teardown clear callbacks/focus; stale callbacks cannot finish a restarted or unloaded level. No camera/player source files were changed in this follow-up.
+- Added tests using the real keyboard/settings stores for rebound movement, run, crouch, jump, Freeze, interact and view actions; removal of old bindings; rebinding while a key is held; blur; disabled-input clearing; and suppression of Ctrl+R as a restart action. Interaction aiming and native browser keyboard handling remain unverified.
+- Added actual player/time-system alternate traversal tests: early Freeze of Cargo's intact gangway, early Freeze of Mechanical's shutter, and Slow crossing both observed Vault windows. Mechanical/Vault alternatives run at 30/60/144 FPS. Existing suites retain all five batches' main solutions, energy depletion, repeated checkpoint restores and rebuild checks.
+- Added finale tests for single skip/natural completion, checkpoint recovery, real level-manager restart/quit during the reveal, cancellation of a pending restart by quit, and cleanup of the retained outgoing scene after completion. Pause tests check the real input-state resolver's precedence: pause overrides cinematic state, and resume retains cinematic ownership. Actual Escape/pointer-lock/menu ordering still needs a browser check.
+- Added camera calculation checks in both modes at 30/60/144 FPS: low-roof clearance against representative geometry, jumping eye height, exterior reveal placement, and first-person visibility after snap/recovery. These tests do not render pixels and cannot approve camera composition or readability.
+- Added `scripts/check-production.mjs`. After `npm run build`, run `node scripts/check-production.mjs`. It inventories the build and checks hashed asset references over local HTTP from a subdirectory with exact filename casing. It does not publish anything or simulate browser gameplay.
+
+Final validation:
+
+| Check | Result |
+| --- | --- |
+| `npm.cmd test` | **73 passed, 0 failed** (nine added checks beyond the prior 64) |
+| `npm.cmd run build` | **Passed**; existing >500 kB chunk warning remains |
+| `node scripts/check-production.mjs` | **Passed**: 53 files, 72.62 MiB on disk, 52 asset references reachable under a local subdirectory |
+| `git diff --check` | **Passed** |
+| Browser inventory | No connected apps/browsers returned |
+
+The prior Windows Computer Use attempt ended because its access guard could not confirm Chrome's current URL; it did not produce gameplay evidence. This follow-up's browser-surface inventory is still empty. Local packaging checks are not evidence of a remote deployment. Build size is not runtime memory, and simulated frame rates are not measured FPS.
+
+Still required before claiming all five batches verified:
+
+- One actual production run from Level 1 through victory with no shortcuts.
+- Screenshots and hands-on first/third-person checks of every upgrade, especially the crouch passage, Security jump, Passenger warning/crossing and bridge shot.
+- Browser input checks with rebound controls, alternate solutions, depletion/repeated deaths, and pause/resume/restart/quit/skip during the finale.
+- Measured FPS, frame time, renderer resources and memory over actual play and repeated transitions; difficulty tuning based on that play.
+- Team credits and trailer/deployment links remain deferred by the user. No trailer or hosted-game completion has been confirmed.
+
+Batch 6 remains pending. These automated checks narrow its verification work but do not replace the production browser run or performance/difficulty pass.

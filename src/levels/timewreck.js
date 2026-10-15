@@ -2132,6 +2132,8 @@ export function createTimewreckLevel({
   let depleted = false
   let waveZ = 0
   let braking = false
+  let brakeComplete = false
+  let disposed = false
   let brakeT = 0
 
   const bridge = new THREE.Group()
@@ -2210,7 +2212,7 @@ export function createTimewreckLevel({
   unregisters.push(interaction.register(brake, {
     prompt: 'Pull the emergency brake',
     onInteract: () => {
-      if (braking || !depleted || Math.abs(player.mesh.position.z - brake.position.z) > 2.5) return
+      if (disposed || braking || brakeComplete || !depleted || Math.abs(player.mesh.position.z - brake.position.z) > 2.5) return
       braking = true
       timeSystem.setMode('NORMAL')
       timeSystem.resetGhost()
@@ -2220,8 +2222,19 @@ export function createTimewreckLevel({
       interaction.flashPrompt('The Chrono Express grinds to a halt…', 3000)
       hud.setObjective('The train stops on the bridge. You made it.')
       exitPath.visible = true
+      hud.showCinematicSkip?.(finishBraking)
     }
   }))
+
+  function finishBraking() {
+    if (disposed || !braking || brakeComplete) return
+    brakeComplete = true
+    braking = false
+    hud.hideCinematicSkip?.()
+    root.rotation.z = 0
+    root.position.set(0, 0, 0)
+    advance()
+  }
 
   // ============================================================
   // Particles: rising embers and falling sparks through the whole wreck
@@ -2369,6 +2382,8 @@ export function createTimewreckLevel({
       fractureMat.customUniforms.uOpacity.value = 0
       failCooldown = 0
       braking = false
+      brakeComplete = false
+      hud.hideCinematicSkip?.()
       brakeT = 0
       exitPath.visible = false
       exitLeft.rotation.y = 0
@@ -2692,11 +2707,7 @@ export function createTimewreckLevel({
         scene.fog.far = 40 + dawn * 70
 
         if (brakeT > 4.8) {
-          braking = false
-          root.rotation.z = 0
-          root.position.y = 0
-          root.position.x = 0
-          advance()
+          finishBraking()
         }
         return
       }
@@ -2930,6 +2941,8 @@ export function createTimewreckLevel({
     },
 
     dispose() {
+      disposed = true
+      hud.hideCinematicSkip?.()
       player.mesh.userData.tightCrouchCamera = false
       player.mesh.userData.wreckLowCeiling = false
       timeSystem.resetGhost()

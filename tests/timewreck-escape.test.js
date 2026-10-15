@@ -1,9 +1,13 @@
-﻿import test from 'node:test'
+import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { createTimeSystem } from '../src/systems/time-system.js'
 import { createPlayer } from '../src/entities/player.js'
 import { createTimewreckLevel } from '../src/levels/timewreck.js'
+import { createLevelManager } from '../src/core/level-manager.js'
+import { createKeyboardState } from '../src/input/keyboard-state.js'
+import { settings } from '../src/core/settings.js'
+import { resolveInputState } from '../src/core/input-state.js'
 import { createRespawnSystem } from '../src/systems/respawn.js'
 
 import { securityCrossingLayout } from '../src/levels/timewreck-security.js'
@@ -14,7 +18,8 @@ function levelHarness(start = 'mechanical', fps = 60) {
   const scene = new THREE.Scene()
   const player = createPlayer()
   const messages = []
-  const hud = new Proxy({ showToast: (message) => messages.push(message) }, {
+  let skipFinale = null
+  const hud = new Proxy({ showToast: (message) => messages.push(message), showCinematicSkip: cb => { skipFinale = cb }, hideCinematicSkip: () => { skipFinale = null } }, {
     get: (target, key) => target[key] ?? (() => {})
   })
   const time = createTimeSystem({ scene, player, hud })
@@ -41,7 +46,7 @@ function levelHarness(start = 'mechanical', fps = 60) {
     }
   }
   const dispose = () => { respawn.dispose(); level.dispose(); time.dispose() }
-  return { get advanced() { return advanced }, scene, player, time, respawn, level, center, layout, interactions, tick, dispose, messages }
+  return { hud, get skipFinale() { return skipFinale }, get advanced() { return advanced }, scene, player, time, respawn, level, center, layout, interactions, tick, dispose, messages }
 }
 function pose(h, x, z, y = 0) { h.player.setPose(new THREE.Vector3(x, y, z), Math.PI) }
 function repair(h, name) {
@@ -268,4 +273,168 @@ test('Passenger: rendered full-width hole and flat caps match exact support surf
       assert.ok(Math.abs(support.maxZ-support.minZ-cap.geometry.parameters.depth)<0.0001)
     }
   } finally { h.dispose() }
+})
+
+function startFinale(h) {
+  h.tick(0.1, { forward: true, run: true })
+  const brake = h.scene.getObjectByName('emergency-brake')
+  pose(h, 0, brake.position.z + 1)
+  h.interactions.get('emergency-brake').onInteract()
+  assert.equal(h.level.isCinematic, true)
+  assert.equal(typeof h.skipFinale, 'function')
+}
+
+test('Finale: native skip completes once; natural completion and checkpoint recovery clear stale callbacks', () => {
+  for (const finish of ['skip', 'automatic', 'checkpoint']) {
+    const h = levelHarness('passenger')
+    try {
+      startFinale(h)
+      const skip = h.skipFinale
+      if (finish === 'skip') skip()
+      else if (finish === 'automatic') h.tick(4.9)
+      else { h.respawn.cancel(); h.respawn.respawn() }
+      assert.equal(h.skipFinale, null)
+      assert.equal(h.level.isCinematic, false)
+      skip(); skip()
+      assert.equal(h.advanced, finish === 'checkpoint' ? 0 : 1)
+      h.interactions.get('emergency-brake').onInteract()
+      assert.equal(h.advanced, finish === 'checkpoint' ? 0 : 1)
+    } finally { h.dispose() }
+  }
+})
+
+test('Finale: real level manager restart/quit cancels reveal and stale completion, including pending transitions', () => {
+  for (const action of ['restart', 'quit', 'restart-then-quit', 'complete-then-quit']) {
+    const h = levelHarness('passenger')
+    const oldRAF = globalThis.requestAnimationFrame
+    const frames = []
+    globalThis.requestAnimationFrame = callback => frames.push(callback)
+    let completeEntries = 0
+    const manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud,
+      timeSystem: h.time, respawn: h.respawn, camera: {snap(){}},
+      loadingScreen: {show(){},hide(){}}, interaction: {
+        register: (o, opts) => { h.interactions.set(o.name, opts); return () => h.interactions.delete(o.name) },
+        registerBlocker: () => () => {}, setEnabled(){}, flashPrompt(){}
+      },
+      levels: [
+        {state:'Timewreck',create: ctx => createTimewreckLevel({...ctx,startCarriage:'passenger'})},
+        {state:'Complete',keepPrevious:true,create: () => {completeEntries++; return {dispose(){}}}}
+      ]
+    })
+    function flush() {
+      let count = 0
+      while (frames.length) { assert.ok(++count < 12); frames.shift()() }
+    }
+    try {
+      manager.adopt('Timewreck', h.level)
+      // Adopt the real level to test teardown while the reveal owns input.
+      startFinale(h)
+      const staleSkip = h.skipFinale
+      if (action === 'restart') { manager.restart(); flush() }
+      else if (action === 'quit') manager.unload()
+      else if (action === 'restart-then-quit') { manager.restart(); manager.unload(); flush() }
+      else { manager.advance(); manager.unload(); flush() }
+      staleSkip()
+      manager.update(10)
+      assert.equal(completeEntries, action === 'complete-then-quit' ? 1 : 0)
+      assert.equal(manager.isCinematic(), false)
+      assert.equal(h.skipFinale, null)
+      if (action === 'restart') {
+        assert.equal(manager.getState(), 'Timewreck')
+        assert.ok(h.player.mesh.position.z > h.center + 8)
+        assert.equal(h.time.getEnergy(), 100)
+        assert.equal(h.time.getAbilityAvailability().REWIND, true)
+        assert.ok(h.scene.getObjectByName('convergence-route-fork'))
+      } else {
+        assert.equal(manager.getState(), null)
+        assert.equal(h.scene.getObjectByName('convergence-route-fork'), undefined)
+        assert.equal(h.interactions.has('emergency-brake'), false)
+      }
+    } finally {
+      manager.dispose(); h.respawn.dispose(); h.time.dispose()
+      globalThis.requestAnimationFrame = oldRAF
+    }
+  }
+})
+
+test('Rebound keys: real keyboard map drives Freeze/movement, rejects old bindings and clears held keys across menus', () => {
+  const h = levelHarness('passenger')
+  const target = new EventTarget()
+  globalThis.window = target
+  const keyboard = createKeyboardState()
+  let viewChanges = 0, interacts = 0
+  const key = (type, code, extra = {}) => {
+    const event = new Event(type, {cancelable:true})
+    Object.assign(event, {code,repeat:false,...extra}); target.dispatchEvent(event)
+  }
+  keyboard.onAction('freeze', () => h.time.triggerFreeze())
+  keyboard.onAction('toggleView', () => viewChanges++)
+  keyboard.onAction('interact', () => interacts++)
+  try {
+    for (const [action,code] of [['freeze','KeyP'],['forward','KeyI'],['run','KeyO'],['duck','KeyU'],['jump','KeyJ'],['interact','KeyK'],['toggleView','KeyL']]) {
+      settings.setBinding(action,0,code); settings.setBinding(action,1,null)
+    }
+    key('keydown','KeyF'); assert.equal(h.time.getMode(),'NORMAL')
+    key('keydown','KeyP'); assert.equal(h.time.getMode(),'FREEZE')
+    key('keydown','KeyI'); key('keydown','KeyO'); key('keydown','KeyU'); key('keydown','KeyJ')
+    assert.equal(keyboard.state.forward,true); assert.equal(keyboard.state.run,true)
+    assert.equal(keyboard.state.duck,true); assert.equal(keyboard.state.jump,true)
+    assert.equal(keyboard.consumePress('jump'),true); assert.equal(keyboard.consumePress('jump'),false)
+    key('keydown','KeyL'); key('keydown','KeyK')
+    assert.equal(viewChanges,1); assert.equal(interacts,1)
+    keyboard.setEnabled(false)
+    for (const action of ['forward','run','duck','jump']) assert.equal(keyboard.state[action],false)
+    key('keydown','KeyK'); assert.equal(interacts,1)
+    keyboard.setEnabled(true)
+    key('keydown','KeyI'); settings.setBinding('forward',0,'KeyY')
+    assert.equal(keyboard.state.forward,false)
+    key('keydown','KeyI'); assert.equal(keyboard.state.forward,false)
+    key('keydown','KeyY'); assert.equal(keyboard.state.forward,true)
+    target.dispatchEvent(new Event('blur')); assert.equal(keyboard.state.forward,false)
+    key('keydown','KeyR',{ctrlKey:true}); assert.equal(keyboard.consumePress('restart'),false)
+  } finally { keyboard.dispose(); settings.resetAll(); h.dispose() }
+})
+
+test('Finale: pause has priority over cinematic input; resuming retains cinematic ownership', () => {
+  const state = {gameStarted:true,cinematic:true}
+  assert.equal(resolveInputState(state),'CINEMATIC')
+  assert.equal(resolveInputState({...state,paused:true}),'PAUSED')
+  assert.equal(resolveInputState({...state,transitioning:true}),'TRANSITION')
+  assert.equal(resolveInputState({...state,gameStarted:false}),'TITLE')
+})
+
+test('Alternate solution: intercept Mechanical shutter with early Freeze and cross without a repair', () => {
+  for (const fps of [30,60,144]) {
+    const h = levelHarness('mechanical',fps)
+    try {
+      pose(h,0,h.center+3)
+      h.time.triggerFreeze(); h.tick(1.05,{forward:true,run:true})
+      assert.ok(h.player.mesh.position.z<h.center-2)
+      assert.equal(h.respawn.isFailing(),false)
+      assert.ok(h.time.getEnergy()>65)
+    } finally { h.dispose() }
+  }
+})
+
+test('Vault alternate: Slow holds each observed clear window long enough for a sprint crossing', () => {
+  for (const fps of [30,60,144]) {
+    const h=levelHarness('vault',fps)
+    try {
+      const gates=[]
+      h.scene.traverse(n=>{if(n.name==='vault-security-gate')gates.push(n)})
+      gates.sort((a,b)=>b.position.z-a.position.z)
+      for(const gate of gates) {
+        pose(h,0,gate.position.z+1.4)
+        let waited=0
+        while(gate.getObjectByName('vault-clearance-signal').material.color.getHex()!==0x42dfad && waited<8) {
+          h.tick(1/fps); waited+=1/fps
+        }
+        assert.ok(waited<8)
+        h.time.triggerSlow();h.tick(0.5,{forward:true,run:true})
+        assert.ok(h.player.mesh.position.z<gate.position.z-1)
+        assert.equal(h.respawn.isFailing(),false)
+        h.time.setMode('NORMAL');h.tick(1)
+      }
+    } finally {h.dispose()}
+  }
 })
