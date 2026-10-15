@@ -339,7 +339,9 @@ async function loadTemplate(assets) {
       console.warn('[police] turn clip failed to load (unused for now)', error)
       return null
     }),
-    assets.loadModel(FILES.torch.href).catch((error) => {
+    // This GLB has no extensionsUsed/Required; preserve optional Draco support
+    // in the loader without fetching its module for this uncompressed prop.
+    assets.loadModel(FILES.torch.href, { draco: false }).catch((error) => {
       console.warn('[police] torch GLTF failed to load', error)
       return null
     })

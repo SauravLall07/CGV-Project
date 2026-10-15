@@ -6,13 +6,11 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 // feeding GLTFLoader and FBXLoader, with Draco decompression available on
 // demand, plus progress callbacks the loading screen subscribes to.
 //
-// DRACOLoader is imported lazily on the first model load, not at module top:
-// it pulls in a ~1.5 MB decoder, and importing it eagerly makes Vite emit
-// that decoder up front even while no model uses it. Lazy-importing keeps it
-// in its own async chunk. DRACOLoader's built-in decoder path (a
-// `new URL(..., import.meta.url)` that Vite fingerprints and rewrites) is
-// left as-is: it resolves relative to the bundle, so it is deploy-safe from
-// a subdirectory (matches vite base: './') with no external dependency.
+// DRACOLoader is wired lazily for callers that may need compression support.
+// Its JS stays in an async chunk; known uncompressed callers can skip wiring.
+// Decoder scripts/WASM are still emitted via the loader's built-in new URL
+// references, which Vite rewrites for the relative deployment base. Wiring
+// alone does not fetch those decoder payloads; decoding/preload does that.
 
 export function createAssetLoader() {
   const manager = new THREE.LoadingManager()
@@ -55,8 +53,10 @@ export function createAssetLoader() {
     return () => set.delete(fn)
   }
 
-  async function loadModel(url) {
-    await ensureDraco()
+  // Known uncompressed assets can skip optional decoder-module wiring. Default
+  // behavior retains Draco support for existing/future callers.
+  async function loadModel(url, { draco: useDraco = true } = {}) {
+    if (useDraco) await ensureDraco()
     return new Promise((resolve, reject) => {
       gltf.load(url, resolve, undefined, reject)
     })

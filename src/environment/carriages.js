@@ -1823,15 +1823,24 @@ function addHandrail(g, half, shared) {
 
 // Hanging lanterns down the centreline: brass canopy, rod, glass and cap.
 function addLanterns(g, half, shared, fx, glassMat, spacing = 4) {
+  // Geometry stays immutable and belongs to this carriage's fixture set.
+  // Keep separate meshes/transforms so visibility and raycasts are unchanged.
+  let geometries = null
   for (let z = -half + 2.5; z <= half - 2; z += spacing) {
+    geometries ??= {
+      rod: new THREE.CylinderGeometry(0.012, 0.012, 0.35, 6),
+      cap: new THREE.CylinderGeometry(0.06, 0.16, 0.08, 8),
+      glass: new THREE.CylinderGeometry(0.13, 0.1, 0.26, 8),
+      base: new THREE.CylinderGeometry(0.11, 0.07, 0.05, 8)
+    }
     const lantern = new THREE.Group()
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.35, 6), shared.brass)
+    const rod = new THREE.Mesh(geometries.rod, shared.brass)
     rod.position.y = -0.18
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.16, 0.08, 8), shared.brass)
+    const cap = new THREE.Mesh(geometries.cap, shared.brass)
     cap.position.y = -0.38
-    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.26, 8), glassMat)
+    const glass = new THREE.Mesh(geometries.glass, glassMat)
     glass.position.y = -0.55
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.07, 0.05, 8), shared.brass)
+    const base = new THREE.Mesh(geometries.base, shared.brass)
     base.position.y = -0.7
     lantern.add(rod, cap, glass, base)
     lantern.position.set(0, CARRIAGE_CEILING_Y, z)
@@ -1844,11 +1853,22 @@ function addLanterns(g, half, shared, fx, glassMat, spacing = 4) {
 }
 
 // Wall sconce: brass back plate with a small shaded lamp.
+// A weak carriage key prevents sharing disposed geometry with another level
+// or retaining an old level. disposeObject deduplicates these at teardown.
+const sconceGeometries = new WeakMap()
 function addSconce(g, s, z, shared, glassMat, y = 1.95) {
+  let geometries = sconceGeometries.get(g)
+  if (!geometries) {
+    geometries = {
+      plate: new THREE.BoxGeometry(0.03, 0.22, 0.12),
+      shade: new THREE.CylinderGeometry(0.06, 0.09, 0.16, 8)
+    }
+    sconceGeometries.set(g, geometries)
+  }
   const x = s * WALL_X
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.22, 0.12), shared.brass)
+  const plate = new THREE.Mesh(geometries.plate, shared.brass)
   plate.position.set(x - s * 0.02, y, z)
-  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.16, 8), glassMat)
+  const shade = new THREE.Mesh(geometries.shade, glassMat)
   shade.position.set(x - s * 0.16, y + 0.1, z)
   noCam(shade)
   g.add(plate, shade)

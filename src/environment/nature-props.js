@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { createLoadQueue } from '../core/load-queue.js'
 import { applyPassageSurfaceMaps } from './passageways/passage-exterior.js'
 
 import pineSmallUrl from '../assets/models/nature/pine-sapling-small.glb?url'
@@ -42,20 +43,23 @@ const MODELS = [
 
 const gltfLoader = new GLTFLoader()
 const textureLoader = new THREE.TextureLoader()
+// Models and surface maps share the same budget. Embedded glTF resources are
+// owned by their model job; this is not a limit on every browser request.
+const enqueueLoad = createLoadQueue(4)
 
 let ready = null
 let assets = null
 
 function loadGltf(url) {
-  return new Promise((resolve, reject) => {
+  return enqueueLoad(() => new Promise((resolve, reject) => {
     gltfLoader.load(url, resolve, undefined, reject)
-  })
+  }))
 }
 
 function loadTexture(url) {
-  return new Promise((resolve, reject) => {
+  return enqueueLoad(() => new Promise((resolve, reject) => {
     textureLoader.load(url, resolve, undefined, reject)
-  })
+  }))
 }
 
 function prepTexture(texture, srgb) {
@@ -131,8 +135,9 @@ transformed.z += cos(windWave) * 0.55 * uWindStrength * windHeight;`
 }
 
 async function loadModels() {
-  const props = []
-  for (const def of MODELS) {
+  // Promise.all retains catalogue order even when requests finish out of order.
+  // Seeded placement consumes this order; pushing on completion would change it.
+  const props = await Promise.all(MODELS.map(async def => {
     try {
       const gltf = await loadGltf(def.url)
       const mesh = firstMesh(gltf.scene)
@@ -144,12 +149,13 @@ async function loadModels() {
         material.alphaTest = 0.5
         material.side = THREE.DoubleSide
       }
-      props.push({ ...def, geometry: mesh.geometry, material })
+      return { ...def, geometry: mesh.geometry, material }
     } catch (error) {
       console.warn(`[nature] skipped ${def.key}`, error)
+      return null
     }
-  }
-  return props
+  }))
+  return props.filter(Boolean)
 }
 
 async function loadSurface(url, srgb) {

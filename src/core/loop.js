@@ -7,7 +7,7 @@
 // makes that frame a slow one instead.
 const MAX_DELTA = 0.1 // seconds
 
-export function createLoop({ renderer, scene, camera, clock, afterRender, render }) {
+export function createLoop({ renderer, scene, camera, clock, afterRender, render, instrumentation }) {
   const draw = render ?? ((nextScene, nextCamera) => renderer.render(nextScene, nextCamera))
   const updateCallbacks = []
 
@@ -16,14 +16,18 @@ export function createLoop({ renderer, scene, camera, clock, afterRender, render
   }
 
   function tick(timestamp) {
+    instrumentation?.beginFrame(timestamp)
     const delta = Math.min(clock.getDelta(timestamp), MAX_DELTA)
+    instrumentation?.beginUpdate()
     for (const update of updateCallbacks) {
       update(delta)
     }
+    instrumentation?.endUpdate()
 
     // Full-canvas main view. autoClear is off so a later inset render
     // (minimap) cannot wipe this pass. Viewport/scissor are reset every
     // frame in case the previous tick left an inset region active.
+    instrumentation?.beginDraw()
     const width = renderer.domElement.clientWidth
     const height = renderer.domElement.clientHeight
     renderer.autoClear = false
@@ -32,7 +36,9 @@ export function createLoop({ renderer, scene, camera, clock, afterRender, render
     renderer.setScissor(0, 0, width, height)
     renderer.clear()
     draw(scene, camera)
+    instrumentation?.endDraw()
     if (afterRender) afterRender(renderer)
+    instrumentation?.endFrame()
 
     requestAnimationFrame(tick)
   }

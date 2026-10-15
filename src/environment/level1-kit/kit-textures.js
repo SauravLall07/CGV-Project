@@ -3,10 +3,13 @@ import * as THREE from 'three'
 // Painted canvases for the Level 1 kit: checkerboard marble, glazed brick,
 // green tiles, damp concrete, posters, the clock face, the riveted steel of
 // the security doors and its hazard stripes. Each canvas is drawn once per
-// session and shared; every level build wraps it in a fresh texture so the
-// level can dispose its own.
+// session and shared. Textures share that canvas's Source, while each
+// level owns its sampler/UV settings and can dispose its own texture wrapper.
 
 const canvases = new Map()
+// Weak canvas keys add no independent lifetime beyond the existing canvas
+// cache. Only Sources are cached; every material receives an owned wrapper.
+const textureSources = new WeakMap()
 
 // Platform-only maps. Keep the hall's shared marble/plaster maps intact.
 export function drawPlatformStone() {
@@ -117,7 +120,11 @@ function normalCanvas(source, strength) {
 
 export function kitTexture(key, draw, { repeat = [1, 1], srgb = true, normal = 0 } = {}) {
   const colour = cached(key, draw)
-  const texture = new THREE.CanvasTexture(normal ? cached(`${key}:n${normal}`, () => normalCanvas(colour, normal)) : colour)
+  const canvas = normal ? cached(`${key}:n${normal}`, () => normalCanvas(colour, normal)) : colour
+  const texture = new THREE.CanvasTexture(canvas)
+  const source = textureSources.get(canvas)
+  if (source) texture.source = source
+  else textureSources.set(canvas, texture.source)
   texture.wrapS = THREE.RepeatWrapping
   texture.wrapT = THREE.RepeatWrapping
   texture.repeat.set(repeat[0], repeat[1])
