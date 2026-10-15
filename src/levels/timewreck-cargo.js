@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // Local to the wreck: Level 2's floor and machinery remain unchanged.
 export const CARGO_GANGWAY = Object.freeze({
@@ -129,6 +130,24 @@ export function createCargoGangway({ root, layout, wood, brass, cyan }) {
   outline.position.set(0, CARGO_GANGWAY.top - 0.06, (layout.minZ + layout.maxZ) / 2)
   outline.raycast = () => {}
   group.add(outline)
+  // Fixed mating stops lie on the solid lips, behind each hinge. Their short
+  // brass rails meet the moving leaf rails only in the restored flat pose.
+  // Nothing spans the hole or suggests an extra walkable side route.
+  const stopParts = []
+  for (const [z, direction] of [[layout.maxZ, 1], [layout.minZ, -1]]) {
+    for (const x of [-0.74, 0.74]) {
+      const rail = new THREE.BoxGeometry(0.055, 0.06, 0.24)
+      rail.translate(x, CARGO_GANGWAY.top + 0.025, z + direction * 0.12)
+      stopParts.push(rail)
+      const crossbar = new THREE.BoxGeometry(0.18, 0.025, 0.045)
+      crossbar.translate(x, CARGO_GANGWAY.top + 0.025, z + direction * 0.22)
+      stopParts.push(crossbar)
+    }
+  }
+  const stops = new THREE.Mesh(mergeGeometries(stopParts, false), brass)
+  stopParts.forEach(part => part.dispose())
+  stops.name = 'cargo-gangway-fixed-hinge-stops'
+  group.add(stops)
   // Mutate persistent strips instead of allocating support objects per frame.
   const supports = Array.from({ length: 24 }, () => ({ minX: 0, maxX: -1, minZ: 0, maxZ: -1, y: 0 }))
   function apply() {

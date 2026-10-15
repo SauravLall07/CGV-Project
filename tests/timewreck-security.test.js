@@ -109,12 +109,29 @@ test('Security: both openings are visible across the shell; island and supports 
     h.scene.updateMatrixWorld(true)
     for (let i = 0; i < h.layout.tiles.length; i++) {
       const tile = h.layout.tiles[i]
+      const deck = h.scene.getObjectByName(`security-freeze-tile-${i}`)
+      const marks = deck.children.find(n => n.name.endsWith('-marks'))
+      assert.ok(marks, 'each real deck carries its own steering or jump marks')
+      assert.equal(marks.userData.noCameraCollision, true)
+      assert.equal(marks.castShadow, false)
+      const vertices = marks.geometry.attributes.position
+      for (let j = 0; j < vertices.count; j++) {
+        assert.ok(Math.abs(vertices.getX(j)) < tile.width / 2)
+        assert.ok(Math.abs(vertices.getZ(j)) < tile.length / 2, 'mark cannot extend across a gap')
+      }
       const support = h.level.supports.find(s => Math.abs(s.minZ - (tile.z - tile.length / 2)) < 0.001)
       assert.ok(support)
       assert.equal(support.maxX - support.minX, tile.width)
       ray.ray.origin.set(tile.x, 2, tile.z)
       const hits = ray.intersectObject(h.scene.getObjectByName(`security-freeze-tile-${i}`), true)
       assert.ok(Math.abs(h.scene.getObjectByName('security-two-stage-crossing').worldToLocal(hits[0].point).y - support.y) < 1e-6)
+    }
+    const solidMarks = h.scene.getObjectByName('security-solid-floor-directions')
+    const vertices = solidMarks.geometry.attributes.position
+    for (let j = 0; j < vertices.count; j++) {
+      const z = vertices.getZ(j)
+      assert.ok(z > h.layout.maxZ || (z > h.layout.islandMinZ && z < h.layout.islandMaxZ),
+        'approach/island instructions stay on permanent floor')
     }
     h.time.setMode('NORMAL'); h.tick(0.23)
     assert.equal(h.level.supports.filter(s => h.layout.holes.some(hole => s.minZ >= hole.minZ && s.maxZ <= hole.maxZ)).length, 0)

@@ -1,5 +1,20 @@
 import * as THREE from 'three'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+
+// Flat chevrons live on real surfaces, never across the missing floor. Travel
+// is -Z. Their direction is geometry as well as colour, including during Freeze.
+function steeringChevron(dx, dz, x = 0, z = 0) {
+  const shape = new THREE.Shape()
+  shape.moveTo(-0.22, -0.12)
+  for (const p of [[0, 0.22], [0.22, -0.12], [0.14, -0.18], [0, 0.04], [-0.14, -0.18]]) shape.lineTo(...p)
+  shape.closePath()
+  const geometry = new THREE.ShapeGeometry(shape)
+  geometry.rotateX(-Math.PI / 2)
+  geometry.rotateY(Math.atan2(-dx, -dz))
+  geometry.translate(x, 0.016, z)
+  return geometry
+}
 
 // Travel is -Z. Both legs are short enough to use independently from a safe
 // observation spot; the centre is real shell floor, not a timed support.
@@ -89,6 +104,13 @@ export function createSecurityCrossing({ root, carriage, span, halfWidth = 2.6 }
   box(island, 1.5, 0.01, 1.1, cyan, 0, 0.005, 0)
   for (const x of [-0.76, 0.76]) box(island, 0.025, 0.015, 1.14, brass, x, 0.012, 0)
 
+  const approach = steeringChevron(0, -1, layout.tiles[0].x, layout.maxZ + 0.55)
+  const departure = steeringChevron(0, -1, layout.tiles[3].x, span.center - 0.85)
+  const directions = new THREE.Mesh(mergeGeometries([approach, departure], false), brass)
+  approach.dispose(); departure.dispose()
+  directions.name = 'security-solid-floor-directions'
+  group.add(directions)
+
   const tiles = layout.tiles.map((tile, i) => {
     const mesh = new THREE.Group()
     mesh.name = `security-freeze-tile-${i}`
@@ -101,6 +123,23 @@ export function createSecurityCrossing({ root, carriage, span, halfWidth = 2.6 }
     for (const z of [-tile.length / 2 + 0.02, tile.length / 2 - 0.02]) {
       box(mesh, tile.width, 0.015, 0.04, cyan, 0, 0, z)
     }
+    const next = layout.tiles[i + 1]
+    const target = i === 2 ? { x: 0, z: span.center } : next ?? { x: 0, z: layout.minZ - 0.6 }
+    const marks = [steeringChevron(target.x - tile.x, target.z - tile.z, 0, 0.3)]
+    // Paired bars stop at the takeoff and begin again on the landing. No
+    // ribbon or arrow fills the air gap; the jump stays a visible interruption.
+    if (i === 3 || i === 4) {
+      for (const inset of [0.14, 0.25]) {
+        const stripe = new THREE.PlaneGeometry(0.65, 0.035)
+        stripe.rotateX(-Math.PI / 2)
+        stripe.translate(0, 0.016, (i === 3 ? -1 : 1) * (tile.length / 2 - inset))
+        marks.push(stripe)
+      }
+    }
+    const marker = new THREE.Mesh(mergeGeometries(marks, false), brass)
+    marks.forEach(part => part.dispose())
+    marker.name = i === 3 ? 'security-jump-takeoff-marks' : i === 4 ? 'security-jump-landing-marks' : 'security-steering-marks'
+    mesh.add(marker)
     group.add(mesh)
     // Pale outlines show the intended crossing before spending any energy.
     const outline = new THREE.LineSegments(

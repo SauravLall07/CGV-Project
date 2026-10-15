@@ -17,11 +17,13 @@ The user subsequently explicitly authorized R1 and then R2 in separate requests.
 Both independently checkable implementations are complete; rendered acceptance
 and profiling remain pending (see results below). The latest request authorized
 R3 and R4 only; both implementations and automated/static checks are now complete.
-Their rendered/human/performance acceptance remains pending. R5 has not started.
+Their rendered/human/performance acceptance remains pending. The subsequent R5
+request authorized R5 only. R5 implementation and automated/static checks are now
+complete; rendered/human/runtime acceptance remains pending. R6 has not started.
 Do not repeat completed upgrade mechanics or treat historical test counts as fresh verification.
 Implement only the requested batch, validate, update this handover, then stop.
 
-## Current R3/R4 scope (2026-10-15, recorded before editing)
+## Historical R3/R4 scope (2026-10-15, recorded before editing)
 
 The latest request mentions R2, which is already implemented, and explicitly
 authorizes R3 and R4 only, stopping before R5. Preserve all existing working-tree
@@ -41,6 +43,21 @@ gameplay value, collision/support shape, timing, checkpoint and alternate soluti
 Run geometry/budget comparisons and gameplay regressions. Browser inventory is
 again empty; rendered, human-readability and performance approval remain pending,
 including every R1 and R2 follow-up below. Do not begin R5.
+
+## R5 scope (2026-10-15, recorded before editing)
+
+Authorized R5 only. Starting tree is clean at `ec08231`; preserve R1-R4 work,
+Level 2 and every gameplay parameter. Browser inventory is again empty.
+
+Implement Cargo's fixed hinge-stop/mating rail marks on intact lips; Relay's
+moving linkage feedback, far-side catch connection and actual echo-expiry display;
+Security's directional surface marks and paired jump/landing marks, with island
+assessment instructions. No changes to clocks, supports, holes, motion amplitudes,
+ability rules/costs, Ghost lifetime, checkpoints or collision. A read-only Ghost
+remaining-lifetime accessor may serve Relay's display without changing replay.
+Validate live state/reset/cancellation/expiry and geometry alignment plus existing
+traversal/retry/alternate solutions. Keep R1 and R2-R4 rendered/performance/human
+acceptance pending. Do not begin R6 or claim difficulty improved without playtests.
 
 ## Intended experience
 
@@ -272,7 +289,9 @@ both routes/cameras/retries work. Record evidence for any altered window.
 
 ### R5 - Cargo, Relay and Security encounter refinement
 
-Status: NOT STARTED. Depends on R3 and R4's tuning approach.
+Status: IMPLEMENTED; automated/static checks passed. Rendered first/third-person
+review, human comprehension/difficulty and runtime budget acceptance PENDING.
+No gameplay parameters or encounter windows were changed. Results below.
 
 Cargo: strengthen restored-pose alignment marks/hinge stops so restoration is
 recognisable; preserve early interception and safe landing before the loop door.
@@ -341,7 +360,8 @@ credits identities and trailer are separate deferred deliverables unless request
 - [ ] R3 rendered distinctiveness, both cameras/Freeze and runtime budget review.
 - [x] R4 Vault/Convergence/Mechanical cues/instructions and correctness checks.
 - [ ] R4 first-time human comprehension, rendered/retry review and difficulty acceptance.
-- [ ] R5 Cargo/Relay/Security encounters.
+- [x] R5 Cargo/Relay/Security feedback implementation and automated/static checks.
+- [ ] R5 rendered camera/Freeze review, human comprehension and runtime budget acceptance.
 - [ ] R6 Passenger/finale/audio.
 - [ ] R7 production integration and final verification.
 
@@ -626,24 +646,130 @@ Pending acceptance and exact next steps:
    resource stability. No timing changes are justified before that evidence.
 5. Stop here. R5 implementation requires the next request; R6/R7 remain untouched.
 
+## R5 results (2026-10-15)
+
+Started from clean HEAD `ec08231`. Preserved R1-R4, Level 2, ability/energy
+parameters, all encounter clocks and durations, Ghost lifetime, floor cuts,
+support sizes/heights, checkpoints and collision. R6 was not started. No commits,
+staging, resets, dependencies or new assets were introduced.
+
+Changed files and decisions:
+
+- `src/levels/timewreck-cargo.js`: one merged brass batch forms fixed mating
+  stops at both hinges. Each short stop lies wholly on an intact floor lip,
+  meeting an existing moving rail in the restored flat pose. The earlier-pose
+  outline remains; the references do not move with either leaf. No geometry spans
+  the hole or adds a side path. Existing selective failure history, 24 support
+  strips, walkable-angle threshold, early Freeze and safe landing are unchanged.
+- `src/levels/timewreck-relay-feedback.js`, integrated by `timewreck.js`: the
+  existing release linkage depresses with real occupancy; one added far-side
+  linkage connects door to catch. Eight instanced bars above the doorway show
+  actual remaining echo time while it weights the platform. A physical occupant
+  keeps the row full; an unheld release collapses the bars to small ticks; the
+  durable catch fills them green and depresses its linkage. Bar height/count and
+  linkage/handle pose complement colour. Feedback changes no door targets,
+  occupancy predicates, spring timing, seam protection or catch eligibility.
+- `src/entities/time-ghost.js`: added only a read-only `getRemainingSeconds()`
+  accessor calculated from the existing trajectory, playback clock and hold
+  duration. It returns zero after expiry/cancellation/reset. No replay, energy,
+  lifetime, occupancy or Level 2 behavior was changed. Relay reads it rather than
+  maintaining a second timer; Ghost continues consuming real time during Freeze.
+- `src/levels/timewreck-security.js`: five brass chevrons ride the actual moving
+  decks and point towards the next deck/island/exit. Paired bars on the last two
+  decks identify takeoff and landing without filling the jump gap. A single merged
+  batch marks entry on the left and departure on the right, wholly on permanent
+  approach/island floor. Each deck still has the same broad wood top, exact support
+  footprint, settling duration, motion, outline and Freeze behavior. No supports
+  or collision shapes were enlarged or shrunk.
+- `timewreck.js` contextual hints explain Cargo's fixed/moving alignment and early
+  Freeze alternative, Relay's platform/linkage/countdown/catch and recovery after
+  expiry, and Security's steering, solid island recharge/reassessment and paired
+  jump markers. They use current bindings. No extra persistent HUD panel, toast
+  stream, lights, sound or post-processing was added. Passenger/finale unchanged.
+- `tests/timewreck-{cargo,relay,security}.test.js`: added Cargo lip/reference
+  geometry and restoration coverage and Relay real-clock/countdown/Freeze/reset
+  integration. Extended existing occupancy-height/cancellation/expiry/catch/retry
+  checks and Security support/geometry checks to cover the new marks. Existing
+  full traversal, alternate solutions, wall/hole bypass, depletion, retained
+  repair history, multi-rate execution and lifecycle tests remain passing.
+
+Static resource inventory from the real assembled level:
+
+| New feedback | Meshes | Triangles (including instances) | New geometries |
+| --- | --- | --- | --- |
+| Cargo fixed hinge stops | 1 | 96 | 1 |
+| Relay bars (8 instances) + far-side linkage | 2 | 108 | 2 |
+| Security surface marks | 6 | 36 | 6 |
+| Total | 9 | 240 | 9 |
+
+One new material for Relay bars; all other new geometry reuses encounter
+materials. No new textures, lights, shadow casters or full-screen passes. Every
+new cue excludes camera collision; resources remain under the existing disposal
+roots. The probe confirms cue removal on teardown. These counts are not actual
+draw calls, GPU memory, FPS, measured cost parity or leak/stability proof.
+
+Fresh final validation:
+
+| Command/check | Result |
+| --- | --- |
+| `node --import ./scripts/register-test-assets.mjs tests/timewreck-cargo.test.js` | PASS: 8 tests |
+| `node --import ./scripts/register-test-assets.mjs tests/timewreck-relay.test.js` | PASS: 8 tests |
+| `node --import ./scripts/register-test-assets.mjs tests/timewreck-security.test.js` | PASS: 7 tests |
+| `npm.cmd test` | PASS: 89 passed, 0 failed, 0 skipped; about 12.5 s |
+| `npm.cmd run build` | PASS; existing >500 kB chunk warning |
+| `node scripts/check-production.mjs` | PASS: 53 files, 72.63 MiB, 52 case-sensitive subdirectory asset references |
+| Actual-level geometry/resource/disposal probe | PASS: inventory above, no new shadows/camera blockers; cues removed on teardown |
+| `git diff --check` | PASS |
+| Browser surface inventory | `apps: []`, `browsers: []`; no rendered/native-input review available |
+
+Full tests and Vite used approved child-process access. Ignored logs:
+`reports/refinement-r5-{cargo,relay,security,tests,build,production,geometry}.log`.
+Existing non-indexed geometry and headless audio timer warnings remain.
+
+Pending acceptance and exact next steps:
+
+1. **R1 rendered/performance checks remain open:** doorway/open-side/hole/boundary
+   views, shadows/minimap/editor/exterior/finale, live movement/shake/detachment,
+   controlled culling CPU/GPU/frame distributions/draw calls/resources/heap,
+   12-vs-8 pooled lights, exterior/transparency/post attribution, and actual full
+   production run. No verified speedup is claimed. R2-R4 visual/human/runtime
+   acceptance also remains pending.
+2. Once a browser is available, review Mechanical first, then Cargo/Relay/Security
+   in both player views with Normal/Slow/Freeze/Rewind and concurrent Ghost where
+   applicable. Capture actual restored/broken/intercepted Cargo, observe alignment
+   and rest/recharge before the loop. Verify Relay linkage and bar visibility,
+   depletion/cancellation/expiry, seam safety, catch after expiry and checkpoint
+   recovery. Inspect Security steering silhouettes, full settling, both island
+   observation directions, jump interruption and safe landing. Automated geometric
+   checks do not establish camera comfort, shader/audio correctness or readability.
+3. Ask first-time players to explain cause/effect and safe next actions, then run
+   deaths/checkpoints/depletion/alternatives/rebindings in both views. Human
+   evidence is still required before claiming difficulty improved. No window or
+   support tuning was justified or performed.
+4. Compare identical poses/settings and a moving production run to R1; check
+   resources/heap across restarts. Additional CPU matrix updates and rendering
+   resources have unmeasured runtime cost; static budgets do not establish parity.
+5. Stop at R5. R6 requires the next request; R7 remains untouched.
+
 ## Exact next-batch prompt
 
 ```text
-Use Game Studio. Complete R5 of the Level 3 refinement pass described in
+Use Game Studio. Complete R6 of the Level 3 refinement pass described in
 reports/level-3-refinement-plan.md.
 
 Read the plan and relevant current source first. Preserve existing user changes,
 completed upgrades, Level 2 behaviour, and current gameplay/ability parameters.
-Refine Cargo, Relay and Security as described in R5. Keep R1's pending rendered
-visibility/performance checks and R2-R4's rendered/human acceptance explicit.
-Review Mechanical and the new cues first if browser access becomes available.
-Preserve actual floor cuts/supports, alternate solutions, retained repair history,
-Ghost/retry safety, energy parameters and current encounter timing. Require human
-playtest evidence before claiming difficulty improved or changing windows.
+Refine Passenger pursuit and finale presentation/audio as described in R6.
+Keep R1's pending rendered visibility/performance checks and R2-R5's pending
+rendered/human/runtime acceptance explicit. Preserve wave speed/lead, energy,
+timing, floor/support geometry, existing stasis and brake/reveal/skip lifecycle.
+Inspect current audio/settings and attribution before adding anything. No roof
+traversal or unmeasured full-screen effects; human chase evidence is required
+before difficulty/window tuning. Do not claim an unrendered finale is approved.
 
 Run appropriate regression/build/packaging checks and rendered verification where
 available. If browser access is unavailable, continue independently checkable work
 and record precisely which visual/performance acceptance criteria remain pending.
 Update the plan with changes, decisions, fresh validation and exact next steps.
-Complete R5 only; do not begin R6. Finish with a concise handover and next prompt.
+Complete R6 only; do not begin R7. Finish with a concise handover and next prompt.
 ```

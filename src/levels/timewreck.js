@@ -13,6 +13,7 @@ import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
 import { createWreckRoutes, createPassengerRack } from './timewreck-routes.js'
 import { createSecurityCrossing } from './timewreck-security.js'
+import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
 import {
   createCarriageShake,
@@ -802,7 +803,7 @@ export function createTimewreckLevel({
     }
   }
   root.add(releasePlatform)
-  blastBox(blastDoors, 0.045, 0.045, 4.6, blastSteel, -0.69, 0.04, doorZ + 2.3)
+  const releaseLinkage = blastBox(blastDoors, 0.045, 0.045, 4.6, blastSteel, -0.69, 0.04, doorZ + 2.3)
   unregisters.push(timeSystem.registerGhostPad(releasePos, 0.56))
 
   const manualCatch = new THREE.Group()
@@ -811,6 +812,10 @@ export function createTimewreckLevel({
   blastBox(manualCatch, 0.38, 0.48, 0.22, blastPlate, 0, 0, 0)
   const catchHandle = blastBox(manualCatch, 0.3, 0.07, 0.12, blastSteel, 0, 0.12, 0.18)
   root.add(manualCatch)
+  const relayFeedback = createRelayFeedback({ doors: blastDoors, linkage: releaseLinkage,
+    doorZ, catchZ, brass: blastSteel })
+  let relayHeld = false
+  let relayEchoRemaining = 0
   const blastObstacles = [
     { minX: -INTERIOR_HALF_WIDTH, maxX: -1.1, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
     { minX: 1.1, maxX: INTERIOR_HALF_WIDTH, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
@@ -829,6 +834,7 @@ export function createTimewreckLevel({
     }
     for (const ram of blastRams) ram.mesh.position.x = ram.side * (1.55 - close * 0.35)
     catchHandle.rotation.z = relayLatched ? -0.8 : 0
+    relayFeedback.update(relayHeld, relayEchoRemaining, relayLatched)
     blastLampMat.emissive.setHex(relayLatched ? 0x55ff99 : relayOpen > 0.9 ? 0x38bdf8 : 0xffb060)
     blastLampMat.emissiveIntensity = relayLatched ? 1.2 : 0.5 + relayOpen
     blastLight.intensity = 0.6 + relayOpen * 1.2
@@ -859,7 +865,11 @@ export function createTimewreckLevel({
   function updateBlastDoors(dt, playerPos) {
     const playerOnRelease = Math.abs(playerPos.y - releasePos.y) < 0.25 &&
       Math.abs(playerPos.x - releasePos.x) < 0.56 && Math.abs(playerPos.z - releasePos.z) < 0.56
-    const held = playerOnRelease || timeSystem.getGhost().isOccupying(releasePos, 0.56)
+    const ghost = timeSystem.getGhost()
+    const echoOnRelease = ghost.isOccupying(releasePos, 0.56)
+    const held = playerOnRelease || echoOnRelease
+    relayHeld = held
+    relayEchoRemaining = echoOnRelease && !playerOnRelease ? ghost.getRemainingSeconds() : 0
     const target = relayLatched || held ? 1 : 0
     // A closing door waits at its current pose while a body clears the seam.
     // It never opens a shut door merely because someone approaches it.
@@ -2348,6 +2358,8 @@ export function createTimewreckLevel({
 
       relayLatched = saved.relayLatched
       relayOpen = relayLatched ? 1 : 0
+      relayHeld = false
+      relayEchoRemaining = 0
       releaseDeck.position.y = 0
       applyRelay()
       wreckRoutes.reset()
@@ -2793,17 +2805,17 @@ export function createTimewreckLevel({
           `Safe switching recess: release time control to recharge. ${bindingLabel(settings.getBinding('rewind'))} restores the shutter; switch to ${bindingLabel(settings.getBinding('freeze'))} while it is open.`, 4500)
       }
       hint('cargo', pp.z, spans.cargo.maxZ,
-        'Cargo — the emergency gangway is buckling. The pale frame marks its earlier position.', 4400)
+        'Cargo — the gangway is buckling. Its pale frame shows the earlier pose; moving brass rails meet the fixed hinge stops when restored.', 4400)
       hint('cargo-gangway', pp.z, cargoGap.maxZ + 1.3,
-        `Restore the gangway with ${bindingLabel(settings.getBinding('rewind'))}, then hold it with ${bindingLabel(settings.getBinding('freeze'))}. Rest on the landing before the bulkhead.`, 6500)
+        `${bindingLabel(settings.getBinding('rewind'))} restores the gangway: align the brass rails with the fixed stops, then ${bindingLabel(settings.getBinding('freeze'))} hold it. Early Freeze can also save the intact deck. Rest on the landing before the bulkhead.`, 6500)
       hint('cargo-landing', pp.z, cargoGap.minZ - 0.25,
         'Intact landing — recharge here. Watch the bulkhead ring; green means the door and overhead load are clear.', 4800)
       hint('relay-emergency-release', pp.z, releasePos.z + 2,
-        `Stand on the brass platform, summon ${bindingLabel(settings.getBinding('ghost'))} Ghost, then cross and use ${bindingLabel(settings.getBinding('interact'))} on the far-side catch. Echo holds for 8 seconds.`, 6500)
+        `Weight the brass platform to pull the door linkage. Summon ${bindingLabel(settings.getBinding('ghost'))} Ghost: the eight bars drain with its hold. Cross, then ${bindingLabel(settings.getBinding('interact'))} latch the far-side catch; it works even after the echo fades.`, 6500)
       hint('security', pp.z, gapMaxZ + 3,
-        `Use ${bindingLabel(settings.getBinding('freeze'))} to settle the marked debris. Steer left then right to the intact recharge island.`, 5500)
+        `${bindingLabel(settings.getBinding('freeze'))} settles the broad debris decks. Enter on the left, follow brass chevrons to the right, then reach the intact recharge island. Pale outlines alone cannot support you.`, 5500)
       hint('security-island', pp.z, spans.security.center + 0.8,
-        `Safe island: release Freeze and recharge. The next path is to the right; use ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across its short break.`, 6000)
+        `Safe island: release Freeze and recharge; assess the right-hand path. ${bindingLabel(settings.getBinding('freeze'))} settles it. Paired brass bars mark takeoff and landing: ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across the break.`, 6000)
       hint('passenger', pp.z, spans.passenger.maxZ,
         `Falling rack ahead: amber marks its landing. Keep right, then centre for the broken floor. ${bindingLabel(settings.getBinding('freeze'))} holds obstacles AND the pursuing wave.`, 6500)
 

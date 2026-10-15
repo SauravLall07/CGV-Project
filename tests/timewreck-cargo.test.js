@@ -56,6 +56,29 @@ test('Cargo: Freeze holds the actual failed pose rather than repairing it', () =
   time.dispose()
 })
 
+test('Cargo: fixed hinge stops remain on solid lips through failure and restoration', () => {
+  const { time, bridge, layout, tick } = gangwayHarness()
+  try {
+    const stops = bridge.group.getObjectByName('cargo-gangway-fixed-hinge-stops')
+    assert.equal(stops.userData.noCameraCollision, true)
+    assert.equal(stops.castShadow, false)
+    const vertices = stops.geometry.attributes.position
+    for (let i = 0; i < vertices.count; i++) {
+      const z = vertices.getZ(i)
+      assert.ok(z <= layout.minZ + 1e-6 || z >= layout.maxZ - 1e-6, 'a stop cannot fill the opening')
+    }
+    const fixed = stops.matrix.clone()
+    tick(14)
+    assert.equal(bridge.supports.every(s => s.maxX < s.minX), true)
+    assert.ok(stops.matrix.equals(fixed), 'broken leaf must not pull the fixed reference down')
+    time.triggerRewind(); tick(0.34); time.triggerFreeze(); tick(0.2)
+    assert.ok(stops.matrix.equals(fixed))
+    assert.ok(bridge.state.angle < 0.01)
+    assert.equal(bridge.supports.length, 24)
+    assert.ok(bridge.supports.every(s => Math.abs(s.y - 0.1) < 1e-6))
+  } finally { time.dispose() }
+})
+
 test('Cargo: floor opening reaches both walls and leaves intact approach/landing geometry', () => {
   const scene = new THREE.Scene()
   const span = { minZ: 20, maxZ: 48, center: 34 }

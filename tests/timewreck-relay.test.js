@@ -42,6 +42,16 @@ function levelHarness(fps = 60) {
 
 
 function leafX(h) { return h.scene.getObjectByName('relay-blast-leaf-right').position.x }
+function holdFill(h) {
+  const bars = h.scene.getObjectByName('relay-echo-hold-bars')
+  const matrix = new THREE.Matrix4()
+  let fill = 0
+  for (let i = 0; i < bars.count; i++) {
+    bars.getMatrixAt(i, matrix)
+    fill += (matrix.elements[5] - 0.12) / 0.88
+  }
+  return fill
+}
 function summon(h) {
   h.player.setPose(h.pad, Math.PI)
   h.tick(0.5)
@@ -66,12 +76,14 @@ test('Relay: Ghost holds release while the real player walks to the catch with e
       h.time.triggerGhost() // cancellation cannot undo the catch
       h.tick(9)
       assert.equal(leafX(h), 1.85)
+      assert.ok(holdFill(h) > 7.99, 'catch displays durable security after the echo expires')
       assert.ok(h.time.getEnergy() > 95)
       for (let i = 0; i < 3; i++) {
         h.respawn.fail('caught'); h.respawn.cancel(); h.respawn.respawn()
         assert.equal(h.player.mesh.position.z, h.doorZ - 1.8)
         assert.equal(leafX(h), 1.85)
         assert.equal(h.time.getGhost().isPlaying(), false)
+        assert.ok(holdFill(h) > 7.99, 'latched feedback survives checkpoint recovery')
       }
     } finally { h.dispose() }
   }
@@ -102,6 +114,7 @@ test('Relay: occupancy height, cancellation, expiration and pre-catch retries re
     h.player.setPose(new THREE.Vector3(0, 0, h.pad.z + 2), Math.PI)
     h.tick(0.1)
     assert.equal(leafX(h), 0.75, 'airborne echo does not press release')
+    assert.ok(holdFill(h) < 0.01, 'airborne echo cannot light the occupancy display')
     h.time.resetGhost()
     for (let i = 0; i < 3; i++) {
       summon(h)
@@ -109,6 +122,7 @@ test('Relay: occupancy height, cancellation, expiration and pre-catch retries re
       h.time.triggerGhost()
       h.tick(0.7)
       assert.equal(leafX(h), 0.75)
+      assert.ok(holdFill(h) < 0.01, 'cancelling the echo clears the display')
       h.respawn.fail('caught'); h.respawn.cancel(); h.respawn.respawn()
       assert.ok(h.player.mesh.position.z > h.pad.z)
       assert.equal(leafX(h), 0.75)
@@ -124,6 +138,7 @@ test('Relay: occupancy height, cancellation, expiration and pre-catch retries re
     h.tick(1)
     assert.equal(ghost.isPlaying(), false)
     assert.equal(leafX(h), 0.75)
+    assert.ok(holdFill(h) < 0.01, 'expired echo leaves no stale countdown')
     summon(h)
     h.level.dispose()
     assert.equal(ghost.isPlaying(), false, 'teardown cancels outgoing echo')
@@ -144,6 +159,32 @@ test('Relay: solo sprint cannot outrun the spring door at 30/60/144 FPS', () => 
       assert.ok(h.player.mesh.position.z > h.doorZ, `${fps}: release needs an echo`)
     } finally { h.dispose() }
   }
+})
+
+test('Relay: hold bars and linkage follow real occupancy and echo lifetime through Freeze', () => {
+  const h = levelHarness()
+  try {
+    summon(h)
+    assert.ok(holdFill(h) > 7.99, 'physical occupant keeps the release held')
+    const linkage = h.scene.getObjectByName('relay-release-linkage')
+    assert.equal(linkage.position.y, 0.025)
+    h.player.setPose(new THREE.Vector3(0, 0, h.pad.z + 2), Math.PI)
+    h.tick(0.1)
+    const ghost = h.time.getGhost()
+    const remaining = ghost.getRemainingSeconds()
+    assert.ok(Math.abs(holdFill(h) - remaining) < 1e-5)
+    h.time.triggerFreeze(); h.tick(0.5)
+    assert.ok(Math.abs(ghost.getRemainingSeconds() - (remaining - 0.5)) < 1e-6, 'Ghost uses real time during Freeze')
+    assert.ok(Math.abs(holdFill(h) - ghost.getRemainingSeconds()) < 1e-5)
+    h.time.setMode('NORMAL'); h.tick(3)
+    assert.ok(holdFill(h) < 4.5 && holdFill(h) > 4)
+    h.time.resetGhost(); h.tick(0.1)
+    assert.equal(ghost.getRemainingSeconds(), 0)
+    assert.ok(holdFill(h) < 0.01)
+    assert.equal(linkage.position.y, 0.04)
+    h.respawn.fail('retry'); h.respawn.cancel(); h.respawn.respawn()
+    assert.ok(holdFill(h) < 0.01, 'checkpoint restoration clears transient feedback')
+  } finally { h.dispose() }
 })
 
 test('Relay: depleted energy recovers on safe floor; Ghost works alongside each shared mode', () => {
