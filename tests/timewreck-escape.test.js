@@ -11,6 +11,7 @@ import { resolveInputState } from '../src/core/input-state.js'
 import { createRespawnSystem } from '../src/systems/respawn.js'
 
 import { securityCrossingLayout } from '../src/levels/timewreck-security.js'
+import { WRECK_VIGNETTES } from '../src/levels/timewreck-feedback.js'
 
 function levelHarness(start = 'mechanical', fps = 60) {
   globalThis.window = { devicePixelRatio: 1, innerWidth: 1280 }
@@ -105,8 +106,8 @@ test('N7: live approach/depleted repair, three falls/retries, Mechanical checkpo
 
 // One live level, normal Vault spawn, no per-room starts or pose changes.
 // This catches clocks/checkpoints/energy carried between the isolated puzzles.
-test('Integration: continuous Vault-to-brake route preserves solvable checkpoints across all carriages', () => {
-  for (const fps of [30, 60, 144]) {
+test('Integration: continuous Vault-to-brake routes preserve both forks and solvable checkpoints across all carriages', () => {
+  for (const route of ['direct', 'maintenance']) for (const fps of [30, 60, 144]) {
     const h = levelHarness(null, fps)
     let stage = 'vault'
     const center = key => {
@@ -114,12 +115,12 @@ test('Integration: continuous Vault-to-brake route preserves solvable checkpoint
       return (span.minZ + span.maxZ) / 2
     }
     const check = () => assert.equal(h.respawn.isFailing(), false,
-      JSON.stringify({fps, stage, pos:h.player.mesh.position, energy:h.time.getEnergy(), messages:h.messages.slice(-3)}))
+      JSON.stringify({fps, route, stage, pos:h.player.mesh.position, energy:h.time.getEnergy(), messages:h.messages.slice(-3)}))
     const move = (axis, target, extra = {}) => {
       for (let i = 0; Math.abs(h.player.mesh.position[axis] - target) > 0.06; i++) {
         assert.ok(i < fps * 25, `blocked ${stage}/${axis}: ${JSON.stringify(h.player.mesh.position)} -> ${target}`)
         const positive = h.player.mesh.position[axis] < target
-        h.tick(Math.min(1 / fps, Math.abs(h.player.mesh.position[axis] - target) / (extra.run ? 6.8 : 4)),
+        h.tick(Math.min(1 / fps, Math.abs(h.player.mesh.position[axis] - target) / (extra.duck ? 1.68 : extra.run ? 6.8 : 4)),
           {...extra, [axis === 'x' ? positive ? 'right' : 'left' : positive ? 'back' : 'forward']:true})
         check()
       }
@@ -148,26 +149,42 @@ test('Integration: continuous Vault-to-brake route preserves solvable checkpoint
       check()
       move('x', 0.65) // open end of the diagonal trolley
       move('z', center(stage) + 10)
-      move('x', -0.6)
-      move('z', center(stage) + 6.2)
-      const surge = h.scene.getObjectByName('convergence-electrical-surge')
-      assert.ok(surge)
-      // Wait from safe floor, then stop the direct aisle's safe phase.
-      waitUntil(() => surge.children[0].material.emissiveIntensity < 0.5)
-      h.time.triggerFreeze(); move('z', center(stage) + 2)
-      h.time.setMode('NORMAL')
+      if (route === 'direct') {
+        move('x', -0.6)
+        move('z', center(stage) + 6.2)
+        const surge = h.scene.getObjectByName('convergence-electrical-surge')
+        assert.ok(surge)
+        waitUntil(() => surge.children[0].material.emissiveIntensity < 0.5)
+        h.time.triggerFreeze(); move('z', center(stage) + 2)
+        h.time.setMode('NORMAL')
+      } else {
+        move('x', 1.75); move('z', center(stage) + 9)
+        move('z', center(stage) + 6.5, { duck: true })
+        recharge(); repair(h, 'convergence-rewind-shutter')
+        move('z', center(stage) + 3.4, { duck: true })
+        h.time.setMode('NORMAL')
+        move('z', center(stage) - 1.3, { duck: true })
+        move('x', -0.6)
+      }
       stage = 'mechanical'
       move('z', center(stage) + 12.8)
       waitUntil(() => Math.abs(h.scene.getObjectByName('steam-clearance-signal').rotation.z) < 0.01)
       h.time.triggerFreeze(); move('z', center(stage) + 9.5)
       h.time.setMode('NORMAL')
       move('x', 1.5)
-      h.time.triggerSlow(); move('z', center(stage) + 4.6)
+      const trunks = h.scene.getObjectByName('runaway-pistons').children.filter(n => n.name === 'mech-luggage-trunk')
+      assert.equal(trunks.length, 3)
+      waitUntil(() => trunks[0].position.x < -1)
+      h.time.triggerFreeze(); move('z', center(stage) + 4.6)
       h.time.setMode('NORMAL'); move('z', center(stage) + 2.7)
       repair(h, 'mechanical-rewind-shutter')
       move('z', center(stage) - 2)
       recharge(); move('x', 0)
-      h.time.triggerSlow(); move('z', center(stage) - 11.5)
+      waitUntil(() => Math.abs(trunks[1].position.x) > 1)
+      h.time.triggerFreeze(); move('z', center(stage) - 7.5)
+      recharge()
+      waitUntil(() => Math.abs(trunks[2].position.x) > 1)
+      h.time.triggerFreeze(); move('z', center(stage) - 11.5)
       h.time.setMode('NORMAL')
       stage = 'cargo'
       move('z', center(stage) + 12)
@@ -221,6 +238,94 @@ test('Integration: continuous Vault-to-brake route preserves solvable checkpoint
   }
 })
 function pose(h, x, z, y = 0) { h.player.setPose(new THREE.Vector3(x, y, z), Math.PI) }
+
+test('N8/N9: each live event pauses, holds Freeze without taking control, and releases callbacks on restart/quit', () => {
+  const oldRAF = globalThis.requestAnimationFrame
+  try {
+    for (const spec of WRECK_VIGNETTES) for (const action of ['restart', 'quit']) {
+      const frames = []; globalThis.requestAnimationFrame = cb => frames.push(cb)
+      const h = levelHarness(spec.key)
+      let manager
+      try {
+        pose(h, 0, h.center + spec.triggerNear - 0.1); h.tick(0.2)
+        const event = h.scene.getObjectByName(`${spec.key}-background-vignette`)
+        const beforePause = event.position.clone()
+        h.level.setPresentationPaused(true); h.tick(0.2)
+        assert.ok(event.position.equals(beforePause))
+        h.level.setPresentationPaused(false); h.tick(0.1)
+        assert.ok(!event.position.equals(beforePause))
+        h.time.triggerFreeze()
+        const held = event.position.clone(), x = h.player.mesh.position.x
+        h.tick(0.1, { right: true })
+        assert.ok(event.position.equals(held))
+        assert.ok(h.player.mesh.position.x > x + 0.3, 'player keeps real movement in stasis')
+        manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud, timeSystem: h.time,
+          respawn: h.respawn, camera: { snap() {} }, loadingScreen: { show() {}, hide() {} },
+          interaction: { register: () => () => {}, registerBlocker: () => () => {}, setEnabled() {} },
+          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ ...ctx, startCarriage: spec.key }) }] })
+        manager.adopt('Timewreck', h.level)
+        if (action === 'restart') {
+          manager.restart()
+          for (let n = 0; frames.length; n++) { assert.ok(n < 10); frames.shift()() }
+          const fresh = h.scene.getObjectByName(`${spec.key}-background-vignette`)
+          assert.notEqual(fresh, event)
+          assert.equal(fresh.position.x, spec.x)
+        } else manager.unload()
+        h.time.update(0.2); manager.update(0.2)
+        assert.ok(event.position.equals(held), 'disposed registration cannot animate stale nodes')
+        assert.equal(h.respawn.isFailing(), false)
+      } finally { manager?.dispose(); if (!manager) h.level.dispose(); h.respawn.dispose(); h.time.dispose() }
+    }
+  } finally { globalThis.requestAnimationFrame = oldRAF }
+})
+
+test('N9: caught recovery and game-over restart during every vignette restore progress and reject stale callbacks', () => {
+  const oldRAF = globalThis.requestAnimationFrame, oldTimeout = globalThis.setTimeout, oldClear = globalThis.clearTimeout
+  try {
+    for (const spec of WRECK_VIGNETTES) {
+      const frames = [], timers = new Map(); let id = 0, gameOvers = 0
+      globalThis.requestAnimationFrame = cb => frames.push(cb)
+      globalThis.setTimeout = cb => { timers.set(++id, cb); return id }
+      globalThis.clearTimeout = key => timers.delete(key)
+      const h = levelHarness(spec.key)
+      let manager
+      try {
+        pose(h, 0, h.center + spec.triggerNear - 0.1); h.tick(0.3)
+        const event = h.scene.getObjectByName(`${spec.key}-background-vignette`)
+        h.respawn.fail('caught during vignette')
+        const staleCaught = [...timers.values()].at(-1)
+        h.respawn.setPaused(true); staleCaught()
+        assert.equal(h.respawn.isFailing(), true, 'pause invalidates the old caught callback')
+        h.respawn.setPaused(false); [...timers.values()].at(-1)()
+        assert.equal(h.respawn.isFailing(), false)
+        assert.equal(event.position.x, spec.x, 'actual checkpoint restores the saved initial event phase')
+        h.time.triggerFreeze(); const restored = event.position.clone(); h.tick(0.1)
+        assert.ok(event.position.equals(restored), 'history reset must not replace checkpoint geometry')
+        manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud, timeSystem: h.time,
+          respawn: h.respawn, camera: { snap() {} }, loadingScreen: { show() {}, hide() {} },
+          interaction: { register: () => () => {}, registerBlocker: () => () => {}, setEnabled() {} },
+          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ ...ctx, startCarriage: spec.key }) }] })
+        manager.adopt('Timewreck', h.level)
+        h.respawn.resetLives(1)
+        h.respawn.setGameOverHandler(() => { gameOvers++; manager.restart() })
+        pose(h, 0, h.center + spec.triggerNear - 0.1)
+        h.time.setMode('NORMAL'); h.tick(0.2)
+        h.respawn.fail('final life during vignette')
+        const staleGameOver = [...timers.values()].at(-1)
+        staleGameOver()
+        for (let n = 0; frames.length; n++) { assert.ok(n < 10); frames.shift()() }
+        staleGameOver(); staleCaught()
+        assert.equal(gameOvers, 1)
+        const fresh = h.scene.getObjectByName(`${spec.key}-background-vignette`)
+        assert.notEqual(fresh, event)
+        assert.equal(fresh.position.x, spec.x)
+        assert.equal(h.respawn.isFailing(), false)
+      } finally { manager?.dispose(); if (!manager) h.level.dispose(); h.respawn.dispose(); h.time.dispose() }
+    }
+  } finally {
+    globalThis.requestAnimationFrame = oldRAF; globalThis.setTimeout = oldTimeout; globalThis.clearTimeout = oldClear
+  }
+})
 
 test('N4: threshold blocks walking, permits a modest jump and leaves both fork entrances reachable', () => {
   for (const fps of [30, 60, 144, [1/144, 1/30, 0.1, 1/60]]) {
@@ -718,6 +823,12 @@ test('Finale: native skip completes once; natural completion and checkpoint reco
       assert.equal(h.advanced, finish === 'checkpoint' ? 0 : 1)
       h.interactions.get('emergency-brake').onInteract()
       assert.equal(h.advanced, finish === 'checkpoint' ? 0 : 1)
+      if (finish !== 'checkpoint') {
+        const valuables = h.scene.getObjectByName('vault-suspended-valuables')
+        const held = Array.from(valuables.instanceMatrix.array)
+        h.time.update(0.1)
+        assert.deepEqual(Array.from(valuables.instanceMatrix.array), held, 'skip/natural completion stop the new feedback owner')
+      }
     } finally { h.dispose() }
   }
 })

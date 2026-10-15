@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { createRepairFragments } from './timewreck-feedback.js'
 
 export const CONNECTOR = Object.freeze({ halfLength: 1.2, width: 2.2, top: 0.04,
   warning: 1.3, fold: 1, angle: 1.2, walkable: 0.15, trigger: 3.4 })
@@ -73,6 +74,8 @@ export function createWreckConnector({ root, spans, player, timeSystem, unregist
     { minX: -2.6, maxX: 2.6, minZ: spans.mechanical.minZ, maxZ: gap.minZ, y: 0 }
   ]
   const supports = [...strips, ...safeSupports]
+  const repair = createRepairFragments({ leaves, width: CONNECTOR.width, length: CONNECTOR.halfLength,
+    wood, brass, name: 'connector' })
   let clock = -1
   const end = CONNECTOR.warning + CONNECTOR.fold
   function angle() {
@@ -81,6 +84,7 @@ export function createWreckConnector({ root, spans, player, timeSystem, unregist
   }
   function apply() {
     const a = angle(), c = Math.cos(a), s = Math.sin(a)
+    repair.update(a)
     outline.visible = a > 0.02
     signal.rotation.z = a > CONNECTOR.walkable ? Math.PI / 2 : 0
     let index = 0

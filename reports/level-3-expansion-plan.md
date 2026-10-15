@@ -6,7 +6,14 @@ batch. No conversation history is required.
 
 ## Authorization and current state
 
-Latest instruction (2026-10-15): implement **N6 and N7 only**. Starting HEAD
+Latest instruction (2026-10-15): implement **N8 and N9**. Starting revision
+`8f532a7`, clean working tree. N8 is implemented with automated checks; feasible
+N9 automated integration is complete, but N9 acceptance is PARTIAL because N1
+is still NOT STARTED and production browser/audio/human/performance evidence is
+unavailable. N2-N7 are preserved. See latest N8/N9 handover and continuation
+prompt at the end. No publication.
+
+Historical N6/N7 instruction (2026-10-15): implement **N6 and N7 only**. Starting HEAD
 `2cb5d5e`, clean working tree. Both batches are implemented and automatically
 checked; rendered acceptance remains pending. N1 is still NOT STARTED. N2-N5
 are preserved; N8/N9 have not been started. See the N6/N7 handover and latest
@@ -432,7 +439,8 @@ and from below/side; support ray checks alone cannot approve camera comfort.
 
 ### N8 - Time feedback and staged background destruction
 
-Status: NOT STARTED. Depends on N7. Consolidate feedback; do not add more mandatory
+Status: IMPLEMENTED; automated/static/audio-graph checks passed. Rendered/audible/
+human/performance acceptance pending; see N8/N9 handover. Consolidate feedback; do not add more mandatory
 hazards or retune N2-N7 mechanics.
 
 **Linked feedback:** a small bounded set of straps/splinters on Cargo gangway and
@@ -469,8 +477,9 @@ measure transparency/audio/registration cost, and retain control during stasis.
 
 ### N9 - Full integration, tuning and final handover
 
-Status: NOT STARTED. Depends on N1-N8 implementations; browser/native play and
-human evidence are required for full acceptance. Carry all old acceptance below.
+Status: PARTIALLY VERIFIED. Feasible automated integration complete; N1 is still
+NOT STARTED and full production/browser/audio/human/performance acceptance remains
+open. See N8/N9 handover. No claim of final acceptance.
 
 Run a freshly built production game New Game -> L1 -> L2 -> L3 -> victory without
 development shortcuts. Repeat both branches, camera modes, deaths, low/zero energy,
@@ -576,7 +585,9 @@ depend on chat memory or silently discard deferred checks after compaction.
 - [ ] N4/N5 rendered, human, audio and measured performance acceptance.
 - [x] N6/N7 implementation and automated/static verification (see handover below).
 - [ ] N6/N7 rendered, audible, human and measured performance acceptance.
-- [ ] N8/N9 implementation; do not begin without their requested scope.
+- [x] N8 implementation and automated/static checks.
+- [x] N9 feasible automated integration and reconciliation of old ledgers.
+- [ ] N8 rendered/audible review; N9 full acceptance, including missing N1.
 - [ ] Fresh rendered/audio/human/performance acceptance, including A1-A9.
 
 N0 changes only this new Markdown file. Historical latest refinement result is
@@ -1019,7 +1030,7 @@ in Normal/Freeze, all N7 alternatives and retries, then the minimum-energy chase
 with measured human timings. N1 is still a skipped separate benchmark. Stop here;
 the next sequential batch is N8 only, upon explicit request.
 
-## Exact next-batch prompt
+## Historical next-batch prompt after N6/N7 (superseded by explicit N8/N9 request)
 
 ```text
 Use Game Studio. Complete N8 only from reports/level-3-expansion-plan.md.
@@ -1057,4 +1068,190 @@ Update reports/level-3-expansion-plan.md with final bounds/clocks, changed files
 resource deltas, fresh evidence, unresolved issues, implemented versus visually
 verified status and the exact N9 prompt. Complete N8 before stopping. Do not begin
 N9, the skipped N1, or publication.
+```
+
+## N8/N9 implementation and verification (2026-10-15)
+
+Starting revision `8f532a7`, clean working tree. Read this plan, latest N6/N7
+handover, current Cargo/connector snapshots and supports, checkpoint/finale/
+presentation ownership, audio, traversal/lifecycle tests and older acceptance
+ledgers. Used Game Studio's existing JavaScript/Three.js and playtest workflows.
+The explicit N8/N9 request supersedes the historical N8-only continuation prompt.
+N2-N7 and older completed mechanics are preserved. N1 remains NOT STARTED; its
+absence is a prerequisite gap for final N9 acceptance, not permission to implement
+it here. No new hazard, support, collision box, void, ability rule, cost, movement,
+camera, wave, old timing, dependency, staging/commit or publication change.
+
+Status: **N8 implemented and automatically/static/audio-graph checked. N9 feasible
+automated integration complete, full acceptance PARTIAL.** Actual production
+L1-to-victory, rendered/audio/human/performance evidence and skipped N1 remain
+outstanding. The following CPU tests do not close them.
+
+Changed files:
+
+- `src/levels/timewreck-feedback.js`: bounded instanced repair straps/splinters,
+  three snapshot-driven approach events, suspended Vault valuables, checkpoint
+  capture/restore, pause/stop and quiet cue ownership. All cosmetic geometry is
+  non-supporting, excluded from camera/interaction rays and shadow casting.
+- `src/levels/timewreck-cargo.js`, `src/levels/timewreck-connector.js`: attach
+  repair pieces to both actual hinges and derive their fragment offsets/strap
+  bends from the existing angle inside every apply/restore/reset path. No separate
+  repair clock/registration or changes to real deck poses/support thresholds.
+- `src/levels/timewreck.js`: construct feedback, gate approach triggers while
+  failing/braking/completed, capture and restore checkpoint event progress before
+  shared history reset, forward presentation pause, use existing braking scale,
+  and stop on skip/natural completion/unload. Existing root disposal/unregisters
+  retain ownership. No changes to freight, steam, Relay or finale feedback rules.
+- `src/systems/wreck-audio.js`, `test/wreck-audio.test.mjs`: quiet background creak/
+  drop tones through existing master bus, capped at one concurrent 0.3 s voice;
+  test silence before unlock, cap, routing, pause and existing reset/disposal.
+- `tests/timewreck-feedback.test.js`: actual shared-time Slow/Freeze/Rewind at
+  30/60/144 FPS and mixed steps, cue de-duplication, checkpoint/pause/braking/stop,
+  exterior bounds over motion, stable resources and single disposal.
+- `tests/timewreck-cargo.test.js`, `tests/timewreck-connector.test.js`: verify
+  fragment instance matrices change on failure and return with real deck rewind
+  or reset, alongside existing support and dangerous-Freeze tests.
+- `tests/timewreck-escape.test.js`: continuous no-room-teleport Vault-to-brake
+  routes for **both** forks at 30/60/144, actual event pause/Freeze/player control,
+  caught/pause-resume/game-over/restart/quit/stale callbacks during every vignette,
+  and feedback stop after both skip and natural finale completion. Existing
+  minimum-energy/rebinding/hold-toggle/lifecycle regressions retained.
+- `README.md`: qualify implemented versus production-verified status and link
+  this evidence. Older upgrade/refinement plans receive explicit acceptance
+  reconciliation notes; Batch 6 remains partial and R7 is not silently completed.
+
+Final bounds/clocks (all Z offsets relative to named carriage centre):
+
+| Addition | Accepted placement and behaviour |
+| --- | --- |
+| Cargo repair | Four small wood splinters and two brass strap pieces per leaf, 12 instances total. Attached to real hinges, using existing wood/brass materials. Intact splinters return into the source deck near its outer sides and distal 72..90% length; at failure move down/out by at most about 0.3 m and rotate with the actual angle. Straps hang below outer deck edges. No new deck/landing top, ray target or support. |
+| Connector repair | Same bounded pattern at existing 2.2 m wide / 1.2 m long leaves. Existing angle drives offsets and hinge motion together. Rewind/restore immediately returns geometry with collision/supports; existing Passenger breakup retires the parent as before. |
+| Vault valuables | Three small gold polyhedra over the damaged right-side plinth: X 1.65..1.97 centres, Z -2.23..-1.97, Y about 1.06..1.24 centres, radius 0.12 with lateral scale 0.65. Registered bob/rotation freezes and rewinds, outside the established left lane and both laser slices. No pickup/target/extra obstacle. |
+| Convergence panel | Attached rest centre X -2.95, Y 2.1, Z -5; 0.5 x 1.2 x 0.08 m teal/brass panel. Player trigger local Z -4..-8, |X| <=2.6. Smooth 1.4 s peel moves 2.4 m outward, 2.3 m downward and 0.8 m downstream with rotation. Bounds remain outside X -2.6 throughout sampled motion. After fork, clear of routes, connector and signs. |
+| Cargo luggage | Rest centre X +3.05, Y 1.6, Z -10.5; 0.75 x 0.55 x 0.9 m wood case/brass straps. Trigger -9..-12.5, |X| <=2.6, downstream of freight sweep -7. Over 1.6 s draws 2.4 m outward, 0.8 m upward/downstream. Does not enter player floor, safe rest or Relay sightline. |
+| Passenger lining | Rest centre X +3, Y 3.15, Z +6.5; 0.4 x 1.05 x 0.08 m burgundy/wood panel. Trigger +4.5..+2 after the rack approach. Over 1.2 s drops 0.9 m, moves 0.9 m outward and 0.8 m downstream; stays outside the body/camera lane. This drops behind the runner, away from the cab/hole approach, without blocking sightlines by a full-width foreground effect. |
+| Shared time/lifecycle | Each event has a one-shot retained clock, initial -1, capped at duration. Normal/Slow/Freeze/Rewind use actual time-system snapshot callbacks. Vault has one continuous clock. Checkpoints save clocks and cue-consumed flags; restore applies poses before history reset. Cues do not replay on rewind or start late after frozen activation. Pause blocks the new owner; braking scales motion to zero using existing 2.5 s deceleration. Completion/unload stops it. No wall-clock gameplay timers or per-frame geometry/material replacement. |
+
+Static delta measured from the actual level's added subtrees, counting instances
+in triangle totals (these are not measured renderer draw calls):
+
+| Subtree | Mesh objects | Rendered instances including ordinary meshes | Triangles | Unique geometries | Referenced materials |
+| --- | --- | --- | --- | --- | --- |
+| Cargo repair fragments | 4 InstancedMesh | 12 | 144 | 1 | 2 existing bridge materials |
+| Connector repair fragments | 4 InstancedMesh | 12 | 144 | 1 | 2 existing bridge materials |
+| Events and Vault valuables | 6 Mesh + 1 InstancedMesh | 9 | 228 | 7 | 4 new materials |
+
+Combined **15 mesh objects, 33 instances, 516 triangles, nine geometries, four new
+materials** (eight referenced, including four existing bridge materials). Four
+new registrations: three one-shot events plus valuables. Zero added textures,
+lights, shadow casters, transparent materials/particles, post passes, supports,
+voids or collision. One bounded short background audio voice, peak gain 0.018,
+0.3 s duration; no new continuous audio or samples. Existing warning transients
+remain separate and louder by configured gain, but actual audible balance is
+unverified. Instance matrices are reused; primitive construction parts are disposed
+after merging; root disposal releases shared resources once. These structural
+counts do not prove actual GPU/heap stability, FPS or a performance improvement.
+
+N9 integration findings and decisions:
+
+1. Extending continuous traversal to maintenance exposed a **script phase
+   assumption**, not evidence for changing game rules: at 144 FPS the old fixed
+   Slow macro hit the first Mechanical luggage bank after the longer route,
+   with about 75.24 energy. The route now observes the real first trunk clear of
+   its lane and holds it, then observes the two downstream banks independently
+   with recharge on existing safe floor. Both complete continuous routes now
+   pass at all three rates. Existing isolated Slow alternatives still pass.
+   No hazard timings, drain rates, movement or assertion thresholds were weakened.
+2. Minimum-energy Passenger retries retain the N6 measurements: 4.37/4.42 s to
+   brake approach, minimum wave gap 9.85 m, minimum energy 2.044..4.294 across
+   fixed/mixed schedules. New side events did not require a route or budget tune.
+   This remains a tight automated energy margin and unverified human difficulty.
+3. Every new vignette is tested in a real level during presentation pause,
+   frozen movement, caught callback pause/resume, final-life game-over restart,
+   manual restart and quit. Fake timers exercise callback ordering, not native
+   browser input. Disposed owners cannot mutate stale nodes; reset restores saved
+   checkpoint phase and histories. Existing tests cover finale skip/natural
+   completion, both crouch modes, rebindings, depleted alternatives, repeated
+   checkpoint starts and all attached resource teardown.
+4. Level 2 source/builders, supports and mechanics were not edited; its regression
+   tests pass in the full suite. No Level 2 screenshot or runtime resource parity
+   is claimed. No human failure evidence was available, so no difficulty tuning.
+5. Read and reconciled the older ledgers: upgrade **Batch 6 remains partially
+   verified**, refinement **R7 remains not separately implemented/accepted**, and
+   R1-R6 rendered requirements stay pending. See their appended N9 reconciliation
+   notes. Automation does not close A1-A9 or substitute for N1's missing benchmark.
+
+Fresh final evidence:
+
+| Check | Result |
+| --- | --- |
+| Focused feedback tests | PASS: three tests, all vignettes at 30/60/144 and mixed 1/144, 1/30, 100 ms, 1/60 steps; pause/held trigger/rewind/checkpoint/braking/stop and stable geometry/material ownership. |
+| Both continuous L3 routes | PASS at 30/60/144 FPS: Vault -> both Convergence choices -> connector -> steam/luggage -> Cargo/freight -> Relay -> Security -> Passenger -> brake/victory callback, with real movement and no new room teleports. This starts at L3 and is not a production L1-to-victory claim. |
+| Event lifecycle/game-over tests | PASS: actual level/manager/respawn ownership through every new event, stale caught/game-over callbacks rejected, fresh scene on restart. |
+| `npm.cmd test` | PASS: **163 passed, zero failed/skipped**, final run about 25.36 s; includes updated Cargo/connector fragment rewind/reset assertions and audio graph. |
+| `npm.cmd run build` | PASS, about 2.32 s; existing >500 kB chunk warning remains. |
+| `node scripts/check-production.mjs` | PASS: **57 files, 72.66 MiB, 56** case-sensitive local subdirectory HTTP asset references. No browser/shader execution inferred. |
+| Actual-level subtree inventory | PASS: resource delta above; zero new lights/shadows/transparency. Full suite includes three cycles across seven L3 start variants with attached resource disposal checks. |
+| `git diff --check`, new-file whitespace/conflict and Markdown fence/link checks | PASS at handover. |
+| Fresh browser inventory/launch | `apps: []`, `browsers: []`; in-app launch returned **`Browser is not available: iab`**. No screenshot, rendered shader/console/network trace, audio recording or hardware benchmark obtained. |
+
+Full Node suite and Vite used approved child-process access. Focused tests used
+Node's isolation-free runner or direct modules. Existing non-indexed geometry and
+headless audio cache/timer warnings remain. An initial feedback test used a
+nonexistent history reset helper; it was corrected to the actual checkpoint reset
+API. The failed maintenance macro was corrected as described above. Ignored local
+evidence: `reports/expansion-n89-{feedback,routes,lifecycle,gameover,tests,build,
+geometry}.log`. Routine packaging output was returned directly.
+
+Remaining acceptance / stop state:
+
+- **N8 implementation complete; visually/audibly unverified. N9 partial.** No
+  actual production New Game -> L1 -> L2 -> L3 -> victory without shortcuts,
+  native pointer lock/menu ordering, two-camera rendered evidence, audible balance,
+  first-time human comprehension/difficulty, or identified-hardware CPU/GPU/frame/
+  resource traces. Browser availability is a concrete blocker, not a passing check.
+- **A1-A9 all remain open**, with fresh automated supporting evidence as above.
+  Check repairs at intact/broken/intercepted poses in both views, then all three
+  vignettes in Normal/Slow/Freeze/Rewind and finale stasis/braking. Inspect open
+  shell silhouettes, warning/catch/brake sightlines, culling/shadows/minimap,
+  lights/fog/reveal, audio unlock/master/mute/pause, and repeated native retries.
+- **N1 remains NOT STARTED**; finish its Cargo static visual benchmark under an
+  explicit request before claiming all N-series implementation complete. Preserve
+  N2-N8 footprints, especially freight, gangway landing, connector lips and the
+  tight Passenger energy margin. Credits identities/trailer/hosting remain deferred.
+- No new batch or publication was begun. Continue with the exact prompt below;
+  do not create an invented N10 or mark old R7 complete by inference.
+
+## Exact continuation prompt
+
+```text
+Use Game Studio. Complete the skipped N1 and the remaining N9 acceptance from
+reports/level-3-expansion-plan.md. Read that plan, both older upgrade/refinement
+acceptance ledgers and the relevant current source first. Inspect git status and
+preserve existing changes. N2-N8 are implemented and automatically checked; N9
+automated integration is complete but full acceptance remains partial.
+
+Implement only N1's Cargo static visual benchmark, respecting the real gangway,
+all floor holes/lips/landings, loop door/load, -4.2 checkpoint and freight sweep
+at -7. Do not retune or reimplement N2-N8. Reuse the established materials and
+merged static geometry, with correct ownership and no new lights/shadow casters
+or post passes by default. Record final placements and resource deltas.
+
+Attempt a fresh production New Game -> L1 -> L2 -> L3 -> victory run without dev
+shortcuts. Verify both Convergence routes, both views, all new events/repairs,
+minimum-energy retries and reasonable alternatives, Ghost cancel/expiry,
+hold/toggle crouch, native rebound inputs, pause/caught/game-over/restart/quit,
+and finale skip/natural completion with stale callback rejection. Capture actual
+screenshots/audio/console/network/shader results and hardware/settings-specific
+frame/resources/heap evidence. Compare L2 as well as L3. Check N6's tight energy
+margin with human execution; fix demonstrated expansion regressions first and
+preserve original movement/power/wave parameters without a documented scope decision.
+
+Run appropriate tests/build/production packaging/resource/diff checks. Reconcile
+A1-A9 and older Batch 6/R7 statuses only against actual evidence. If browser or
+human/hardware evidence remains unavailable, finish feasible implementation and
+keep precise acceptance pending; do not call N9, R7 or the production run fully
+verified. Update all affected handovers with changed files, bounds/counts, fresh
+evidence, unresolved issues and an exact continuation prompt. No publication,
+new level, engine migration or unrelated batch.
 ```

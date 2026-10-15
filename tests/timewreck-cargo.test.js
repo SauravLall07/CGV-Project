@@ -29,12 +29,16 @@ function gangwayHarness() {
 test('Cargo: waiting on a broken gangway retains repair history at different refresh rates', () => {
   for (const fps of [30, 60, 144]) {
     const { time, bridge, tick } = gangwayHarness()
+    const fragments = bridge.group.getObjectByName('cargo-repair-splinters')
+    const intactFragments = Array.from(fragments.instanceMatrix.array)
     tick(14, fps)
+    assert.notDeepEqual(Array.from(fragments.instanceMatrix.array), intactFragments)
     assert.ok(bridge.state.angle > 1)
     assert.ok(bridge.supports.every((s) => s.maxX < s.minX))
     time.triggerRewind()
     tick(0.34, fps)
     assert.ok(bridge.state.angle < 0.01, `${fps} FPS restores an intact deck after waiting`)
+    assert.deepEqual(Array.from(fragments.instanceMatrix.array), intactFragments, 'repair fragments return with the actual rewound deck')
     time.triggerFreeze()
     const clock = bridge.state.clock
     tick(1.5, fps)

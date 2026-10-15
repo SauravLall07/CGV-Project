@@ -906,3 +906,15 @@ Complete R7 only. If browser access remains unavailable, complete feasible check
 and record the precise blocker; do not mark full integration/visual/performance
 acceptance complete or imply publication. Finish with an honest final handover.
 ```
+
+## Expansion N9 acceptance reconciliation (2026-10-15)
+
+The later [N8/N9 handover](level-3-expansion-plan.md#n8n9-implementation-and-verification-2026-10-15)
+adds fresh automated coverage of both continuous L3 branches, minimum-energy
+retries, new event lifecycle, stop/skip, audio graphs and resource disposal:
+163 tests pass, plus build and local packaging. It preserves R1-R6 mechanics
+and their unverified rendered requirements. No browser, screenshots, audible
+review, native controls or hardware measurements were obtained. **R7 has not
+been separately implemented or accepted**, and R1-R6 rendered acceptance stays
+pending. Overlapping N9 tests are supporting evidence, not a retroactive pass
+for R7 or the A1-A9 ledger; N1 is also still absent. No publication occurred.

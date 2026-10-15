@@ -77,6 +77,8 @@ test('N7: idle retains repair history, frozen broken leaves stay unsupported, an
 test('N7: both floors/edge strips expose the full gap and supported strips match moving leaf surfaces', () => {
   const h = harness(60)
   try {
+    const fragments = h.connector.group.getObjectByName('connector-repair-splinters')
+    const intactFragments = Array.from(fragments.instanceMatrix.array)
     const surfaces = []
     h.root.traverse(n => { if (/^(floor-|convergence-floor-edge|mechanical-floor-edge)/.test(n.name)) surfaces.push(n) })
     h.root.updateMatrixWorld(true)
@@ -92,8 +94,10 @@ test('N7: both floors/edge strips expose the full gap and supported strips match
       assert.ok(Math.abs(hits[0].point.y - s.y) < 0.001)
     }
     h.time.setMode('NORMAL'); h.tick(1)
+    assert.notDeepEqual(Array.from(fragments.instanceMatrix.array), intactFragments)
     assert.ok(h.connector.supports.slice(0, 24).every(s => s.maxX < s.minX))
     h.connector.reset()
+    assert.deepEqual(Array.from(fragments.instanceMatrix.array), intactFragments, 'reset restores visible splinters with supports')
     assert.equal(h.connector.clock, -1)
     assert.ok(h.connector.supports.slice(0, 24).every(s => s.minX < s.maxX && s.y === CONNECTOR.top))
   } finally { h.dispose() }

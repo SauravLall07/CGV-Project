@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { createRepairFragments } from './timewreck-feedback.js'
 
 // Local to the wreck: Level 2's floor and machinery remain unchanged.
 export const CARGO_GANGWAY = Object.freeze({
@@ -149,9 +150,12 @@ export function createCargoGangway({ root, layout, wood, brass, cyan }) {
   stops.name = 'cargo-gangway-fixed-hinge-stops'
   group.add(stops)
   // Mutate persistent strips instead of allocating support objects per frame.
+  const repair = createRepairFragments({ leaves, width: CARGO_GANGWAY.width, length: halfLength,
+    wood, brass, name: 'cargo' })
   const supports = Array.from({ length: 24 }, () => ({ minX: 0, maxX: -1, minZ: 0, maxZ: -1, y: 0 }))
   function apply() {
     const angle = state.angle
+    repair.update(angle)
     outline.visible = angle > 0.02
     let index = 0
     for (const { hinge, sign } of leaves) {

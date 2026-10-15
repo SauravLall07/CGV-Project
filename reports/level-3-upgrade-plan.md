@@ -287,3 +287,15 @@ Remaining acceptance work / stop state:
 5. Team identities/roles and trailer/hosted URLs remain deferred under the earlier user instruction. Nothing was published or represented as deployed.
 
 Stopped after the feasible Batch 6 implementation, integration verification and this handover. Batch 6 is **partially verified**, with the browser-dependent acceptance work explicitly outstanding.
+
+## Expansion N9 acceptance reconciliation (2026-10-15)
+
+The later [N8/N9 handover](level-3-expansion-plan.md#n8n9-implementation-and-verification-2026-10-15)
+records 163 passing tests, build and local production packaging, continuous L3
+routes through both forks at 30/60/144 FPS, event pause/caught/game-over/restart/
+quit handling and final skip/natural completion checks. These supersede older
+test counts only as fresh automated evidence for the expanded current source.
+Browser inventory is still empty and in-app launch unavailable. **Batch 6 stays
+partially verified**: the actual production L1-to-victory run, native input,
+rendered/audio/human and measured hardware performance/resource acceptance above
+remain outstanding. N9 automation does not close them; nothing was published.

@@ -10,6 +10,7 @@ export function createWreckAudio({ context = getContext, output = getMasterGain 
   let settled = false
   let paused = false
   let disposed = false
+  let debrisVoice = null
   const voices = new Set()
   function connect() {
     const ctx = context(), master = output()
@@ -41,9 +42,16 @@ export function createWreckAudio({ context = getContext, output = getMasterGain 
     voices.clear()
     bed?.disconnect(); bed = null
     brakeVoice = null; settled = false
+    debrisVoice = null
     bus?.disconnect(); bus = null
   }
   return {
+    debris(kind) {
+      const ctx = connect()
+      if (!ctx || paused || (debrisVoice && voices.has(debrisVoice))) return
+      const frequency = kind === 'convergence' ? 175 : kind === 'cargo' ? 110 : 240
+      debrisVoice = tone(ctx, frequency, 45, 0.3, 0.018, 'triangle')
+    },
     snap() {
       const ctx = connect()
       if (ctx && !paused) {

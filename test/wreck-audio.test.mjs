@@ -22,7 +22,7 @@ test('Wreck audio: silent before unlock; real master/mute, hush, pause, settling
     createOscillator: () => { const n = node('oscillator'); sources.push(n); return n }
   }
   const silent = createWreckAudio({ context: () => null, output: () => null })
-  silent.warning(); silent.snap(); silent.brake(); silent.update(true, false); silent.dispose()
+  silent.warning(); silent.snap(); silent.debris('cargo'); silent.brake(); silent.update(true, false); silent.dispose()
   assert.equal(nodes.length, 0)
   const oldWindow = globalThis.window
   const volume = settings.get('masterVolume'), mute = settings.get('mute')
@@ -45,12 +45,16 @@ test('Wreck audio: silent before unlock; real master/mute, hush, pause, settling
     sound.snap()
     assert.equal(sources.length, beforeSnap + 2, 'one connector snap uses two bounded short tones')
     assert.ok(sources.slice(-2).every(s => s.destination.destination === bus && s.stopped))
+    const beforeDebris = sources.length
+    sound.debris('cargo'); sound.debris('passenger'); sound.debris('convergence')
+    assert.equal(sources.length, beforeDebris + 1, 'background cues share one bounded transient voice')
+    assert.equal(sources.at(-1).destination.destination, bus)
     settings.set('mute', true); assert.equal(master.gain.value, 0)
     settings.set('masterVolume', 0.23); assert.equal(master.gain.value, 0)
     settings.set('mute', false); assert.equal(master.gain.value, 0.23)
     sound.setPaused(true); assert.equal(bus.gain.value, 0)
     const count = sources.length
-    sound.warning(); sound.snap(); assert.equal(sources.length, count)
+    sound.warning(); sound.snap(); sound.debris('cargo'); assert.equal(sources.length, count)
     sound.setPaused(false); assert.equal(bus.gain.value, 1)
     assert.equal(master.gain.value, 0.23, 'resuming must not override master volume')
     sound.brake(); sound.update(true, false, 0)

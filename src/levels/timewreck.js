@@ -14,6 +14,7 @@ import { bindingLabel, settings } from '../core/settings.js'
 import { createWreckRoutes, createPassengerRack } from './timewreck-routes.js'
 import { createWreckSpatial } from './timewreck-spatial.js'
 import { createWreckConnector } from './timewreck-connector.js'
+import { createWreckFeedback } from './timewreck-feedback.js'
 import { createSecurityCrossing } from './timewreck-security.js'
 import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
@@ -2282,6 +2283,7 @@ export function createTimewreckLevel({
   function finishBraking() {
     if (disposed || !braking || brakeComplete) return
     brakeComplete = true
+    feedback.stop()
     braking = false
     wreckAudio.reset()
     hazardAudio.reset()
@@ -2370,11 +2372,17 @@ export function createTimewreckLevel({
       if (kind === 'freight') showLevelToast(`Freight straps creaking! Wait for the case to swing aside; ${bindingLabel(settings.getBinding('slow'))} Slow or ${bindingLabel(settings.getBinding('freeze'))} Freeze can hold a clear route.`, 4500)
     } })
 
+  const feedback = createWreckFeedback({ root, spans, player, timeSystem, unregisters,
+    cue: kind => wreckAudio.debris(kind),
+    playbackScale: () => braking ? Math.max(0, 1 - brakeT / 2.5) : 1
+  })
+
   // Capture the collapse at each checkpoint, then restore moving hazards to a
   // predictable phase. The final checkpoint also puts the pursuing wave far
   // enough behind the player for repeated deaths to remain recoverable.
   function captureCheckpointRestore(checkpointZ) {
     const saved = {
+      feedback: feedback.capture(),
       depleted,
       relayLatched,
       breakupT,
@@ -2454,6 +2462,7 @@ export function createTimewreckLevel({
       wreckAudio.reset()
       hazardAudio.reset()
       expansionHazards.reset()
+      feedback.restore(saved.feedback)
       brakeComplete = false
       hud.hideCinematicSkip?.()
       brakeT = 0
@@ -2528,7 +2537,7 @@ export function createTimewreckLevel({
     voids: gapVoids,
     getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return braking },
-    setPresentationPaused(value) { wreckAudio.setPaused(value); hazardAudio.setPaused(value) },
+    setPresentationPaused(value) { wreckAudio.setPaused(value); hazardAudio.setPaused(value); feedback.setPaused(value) },
 
     update(delta) {
       // Recover temporary render visibility even if a prior render was aborted.
@@ -2611,6 +2620,7 @@ export function createTimewreckLevel({
       passengerRack.update()
       expansionHazards.update(!braking && !respawn.isFailing())
       connector.update(!braking && !respawn.isFailing())
+      feedback.update(!braking && !brakeComplete && !respawn.isFailing())
       if (pp.z > connector.gap.minZ && pp.z < connector.gap.maxZ && pp.y < -0.65) {
         failSoft('The connector folded. Rewind from solid floor, then Freeze its flat hinges.', 'fell')
       }
@@ -3047,6 +3057,7 @@ export function createTimewreckLevel({
 
     dispose() {
       disposed = true
+      feedback.stop()
       spatial.dispose(slabSupports)
       for (let i = slabSupports.length - 1; i >= 0; i--) if (connector.supports.includes(slabSupports[i])) slabSupports.splice(i, 1)
       const connectorVoidIndex = gapVoids.indexOf(connector.gap)

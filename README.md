@@ -12,12 +12,18 @@ plumbing the rest of the game builds on — an interaction system, a
 state-machine level manager (with dispose-based teardown and
 restart-without-refresh), a checkpoint/respawn system, an asset-loading
 pipeline with a progress-bar loading screen, and a HUD scaffold. All three
-levels are now playable start to finish — Level 1 stealth infiltration, Level 2
+levels are implemented — Level 1 stealth infiltration, Level 2
 five-carriage time-manipulation traversal, and Level 3's escape run back down
 the wrecked train. Every asset is built from Three.js primitives and
 procedurally generated textures — nothing is modelled or downloaded. See
 [Roadmap](#roadmap) below for exactly what's implemented versus what's still to
 come.
+
+Level 3 expansion validation: automated traversal covers both Convergence routes,
+retries and lifecycle checks. Rendered/audio/human/performance acceptance and a
+full production New Game-to-victory run remain pending. See the
+[expansion verification handover](reports/level-3-expansion-plan.md#n8n9-implementation-and-verification-2026-10-15)
+for evidence and outstanding work.
 
 ## Controls
 
