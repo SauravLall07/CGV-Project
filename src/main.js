@@ -649,6 +649,7 @@ function devStartOptions() {
   if (!target) return null
   if (target === 'level2') return { state: 'MovingHeist' }
   if (target === 'level3') return { state: 'Timewreck' }
+  if (target === 'level3-relay') return { state: 'Timewreck', levelOptions: { startCarriage: 'relay' } }
   if (target === 'level3-cargo') return { state: 'Timewreck', levelOptions: { startCarriage: 'cargo' } }
   const carriages = ['passenger', 'security', 'relay', 'cargo', 'mechanical', 'convergence', 'roof', 'vault']
   if (carriages.includes(target)) return { state: 'MovingHeist', levelOptions: { startAt: target } }

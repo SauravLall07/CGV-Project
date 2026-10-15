@@ -24,7 +24,7 @@ Documents reviewed: beta-readiness handover (13 Oct), October beta audit/cards, 
 
 ## Batches and intended solutions
 
-### Batch 1: Cargo Rewind / Freeze crossing (authorized now)
+### Batch 1: Cargo Rewind / Freeze crossing (implemented)
 
 Add a wood/brass hinged gangway over a real opening before the existing loop bulkhead. It buckles on approach and remains failed; preserve the failure history while idle. Rewind restores the earlier level deck, then Freeze holds both deck and bulkhead open while the player crosses. An intact landing separates the crossing from the bulkhead so energy can recover. Door-open and restored-deck states must overlap. Use environmental cues, binding-aware help, accurate supports and a safe pre-puzzle checkpoint. Restore the same solvable setup after repeated failures. Do not introduce a global ability mode change or blanket Freeze strain.
 
@@ -63,13 +63,16 @@ Play the entire production build without shortcuts, then repeat deaths/restarts/
 - [x] Implement Batch 1 Cargo geometry, timeline, landing and checkpoint integration.
 - [x] Verify Batch 1 automated behavior and production build: 41/41 suite tests pass, including six new Cargo tests; production build passes.
 - [x] Attempt browser playtest: in-app browser unavailable; browser inventory returned no connected browsers. Rendered visual QA and hands-on difficulty are explicitly unverified.
-- [ ] Batches 2-6 are pending and not authorized by the current implementation request.
+- [x] Implement Batch 2 Relay Ghost release, far-side permanent catch and safe checkpoints.
+- [x] Verify Batch 2 simulation/integration and restart lifecycle; 48/48 suite tests pass and production build passes.
+- [ ] Batch 2 rendered browser QA remains unavailable; do not treat automated checks as visual or hands-on approval.
+- [ ] Batches 3-6 remain pending and are not authorized by this request.
 
 ## Decisions
 
 - 2026-10-15: Keep the existing JavaScript/custom support/Cannon architecture; specialist skill defaults are not a reason to migrate the project.
 - 2026-10-15: Cargo uses selectively recorded one-shot failure history, following L2, so repairs remain available after waiting. Bulkhead keeps its periodic shared-time behavior and can be stopped separately after reaching the landing.
-- 2026-10-15: Persist all progress here; only implement Batch 1 in this session.
+- 2026-10-15 (Batch 1 session): Persist all progress here; only implement Batch 1 in that session.
 - 2026-10-15: Gangway opening is 4.8 m long, Cargo center +3.8 to +8.6; deck width 1.6 m, intact top 0.1 m. The trigger is center +12.8; failure warns for 0.18 s then folds for 0.65 s. Two hinged halves fold downward. Supports follow each half in strips while shallow enough to stand on (<=0.18 rad); steeper failed leaves cannot support the player. The entire shell width is a void, so wall-side furniture supplies no invisible floor bypass. Early Slow/Freeze interception is an intentional alternate solution, consistent with L2.
 - 2026-10-15: Landing is center +3.15, between gap end +3.8 and bulkhead +2. The nine-second bulkhead loop is unchanged; its green 2.5 s phase has door up and luggage raised. A player can repair/freeze/cross, recharge on the landing, then hold the next green window. No requirement to independently freeze different targets.
 - 2026-10-15: Existing Cargo entry checkpoint is center +12.5 on safe floor; add an exit checkpoint at Cargo minZ +1.5 after all Cargo hazards. Reset gangway to intact and door clock to zero before the shared time system rebuilds snapshot baselines. Local Cargo fall messages use the actual player height; door/load failures now test visible object/body overlap rather than arbitrary phase cutoffs.
@@ -78,9 +81,9 @@ Play the entire production build without shortcuts, then repeat deaths/restarts/
 
 ## Verification, known issues and next step
 
-Batch 1 implementation is complete. Batches 2-6 remain untouched. Baseline working tree changes listed above were preserved.
+Batch 1 implementation is complete. Batch 2 implementation and automated verification are complete, with rendered browser QA still pending. Batches 3-6 remain untouched. The Batch 2 starting working tree was clean; prior completed work was preserved.
 
-Verified on 2026-10-15:
+Batch 1 verification on 2026-10-15:
 
 - `npm.cmd test`: 41 tests passed, zero failures (six new Cargo tests). Sandbox initially prevented Node's isolated worker processes; final suite ran with approved process access. The single-process fallback was unsuitable because old test files replace global DOM stubs; do not use its failures as source regressions.
 - New tests exercise 30/60/144 FPS repair after 14 seconds idle; Freeze retaining a broken pose; full-width floor raycasts; actual L3 decorative deck opening; real player traversal/energy recovery; shared Freeze holding the open bulkhead; body overlap with a partly closed frozen door; and three actual respawn/checkpoint resets followed by another successful repair.
@@ -96,4 +99,32 @@ Local test instructions:
 4. Cross to the intact landing before the door; release Freeze and recharge. Wait for the bulkhead ring to turn green, then Freeze the open door/raised luggage and move through.
 5. Deliberately fall once and repeat. R restarts at Cargo in this development shortcut. Custom bindings are reflected in new Cargo hints.
 
-Next batch after user review: Batch 2, Relay Ghost emergency release. Read this plan, inspect the current Cargo implementation, retain the tests and don't treat the missing rendered QA as completed. The current request ends here.
+## Batch 2 results (2026-10-15)
+
+Implemented only Relay's emergency release. Reused the existing teal/brass fire-door leaves and L2 operator-platform vocabulary; no code sequence, engine changes, new targeting or later-batch mechanics. Added a low platform 4.6 m before the door and one manual catch 1.8 m beyond it. Hints use current Ghost/interact bindings. Cyan means released; green means permanently latched.
+
+Decisions and lifecycle:
+
+- Player and Ghost weight use the same square 0.56 m half-size and 0.25 m height tolerance. The platform is registered with the existing stationary eight-second Ghost hold. Cost remains 35 energy plus the existing 1.5/s Ghost drain; normal-mode recharge remains 15/s.
+- The spring door follows real time and Ghost occupancy independently of Slow/Freeze/Rewind. Opens in 0.4 s, closes in 0.45 s. An initial 0.65 s close allowed a solo sprint at 30 FPS; the final close was checked at 30/60/144 FPS. A real walking crossing from platform to catch takes about 1.55 s after summon, leaving substantial duration/energy margin. Shared ability modes remain unchanged globally.
+- Collision tracks both rendered leaves, with the existing side housings blocking wall bypasses. Shut doors block walking and jumping. Closing waits at the current pose when the body occupies the seam, so cancellation does not crush the player.
+- The catch is eligible only beyond the door, at floor height and within interaction range. It immediately latches the passage open and saves a far-side checkpoint. It also mechanically reopens the door if the echo was lost after crossing, preventing a far-side soft lock.
+- Added a safe Relay entry checkpoint before the platform. Pre-catch respawns restore a shut door, usable energy, zero Ghost cooldown and no stale echo. Captured post-catch checkpoints restore the open/latched door immediately, before the time-system reset. Full restart rebuilds an unlatched puzzle. Teardown cancels the echo and unregisters the pad and interaction.
+- Added dev-only `?start=level3-relay`; it uses the existing restart options, like the Cargo shortcut. Production progression is unchanged.
+
+Verification:
+
+- `npm.cmd test`: **48 passed, zero failures**, including seven new Relay integration tests and all six Cargo tests. Tests use the actual player, time, level and respawn systems. Catch tests invoke the registered interaction callback and eligibility predicate; browser aiming/prompt visibility remains unverified.
+- Covered walking traversal and solo sprint at 30/60/144 FPS; energy cost, insufficient-energy rejection and safe recharge; airborne player/echo rejection; eight-second expiry; cancellation before crossing and inside the seam; far-side recovery; shared-mode switching; three repeated resets before and after the catch; disposal/unregistration and fresh level reconstruction.
+- `npm.cmd run build`: passed. Existing large-chunk warning remains. Headless fixtures also log existing geometry warnings and audio cache/timer messages; browser audio behavior was not assessed.
+- `git diff --check`: passed.
+- Browser attempt: inventory returned no browsers; creating an in-app browser returned `Browser is not available: iab`. No screenshots, rendered visual QA, first/third-person catch aiming, runtime shader/performance results, or hands-on difficulty approval is claimed.
+
+Local Relay playtest when a browser is available:
+
+1. Run `npm run dev`, open `http://127.0.0.1:5173/?start=level3-relay`, and choose NEW GAME.
+2. Walk onto the brass/teal spring platform. Summon Ghost using the displayed binding, walk through the released door, then use the far-side manual catch. Confirm green lamp and checkpoint toast.
+3. Cancel Ghost before crossing and wait for expiry on another attempt. Confirm the door blocks safely, safe floor permits recharge, and a retry restores the entry setup. Cancel while inside the seam and confirm no crushing or trapping.
+4. After latching, deliberately die and confirm the far-side spawn and open door. Press R and confirm a fresh unlatched puzzle with no echo. Repeat in both views and with rebound controls; check the catch prompt and brass linkage visually.
+
+Remaining issues: browser and visual checks above are outstanding for Batches 1 and 2. Full production-route integration and tuning belong to Batch 6. Next implementation batch, only on a new request: Batch 3, Security two-stage crossing. Stop after this Batch 2 handover.

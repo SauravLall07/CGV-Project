@@ -12,7 +12,6 @@ import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
 import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
 import {
-  DASH_DOOR_TIMING,
   createCarriageShake,
   createStormDebris,
   createLampMotion,
@@ -672,28 +671,13 @@ export function createTimewreckLevel({
     }
   }
 
-  // Relay blast doors. The clock uses envDt, so Slow, Freeze and Rewind
-  // move the whole cycle — leaves and warning light — together. Close is a
-  // fast slam after a long readable warning so Freeze is the reliable cross.
-  // Short open + clear warning, then a hard slam. Freeze during the open/warn
-  // window is the reliable cross; waiting it out is tight.
-  //
-  // Open-hold only — independent of atmosphere shake/debris/lights/handles.
-  // Disable via DASH_DOOR_TIMING.enabled in timewreck-atmosphere.js (reverts to 0.28).
-  const BLAST_OPEN_S = DASH_DOOR_TIMING.enabled ? DASH_DOOR_TIMING.openHoldSeconds : 0.28
-  const BLAST_WARN_S = 0.4
-  // Slam duration — shorter = door closes faster (challenge bump).
-  const BLAST_CLOSE_S = 0.11
-  const BLAST_SHUT_S = 0.3
-  const BLAST_REOPEN_S = 0.55
-  const BLAST_CYCLE_S = BLAST_OPEN_S + BLAST_WARN_S + BLAST_CLOSE_S + BLAST_SHUT_S + BLAST_REOPEN_S
-  const BLAST_LEAF_HALF_X = 0.75
-  const BLAST_LEAF_HALF_Z = 0.18
-  const BLAST_LEAF_TOP = 2.8
+  // Relay spring release follows Ghost's real-time clock, independently of shared modes.
   const doorZ = spans.relay.center - 2.6
-  let blastT = 0
+  const releasePos = new THREE.Vector3(0, 0.03, doorZ + 4.6)
+  const catchZ = doorZ - 1.8
+  let relayLatched = false
+  let relayOpen = 0
   let blastSlam = 0
-  let blastWasClosing = false
 
   // Vintage teal/brass door leaves — same leaf dims / motion / hits as before.
   // Warm amber warning accents (readable) replace flat industrial red.
@@ -786,95 +770,97 @@ export function createTimewreckLevel({
   blastDoors.traverse((node) => { node.userData.noCameraCollision = true })
   root.add(blastDoors)
 
+  // Low brass/teal operator platform reuses L2's footprint and occupancy height.
+  const releasePlatform = new THREE.Group()
+  releasePlatform.name = 'relay-emergency-platform'
+  releasePlatform.position.copy(releasePos)
+  blastBox(releasePlatform, 1.22, 0.04, 1.22, blastSteel, 0, -0.02, 0)
+  const releaseDeck = blastBox(releasePlatform, 1.08, 0.02, 1.08, blastPlate, 0, 0, 0)
+  for (const x of [-0.46, 0.46]) {
+    blastBox(releasePlatform, 0.06, 0.025, 0.9, blastScar, x, 0.02, 0)
+    for (const y of [0.01, 0.04, 0.07]) {
+      const spring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.018, 6, 12), blastSteel)
+      spring.rotation.x = Math.PI / 2
+      spring.position.set(x * 1.4, y, 0)
+      releasePlatform.add(spring)
+    }
+  }
+  root.add(releasePlatform)
+  blastBox(blastDoors, 0.045, 0.045, 4.6, blastSteel, -0.69, 0.04, doorZ + 2.3)
+  unregisters.push(timeSystem.registerGhostPad(releasePos, 0.56))
+
+  const manualCatch = new THREE.Group()
+  manualCatch.name = 'relay-manual-catch'
+  manualCatch.position.set(0.8, 1.05, catchZ)
+  blastBox(manualCatch, 0.38, 0.48, 0.22, blastPlate, 0, 0, 0)
+  const catchHandle = blastBox(manualCatch, 0.3, 0.07, 0.12, blastSteel, 0, 0.12, 0.18)
+  root.add(manualCatch)
   const blastObstacles = [
-    { minX: -2.6, maxX: -1.1, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
-    { minX: 1.1, maxX: 2.6, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 }
+    { minX: -INTERIOR_HALF_WIDTH, maxX: -1.1, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
+    { minX: 1.1, maxX: INTERIOR_HALF_WIDTH, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
+    { minX: 0, maxX: 0, minZ: doorZ - 0.18, maxZ: doorZ + 0.18 },
+    { minX: 0, maxX: 0, minZ: doorZ - 0.18, maxZ: doorZ + 0.18 }
   ]
 
-  function updateBlastDoors(dt, playerPos) {
-    blastT = ((blastT + dt) % BLAST_CYCLE_S + BLAST_CYCLE_S) % BLAST_CYCLE_S
-    let closeAmount = 0
-    let lampEi = 0.12
-    let lightI = 0.45
-    let fillI = 0.15
-    const warnStart = BLAST_OPEN_S
-    const closeStart = warnStart + BLAST_WARN_S
-    const shutStart = closeStart + BLAST_CLOSE_S
-    const reopenStart = shutStart + BLAST_SHUT_S
-    const closing = blastT >= closeStart && blastT < shutStart
-    if (blastT < warnStart) {
-      closeAmount = 0
-    } else if (blastT < closeStart) {
-      closeAmount = 0
-      const flick = 0.5 + 0.5 * Math.sin(blastT * 18 * Math.PI)
-      lampEi = 0.45 + flick * 2.6
-      lightI = 1.2 + flick * 14
-      fillI = 0.8 + flick * 4
-    } else if (blastT < shutStart) {
-      // Ease-in slam: slow start, then hard close into the centre.
-      const u = (blastT - closeStart) / BLAST_CLOSE_S
-      closeAmount = u * u * u
-      const pulse = 0.5 + 0.5 * Math.sin(blastT * 14 * Math.PI)
-      lampEi = 2.0 + pulse * 0.8
-      lightI = 8 + pulse * 6
-      fillI = 4 + pulse * 3
-    } else if (blastT < reopenStart) {
-      closeAmount = 1
-      const pulse = 0.5 + 0.5 * Math.sin(blastT * 4 * Math.PI)
-      lampEi = 1.7 + pulse * 0.35
-      lightI = 8 + pulse * 2
-      fillI = 2.5
-    } else {
-      const u = (blastT - reopenStart) / BLAST_REOPEN_S
-      const eased = u * u * (3 - 2 * u)
-      closeAmount = 1 - eased
-      const pulse = 0.5 + 0.5 * Math.sin(blastT * 8 * Math.PI)
-      const urgency = 1 - eased
-      lampEi = 0.12 + urgency * (1.4 + pulse * 0.6)
-      lightI = 0.45 + urgency * (6 + pulse * 3)
-      fillI = 0.15 + urgency * 2
+  function applyRelay() {
+    const close = 1 - relayOpen
+    blastLeft.position.x = -1.85 + 1.1 * close
+    blastRight.position.x = 1.85 - 1.1 * close
+    for (const [i, leaf] of [blastLeft, blastRight].entries()) {
+      Object.assign(blastObstacles[i + 2], {
+        minX: leaf.position.x - 0.75, maxX: leaf.position.x + 0.75
+      })
     }
-    if (blastWasClosing && !closing && closeAmount >= 0.99) {
-      blastSlam = 1
-      slamSparks.material.opacity = 0.85
-    }
-    blastWasClosing = closing
-
-    blastSparkMat.emissiveIntensity = lampEi > 0.4 ? lampEi * 0.85 : 0.15
-    blastLampMat.emissiveIntensity = lampEi
-    blastSteel.emissiveIntensity = 0.12 + Math.min(0.45, lightI * 0.04)
-    blastLight.intensity = lightI
-    blastFillL.intensity = fillI
-    blastFillR.intensity = fillI
-    blastLamp.scale.setScalar(1 + Math.min(0.35, lampEi * 0.08))
-
-    const leftX = -1.85 + 1.1 * closeAmount
-    const rightX = 1.85 - 1.1 * closeAmount
-    blastLeft.position.x = leftX
-    blastRight.position.x = rightX
-    // Slight Z shudder during the slam window.
-    const shudder = closing ? Math.sin(blastT * 80) * 0.012 * closeAmount : 0
-    blastLeft.position.z = doorZ + shudder
-    blastRight.position.z = doorZ - shudder
-    for (const ram of blastRams) {
-      ram.mesh.position.x = ram.side * (1.55 - closeAmount * 0.35)
-    }
-
-    if (!playerPos) return
-    const bodyTop = playerPos.y + 1.85
-    const bodyBottom = playerPos.y
-    const pad = 0.18
-    const inSlab = Math.abs(playerPos.z - doorZ) < BLAST_LEAF_HALF_Z + pad
-      && bodyTop > 0 && bodyBottom < BLAST_LEAF_TOP
-    const hitLeft = Math.abs(playerPos.x - leftX) < BLAST_LEAF_HALF_X + pad
-    const hitRight = Math.abs(playerPos.x - rightX) < BLAST_LEAF_HALF_X + pad
-    if (inSlab && (hitLeft || hitRight)) failSoft('The blast doors caught you!')
+    for (const ram of blastRams) ram.mesh.position.x = ram.side * (1.55 - close * 0.35)
+    catchHandle.rotation.z = relayLatched ? -0.8 : 0
+    blastLampMat.emissive.setHex(relayLatched ? 0x55ff99 : relayOpen > 0.9 ? 0x38bdf8 : 0xffb060)
+    blastLampMat.emissiveIntensity = relayLatched ? 1.2 : 0.5 + relayOpen
+    blastLight.intensity = 0.6 + relayOpen * 1.2
+    blastFillL.intensity = blastFillR.intensity = 0.3
   }
+
+  unregisters.push(interaction.register(manualCatch, {
+    prompt: 'Latch emergency fire door open',
+    range: 1.6,
+    isEligible: () => !relayLatched && player.mesh.position.z < doorZ - 0.55 &&
+      Math.abs(player.mesh.position.y) < 0.25,
+    onInteract() {
+      if (relayLatched || player.mesh.position.z >= doorZ - 0.55 ||
+          Math.abs(player.mesh.position.y) >= 0.25 ||
+          Math.hypot(player.mesh.position.x - 0.8, player.mesh.position.z - catchZ) > 1.6) return
+      // The manual catch can recover an expired echo after the player crosses.
+      relayLatched = true
+      relayOpen = 1
+      applyRelay()
+      lastCheckpointZ = Math.min(lastCheckpointZ, catchZ)
+      respawn.setCheckpoint(new THREE.Vector3(0, 0, catchZ), Math.PI, {
+        restore: captureCheckpointRestore(catchZ)
+      })
+      hud.showToast('FIRE DOOR LATCHED - passage secured. Checkpoint saved.', 3000)
+    }
+  }))
+
+  function updateBlastDoors(dt, playerPos) {
+    const playerOnRelease = Math.abs(playerPos.y - releasePos.y) < 0.25 &&
+      Math.abs(playerPos.x - releasePos.x) < 0.56 && Math.abs(playerPos.z - releasePos.z) < 0.56
+    const held = playerOnRelease || timeSystem.getGhost().isOccupying(releasePos, 0.56)
+    const target = relayLatched || held ? 1 : 0
+    // A closing door waits at its current pose while a body clears the seam.
+    // It never opens a shut door merely because someone approaches it.
+    const inSeam = Math.abs(playerPos.z - doorZ) < 0.55
+    if (target || !inSeam) {
+      relayOpen = THREE.MathUtils.clamp(relayOpen + (target ? dt / 0.4 : -dt / 0.45), 0, 1)
+    }
+    releaseDeck.position.y = held ? -0.015 : 0
+    applyRelay()
+  }
+  applyRelay()
 
   const checkpointZs = [
     spans.mechanical.maxZ - 1.5,
     spans.cargo.maxZ - 1.5,
     spans.cargo.minZ + 1.5,
+    spans.relay.maxZ - 1.5,
     spans.security.maxZ - 1.5,
     spans.passenger.maxZ - 1.5
   ]
@@ -2341,6 +2327,7 @@ export function createTimewreckLevel({
   function captureCheckpointRestore(checkpointZ) {
     const saved = {
       depleted,
+      relayLatched,
       breakupT,
       lastCheckpointZ,
       collapseArmed,
@@ -2368,6 +2355,10 @@ export function createTimewreckLevel({
         group.visible = true
       }
 
+      relayLatched = saved.relayLatched
+      relayOpen = relayLatched ? 1 : 0
+      releaseDeck.position.y = 0
+      applyRelay()
       ramT = 0
       applyRams()
       loopT = 0
@@ -2444,7 +2435,8 @@ export function createTimewreckLevel({
     }
   }
 
-  const initialZ = startCarriage === 'cargo' ? spans.cargo.maxZ - 1.5 : spans.vault.center + 3
+  const initialZ = ['cargo', 'relay'].includes(startCarriage)
+    ? spans[startCarriage].maxZ - 1.5 : spans.vault.center + 3
   return {
     objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
     checkpoint: {
@@ -2535,7 +2527,7 @@ export function createTimewreckLevel({
 
       if (vaultActive) updateVaultGates(envDt, pp)
       if (surgeActive) updateElectricalSurges(envDt, pp)
-      if (blastActive) updateBlastDoors(envDt, pp)
+      if (blastActive) updateBlastDoors(delta, pp)
       const modeInt = MODE_INT[mode] ?? 0
 
       if (fractureArmed && pp.z > FRACTURE_Z) {
@@ -2770,8 +2762,8 @@ export function createTimewreckLevel({
         `Restore the gangway with ${bindingLabel(settings.getBinding('rewind'))}, then hold it with ${bindingLabel(settings.getBinding('freeze'))}. Rest on the landing before the bulkhead.`, 6500)
       hint('cargo-landing', pp.z, cargoGap.minZ - 0.25,
         'Intact landing — recharge here. Watch the bulkhead ring; green means the door and overhead load are clear.', 4800)
-      hint('relay-blast-doors', pp.z, doorZ + 4.2,
-        `Use ${bindingLabel(settings.getBinding('slow'))} or ${bindingLabel(settings.getBinding('freeze'))} to pass the blast doors`)
+      hint('relay-emergency-release', pp.z, releasePos.z + 2,
+        `Stand on the brass platform, summon ${bindingLabel(settings.getBinding('ghost'))} Ghost, then cross and use ${bindingLabel(settings.getBinding('interact'))} on the far-side catch. Echo holds for 8 seconds.`, 6500)
       hint('security', pp.z, spans.security.maxZ,
         'Security car — the floor is gone. [2]/F FREEZE the suspended wreckage into a walkway.')
       hint('passenger', pp.z, spans.passenger.maxZ,
@@ -2952,6 +2944,7 @@ export function createTimewreckLevel({
     },
 
     dispose() {
+      timeSystem.resetGhost()
       unregisters.forEach((fn) => fn())
       stormDebris.dispose()
       grabHandles.dispose()
