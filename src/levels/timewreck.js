@@ -15,6 +15,8 @@ import { createWreckRoutes, createPassengerRack } from './timewreck-routes.js'
 import { createSecurityCrossing } from './timewreck-security.js'
 import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
+import { createWreckHazardAudio } from '../systems/wreck-hazard-audio.js'
+import { createExpansionHazards } from './timewreck-expansion-hazards.js'
 import { signMaterial } from '../environment/textures.js'
 import { addPassengerGuidance } from '../environment/passenger-guidance.js'
 import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
@@ -222,6 +224,7 @@ export function createTimewreckLevel({
 
   const unregisters = []
   const wreckAudio = createWreckAudio()
+  const hazardAudio = createWreckHazardAudio()
   unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds }
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
@@ -900,6 +903,7 @@ export function createTimewreckLevel({
     spans.mechanical.center + 2.7,
     spans.mechanical.center - 2,
     spans.cargo.maxZ - 1.5,
+    spans.cargo.center - 4.2,
     spans.cargo.minZ + 1.5,
     spans.relay.maxZ - 1.5,
     spans.security.maxZ - 1.5,
@@ -2268,6 +2272,7 @@ export function createTimewreckLevel({
     brakeComplete = true
     braking = false
     wreckAudio.reset()
+    hazardAudio.reset()
     hud.hideCinematicSkip?.()
     root.rotation.z = 0
     root.position.set(0, 0, 0)
@@ -2344,6 +2349,13 @@ export function createTimewreckLevel({
     warn: () => {
       wreckAudio.warning()
       showLevelToast('Rack bolts snapping! Amber brackets mark the fall zone — keep RIGHT, then return to CENTRE for the floor crossing.', 3200)
+    } })
+
+  const expansionHazards = createExpansionHazards({ root, spans, player, timeSystem, unregisters,
+    fail: message => failSoft(message), audio: hazardAudio,
+    warn: kind => {
+      wreckAudio.warning()
+      if (kind === 'freight') showLevelToast(`Freight straps creaking! Wait for the case to swing aside; ${bindingLabel(settings.getBinding('slow'))} Slow or ${bindingLabel(settings.getBinding('freeze'))} Freeze can hold a clear route.`, 4500)
     } })
 
   // Capture the collapse at each checkpoint, then restore moving hazards to a
@@ -2427,6 +2439,8 @@ export function createTimewreckLevel({
       failCooldown = 0
       braking = false
       wreckAudio.reset()
+      hazardAudio.reset()
+      expansionHazards.reset()
       brakeComplete = false
       hud.hideCinematicSkip?.()
       brakeT = 0
@@ -2501,7 +2515,7 @@ export function createTimewreckLevel({
     voids: gapVoids,
     getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return braking },
-    setPresentationPaused: value => wreckAudio.setPaused(value),
+    setPresentationPaused(value) { wreckAudio.setPaused(value); hazardAudio.setPaused(value) },
 
     update(delta) {
       // Recover temporary render visibility even if a prior render was aborted.
@@ -2582,6 +2596,7 @@ export function createTimewreckLevel({
 
       wreckRoutes.update()
       passengerRack.update()
+      expansionHazards.update(!braking && !respawn.isFailing())
       if (vaultActive && !braking) updateVaultGates(envDt, pp)
       if (surgeActive) updateElectricalSurges(envDt, pp)
       if (blastActive) updateBlastDoors(delta, pp)
@@ -2825,8 +2840,12 @@ export function createTimewreckLevel({
       hint('convergence-surges', pp.z, spans.convergence.center + 11.5,
         `Choose before the split: brass DIRECT is fast but exposed to surges. Cyan MAINTENANCE is sheltered but slower: ${bindingLabel(settings.getBinding('duck'))} crouch, ${bindingLabel(settings.getBinding('rewind'))} repair the shutter, then ${bindingLabel(settings.getBinding('freeze'))} hold it open.`,
         6000)
-      hint('mechanical', pp.z, spans.mechanical.maxZ,
+      hint('mechanical', pp.z, spans.mechanical.center + 9.3,
         `${bindingLabel(settings.getBinding('slow'))} Slow the first luggage bank. Stop inside the teal brackets on solid floor; release time control to recharge. Then ${bindingLabel(settings.getBinding('rewind'))} repair the shutter and ${bindingLabel(settings.getBinding('freeze'))} hold it open. Another bank follows.`, 6500)
+      if (pp.z > spans.mechanical.center + 9 && pp.z < spans.mechanical.maxZ) {
+        hint('mechanical-steam', pp.z, spans.mechanical.center + 13.2,
+          `Steam crossing: upright amber means warning or a live jet. Wait here for the horizontal green bar; ${bindingLabel(settings.getBinding('freeze'))} holds the current state, including dangerous steam. Recharge beyond the pipe before the luggage bank.`, 6000)
+      }
       if (Math.abs(pp.x - 1.75) < 0.55 && Math.abs(pp.z - wreckRoutes.recessZ) < 0.8) {
         hint('mechanical-recess', pp.z, Infinity,
           `Safe switching recess: release time control to recharge. ${bindingLabel(settings.getBinding('rewind'))} restores the shutter; switch to ${bindingLabel(settings.getBinding('freeze'))} while it is open.`, 4500)
@@ -3003,6 +3022,7 @@ export function createTimewreckLevel({
     dispose() {
       disposed = true
       wreckAudio.dispose()
+      hazardAudio.dispose()
       removeVisibility()
       hud.hideCinematicSkip?.()
       player.mesh.userData.tightCrouchCamera = false
