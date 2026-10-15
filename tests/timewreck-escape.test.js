@@ -154,6 +154,59 @@ test('Integration: continuous Vault-to-brake route preserves solvable checkpoint
   }
 })
 function pose(h, x, z, y = 0) { h.player.setPose(new THREE.Vector3(x, y, z), Math.PI) }
+
+test('R1 visibility: actual L3 panels cull only ray-occluded bounds, restore each pass and release hooks on unload', () => {
+  let totalHidden = 0
+  for (const start of [null, 'convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger']) {
+    const h = levelHarness(start)
+    const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.1, 200)
+    const ray = new THREE.Raycaster()
+    const box = new THREE.Box3()
+    const corner = new THREE.Vector3()
+    const eye = new THREE.Vector3()
+    const direction = new THREE.Vector3()
+    const panels = [], meshes = []
+    h.scene.traverse(n => { if (n.userData.wreckOccluder) panels.push(n); if (n.isMesh) meshes.push(n) })
+    try {
+      assert.ok(panels.length >= 40, 'real solid panels are explicitly marked')
+      for (const mode of ['NORMAL', 'FREEZE', 'REWIND']) {
+        h.time.setMode(mode); h.tick(0.12)
+        for (const x of [-1.5, 0, 1.5]) {
+          camera.position.set(x, 1.65, h.player.mesh.position.z)
+          camera.lookAt(x, 1.65, camera.position.z - 5)
+          camera.updateMatrixWorld()
+          const original = new Map(meshes.map(n => [n, n.visible]))
+          h.scene.onBeforeRender({}, h.scene, camera)
+          const hidden = meshes.filter(n => original.get(n) && !n.visible)
+          totalHidden += hidden.length
+          for (const n of hidden) {
+            assert.equal(n.castShadow, false)
+            box.copy(n.geometry.boundingBox).applyMatrix4(n.matrixWorld).expandByScalar(0.03)
+            eye.copy(camera.position)
+            for (let i = 0; i < 8; i++) {
+              corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z)
+              direction.copy(corner).sub(eye)
+              ray.set(eye, direction.clone().normalize())
+              assert.ok(ray.intersectObjects(panels).some(hit => hit.distance < direction.length()),
+                `${start}/${mode}/${n.name}: each culled bound corner is blocked by real geometry`)
+            }
+          }
+          h.scene.onAfterRender({}, h.scene, camera)
+          for (const n of meshes) assert.equal(n.visible, original.get(n), 'render restores exact visibility')
+          h.scene.onBeforeRender({}, h.scene, new THREE.OrthographicCamera())
+          assert.equal(h.level.getVisibilityStats().hidden, 0)
+          h.scene.onAfterRender({}, h.scene, new THREE.OrthographicCamera())
+        }
+      }
+      const before = h.scene.onBeforeRender
+      h.level.dispose()
+      assert.notEqual(h.scene.onBeforeRender, before, 'level removes its render hook')
+      assert.equal(h.interactions.size, 0)
+    } finally { h.respawn.dispose(); h.time.dispose() }
+  }
+  assert.ok(totalHidden > 0, 'actual level exercises culling rather than a no-op')
+})
+
 function repair(h, name) {
   const shutter = h.scene.getObjectByName(name).children[0]
   h.tick(1.4)

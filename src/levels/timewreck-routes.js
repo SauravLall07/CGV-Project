@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { switchingRecessGeometry } from '../environment/mechanical-reference.js'
 
 // One-shot failures keep their intact baseline while the player observes.
 export function createMaintenanceShutter({ root, timeSystem, unregisters, obstacles, player, z, minX, maxX, name }) {
@@ -64,7 +65,14 @@ export function createWreckRoutes({ root, spans, player, timeSystem, unregisters
   obstacles.push(low)
   for (const x of [-0.5, 1.75]) box(0.5, 0.015, 1, x, 0.012, near + 1, x < 0 ? brass : cyan, 'fork-route-marker')
   const recessZ = spans.mechanical.center + 2.7
-  box(1.1, 0.02, 2.0, 1.75, 0.015, recessZ, cyan, 'mechanical-safe-switching-recess')
+  const recessMaterial = new THREE.MeshStandardMaterial({
+    color: 0x39797c, emissive: 0x69bdcd, emissiveIntensity: 0.3, roughness: 0.72
+  })
+  const recess = new THREE.Mesh(switchingRecessGeometry(), recessMaterial)
+  recess.name = 'mechanical-safe-switching-recess'
+  recess.position.set(1.75, 0.026, recessZ)
+  recess.userData.noCameraCollision = true
+  group.add(recess)
   const shutters = [
     createMaintenanceShutter({ root, player, timeSystem, unregisters, obstacles,
       z: c + 4, minX: 0.92, maxX: 2.6, name: 'convergence-rewind-shutter' }),

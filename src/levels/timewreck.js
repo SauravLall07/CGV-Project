@@ -4,6 +4,7 @@ import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
 import { createLightPool } from '../core/light-pool.js'
+import { createWreckVisibility, installWreckVisibility } from '../environment/wreck-visibility.js'
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
@@ -992,7 +993,7 @@ export function createTimewreckLevel({
     rams.push({ head, phase, z })
   }
 
-  // Retune existing Mechanical fills: warm amber aisle + one violet storm accent.
+  // Existing Mechanical fills: warm practical aisle + cool exterior at damage.
   // Same light count — no new PointLights.
   for (const [dz, intensity] of [[6, 5.5], [0, 7.2], [-6, 5.5]]) {
     const mechFill = new THREE.PointLight(0xffc090, intensity, 11, 2)
@@ -1000,8 +1001,8 @@ export function createTimewreckLevel({
     mechFill.userData.noCameraCollision = true
     root.add(mechFill)
   }
-  const mechAccent = new THREE.PointLight(0xa78bfa, 3.8, 9, 2)
-  mechAccent.position.set(1.2, 1.8, spans.mechanical.center - 2)
+  const mechAccent = new THREE.PointLight(0x9bb9cf, 3.8, 9, 2)
+  mechAccent.position.set(-2.25, 2.6, spans.mechanical.center + 3.4)
   mechAccent.userData.noCameraCollision = true
   root.add(mechAccent)
   root.add(ramBank)
@@ -2284,7 +2285,8 @@ export function createTimewreckLevel({
   })
   root.add(embers.points, sparks.points, openingWind.points, openingSparks.points, chronoMotes.points)
 
-  // Same forward-light budget as Level 2. Built only after every L3 PointLight
+  // L3 keeps 12 points (Level 2 uses 8); any reduction needs rendered profiling.
+  // Built only after every L3 PointLight
   // (carriage lamps, hazard washes, Freeze glows, finale wave/stasis) is on
   // `root`. Sources stay in the graph for flicker/intensity animation; a fixed
   // set of 12 real lights is what the renderer sees.
@@ -2439,7 +2441,12 @@ export function createTimewreckLevel({
 
   const initialZ = ['convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger'].includes(startCarriage)
     ? spans[startCarriage].maxZ - 1.5 : spans.vault.center + 3
+  const visibility = createWreckVisibility({ root, carriages, spans,
+    wallX: WRECK_WALL_X, ceilingY: CARRIAGE_CEILING_Y,
+    enabled: () => !disposed && !braking })
+  const removeVisibility = installWreckVisibility(scene, visibility)
   return {
+    getVisibilityStats: visibility.getStats,
     objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
     checkpoint: {
       position: new THREE.Vector3(0, 0, initialZ),
@@ -2454,6 +2461,8 @@ export function createTimewreckLevel({
     get isCinematic() { return braking },
 
     update(delta) {
+      // Recover temporary render visibility even if a prior render was aborted.
+      visibility.afterRender()
       const mode = timeSystem.getMode()
       const finaleFreeze = depleted && mode === 'FREEZE' && !braking
       if (finaleFreeze && !wasFinaleFreeze) {
@@ -2943,6 +2952,7 @@ export function createTimewreckLevel({
 
     dispose() {
       disposed = true
+      removeVisibility()
       hud.hideCinematicSkip?.()
       player.mesh.userData.tightCrouchCamera = false
       player.mesh.userData.wreckLowCeiling = false
