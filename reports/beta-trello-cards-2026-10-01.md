@@ -1,5 +1,9 @@
 # Trello Backlog for Beta
 
+> Historical planning document. The [15 October completion handover](level-3-expansion-plan.md#n1-completion-and-final-verification-2026-10-15)
+> records current implementation and acceptance. Level 3 N1-N8 and the finale
+> are implemented; browser/human/audio/performance acceptance remains pending.
+
 Labels use `Severity; Type; Level; Rubric`. Checklist includes the acceptance criteria item.
 
 ## BLOCKERS (do first)

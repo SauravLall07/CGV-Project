@@ -1,5 +1,9 @@
 # Chrono Express — Full Implementation Roadmap (Alpha → Final)
 
+> Historical planning document. The [15 October completion handover](reports/level-3-expansion-plan.md#n1-completion-and-final-verification-2026-10-15)
+> records current implementation and acceptance. Level 3 N1-N8 and the finale
+> are implemented; browser/human/audio/performance acceptance remains pending.
+
 This is the complete plan from where the Alpha blockout leaves off through to Final submission. It builds directly on the two earlier documents:
 
 1. **Three.js setup plan** — tooling, deployment-safe config, base scene/camera/renderer/loop

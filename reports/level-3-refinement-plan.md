@@ -1,5 +1,12 @@
 # Level 3 refinement pass: R0-R7
 
+Current status (15 October completion pass): R1-R6 and expansion N1-N8 are
+implemented; 163 tests, build and local production packaging pass. Rendered,
+audible, human and measured performance acceptance remains open. R7 has not
+received full production verification; N9 automation is supporting evidence.
+Continue from the [latest handover](level-3-expansion-plan.md#n1-completion-and-final-verification-2026-10-15),
+not historical batch scope/stop statements below.
+
 Persistent execution plan and handover. Created 2026-10-15 (Africa/Johannesburg).
 Read this file and inspect current source before continuing. Conversation history
 is not required. The older `reports/level-3-upgrade-plan.md` remains the historical

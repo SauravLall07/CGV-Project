@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { addMechanicalReference } from './mechanical-reference.js'
 import { refineWreckLandmark } from './wreck-landmarks.js'
+import { addCargoWreckBenchmark } from './cargo-wreck-benchmark.js'
 import {
   carpetMaterial,
   metalMaterial,
@@ -886,6 +887,7 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
   const trunkLeather = new THREE.MeshStandardMaterial({
     color: 0x3a2818, roughness: 0.88, metalness: 0.04, emissive: 0x120c08, emissiveIntensity: 0.06
   })
+  addCargoWreckBenchmark(g, { wood: trunkWood, leather: trunkLeather, brass: shared.brass })
   const spots = []
   for (let z = -half + 2.4; z <= half - 2.4; z += 2.8) {
     spots.push([-(WALL_X - 0.5), 0.42, z, 0])

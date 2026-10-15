@@ -1,5 +1,20 @@
 ﻿# Chrono Express: Beta Code Audit and Two-Week Plan
 
+> Historical audit of the 1 October source baseline. Use the
+> [15 October completion handover](level-3-expansion-plan.md#n1-completion-and-final-verification-2026-10-15)
+> for current status. Original tables below are not a current missing-feature list.
+
+15 October reconciliation: global stasis/bridge/train-stop/skip, Cannon-es debris,
+binding-aware L3 instructions, loading-readiness handling, music-cache lifecycle
+checks, audio and credits UI are now implemented. See current source, regression
+tests and the upgrade/refinement/expansion handovers for implementation evidence.
+Selected-object targeting remains outside the shared-mode design. README scope
+and roadmap drift is corrected in the completion pass. N1-N8 are implemented;
+source tests/build/local packaging pass. Browser, human, shader/audio and measured
+performance acceptance remains open. Team identities, provenance confirmation,
+trailer and remote hosting verification remain outstanding. No deployment or
+course-deliverable acceptance is inferred.
+
 Reviewed 1 October 2026. Working target: **15 October 2026** (two weeks from the stated request; confirm against Moodle, which is authoritative). Source baseline compared with `reports/chrono-express-codebase-review-2026-09-08.docx`. This is a code and document audit, not a browser playthrough.
 
 ## Executive summary

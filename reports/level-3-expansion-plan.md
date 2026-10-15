@@ -6,7 +6,15 @@ batch. No conversation history is required.
 
 ## Authorization and current state
 
-Latest instruction (2026-10-15): implement **N8 and N9**. Starting revision
+Latest instruction (2026-10-15): read all Level 3 documentation and finish the
+remaining work. Starting revision `90421d3`, clean tree. **N1-N8 are implemented**;
+N1 is a statically checked art candidate awaiting rendered approval. Fresh tests,
+build and packaging pass. N9, A1-A9 and older Batch 6/R7 acceptance remain partial
+because no browser surface is available. See
+[final handover](#n1-completion-and-final-verification-2026-10-15).
+No publication or baseline gameplay tuning.
+
+Historical N8/N9 instruction (2026-10-15): implement **N8 and N9**. Starting revision
 `8f532a7`, clean working tree. N8 is implemented with automated checks; feasible
 N9 automated integration is complete, but N9 acceptance is PARTIAL because N1
 is still NOT STARTED and production browser/audio/human/performance evidence is
@@ -201,7 +209,9 @@ do not rerun the gameplay suite for a Markdown-only addition.
 
 ### N1 - Cargo visual benchmark
 
-Status: NOT STARTED. Depends on N0. Establish the new art scale in Cargo before
+Status: IMPLEMENTED; static bounds/resources, lifecycle regressions and build
+passed. Rendered art approval is PENDING; see final handover. Depends on N0.
+Establish the new art scale in Cargo before
 propagating it; Mechanical's R2 treatment remains an unrendered candidate reference.
 
 **Placement/action:** large folded luggage framing above/by the existing gangway
@@ -234,8 +244,8 @@ Do not spread this art treatment in N1 or begin N2's moving hazard.
 
 Status: IMPLEMENTED; automated traversal, lifecycle and build checks passed.
 Rendered, audible, human-difficulty and runtime performance acceptance PENDING.
-N1 implementation is absent: the explicit N2/N3-only request overrides the original
-ordering dependency for this work. N1 visual benchmark review remains outstanding.
+N1 was absent during the N2/N3 batch: the explicit request overrode its original
+ordering dependency. N1 is now implemented; rendered benchmark review is outstanding.
 
 **Placement/action:** one suspended strapped trunk/freight pallet centred around
 Cargo -7 on solid floor, after the existing loop load at -2 and before exit -12.5.
@@ -274,7 +284,7 @@ suspension/collision alignment and both-camera sightlines; listen for warning mi
 
 Status: IMPLEMENTED; automated traversal, lifecycle, audio-graph and build checks
 passed. Rendered/audible/human/performance acceptance PENDING. Completed with N2
-under the combined request, using existing materials because N1 is not implemented.
+under the combined request, using existing materials before N1 was implemented.
 
 **Placement/action:** ruptured wall-mounted brass pressure assembly and a short
 cross-aisle vent slice near Mechanical +11, between entry +13.5 and first luggage
@@ -300,7 +310,7 @@ clarity in both views, and prove safe spots before/after all new danger.
 ### N4 - Vault and Convergence destruction/traversal
 
 Status: IMPLEMENTED; automated/static verification passed, rendered/human acceptance
-pending. See N4/N5 handover. N1 remains an unverified, unimplemented benchmark.
+pending. See N4/N5 handover. N1 is now implemented but visually unverified.
 
 **Vault:** enlarge the broken containment composition around the existing empty
 crown, with fractured plinth and a broken floor-mounted arm near -2.1 between
@@ -477,8 +487,8 @@ measure transparency/audio/registration cost, and retain control during stasis.
 
 ### N9 - Full integration, tuning and final handover
 
-Status: PARTIALLY VERIFIED. Feasible automated integration complete; N1 is still
-NOT STARTED and full production/browser/audio/human/performance acceptance remains
+Status: PARTIALLY VERIFIED. Feasible automated integration and N1 implementation
+complete; full production/browser/audio/human/performance acceptance remains
 open. See N8/N9 handover. No claim of final acceptance.
 
 Run a freshly built production game New Game -> L1 -> L2 -> L3 -> victory without
@@ -578,7 +588,8 @@ depend on chat memory or silently discard deferred checks after compaction.
 - [x] N0: preserve clean starting checkout at `a3cac97`; save all new scope here.
 - [x] N0: distinguish existing features, proposed additions and historical evidence.
 - [x] N0: define N1-N9, source-aware placements, dependencies and carried acceptance.
-- [ ] N1 visual benchmark implementation and rendered approval.
+- [x] N1 visual benchmark implementation and static checks (see final handover).
+- [ ] N1 rendered visual benchmark approval.
 - [x] N2/N3 implementation and automated/static verification (see results below).
 - [ ] N2/N3 rendered, audible, human and measured performance acceptance.
 - [x] N4/N5 implementation and automated/static verification (see handover below).
@@ -587,7 +598,7 @@ depend on chat memory or silently discard deferred checks after compaction.
 - [ ] N6/N7 rendered, audible, human and measured performance acceptance.
 - [x] N8 implementation and automated/static checks.
 - [x] N9 feasible automated integration and reconciliation of old ledgers.
-- [ ] N8 rendered/audible review; N9 full acceptance, including missing N1.
+- [ ] N8 rendered/audible review; N9 full acceptance, including N1 visual approval.
 - [ ] Fresh rendered/audio/human/performance acceptance, including A1-A9.
 
 N0 changes only this new Markdown file. Historical latest refinement result is
@@ -1222,7 +1233,7 @@ Remaining acceptance / stop state:
 - No new batch or publication was begun. Continue with the exact prompt below;
   do not create an invented N10 or mark old R7 complete by inference.
 
-## Exact continuation prompt
+## Historical continuation prompt after N8/N9 (superseded by final handover)
 
 ```text
 Use Game Studio. Complete the skipped N1 and the remaining N9 acceptance from
@@ -1255,3 +1266,118 @@ verified. Update all affected handovers with changed files, bounds/counts, fresh
 evidence, unresolved issues and an exact continuation prompt. No publication,
 new level, engine migration or unrelated batch.
 ```
+
+
+## N1 completion and final verification (2026-10-15)
+
+Latest request: read all Level 3 docs and finish up. Starting HEAD 90421d3,
+clean working tree. Reviewed the upgrade, refinement and expansion plans,
+acceptance ledgers/handovers, older roadmap/audit L3 sections, current Cargo
+shell/gangway, resource/disposal workflow and saved check results. Historical
+batch-only stop prompts are superseded by this request. N1-N8 implementation
+is now complete. **N9 acceptance remains partial; A1-A9 remain open.**
+
+Implemented N1 as static, L3-only dressing:
+
+- src/environment/cargo-wreck-benchmark.js: folded open luggage-rack timber and
+  brass ribs above the real gap, attached torn lining/straps, two broken strapped
+  freight cases with an outward-leaning lid and splinters by the downstream wall.
+  Three material-merged batches reuse Cargo's actual wood/leather/brass materials.
+- src/environment/carriages.js: invoke only in damaged Cargo after those materials
+  exist. The group belongs to the Cargo shell, so existing shake, reset, visibility
+  and root resource disposal retain ownership. R3's brass fascia remains attached
+  around the new exposed backing. No spreading this treatment to other carriages.
+- README.md: replace stale alpha/stub/phase roadmap claims, acknowledge imported
+  assets, document implemented scope and remaining acceptance; add Audio settings
+  and the existing decorative physics system.
+- Upgrade/refinement plans, October audit/cards and original full roadmap: add
+  prominent current-status links while preserving historical findings. Update
+  the expansion's current N1/N9 statuses and continuation instructions.
+
+Final measured local bounds (metres, relative to Cargo centre):
+
+| Composition | X | Y | Z |
+| --- | --- | --- | --- |
+| Folded framing, lining and straps | -2.4092..-1.4508 | 2.5511..3.1917 | +4.6652..+8.4082 |
+| Broken freight cases, lid and splinters | +2.5850..+3.5014 | +0.0350..+2.0399 | -5.4150..-4.0829 |
+
+A vertex-by-vertex Node probe checked every added vertex: positive-Z framing is
+above 2.55 m, left of X=-1.3 and inside the reserved +3.8..+8.6 Z range;
+downstream freight is beyond X=+2.55 and inside Z=-5.5..-4. This places the
+freight outside the playable body envelope rather than creating an uncollidable
+prop in the lane. No floor-height geometry spans the gangway. Entry +12.5,
+landing +3.15, loop door +2/load -2, central -4.2 checkpoint, sweep -7 and exit
+-12.5 retain their original mechanics and clearances. Actual two-camera comfort
+and apparent overlap with other dressing still require rendered review.
+
+Added resources: **3 meshes, 3 geometries, 552 triangles, 38,640 geometry-buffer
+bytes**, 3 existing referenced materials, **0 new materials/textures/lights/shadow
+casters/time registrations/audio voices/particles/post passes/colliders/supports/
+voids**. The temporary box geometries are disposed after merging. The vertex
+probe also observes exactly one disposal event per added merged geometry when
+the environment root is released. These are CPU/static counts, not GPU memory
+or measured frame cost. Factory census before/after:
+
+| Scope | Before | After |
+| --- | --- | --- |
+| L3 meshes / geometries / triangles | 855 / 846 / 22138 | 858 / 849 / 22690 |
+| L3 materials / source lights / shadow casters | 183 / 23 / 70 | 183 / 23 / 70 |
+| L3 geometry buffer bytes | 918332 | 956972 |
+| L2 scene structural SHA-256 | a6c8dea2f1218f6d1b5d42533a0953df03f9eb74a3b3309ea2e3f044c1d59284 | identical |
+
+The digest covers scene structure, geometry, material properties, instance matrices
+and bounds, using mocked canvas; it excludes raster texture pixels/browser output.
+No Level 2 source path was changed. No power/movement/energy/wave/camera/timing
+parameters were retuned. The tight Passenger automated energy margin remains a
+human-test requirement rather than a reason for speculative tuning.
+
+Fresh final checks:
+
+| Check | Result |
+| --- | --- |
+| npm.cmd test | PASS: 163 tests, zero failures/skips, about 22.8 s. Both continuous L3 forks at 30/60/144, Cargo repair/alternatives/retries, minimum-energy Passenger, event/finale lifecycle and repeated attached-resource disposal remain covered. |
+| npm.cmd run build | PASS: 178 modules, about 1.34 s; existing >500 kB chunk warning. |
+| node scripts/check-production.mjs | PASS: 57 files, 72.66 MiB, 56 case-sensitive local subdirectory HTTP references. |
+| scripts/measure-carriage-resources.mjs via existing asset register | PASS: before/after inventory above; unchanged L2 structural digest. |
+| One-off actual-factory vertex/disposal probe | PASS: all new vertices in reserved regions; each added geometry disposed once. |
+| git diff --check and changed-document validation | PASS: whitespace, new-file/conflict checks, Markdown fences, local links and completion anchors. |
+| Browser inventory / launch | apps: [], browsers: []; createBrowserTab(iab, production URL) returned Browser is not available: iab. No page boot or rendered frame. |
+
+Tests and Vite initially encountered sandbox process-spawn restrictions; final
+runs passed with approved child-process access. No source assertion was weakened.
+Ignored evidence logs: reports/finish-tests.log, finish-build.log,
+finish-before-resources.log and finish-after-resources.log. Production packaging
+and vertex probe results were returned directly. Final whitespace/link checks are
+recorded by the completion review.
+
+Remaining work is verification and externally supplied deliverables:
+
+- N1 is an implemented art candidate, **not visually approved**. Capture Cargo
+  entry, restored/broken/intercepted deck, landing and exit in both views and
+  Normal/Freeze with identical settings; inspect static cases against freight.
+- N9, upgrade Batch 6 and refinement R7 full acceptance remain incomplete. No
+  production New Game -> L1 -> L2 -> L3 -> victory run, native pointer-lock/menu/
+  rebound-control results, shader/console/network capture, audible balance,
+  human difficulty/comprehension or hardware frame-time/heap/GPU evidence exists
+  from this session. A1-A9 stay open with the passing automation as support.
+- Exact team display names/roles, source/licence provenance confirmation, trailer
+  and hosted deployment verification remain deferred. Existing credits/source
+  records were inspected; no identity, external licence confirmation or hosted
+  URL was invented. No asset dependency was added or publication performed.
+
+### Exact continuation after completion pass
+
+Read this final handover and the A1-A9 ledger. Preserve the completed N1-N8
+implementation; do not rebuild mechanics or invent a new batch. With a connected
+browser, run the freshly built production New Game-to-victory route without dev
+shortcuts, then both forks/cameras, alternate powers, Ghost expiry/cancel,
+minimum-energy repeated retries, hold/toggle crouch, rebound native controls,
+pause/caught/game-over/restart/quit and finale skip/natural completion. Capture
+Cargo's N1 candidate and all earlier rendered requirements. Record browser,
+hardware/GPU, viewport/DPR/settings, pixels, shader/console/network/audio results,
+frame-time distributions, renderer resources and heap through repeated transitions.
+Use human Passenger failures/timings to assess the ~2-energy automated margin;
+adjust additions first and document any approved baseline tuning. Reconcile N9,
+Batch 6/R7 and A1-A9 only against obtained evidence. Fill credits from supplied
+names/roles and confirm provenance; record supplied trailer/hosted URLs and verify
+them separately. Retain precise pending items if those inputs remain unavailable.

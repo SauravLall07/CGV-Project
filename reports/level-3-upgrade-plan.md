@@ -1,5 +1,12 @@
 # Level 3 upgrade implementation plan
 
+Current status (15 October completion pass): upgrade mechanics and expansion
+N1-N8 are implemented; 163 tests, build and local production packaging pass.
+**Batch 6 acceptance remains partial** because production browser/human/audio/
+performance checks are unavailable. Continue from the
+[latest handover](level-3-expansion-plan.md#n1-completion-and-final-verification-2026-10-15),
+not historical batch stop instructions below. Do not rebuild completed mechanics.
+
 This is the persistent handover for the Timewreck upgrade. Read this file and inspect current source before continuing; conversation history is not required. Scope: improve the existing Three.js/JavaScript/Vite game, using Level 2's mechanics and luxury railway materials. Implement one batch at a time, verify it, update this file, then stop. Do not implement later batches without a user request.
 
 ## Purpose and constraints
