@@ -566,3 +566,119 @@ Before used fresh in-memory Vite output; after used a fresh production build.
 Use the Phase C manual checklist in the progress tracker and the production
 baseline protocol above before asserting FPS, memory, GC or latency gains or
 expanding the remaining C work. No Phase D implementation began.
+
+## Phase D session evidence - 15 October 2026
+
+The user reported checking/verifying delivered C changes and explicitly
+authorized D. Delivered C substeps are approved; broader C tasks remain
+deferred. D source reference: `7f85201` (clean initial working tree). No commit,
+push, dependency installation or deployment was performed in this session.
+
+D1 kit Source sharing and D2 shared in-flight music loads were implemented.
+Broader texture/PCM budgets, asset repackaging and D3 shutdown remain pending
+their profiling/lifecycle prerequisites. A fresh browser inventory again
+returned `apps: []`, `browsers: []`. The progress tracker records the deliberate
+limitation to verifiable resource ownership/concurrency work before browser
+snapshots and lists remaining gates.
+
+### Reproduce the resource and concurrency probe
+
+```powershell
+node --import ./scripts/register-test-assets.mjs scripts/measure-phase-d-resources.mjs
+node --import ./scripts/register-test-assets.mjs --test test/kit-texture-ownership.test.mjs test/level-music-cache.test.mjs
+```
+
+For before values, copy only the measurement script into an isolated `7f85201`
+checkout using the same installed dependencies and asset hook. The same script
+was run before runtime edits and afterward in this session. It uses the real
+kit material/texture factories with mocked canvas drawing, plus real music
+load ownership with controlled fetch/AudioContext doubles. It does not sample
+heap, GC, GPU residency, decoded real music, audible output or frame timing.
+
+### Measured counts
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| Source identities for 100 same-canvas kit textures | 100 | 1 | 99 fewer |
+| Source identities across three kit material builds | 115 | 47 | 68 fewer |
+| Texture wrappers across those builds | 144 | 144 | Unchanged; independent owners/settings |
+| Canvas images across those builds | 47 | 47 | Unchanged; no image conversion |
+| Fetches for three concurrent same-URL music loads | 3 | 1 | Two duplicates avoided in fixture |
+| Decodes for those same loads | 3 | 1 | Two duplicates avoided in fixture |
+| Distinct decoded results for those same loads | 3 | 1 | One shared result in fixture |
+
+The kit probe's sampler/settings hash is identical before/after:
+`b5de10bed4fc69211926b2e82eb53b23ef2b7b303555cbb113a82f9899f3ea0c`.
+It covers map channel, image dimensions, CanvasTexture flag, color space,
+repeat/offset, wrapping, anisotropy, format/type, filters, flipY and mip policy.
+It excludes Source identities and does not rasterize canvas pixels. New tests
+verify the shared cached canvas, independent wrappers, normal-strength/color
+separation and teardown/restart ownership.
+
+The music fixture has an arbitrary two-second stereo AudioBuffer-shaped object.
+Its values are not measurements of any game MP3. No decoded music memory saving
+or total PCM residency is claimed from this probe. The existing successful
+music buffer retention policy remains unchanged; only redundant concurrent
+fetch/decode work and disposed-owner reattachment were removed.
+
+### Ownership and runtime interpretation
+
+Kit Sources are cached under weak canvas keys; materials receive disposable
+independent wrappers. New wrappers do not dirty the existing Source or retain
+extra template Textures. The existing canvas cache remains the session owner.
+Installed Three Texture.copy shares Sources; WebGLTextures keys GPU ownership
+by Source plus upload/sampler settings including colorSpace, forces upload for
+new variants and tracks use counts on disposal. Thus independent normal/color/
+sampler views preserve their settings; real GPU allocation/upload savings and
+first-render parity still need driver measurements. Source counts are not VRAM.
+
+Music pending promises are URL-keyed and clear on success/failure. Canceling a
+player cancels its playback intent, not another owner's shared request. The
+existing playback token still suppresses stale starts. A disposed player does
+not reacquire a buffer when a pending load finishes. Active failures remain
+observable and retryable; no eviction, streaming, pitch/fade or autoplay policy
+change was introduced.
+
+To collect actual decoded music metadata in a dev-server tab after normal
+gesture unlock and track playback:
+
+```js
+const music = await import('/src/systems/level-music.js')
+console.table(music.getMusicCacheInfo().tracks)
+music.getMusicCacheInfo().totalPcmBytes
+```
+
+The on-demand snapshot returns duration, rate, channels, sample length,
+`length * channels * 4` PCM bytes, total PCM bytes and pending URLs. It exposes
+no AudioBuffer/source/gain objects. This is a dev module diagnostic, not a
+production global. Actual MP3 buffer metadata/long-session trends were not
+collected in this environment, so an eviction budget remains undecided.
+
+### Production bytes and validation
+
+Same installed toolchain; Node Buffer byte counts and default gzipSync.
+Before used fresh in-memory Vite output; after used fresh production output.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| Total output, 53 files | 76,158,180 B | 76,158,519 B | None; +339 B |
+| Entry JavaScript | 1,514,563 B | 1,514,902 B | None; +339 B |
+| Entry JavaScript, local gzip | 445,102 B | 445,239 B | None; +137 B |
+
+- Before full suite: 107 passed, 0 failed/skipped/cancelled.
+- New targeted tests: 11 passed (three texture and eight music).
+- Final full suite: 118 passed, 0 failed/skipped/cancelled. Its 62,287.9764 ms
+  duration is validation evidence, not a game performance measurement.
+- All 126 source modules and three new modules passed node --check.
+- Production build and 53-file/52-reference local subdirectory HTTP check passed.
+  The existing large-entry warning remains. Type/lint commands are unconfigured.
+- Tests cover Source/sampler/color/normal/UV isolation, simultaneous live and
+  rebuilt texture owners, shared-load failures/retries, callback/promise decode,
+  disposed player isolation, latest playback intent, one-shot/master-mute routing
+  and stop/disconnection. Existing full gameplay/lifecycle suites also passed.
+- Browser graphics, audible mix/cues, real MP3 decode/PCM, heap/GC, GPU residency,
+  startup/frame-time improvements and Phase D manual testing remain pending.
+
+No runtime FPS/memory/latency improvement was proven. Follow the established
+production baseline protocol and Phase D checklist in the progress tracker
+before accepting or expanding this work. Phase E was not started.

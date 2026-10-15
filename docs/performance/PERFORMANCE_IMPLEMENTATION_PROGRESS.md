@@ -7,19 +7,18 @@ Initial working tree: clean. No commit, push, dependency installation or deploym
 
 ## Phase register
 
-The user tested the delivered Phase B fixture change and explicitly authorized
-Phase C: "Ok ive tested it, give me a git commit message and can move onto
-Phase C". The delivered Phase B scope is APPROVED. Its unimplemented broader
-tasks remain deferred, not silently completed. Phase C is the active scope;
-Phase A remains incomplete and unapproved. Earlier session details below are
-historical evidence; current Phase C results are appended.
+The user tested and verified the delivered Phase C changes and explicitly
+authorized Phase D. The delivered B and C scopes are APPROVED; their broader
+unimplemented tasks remain deferred, not silently completed. Phase D is now
+the active scope. Phase A remains incomplete and unapproved. Earlier session
+details below are historical evidence; current Phase D results are appended.
 
 | Phase | Plan tasks | Status | Completed / remaining |
 |---|---|---|---|
 | A - Quick wins | A0-A4 | BLOCKED | Partial A0 diagnostic tooling and automated checks completed. Real-browser prerequisite and remaining A0 work block A1-A4. |
 | B - Rendering improvements | B1-B4 | APPROVED | User tested/accepted the delivered fixture-sharing substep. Broader B1 batching and B2-B4 remain unimplemented and deferred behind profiling gates. |
-| C - CPU and game loop improvements | C1-C5 | BLOCKED | C1 immutable availability/direct rewind scan and C3 relay unchanged-state guards implemented, awaiting user testing. Remaining storage/raycast/scheduling/timing work needs profiling or an agreed behavior reference. |
-| D - Memory improvements | D1-D3 | NOT STARTED | All tasks remain; query cleanup here belongs to A0 diagnostic ownership, not application shutdown. |
+| C - CPU and game loop improvements | C1-C5 | APPROVED | User tested/verified the delivered C1 availability/scan and C3 relay guards. Remaining storage/raycast/scheduling/timing work is unimplemented and deferred. |
+| D - Memory improvements | D1-D3 | BLOCKED | D1 kit Source sharing and D2 in-flight music deduplication/inventory implemented, awaiting user testing. Broader texture/audio budgets and D3 require profiling or a demonstrated lifecycle need. |
 | E - Loading and build improvements | E1-E4 | NOT STARTED | All tasks remain; no readiness, loading, asset or hosting behavior change. |
 | F - Advanced optimizations | F1-F2 | NOT STARTED | All tasks and their measurement/architecture gates remain. |
 
@@ -446,7 +445,10 @@ fixture geometry construction and reuse. No tracked file was deleted. Final
 
 ## Phase C session - 15 October 2026
 
-**Status: BLOCKED - C1/C3 substeps implemented, awaiting user testing.**
+**Status at original session close: BLOCKED - C1/C3 substeps implemented.**
+Subsequent feedback: the user checked and verified the delivered changes and
+authorized Phase D. The delivered scope is APPROVED; remaining C tasks stay
+deferred. See the Phase D feedback record below.
 
 ### Prior-phase feedback, authorization and Git boundary
 
@@ -645,3 +647,218 @@ checkout/copy with identical settings; do not compare away the accepted B work.
 Only C changes remain in this diff. The two new modules are untracked and
 omitted from ordinary `git diff --stat`. No tracked file was deleted. Final
 `git diff --check` passed. No agent staging/commit/push/deployment occurred.
+
+## Phase D session - 15 October 2026
+
+**Status: BLOCKED - D1/D2 substeps implemented, awaiting user testing.**
+
+### Feedback, authorization and reference
+
+The user said "ok checked and verified" about delivered Phase C and explicitly
+authorized Phase D. Delivered C1/C3 substeps are now APPROVED; the remaining
+original C tasks stay deferred, not completed. Phase C was committed as
+`7f85201` (`perf(time): avoid redundant availability and relay display work`).
+This D session began with a clean working tree at that reference. No agent
+commit, staging, push, dependency installation or deployment occurred.
+
+The user also requested clearing chat context. Chat history cannot be erased
+by this coding workflow; the repository tracker is the continuity source and
+only Phase D was treated as active scope. No Phase E work began.
+
+### Scope and remaining gates
+
+Browser inventory again returned `apps: []`, `browsers: []`. Real renderer/heap
+snapshots, actual decoded MP3 PCM sizes, GPU residency and long-session traces
+are unavailable. This session implements bounded D1 Source sharing and D2
+overlapping-load deduplication using reproducible identity/request counts,
+explicit ownership and integration tests. Implementing these before browser
+profiling is a recorded plan deviation, not evidence that the browser gates
+have passed. No cache budget, compression or streaming choice was invented.
+
+| Task | Status | Completed / remaining |
+|---|---|---|
+| D1 - Texture/cache ownership and duplicate reuse | IN PROGRESS | Kit texture Source inventory/sharing and owner/restart tests completed. Broader image deduplication, replaced-map cleanup and actual CPU/GPU residency investigation remain deferred. |
+| D2 - Audio load deduplication and decoded budget | IN PROGRESS | URL-keyed in-flight fetch/decode coalescing, retry cleanup, disposed-owner isolation and on-demand decoded PCM inventory completed. Unlock/start coalescing, cancellation, eviction/streaming decisions and actual MP3/long-session measurements remain deferred. |
+| D3 - Application shutdown for a demonstrated need | NOT STARTED | No remount/HMR/context-loss leak or embedding requirement has been demonstrated. Ordinary level restart remains separate; no speculative root teardown added. |
+
+### Ownership inventory
+
+| Resource | Owner / lifetime | Disposal or sharing contract |
+|---|---|---|
+| Kit painted/normal canvases | Existing module canvas cache, intentional session lifetime | Paint once per key/normal strength; pixels and cache keys unchanged. |
+| Kit texture Sources | Private weak map keyed by cached canvas | One Source per canvas; no independent image lifetime or extra template Texture wrapper. |
+| Kit material texture wrappers | Individual level/material owners | Separate Texture/UV/sampler settings, shared Source; existing disposeObject releases owned wrappers. No sharedTexture exemption added to returned wrappers. |
+| Core procedural textures | Existing session canonical library plus level-owned clones | Already shares Sources; unchanged. Canonical shared flags and clone disposal retained. |
+| Nature surfaces/models | Existing session asset owner | Existing sharedTexture resources retained; embedded duplicate images not repackaged or merged here. |
+| Passage exterior maps/materials | Existing module-held material/asset owners | Unchanged; cleanup of replaced private maps remains D1 follow-up. |
+| Decoded music | Existing session URL-keyed cache | Same successful-buffer retention policy; no eviction/cancellation change without real PCM evidence. |
+| Pending music loads | URL-keyed promise map | One fetch/decode per URL; removed on success or failure; one player's dispose cannot cancel another player's shared load. |
+| Music playback buffer/source/gain | Individual LevelMusicPlayer plus existing active-player token | Disposed players cannot reacquire buffers or play after late load completion. Existing playback/mix/source-stop logic retained. |
+| SFX, procedural drone, AudioContext/master | Existing audio/session owners | Unchanged; no D3-wide shutdown or alternate streaming playback. |
+
+Installed Three source was checked: Texture.copy shares the Source; the
+renderer caches GPU textures by Source plus sampler/upload parameters including
+colorSpace and tracks use counts on disposal. Different UV repeats remain
+per-texture settings; different color-space/sampler variants retain distinct
+GPU cache keys. New GPU variants force upload even when sharing a Source.
+This supports the ownership design, but is not a real-driver memory benchmark.
+
+### Implemented changes
+
+- `kitTexture` assigns a cached canvas Source to each new owned wrapper instead
+  of retaining an independent Source for every wrapper. New wrappers do not
+  dirty unchanged shared pixels or retain an extra template Texture. Color,
+  normal strength, color-space,
+  wrapping, filters, anisotropy and UV repeat defaults are preserved. Normal
+  maps of different strengths keep separate canvases/Sources.
+- Music loads share a promise by normalized URL across players. Successful
+  buffers retain the original cache policy; fetch/body/decode failures remove
+  pending state and permit retry. Requests before AudioContext initialization
+  fail observably before fetching and can retry after normal audio unlock.
+- Late shared-load completion returns its result without reattaching a buffer
+  to a disposed player. Existing latest-request token checks still decide
+  playback; no shared request is aborted merely because one owner leaves.
+- `getMusicCacheInfo()` returns an on-demand detached metadata snapshot:
+  duration, sample rate, channels, sample length, PCM bytes per track, pending
+  URLs and total PCM bytes. It exposes no AudioBuffer/node references and does
+  not run every frame. It is an ES-module diagnostic export, not a new UI.
+
+### Files created or modified in Phase D
+
+| File | Change | Reason |
+|---|---|---|
+| `src/environment/level1-kit/kit-textures.js` | Private weak canvas Source cache with level-owned wrappers | Share identical Sources without sharing mutable sampler/UV wrappers or dirtying unchanged pixels. |
+| `src/systems/level-music.js` | In-flight URL cache, retry cleanup, disposed-owner guard, PCM metadata snapshot | Avoid duplicate fetch/decode and preserve async playback ownership. |
+| `scripts/measure-phase-d-resources.mjs` (new) | Kit Source/sampler inventory and mocked overlapping music probe | Reproduce source/request counts before/after; clearly exclude browser memory claims. |
+| `test/kit-texture-ownership.test.mjs` (new) | Three texture ownership/variant/restart tests | Verify independent settings, normal/color separation, stable Source version and wrapper disposal. |
+| `test/level-music-cache.test.mjs` (new) | Eight async load/playback tests | Verify shared loads, failure/retry, PCM snapshot isolation, cancellation, latest intent, one-shot/mute routing and observable errors. |
+| `docs/performance/PERFORMANCE_BASELINE.md` | Append D evidence, measurements and limitations | Preserve previous source evidence and reproducible comparisons. |
+| `docs/performance/PERFORMANCE_IMPLEMENTATION_PROGRESS.md` | Record C acceptance, D scope, ownership and remaining work | Maintain the phase/testing handoff. |
+
+Ignored `dist/` was rebuilt for validation. Test logs and before/after probe
+JSON are in the OS temp directory. No tracked files were deleted.
+
+### Measured before/after results
+
+Probe scope: Node with the existing canvas/asset hook; music network/decoder
+are controlled doubles. Texture wrappers/settings and image count remain
+unchanged. These are resource identities and request counts, not heap/VRAM.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| Sources for 100 same-canvas kit textures | 100 | 1 | 99 fewer Source identities |
+| Sources across three kit-material builds | 115 | 47 | 68 fewer Source identities |
+| Texture wrappers across those builds | 144 | 144 | Unchanged; owners remain separate |
+| Images across those builds | 47 | 47 | Unchanged; cached pixels preserved |
+| Fetches for three concurrent same-URL music loads | 3 | 1 | Two duplicate requests avoided in fixture |
+| Decodes for those loads | 3 | 1 | Two duplicate decodes avoided in fixture |
+| Distinct decoded buffers for those loads | 3 | 1 | One shared decoded result in fixture |
+| Total production output, 53 files | 76,158,180 B | 76,158,519 B | None; +339 B |
+| Entry JavaScript | 1,514,563 B | 1,514,902 B | None; +339 B |
+| Entry JavaScript, local gzip | 445,102 B | 445,239 B | None; +137 B |
+
+Texture sampler metadata hash matches before/after:
+`b5de10bed4fc69211926b2e82eb53b23ef2b7b303555cbb113a82f9899f3ea0c`.
+The probe does not rasterize canvases or decode actual music. Its synthetic
+two-second stereo buffer is only a test fixture; no real-track PCM total was
+measured or inferred from compressed MP3 sizes. Expected benefits are fewer
+duplicate resource owners/uploads and overlapping fetch/decode work. No FPS,
+frame-time, startup, heap/GC, actual GPU bytes or audible latency gain is proven.
+
+### Validation results
+
+| Check | Result |
+|---|---|
+| Before full suite | PASS: 107 tests; 0 failed/skipped/cancelled |
+| New targeted tests | PASS: 11 tests (three texture, eight music) |
+| After full suite | PASS: 118 tests; 0 failed/skipped/cancelled |
+| Syntax | PASS: all 126 source modules and three new modules |
+| Type checking / linting | UNAVAILABLE: repository has no configured commands |
+| Production build | PASS; existing >500 kB entry/chunk warning remains |
+| Production packaging/HTTP | PASS: 53 files / 52 subdirectory references |
+| Texture settings equivalence | PASS: sampler hash and color/normal/UV ownership tests |
+| Audio async ownership | PASS: shared load survives one owner's disposal; disposed player cannot reacquire buffer/play; stale global starts never start a source |
+| Playback/source graph | PASS with doubles: one latest active source, original loop/volume/master-mute routing, one-shot completion and stop/disconnect behavior |
+| Failure paths | PASS: HTTP/decode failures are retryable and active-load failures remain observable |
+| Browser profiling / actual audio and GPU | BLOCKED: no accessible browser/context |
+| Phase D manual user testing | NOT COMPLETED; awaiting feedback |
+
+Final full-suite duration 62,287.9764 ms is validation evidence, not a performance
+benchmark. No existing warnings or unrelated audio/rendering behavior were
+changed to make validation quieter.
+
+### Manual testing and measurement
+
+Compare against clean reference `7f85201` using identical display/audio settings
+and browser/device conditions. Use the established production protocol for
+actual before/after FPS, memory, cold/warm load and trace measurements.
+
+1. **L1 appearance:** New Game -> forecourt -> hall -> passages/bridge ->
+   platform. Inspect checker floors, brick/tile, concrete/roughness, posters,
+   clock, signs, train windows and valance. Expect identical UV repeats, normal
+   direction, color/emissive response, transparency and bloom. Compare matching
+   views to the reference; watch wrong color space, stretched repeats or missing
+   normal/roughness channels.
+2. **Texture lifetime:** restart Boarding 20 times and quit/title/New Game 10
+   times after visiting the same route. Expect intact surfaces after rebuilds
+   and resource counts that plateau after warmup; watch black/disposed textures
+   or growth at the same checkpoint. Inspect renderer/heap snapshots on both
+   revisions. Source counts are not VRAM bytes and GPU reuse depends on matching
+   upload parameters.
+3. **Rapid music transitions:** with network/CPU throttling, unlock audio and
+   rapidly click New Game, quit/title, restart and enter levels. Expect one
+   intended audible track with no stale track starting after a late request.
+   Compare Network fetch/decode tasks and audible behavior with the reference;
+   watch overlapping tracks, changed timing or a disposed player starting later.
+4. **Retry paths:** block one music request, then unblock and trigger it again;
+   repeat a controlled decode failure where available. Expect an observable
+   error, no stale source and a working retry. Compare request count with the
+   reference; no rejected promise may permanently poison the pending cache.
+5. **Audio policy and mix:** test initial gesture unlock, mute/volume, every
+   time mode, pause/background/resume, victory one-shot and credits/title exit.
+   Expect the same pitch, loop/cue/fade behavior and master mix. Watch repeated
+   unlock/source restarts, missing cues or audio continuing from an old level.
+   Broader unlock/start coalescing and cache eviction were not implemented.
+6. **PCM inventory:** in a dev-server tab after normal gesture unlock, use
+   `const music = await import('/src/systems/level-music.js')`, then inspect
+   `music.getMusicCacheInfo()` after each track has decoded. Save actual buffer
+   rates/channels/lengths/PCM totals and pending URLs. Compare long-session heap
+   retaining paths and active source graphs before choosing a cache budget.
+   This module diagnostic is for dev-server inspection, not a production global.
+
+### Risks, remaining work and stop condition
+
+- Shared Sources intentionally follow the existing cached canvas lifetime.
+  No pixel/texture budget or cache release policy was chosen without evidence.
+  Embedded nature image duplication and replaced procedural-map cleanup remain.
+- Same-source texture settings are independent, but real GPU reuse/first-upload
+  behavior and screenshots still require browser testing on actual drivers.
+- Music cache retention remains unchanged and may retain all decoded tracks.
+  In-flight coalescing avoids duplicates; it does not prove a smaller steady
+  PCM cache. Real music PCM totals and long-session retention remain unmeasured.
+- Shared fetches are deliberately not aborted on a single player's cancellation.
+  Pending entries clear on settlement; network requests that never settle retain
+  their pending entry. No speculative timeout or new autoplay policy was added.
+- Playback source/gain behavior was retained. General application shutdown,
+  streaming, eviction and coalescing every unlock/start call remain separate
+  work behind the plan's evidence/behavior gates.
+- D's delivered substeps await user testing. No Phase D approval is inferred
+  from the earlier Phase C acceptance. Phase E was not started and requires
+  explicit authorization. No commit/push/deployment is automatic.
+
+### Phase D Git summary
+
+```text
+ M docs/performance/PERFORMANCE_BASELINE.md
+ M docs/performance/PERFORMANCE_IMPLEMENTATION_PROGRESS.md
+ M src/environment/level1-kit/kit-textures.js
+ M src/systems/level-music.js
+?? scripts/measure-phase-d-resources.mjs
+?? test/kit-texture-ownership.test.mjs
+?? test/level-music-cache.test.mjs
+```
+
+Two runtime files, two performance documents and three new probe/test modules
+comprise this session. Ordinary `git diff --stat` omits the three untracked
+modules. No unrelated source change or tracked deletion occurred. Final
+`git diff --check` passed. Everything remains uncommitted against `7f85201`.
