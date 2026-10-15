@@ -464,8 +464,16 @@ export function createPlayer() {
       }
     }
 
-    crouching = ((holdToCrouch ? Boolean(keyboard.duck) : crouchToggled) || Boolean(group.userData.wreckLowCeiling)) && !airborne
-    const deepVentCrouch = crouching && Boolean(group.userData.tightCrouchCamera)
+    // A low maintenance vent is a hard posture constraint, not just a camera
+    // hint. Check the player's current position every frame, independent of
+    // whether crouch is hold/toggle or whether the vent update ran first.
+    const inForcedCrouchVent = Boolean(group.userData.forceCrouchInVent?.(group.position))
+    if (inForcedCrouchVent) {
+      jumpPressed = false
+      crouchToggled = false
+    }
+    crouching = (inForcedCrouchVent || (holdToCrouch ? Boolean(keyboard.duck) : crouchToggled) || Boolean(group.userData.wreckLowCeiling)) && !airborne
+    const deepVentCrouch = crouching && (inForcedCrouchVent || Boolean(group.userData.tightCrouchCamera))
     running = Boolean(keyboard.run) && moving && !crouching
 
     function sampleGroundHeight(fallback) {

@@ -261,6 +261,15 @@ function createCrouchVent({ group, colliders, floorMat, wallMat, ironMat, player
     clearanceGates.push(gate)
   }
 
+  // Authoritative low-clearance region for the player controller. This keeps
+  // the character crouched even when crouch is released or toggled off, or
+  // when jump/run is pressed while crawling through the vent.
+  const forceCrouchInVent = (position) => Boolean(
+    position && position.x >= startX - 0.1 && position.x <= endX + 0.1 &&
+    Math.abs(position.z - z) <= width / 2 + 0.1
+  )
+  if (player?.mesh) player.mesh.userData.forceCrouchInVent = forceCrouchInVent
+
   let warnedStanding = false
   function update() {
     const crouched = Boolean(player?.isCrouching?.())
@@ -279,6 +288,12 @@ function createCrouchVent({ group, colliders, floorMat, wallMat, ironMat, player
 
   return {
     update,
+    dispose() {
+      if (player?.mesh?.userData.forceCrouchInVent === forceCrouchInVent) {
+        delete player.mesh.userData.forceCrouchInVent
+        player.mesh.userData.tightCrouchCamera = false
+      }
+    },
     contains(x, zPos) {
       return x >= startX - 0.1 && x <= endX + 0.1 && Math.abs(zPos - z) <= width / 2 + 0.1
     },
@@ -1546,6 +1561,7 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
   dressBridgePassage(group, colliders)
 
   function dispose() {
+    vent.dispose()
     powerPuzzle.dispose()
     pickupUnregisters.forEach((unregister) => unregister())
     distraction?.dispose()
