@@ -682,3 +682,107 @@ Before used fresh in-memory Vite output; after used fresh production output.
 No runtime FPS/memory/latency improvement was proven. Follow the established
 production baseline protocol and Phase D checklist in the progress tracker
 before accepting or expanding this work. Phase E was not started.
+
+## Phase E: required readiness and later-level delivery (15 October 2026)
+
+Reference: clean committed `1221bea` (`Memory improvements`). The user explicitly
+authorized E; this does not establish D testing acceptance. E is partial: required
+startup readiness, bounded nature jobs and later-level splitting are delivered;
+profile-dependent staging, character conversion and remote hosting remain gated.
+
+### Reproduction and comparison limits
+
+```powershell
+node --import ./scripts/register-test-assets.mjs scripts/measure-phase-e-loading.mjs
+node scripts/measure-build-graph.mjs
+npm.cmd run build
+node scripts/check-production.mjs
+```
+
+The nature probe was run against the reference before runtime edits, then against
+the candidate. It exercises the real nature module with controlled GLTFLoader/
+TextureLoader callbacks and a non-rendering canvas stub. Each wave completes all
+currently pending top-level jobs in reverse order. A wave has no time unit; models
+are not really fetched, decoded or drawn. The same 19 jobs are requested in both.
+
+The graph probe builds with installed Vite and `write: false`. Initial JavaScript
+is the entry plus the recursive static-import closure, including extracted shared
+Three core; quoting entry size alone would overstate the saving. gzip is local
+gzipSync output, summed per initial chunk, not a measured server response. Source
+and model bytes were not converted. Reference packaging was freshly built before
+edits. Before E3, an intermediate E1 graph also established that both later levels
+and Cannon were still in the initial chunk (1,516,359 B, local gzip 445,887 B).
+
+### Measured counts and emitted bytes
+
+| Metric | Reference `1221bea` | Candidate | Change |
+|---|---:|---:|---|
+| Top-level nature load jobs | 19 | 19 | Same work |
+| Peak active top-level nature jobs in fixture | 9 | 4 | Shared four-slot budget |
+| Fixture completion waves | 11 | 5 | Serialized model chain removed |
+| Nature catalogue entries | 11 | 11 | Same order/settings hash |
+| Emitted files | 53 | 57 | Four additional JS chunks |
+| Total output | 76,158,519 B | 76,164,581 B | +6,062 B |
+| Entry JS alone | 1,514,902 B | 952,631 B | -562,271 B; see initial closure below |
+| Initial JS, including static dependencies | 1,514,902 B | 1,231,307 B | -283,595 B (18.7%) |
+| Initial JS, local gzip | 445,239 B | 356,295 B | -88,944 B (20.0%) |
+
+Nature catalogue/material-settings SHA256 matches before and after:
+`7ee58fa599ef14b2e62e5c770d3b550267ab8f3b7b7df0fe229072bf43699239`.
+It covers ordered keys, kind, scale/capacity, wind parameters, alpha/side, map/normal
+color space, wrapping and anisotropy. This is not a pixel or whole-scene hash.
+Tests also retain each geometry/material's association with its definition.
+
+### Candidate dependency graph
+
+| Chunk role | Emitted bytes | Initial? |
+|---|---:|---|
+| Entry | 952,631 | Yes |
+| Shared Three core | 278,676 | Yes |
+| Shared later-level environment/shader chunk | 68,629 | No |
+| Moving Heist | 51,327 | No |
+| Timewreck, including Cannon | 169,598 | No |
+| Optional DRACOLoader | 7,419 | No |
+
+There is one Three package root, one Cannon package root and no duplicated module
+IDs across chunks. Workshop route/format strings are absent from production JS.
+The guard torch's actual GLB JSON has no extensionsUsed/Required; its load now
+opts out of Draco wiring. Default loadModel callers still wire/share Draco.
+This skips an unused module import; it does not claim a decoder-binary saving.
+
+Boarding stays eager and its title scene is adopted for New Game. L2 prefetch
+starts two frames after Boarding entry/adoption; L3 prefetch starts after L2 entry.
+Neither starts alongside boot FBXs. Failed optional prefetch is observed; a real
+transition retries factory resolution under the overlay. Browser module-load
+failure caching may still require reload. Canceled imports may finish and cache
+a factory but cannot construct a stale scene or dismiss a newer transition.
+Complete remains a tiny eager factory to preserve immediate keepPrevious credits.
+
+Startup progress counts four required steps (detective, police, nature-backed
+Boarding construction, presentation including Ghost warmup/extra frame). It is
+step completion, not bytes or estimated remaining time. Existing asset fallbacks
+still settle their steps; a rejected required task shows a reload message. The
+asset manager never dismisses the overlay independently of the scene owner.
+
+### Validation and outstanding measurements
+
+- Reference full suite: 118 passed, no failures/skips/cancellations.
+- Final full suite: 136 passed, no failures/skips/cancellations. Its 35,238.3672 ms
+  duration is validation evidence, not a game performance measurement.
+- Syntax passed for 128 source modules plus six new probe/test modules.
+- Production build passed; the existing large-chunk warning remains.
+- Local production HTTP checks passed: 57 files and 56 relative subdirectory
+  references. This does not inspect deployed MIME, compression or cache headers.
+- New tests exercise bounded successful/failed jobs, reversed model completion,
+  missing/meshless optional nature assets, readiness completion orders, fallback
+  results, mandatory rejection, loader unsubscribe, prefetch/cold-load sharing,
+  cancellation before/after import and construction, failure/retry, checkpoint/
+  energy/options, credits retention and optional decoder capability.
+- No accessible apps/browsers were returned by a fresh UI inventory. Real cold/
+  warm timing, first-use/transition spikes, frame distributions, shader/upload
+  work, peak decode memory, screenshots and manual playthrough remain unmeasured.
+- Procedural import-time drawing/building/compile/upload may remain on the
+  critical path. Four concurrent GLBs may increase peak model decode residency;
+  fewer fixture waves cannot establish lower browser load time or memory.
+- E2 character conversion/parity and E4 real-host header policy remain unresolved.
+  No server config, deployment, asset conversion or Phase F work was performed.

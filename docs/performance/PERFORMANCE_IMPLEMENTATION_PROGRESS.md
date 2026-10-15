@@ -7,11 +7,11 @@ Initial working tree: clean. No commit, push, dependency installation or deploym
 
 ## Phase register
 
-The user tested and verified the delivered Phase C changes and explicitly
-authorized Phase D. The delivered B and C scopes are APPROVED; their broader
-unimplemented tasks remain deferred, not silently completed. Phase D is now
-the active scope. Phase A remains incomplete and unapproved. Earlier session
-details below are historical evidence; current Phase D results are appended.
+The user explicitly authorized Phase E after committing D as `1221bea`.
+The delivered B and C scopes are APPROVED; their broader unimplemented tasks
+remain deferred. D testing acceptance was not explicitly reported and remains
+pending. E is the active scope; its E1/E3 results and remaining gates are below.
+Phase A remains incomplete and unapproved. Earlier session details are history.
 
 | Phase | Plan tasks | Status | Completed / remaining |
 |---|---|---|---|
@@ -19,7 +19,7 @@ details below are historical evidence; current Phase D results are appended.
 | B - Rendering improvements | B1-B4 | APPROVED | User tested/accepted the delivered fixture-sharing substep. Broader B1 batching and B2-B4 remain unimplemented and deferred behind profiling gates. |
 | C - CPU and game loop improvements | C1-C5 | APPROVED | User tested/verified the delivered C1 availability/scan and C3 relay guards. Remaining storage/raycast/scheduling/timing work is unimplemented and deferred. |
 | D - Memory improvements | D1-D3 | BLOCKED | D1 kit Source sharing and D2 in-flight music deduplication/inventory implemented, awaiting user testing. Broader texture/audio budgets and D3 require profiling or a demonstrated lifecycle need. |
-| E - Loading and build improvements | E1-E4 | NOT STARTED | All tasks remain; no readiness, loading, asset or hosting behavior change. |
+| E - Loading and build improvements | E1-E4 | BLOCKED | E1 required startup readiness/bounded nature jobs and E3 lazy factories/prefetch/optional Draco implemented and awaiting user testing. Broad staging, E2 conversion and E4 host verification remain gated. |
 | F - Advanced optimizations | F1-F2 | NOT STARTED | All tasks and their measurement/architecture gates remain. |
 
 Allowed statuses: NOT STARTED, IN PROGRESS, IMPLEMENTED — AWAITING USER TESTING,
@@ -862,3 +862,212 @@ Two runtime files, two performance documents and three new probe/test modules
 comprise this session. Ordinary `git diff --stat` omits the three untracked
 modules. No unrelated source change or tracked deletion occurred. Final
 `git diff --check` passed. Everything remains uncommitted against `7f85201`.
+
+## Phase E session: loading readiness and later-level modules
+
+### A. Scope and status
+
+User instruction: "Move on to phase E". Session reference is clean HEAD `1221bea`
+(`Memory improvements`); the prior D changes are committed. D manual acceptance
+was not explicitly reported, so its status remains pending. This instruction
+authorizes E work, not an automatic D approval or any Phase F implementation.
+
+E1 required readiness/parallelism and E3 async module resolution are implemented.
+Broad E1 procedural staging, E2 character conversion and E4 deployed-host policy
+remain blocked by the missing browser traces/parity references or host access.
+The delivered E scope awaits user testing. Overall E is partial, not approved.
+
+### B. Files and responsibilities
+
+| File | Change and purpose |
+|---|---|
+| `src/core/loading-tasks.js` (new) | Fixed required-step progress/readiness; failures latch, duplicate completion does not inflate progress. |
+| `src/core/load-queue.js` (new) | FIFO budget for full async jobs; rejected/thrown jobs release slots. |
+| `src/environment/nature-props.js` | Four slots shared across 11 GLBs and eight surface maps; ordered Promise.all preserves catalogue/seed consumers and existing per-asset fallback. |
+| `src/ui/loading-screen.js` | Required-step startup progress; manager completion cannot hide overlay; transition reset and visible reload error. |
+| `src/main.js` | Track four startup steps, preserve title adoption/Ghost warmup/frame boundary; dynamically import L2/L3 and prefetch next module after entry presentation. |
+| `src/core/level-manager.js` | Resolve/cached-share factories before teardown; token checks before construction and after presentation; optional prefetch failure and required error paths. |
+| `src/core/assets.js` | Allow known uncompressed model callers to skip Draco wiring; default compressed capability unchanged. |
+| `src/entities/police-visual.js` | Opt the verified uncompressed guard torch out of Draco wiring. |
+| `scripts/measure-phase-e-loading.mjs` (new) | Reproducible controlled nature-load counts/waves and ordered settings hash. |
+| `scripts/measure-build-graph.mjs` (new) | In-memory emitted byte graph, initial static closure, gzip, ownership and workshop exclusion. |
+| Four new `test/*loading*.test.mjs` / `test/optional-draco.test.mjs` modules | Readiness, actual nature module, async transition/prefetch/cancellation/error and decoder contracts. Exact files listed under Git summary. |
+| Both performance baseline/progress documents | Append evidence, limitations and manual checklist. |
+
+No dependency/lockfile, model binary, visual shader, movement, puzzle, time-power,
+animation clip or remote hosting configuration changed. `dist/` is ignored and
+was regenerated. No unrelated working-tree changes existed or were overwritten.
+
+### C. Tasks and readiness manifest
+
+| Plan task | Delivered | Remaining |
+|---|---|---|
+| E1 | Required-task startup accounting; owner-only dismissal; shared four-job nature queue; order/fallback preservation; required failure message. | Profile/move import-time procedural preparation; stage proven long factories; actual browser compile/upload/peak-memory verification. |
+| E2 | None; original FBXs, clips and torch transforms retained. | Offline conversion/provenance and fixed-pose/clip/release parity plus actual browser decode/visual references. |
+| E3 | Lazy L2/L3 factories; post-entry prefetch; cold-load barrier; shared successful/pending factories; token cancellation; optional Draco opt-out. | Actual cold/warm transition traces and manual/browser render/cancellation checks. Complete stays eager to preserve instant credits. |
+| E4 | Existing local relative HTTP checker rerun against new chunks. | Actual hosting URL/read access, header/cache/compression policy and remote browser verification. No speculative .htaccess written. |
+
+Required startup steps are declared before any load completion can report progress:
+
+| Step | Completion contract | Failure/fallback policy |
+|---|---|---|
+| Detective | Existing player visual load settles. | Existing primitive character fallback remains valid. |
+| Police | Existing template, walk/idle/turn/torch loading settles. | Existing humanoid/optional clip/torch fallbacks remain valid. |
+| Backdrop | All 19 nature top-level jobs settle, surface maps apply, Boarding/title construction finishes. | Existing missing/meshless prop omission and null-map fallback remain valid; rejected construction is a required failure. |
+| Presentation | Ghost warmup and the existing final startup rAF boundary complete after the above steps. | Required preparation exception keeps overlay visible and reports reload recovery. |
+
+These are four equally counted work units, not a network percentage or time
+estimate. Nature requests inside a GLB remain loader-owned and can exceed the
+four top-level slots. Audio retains its gesture-driven policy. Later modules
+are optional prefetch until transition: L2 after Boarding adoption/entry, L3
+after L2 entry, each delayed two frames and state-checked. The title backdrop
+is still adopted without a rebuild. Credits stay eager and hold the outgoing
+scene without a loading flash.
+
+### D. Measured results
+
+| Metric | Before `1221bea` | After | Interpretation |
+|---|---:|---:|---|
+| Controlled peak top-level nature jobs | 9 | 4 | Shared bounded budget; not total requests/decoded-memory bytes. |
+| Controlled completion waves | 11 | 5 | Same 19 jobs; no wave duration or browser timing implied. |
+| Initial JavaScript, full static closure | 1,514,902 B | 1,231,307 B | -283,595 B (18.7%). |
+| Initial JavaScript, local per-chunk gzip | 445,239 B | 356,295 B | -88,944 B (20.0%); no server transfer claim. |
+| Total emitted output | 76,158,519 B | 76,164,581 B | +6,062 B; 53 -> 57 files. |
+
+The ordered catalogue/material-settings hash is unchanged:
+`7ee58fa599ef14b2e62e5c770d3b550267ab8f3b7b7df0fe229072bf43699239`.
+It does not cover raster pixels or complete scene output. The candidate initial
+closure includes the 952,631 B entry and 278,676 B shared Three core. L2, L3,
+their shared later-level chunk and Cannon are outside it. No duplicated module
+IDs, extra Three/Cannon package roots or production workshop strings were found.
+See the baseline's chunk table and reproduction commands for full detail.
+
+Expected benefits are less initial JS evaluation and less serialized nature
+loading. No FPS, ready-time, longest-task, decode-memory or first-use latency
+improvement was measured. The remaining procedural work can still block before
+the overlay first paints or during construction/material compilation/upload.
+
+### E. Validation results
+
+| Check | Result |
+|---|---|
+| Reference full suite | PASS: 118 tests; 0 failed/skipped/cancelled. |
+| New targeted behavior contracts | PASS: 18 tests across four modules, including two final cancellation/presentation boundaries. |
+| Final full suite | PASS: 136 tests; 0 failed/skipped/cancelled. Duration 35,238.3672 ms is validation evidence, not a game benchmark. |
+| Syntax | PASS: 128 source modules and six new probe/test modules. |
+| Type checking / linting | UNAVAILABLE: plain JS repository has no configured commands. |
+| Production build | PASS; existing large-chunk warning remains; default Vite splitting, no arbitrary vendor config. |
+| Local production packaging/HTTP | PASS: 57 files / 56 case-sensitive relative subdirectory references. |
+| Runtime profiling / rendered comparison | BLOCKED: fresh UI inventory returned apps: [], browsers: []. |
+| Phase E manual user testing | NOT COMPLETED; awaiting feedback. |
+
+Tests include delayed character-versus-nature completion in either order, no
+manager-driven dismissal, required rejection/fallback, failure slot release,
+reversed nature callback order, optional failures, cold imports, coalesced
+prefetch/enter, cancellation before load/after load/before presentation, stale
+rejection isolation, retry after failed prefetch, preserved energy/checkpoints/
+options, restart cache reuse, title adoption and held-scene credits disposal.
+The first focused decoder test incorrectly expected an isDRACOLoader marker;
+it was corrected to verify the installed loader's decode capability and shared
+identity. Existing geometry/audio warning behavior was preserved.
+
+### F. Manual testing and comparison checklist
+
+Compare a production build with clean `1221bea`, identical browser/device,
+quality, camera/route and cache conditions. Run at least three cold and warm
+attempts per case. Use the baseline raw frame/startup protocol, not test duration.
+
+1. **Cold/warm title:** load with cache disabled, then repeat warm. Delay nature
+   GLBs/JPGs while FBXs finish, then reverse the delays. Expect the loading screen
+   to remain visible until the station, both character paths and presentation
+   are ready. Progress advances per completed step and reaches 100% at readiness.
+   Watch premature fade, blank/partial scene, permanently stuck progress or an
+   early New Game click. Capture menu/control-ready time and longest tasks.
+2. **Nature appearance/fallback:** New Game -> forecourt -> hall -> passages ->
+   platform. Compare trees/fern/rock placement, wind, leaf alpha, roofs, brick and
+   ground at matching views/phase. Block one nature GLB/JPG, reload, then unblock.
+   Expect the established omission/map fallback and a usable menu; watch changed
+   seeded placement on successful full loads, wrong map settings or a stalled
+   queue. Measure actual simultaneous decode residency with memory tools.
+3. **New Game/title adoption:** click New Game as soon as available; inspect the
+   camera arrival, detective pose and first Ghost use. Quit/title and start again
+   ten times. Expect the same camera glide and ready station without a rebuild
+   flash, duplicate input handler, missing character or first-use shader surprise.
+4. **Cold later-level transitions:** throttle CPU/network, progress L1 -> L2 ->
+   L3, and separately use dev ?start=level2 / ?start=level3. Expect the overlay to
+   cover module loading/build/presentation and block gameplay until complete.
+   Check checkpoint/yaw, energy carry and every level's initial objective. Watch
+   missing module assets, old-level interaction or a stale camera. Capture first
+   play frame, transition longest task and network waterfalls against reference.
+5. **Cancellation/restart:** with a later-level chunk delayed, quit/title or
+   restart where controls permit; in dev, exercise window.levelManager.unload(),
+   enter(...) or restart() while pending. Resolve the delayed request. Expect
+   only the newest transition to construct/reveal a scene; watch late geometry,
+   wrong state, input unlocking or a newer overlay disappearing.
+6. **Failed chunks/prefetch:** in dev, block a later-level module during prefetch.
+   Existing gameplay should continue. Unblock and transition; application factory
+   resolution retries. If the browser retains a failed module fetch, reload.
+   Block a required cold transition: expect a visible reload message, frozen old
+   scene and disabled interaction. Watch unhandled rejection or a partial level.
+7. **Credits/run reset:** finish L3, inspect credits over the final scene, then
+   quit/title and restart. Expect no loading flash on Complete and exactly one
+   outgoing-scene teardown. Watch black credits background or retained old runs.
+8. **Production paths and budget:** serve the fresh dist under a nested URL,
+   reload and enter all levels. Expect correct relative chunks/assets; workshop
+   remains absent. Record actual remote MIME, encoding, cache headers, initial
+   transferred/evaluated JS and warm-cache behavior. Static byte/gzip totals
+   alone cannot establish the real delivered improvement.
+
+### G. Risks, unresolved gates and stop
+
+- Browser screenshots, cold/warm stage traces, first-use spikes, GPU uploads and
+  peak memory are unavailable. The fixed four-job limit needs device validation;
+  parallel model decoding can increase transient model memory despite fewer
+  top-level jobs. Network jobs that never settle still hold slots; no speculative
+  timeout/retry policy was added to nature's existing session cache.
+- Startup progress is deliberately coarse required-step completion. Later-level
+  module/build completion is owner-gated; no elapsed-time progress was invented.
+- Prefetch can evaluate shared procedural code during gameplay and may cause a
+  task spike. It is deferred until after presentation and excludes boot traffic;
+  actual traces are still required to tune its timing or stage that work.
+- Dynamic imports cannot be aborted. Cancellation invalidates construction and
+  presentation; the resolved module/factory may remain in its intentional cache.
+  Browser import-failure caching can require reload despite application retry.
+- Required chunk failure retains the outgoing scene under an error overlay.
+  Factory construction exceptions report the same reload recovery but cannot
+  guarantee rolling back arbitrary partially constructed factory side effects.
+  No general async scene-building contract or factory rollback was introduced.
+- E1 broad staging and E2 conversion require real long-task/pose/clip references.
+  E4 needs the actual host/header policy. No fabricated server configuration,
+  compressed character asset, deployment or benchmark result was supplied.
+- Revert E1 queue/readiness/composition changes together if rejected. Revert E3
+  dynamic table and manager resolution/prefetch together to restore sync factories;
+  revert the paired torch/asset opt-out to restore default Draco wiring.
+- Delivered E work awaits manual testing; E as a whole is BLOCKED/partial. Phase
+  F remains NOT STARTED and requires explicit authorization. No automatic commit,
+  push or deployment was performed.
+
+### H. Git change summary
+
+```text
+ M docs/performance/PERFORMANCE_BASELINE.md
+ M docs/performance/PERFORMANCE_IMPLEMENTATION_PROGRESS.md
+ M src/core/assets.js
+ M src/core/level-manager.js
+ M src/entities/police-visual.js
+ M src/environment/nature-props.js
+ M src/main.js
+ M src/ui/loading-screen.js
+?? scripts/measure-build-graph.mjs
+?? scripts/measure-phase-e-loading.mjs
+?? src/core/load-queue.js
+?? src/core/loading-tasks.js
+?? test/async-level-loading.test.mjs
+?? test/loading-readiness.test.mjs
+?? test/nature-loading.test.mjs
+?? test/optional-draco.test.mjs
+```
+
+Eight tracked files plus eight new modules comprise the E change. Ordinary
+git diff --stat omits the untracked modules; the final response includes its
+actual tracked-file statistics. All changes remain uncommitted against `1221bea`.
