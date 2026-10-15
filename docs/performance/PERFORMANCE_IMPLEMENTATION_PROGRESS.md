@@ -7,12 +7,15 @@ Initial working tree: clean. No commit, push, dependency installation or deploym
 
 ## Phase register
 
-Only Phase A was opened. No phase has been approved by the user.
+The user subsequently instructed "Move on to Phase B". Phase B is now the
+active scope; Phase A remains incomplete and unapproved. No manual testing
+acceptance has been supplied for either phase. Initial Phase A session details
+below are retained as historical evidence; the Phase B session is appended.
 
 | Phase | Plan tasks | Status | Completed / remaining |
 |---|---|---|---|
 | A - Quick wins | A0-A4 | BLOCKED | Partial A0 diagnostic tooling and automated checks completed. Real-browser prerequisite and remaining A0 work block A1-A4. |
-| B - Rendering improvements | B1-B4 | NOT STARTED | All tasks remain; no rendering optimization or fidelity change. |
+| B - Rendering improvements | B1-B4 | BLOCKED | B1 fixture geometry-sharing substep implemented, awaiting user testing. Broader B1 batching and B2-B4 require browser profiling/visual evidence. |
 | C - CPU and game loop improvements | C1-C5 | NOT STARTED | All tasks remain; A0 loop instrumentation does not change simulation scheduling. |
 | D - Memory improvements | D1-D3 | NOT STARTED | All tasks remain; query cleanup here belongs to A0 diagnostic ownership, not application shutdown. |
 | E - Loading and build improvements | E1-E4 | NOT STARTED | All tasks remain; no readiness, loading, asset or hosting behavior change. |
@@ -22,7 +25,7 @@ Allowed statuses: NOT STARTED, IN PROGRESS, IMPLEMENTED — AWAITING USER TESTIN
 APPROVED, BLOCKED. Only explicit user acceptance can set APPROVED. Phase A is
 not complete and must not be reported as implemented or approved.
 
-## Blocker and scope decision
+## Phase A blocker and scope decision (initial session)
 
 The plan says: "Establish a source revision and a real-browser baseline before
 the first optimization." A0 also requires a browser on actual hardware. A fresh
@@ -33,8 +36,9 @@ not an approval-review rejection.
 
 Safe independent A0 diagnostic preparation was implemented and tested. The
 performance optimizations A1-A4 were left pending rather than bypassing the
-plan's gate. No later phase was entered. When access or baseline evidence is
-available, resume **Phase A**, not Phase B, and finish its remaining work.
+plan's gate. No later phase was entered in that session. The subsequent explicit
+Phase B instruction supersedes the earlier resume-Phase-A-only scope decision;
+it does not complete or approve Phase A's outstanding tasks.
 
 ## A0 - Establish trustworthy measurement
 
@@ -94,7 +98,7 @@ Remaining A0 work (not completed):
 | A3 - Cache static minimap data and bound icon reuse | NOT STARTED | Inspect mutable obstacles, cache/revision invalidation, bounded icon pools; carriage/roof/dynamic obstacle/restart checks and allocation evidence. |
 | A4 - Restore light-pool update contract | NOT STARTED | Supply L3 delta and cover early returns after source changes; stationary-view moving-source/visibility/Freeze/brake/restart reference and tests. |
 
-## Files changed in this session
+## Files changed in the initial Phase A session
 
 | File | Change | Reason |
 |---|---|---|
@@ -251,3 +255,186 @@ Final `git diff --check` passed. Per-command safe-directory handling was used;
 no global Git configuration was changed. Git reports its existing inaccessible
 global ignore path and Windows LF/CRLF conversion notices. These did not prevent
 repository inspection or indicate whitespace errors.
+
+## Phase B session - 15 October 2026
+
+**Status: BLOCKED - partial B1 implemented, awaiting user testing.**
+
+Authorization: "Move on to Phase B". This explicitly changes the active phase;
+it is not evidence that the user has tested or accepted Phase A. No work on
+Phase A or Phases C-F was performed in this session.
+
+Source revision: `51ca6450ebbf677a1309188494aa3b98a8062110`
+(`Implement partial baseline performance upgrades`). Initial working tree was
+clean: prior Phase A changes had been committed outside this session. This
+agent made no commit, push, dependency installation or deployment.
+
+### Scope, dependencies and evidence gate
+
+A fresh browser inventory still returned `apps: []`, `browsers: []`. Real render
+CPU/draw-call traces, screenshots and GPU pass data remain unavailable.
+
+B1's first substep is sharing identical immutable geometry, starting with one
+repeated prop family. This session implements that bounded fixture substep
+using measurable resource ownership and exact geometry/scene-data comparisons.
+It does not claim that B1's browser gate has been met. This is a documented
+deviation from waiting for all A0/render-trace/screenshot prerequisites before
+any B1 code: the change is limited to geometry identity/ownership, with no mesh,
+material, transform, culling, light, collision or shader policy change. Browser
+verification remains required for acceptance and broader B1 work.
+
+| Task | Status | Completed / remaining |
+|---|---|---|
+| B1 - Share geometry, then batch static props | IN PROGRESS | Repeated L2 lantern/sconce geometry sharing implemented. Manual visual/runtime verification and further profiling-selected sharing/batching remain. |
+| B2 - Reduce culling overhead | NOT STARTED | Need hook timings and finalized B1 object boundaries before removing matrix work or adding bound/portal caches. |
+| B3 - Optimize post/shadow/fill | NOT STARTED | Need fresh GPU/fallback browser traces and reference images before choosing a target. No clears, shadow policy, grade or bloom changed. |
+| B4 - Spatially partition grass | NOT STARTED | Need grass placement/vertex/fill evidence and tiling comparison; more draws could offset culling gains. |
+
+### Implementation and resource ownership
+
+Only `addLanterns` and `addSconce` in `src/environment/carriages.js` changed.
+Each hanging-lantern set now creates its four immutable geometries once, lazily
+on the first fixture. Sconce plates/shades share two immutable geometries per
+carriage, held under a weak carriage key. No fixture geometry is shared across
+carriages, simultaneously live environments or rebuilt levels. Empty lantern
+sets do not create orphan geometries.
+
+Meshes, groups, lights and materials remain individually addressable in their
+original hierarchy with original positions, rotations, UVs, normals, indices,
+shadow flags, render order and collision metadata. Existing `disposeObject`
+already deduplicates geometry disposal within a level root, so it needed no
+change. There is no permanent global geometry cache, resource ownership flag,
+new dependency or renderer/culling rewrite.
+
+### Files changed in Phase B
+
+| File | Change | Reason |
+|---|---|---|
+| `src/environment/carriages.js` | Share four lantern and two sconce shape geometries within each owning carriage | Avoid repeated immutable geometry allocations/buffers while retaining individual meshes. |
+| `scripts/measure-carriage-resources.mjs` (new) | CPU-only factory census, buffer byte counts and scene-data SHA-256 | Reproduce resource counts and compare source data before/after without inventing browser metrics. |
+| `test/carriage-fixtures.test.mjs` (new) | Three geometry/ownership/raycast contract tests | Verify original shape data, separate meshes/owners, disposal, restart and transformed ray hits. |
+| `docs/performance/PERFORMANCE_BASELINE.md` | Append Phase B resource measurements, reference hashes and limitations | Preserve earlier evidence and make the comparison reproducible. |
+| `docs/performance/PERFORMANCE_IMPLEMENTATION_PROGRESS.md` | Record explicit phase change, pending approval, results and remaining gates | Keep the current and historical state accurate. |
+
+Ignored `dist/` was regenerated for production validation. Test logs and before/
+after census JSON are in the OS temp directory; no tracked file was deleted.
+
+### Measured before/after results
+
+Scope: carriage environment factory only, using the existing Node canvas/asset
+hook. This excludes the rest of the level, real rasterization, asset decoding,
+the renderer, audio, driver overhead and GPU memory. Bytes below are unique
+backing buffers for geometry index/attribute arrays, not heap usage or VRAM.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| L2 carriage unique geometries | 1,615 | 1,431 | 184 fewer (11.39%) |
+| L2 carriage geometry buffer bytes | 2,477,392 B | 2,189,360 B | 288,032 B fewer (11.63%) |
+| L2 carriage meshes | 1,644 | 1,644 | Unchanged |
+| L2 carriage allocated triangles, including instances | 55,656 | 55,656 | Unchanged |
+| L3 carriage unique geometries | 846 | 846 | Unchanged; this fixture family is L2-only |
+| L3 carriage geometry buffer bytes | 918,332 B | 918,332 B | Unchanged |
+| Total production output, 53 files | 76,157,905 B | 76,158,052 B | None; +147 B |
+| Entry JavaScript | 1,514,288 B | 1,514,435 B | None; +147 B |
+| Entry JavaScript, local gzip | 444,921 B | 445,037 B | None; +116 B |
+
+These verify fewer resource allocations/buffer storage, not higher FPS or
+fewer draw calls. No startup/frame-time/heap/GC/GPU comparison was measured.
+Object, material, light and shadow-caster counts remained unchanged. The L2/L3
+scene-data hashes match before/after for all geometry data, mesh/instance
+transforms, sampled material settings, draw flags, lights and collision metadata.
+This is not a screenshot comparison: the canvas hook does not rasterize images.
+Full hashes and the reproduction command are appended to the baseline document.
+
+### Validation results
+
+| Check | Result |
+|---|---|
+| Before `npm.cmd test` | PASS: 98 tests; 0 failed/skipped/cancelled |
+| New fixture tests | PASS: 3 tests |
+| After `npm.cmd test` | PASS: 101 tests; 0 failed/skipped/cancelled |
+| Syntax | PASS: all 126 source modules and both new modules via `node --check` |
+| Type checking / linting | UNAVAILABLE: repository has no configured commands; none added |
+| Production build | PASS: `npm.cmd run build`; existing >500 kB chunk warning remains |
+| Packaging/HTTP | PASS: `node scripts/check-production.mjs`, 53 files / 52 references |
+| Scene-data equivalence | PASS: matching L2 and L3 before/after hashes |
+| Cleanup | PASS: one disposal event per shared fixture geometry; live sibling/rebuilt environments isolated |
+| Raycasts | PASS: fixture hit distance/point/UV/face match original geometry after carriage translation/rotation |
+| Browser integration / runtime profiling | BLOCKED: no accessible browser or graphics context |
+| Manual user testing | NOT COMPLETED; no approval inferred |
+
+Existing gameplay integration, visibility, camera/collision, temporal puzzle,
+wreck detachment and cinematic suites remain included in the full test command.
+The full suite duration (40,468.143 ms) is validation evidence, not a benchmark.
+
+### Manual testing checklist
+
+Use a clean source reference at `51ca6450ebbf677a1309188494aa3b98a8062110` for
+comparisons with the same quality, camera pose, route and effect phase. Production
+profiling still requires the baseline protocol: warmup, three 60 s samples per
+scenario, cold/warm loading separately, and browser Performance/Network traces.
+
+1. **L2 fixture appearance:** run the dev server, open `/?start=level2`, click
+   New Game, and inspect Passenger lanterns and wall sconces up close, including
+   both sides and overhead. Compare identical camera poses with the reference.
+   Brass shapes, glass shading, UVs, glow, lights and shadows should look the
+   same. Watch missing faces, changed normals, flicker or shared state spreading
+   from one fixture to another.
+2. **Other fixture carriages:** use `/?start=relay`, `/?start=cargo`,
+   `/?start=mechanical`, `/?start=convergence` and `/?start=vault` (New Game after
+   each load). Inspect hanging and wall fixtures; operate nearby controls/doors
+   and encounter guards. Expect the same prompts, camera collision and stealth
+   behavior. Compare the same actions with the reference; watch blocked routes,
+   changed focus/LOS, stale highlights or altered lighting.
+3. **Visibility boundaries:** in L2 look through doors/windows, move across
+   carriage boundaries, then visit `/?start=roof`. Turn toward interiors and
+   change camera mode. Expect the same visible fixtures/shadows and conservative
+   culling as the reference; watch disappearing lights/fixtures, popping or
+   camera clipping. No object was batched across a visibility zone.
+4. **Ownership/restarts:** after visiting fixture-heavy carriages, restart the
+   same level 20 times and quit/title/New Game 10 times. Expect intact fixtures
+   after each rebuild and renderer resource counts that plateau after warmup.
+   Compare the same sequence against the reference. Watch missing geometry,
+   monotonic growth, black fixtures or disposed-resource errors. Lazy uploads
+   mean browser geometry counts need not equal the full CPU factory census.
+5. **L3 regression:** open `/?start=level3`, click New Game, and exercise Freeze,
+   Rewind, moving wreck pieces, restart and the brake/credits sequence. This
+   factory's data hash is unchanged; behavior and visuals should match the
+   reference. Watch broken detachment, changed hazard lighting or disposal errors.
+6. **Performance:** collect actual CPU/render/GPU/frame-time and memory traces
+   with fixed quality along the same L2 route on both revisions. The verified
+   reduction is geometry storage; do not expect fewer mesh draw submissions or
+   infer FPS from the census. Report observed runtime differences with run-to-run
+   spread before accepting or expanding the change.
+
+### Risks, remaining work and stop condition
+
+- B1 is a first prop-family substep, not a completed batching project. Sharing
+  assumes these shape buffers stay immutable; any future per-fixture vertex
+  deformation must first clone geometry. Current fixture code changes only
+  mesh transforms/materials and does not mutate these buffers.
+- Screenshot parity, real render/driver counts, restart GPU trends and FPS
+  remain unverified. Automated source-data equality cannot prove raster parity.
+- Browser-dependent B1 acceptance, broader batching, and B2-B4 remain blocked.
+  No culling, post, shadow, shader, grass, light budget or gameplay timing change
+  was attempted to work around missing profiling evidence.
+- User authorization to enter B was recorded; Phase A remains incomplete and
+  unapproved. No phase will be set APPROVED without explicit testing acceptance.
+- No work proceeds to Phase C. Stop here after the Phase B report; resume the
+  remaining Phase B scope when measurement evidence or explicit steering arrives.
+
+### Phase B Git change summary
+
+```text
+ M docs/performance/PERFORMANCE_BASELINE.md
+ M docs/performance/PERFORMANCE_IMPLEMENTATION_PROGRESS.md
+ M src/environment/carriages.js
+?? scripts/measure-carriage-resources.mjs
+?? test/carriage-fixtures.test.mjs
+```
+
+The tracked diff comprises the two performance documents and one scoped runtime
+file. Ordinary `git diff --stat` excludes the two untracked new modules. The
+runtime diff is 26 insertions and 6 deletions in `carriages.js`; it changes only
+fixture geometry construction and reuse. No tracked file was deleted. Final
+`git diff --check` passed. Nothing was staged, committed, pushed or deployed.

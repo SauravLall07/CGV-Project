@@ -367,3 +367,105 @@ skipped queries and dropped results are reported in the export.
   checking and `git diff --check` are not substitutes for those tools.
 - Browser integration, real GPU queries, visual checks and manual user testing
   remain pending. The new graphics/DOM tests use controlled test doubles.
+
+## Phase B session evidence - 15 October 2026
+
+The user explicitly instructed "Move on to Phase B". Source reference:
+`51ca6450ebbf677a1309188494aa3b98a8062110`, with a clean initial working tree.
+Phase A's partial/blocked status was retained; no manual approval was inferred.
+This session changes only B1's first fixture-geometry substep, plus its
+measurement script, tests and documentation. B1 batching and B2-B4 remain
+pending the real-browser profiling/screenshot gates. See the progress tracker
+for the documented scope deviation and outstanding work.
+
+### Carriage geometry census before/after
+
+Both measurements ran the same `createCarriageEnvironment` factory with
+`damaged=false`, then `damaged=true`, in Node with the existing canvas/asset
+hook. This is a subset of a complete L2/L3 scene: no level-specific puzzles,
+player, real model loading, renderer, audio or GPU work. The canvas does not
+rasterize, and procedural texture caches persist within each measurement
+process. No FPS, browser frame/load time, heap/GC or GPU time was measured.
+
+The changed family consists of L2 hanging lanterns and wall sconces. Their six
+shape geometries are shared only within their owning carriage; meshes and
+lights remain separate. Buffer bytes count unique backing ArrayBuffers for
+geometry indices/attributes. They exclude object/driver overhead, instance
+matrices, textures and GPU residency; they are not total memory usage.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| L2 unique geometry objects | 1,615 | 1,431 | 184 fewer (11.39%) |
+| L2 geometry buffer bytes | 2,477,392 B | 2,189,360 B | 288,032 B fewer (11.63%) |
+| L2 Object3D nodes | 1,802 | 1,802 | Unchanged |
+| L2 meshes | 1,644 | 1,644 | Unchanged |
+| L2 allocated triangles, including instances | 55,656 | 55,656 | Unchanged |
+| L2 unique materials | 131 | 131 | Unchanged |
+| L2 shadow-caster meshes | 207 | 207 | Unchanged |
+| L2 lights, including nonrendered sources | 102 | 102 | Unchanged |
+| L3 unique geometry objects | 846 | 846 | Unchanged |
+| L3 geometry buffer bytes | 918,332 B | 918,332 B | Unchanged |
+| L3 nodes / meshes / allocated triangles | 928 / 855 / 22,138 | 928 / 855 / 22,138 | Unchanged |
+
+These are verified resource reductions, not draw-call or FPS reductions.
+Less geometry construction/storage/upload is an expected benefit; wall-clock
+construction, upload and frame improvements remain unmeasured.
+
+### Source-data equivalence
+
+The measurement script hashes ordered node/mesh/instance transforms, geometry
+index and attribute bytes, material groups, draw ranges, sampled material/
+texture-sampler settings, visibility/shadow/render flags, light settings and
+collision/bounds metadata. It excludes resource IDs/UUIDs, rasterized texture
+pixels and browser rendering. Both checksums match before and after:
+
+| Factory | Before and after `sceneDataSha256` |
+|---|---|
+| L2 | `a6c8dea2f1218f6d1b5d42533a0953df03f9eb74a3b3309ea2e3f044c1d59284` |
+| L3 | `106754b4de37b9a489e3c2ff16c1c4c1badc083c093c02da0f012cf8ee142f9e` |
+
+Reproduce from repository root:
+
+```powershell
+node --import ./scripts/register-test-assets.mjs scripts/measure-carriage-resources.mjs
+node --import ./scripts/register-test-assets.mjs --test test/carriage-fixtures.test.mjs
+```
+
+To reproduce the before census, copy only the new measurement script into an
+isolated checkout of the source reference above, using the same installed
+dependencies and asset hook. Run it against that checkout's unchanged source.
+Do not compare this carriage-only count to the earlier full-level census.
+
+### Production bytes
+
+Same installed toolchain, Node Buffer byte counts and default `gzipSync`.
+Before used fresh in-memory Vite output; after used fresh production output.
+
+| Metric | Before | After | Improvement |
+|---|---:|---:|---|
+| Total output, 53 files | 76,157,905 B | 76,158,052 B | None; +147 B |
+| Entry JavaScript | 1,514,288 B | 1,514,435 B | None; +147 B |
+| Entry JavaScript, local gzip | 444,921 B | 445,037 B | None; +116 B |
+
+The small code-size increase implements scoped geometry ownership. No asset,
+dependency, render quality, light budget, culling, shadow, bloom or timing policy
+was changed. No package-size or draw-call saving is claimed.
+
+### Verification and remaining runtime gate
+
+- Pre-change suite: 98 tests passed, 0 failed/skipped/cancelled.
+- Three new fixture tests passed: original topology/normals/UV/material groups,
+  independent meshes and carriage owners, dispose-once behavior, simultaneous
+  live environments, restart freshness, and equivalent transformed ray hits.
+- Final full suite: 101 tests passed, 0 failed/skipped/cancelled. Its
+  40,468.143 ms duration is not a game performance metric.
+- All 126 source modules and both new modules passed `node --check`.
+- Production build and 53-file/52-reference subdirectory HTTP check passed.
+  The existing large-entry warning remains. Type/lint commands are unconfigured.
+- The fresh UI inventory still returned `apps: []`, `browsers: []`. Browser
+  screenshots, actual rendering, query/driver behavior, startup/frame timing,
+  memory/GC and manual testing remain unavailable/uncompleted.
+
+Follow the existing production protocol above and the Phase B manual checklist
+in the progress tracker before accepting/expanding B1 or selecting B2-B4 work.
+No B2-B4 bottleneck was established by this CPU-only resource census.
