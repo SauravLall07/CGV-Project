@@ -72,15 +72,69 @@ function addBox(group, colliders, {
   return mesh
 }
 
-function markerGeometry(index) {
-  if (index === 0) return new THREE.CircleGeometry(0.18, 22)
-  if (index === 1) return new THREE.CircleGeometry(0.2, 3)
-  if (index === 2) return new THREE.PlaneGeometry(0.3, 0.3)
-  return new THREE.RingGeometry(0.1, 0.19, 20)
+// The route markers are actual station-signalling pictograms rather than
+// abstract, colour-coded shapes. Their silhouettes carry the information.
+function createRailMarkerTexture(index) {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 256
+  const ctx = canvas.getContext('2d')
+  ctx.strokeStyle = '#f0dfb3'
+  ctx.fillStyle = '#f0dfb3'
+  ctx.lineWidth = 10
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  const line = (x1, y1, x2, y2) => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke() }
+  const circle = (x, y, r, fill = false) => {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2)
+    fill ? ctx.fill() : ctx.stroke()
+  }
+  if (index === 0) { // Railway points / turnout
+    line(75, 35, 75, 218)
+    line(113, 35, 113, 218)
+    ctx.beginPath(); ctx.moveTo(75, 203); ctx.bezierCurveTo(75, 139, 154, 105, 178, 38); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(113, 218); ctx.bezierCurveTo(113, 156, 188, 117, 212, 54); ctx.stroke()
+    for (let y = 56; y < 206; y += 38) line(64, y, 125, y)
+  } else if (index === 1) { // Mechanical semaphore signal
+    line(106, 51, 106, 219)
+    line(78, 219, 140, 219)
+    ctx.fillRect(105, 72, 108, 24)
+    ctx.fillStyle = '#9e4236'; ctx.fillRect(161, 74, 30, 20)
+    ctx.fillStyle = '#f0dfb3'; circle(107, 84, 11, true)
+  } else if (index === 2) { // Signal gantry
+    line(48, 211, 48, 71)
+    line(208, 211, 208, 71)
+    line(48, 74, 208, 74)
+    line(63, 86, 191, 86)
+    line(75, 74, 75, 118)
+    line(182, 74, 182, 118)
+    circle(75, 141, 13); circle(182, 141, 13)
+    line(48, 211, 208, 211)
+  } else { // Track tunnel
+    ctx.beginPath(); ctx.moveTo(55, 213); ctx.lineTo(55, 118)
+    ctx.arc(128, 118, 73, Math.PI, 0); ctx.lineTo(201, 213); ctx.stroke()
+    line(94, 214, 113, 143)
+    line(161, 214, 143, 143)
+    for (let y = 161; y < 215; y += 18) {
+      const t = (y - 143) / 71
+      line(113 - 19*t, y, 143 + 18*t, y)
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+function randomizedRoute() {
+  const route = [0, 1, 2, 3]
+  for (let i = route.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[route[i], route[j]] = [route[j], route[i]]
+  }
+  return route
 }
 
 function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY }) {
-  const target = [1, 3, 0, 2]
+  const target = randomizedRoute()
   const unregisters = []
   const platePositions = [
     new THREE.Vector3(worldX(-23.4), floorY + 0.055, CORRIDOR_Z - 1.55),
@@ -89,23 +143,22 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
     new THREE.Vector3(worldX(-20.7), floorY + 0.055, CORRIDOR_Z + 1.55)
   ]
 
-  const baseColors = [0x38bdf8, 0xf59e0b, 0xc084fc, 0x34d399]
-  const markerNames = ['circle', 'triangle', 'square', 'ring']
-
-  const plateMats = baseColors.map((color) => new THREE.MeshStandardMaterial({
-    color: 0x242a31,
-    roughness: 0.52,
-    metalness: 0.62,
-    emissive: color,
-    emissiveIntensity: 0.35
-  }))
-  const symbolMats = baseColors.map((color) => new THREE.MeshStandardMaterial({
-    color,
-    emissive: color,
-    emissiveIntensity: 1.2,
-    roughness: 0.25,
-    metalness: 0.25,
-    side: THREE.DoubleSide
+  const markerNames = ['points', 'semaphore', 'signal gantry', 'tunnel']
+  const inactiveGlow = 0x6f5733
+  const signalGlow = 0xf9c66b
+  const activatedSymbolGlow = 0xffc65a
+  const solvedSymbolGlow = 0x62ffc9
+  const markerTextures = markerNames.map((_, i) => createRailMarkerTexture(i))
+  const plateMat = new THREE.MeshStandardMaterial({
+    color: 0x242b2a, roughness: 0.66, metalness: 0.7,
+    emissive: inactiveGlow, emissiveIntensity: 0.12
+  })
+  const insetMat = new THREE.MeshStandardMaterial({ color: 0x101a1b, roughness: 0.72, metalness: 0.42 })
+  const brassTrimMat = new THREE.MeshStandardMaterial({ color: 0xa68b58, roughness: 0.45, metalness: 0.84 })
+  const symbolMats = markerTextures.map((map) => new THREE.MeshStandardMaterial({
+    map, transparent: true, alphaTest: 0.12, depthWrite: false,
+    emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.12,
+    side: THREE.DoubleSide, roughness: 0.75
   }))
 
   const plates = []
@@ -114,21 +167,38 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
     plate.name = `routing-floor-plate-${i + 1}`
     plate.position.copy(platePositions[i])
 
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.09, 1.35), plateMats[i])
-    slab.position.y = 0
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.09, 1.35), plateMat.clone())
     slab.receiveShadow = true
     plate.add(slab)
 
-    const symbol = new THREE.Mesh(markerGeometry(i), symbolMats[i])
+    // Bronze-rimmed enamel centre: the texture is easy to read on the floor.
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.012, 1.14), brassTrimMat)
+    trim.position.y = 0.053
+    plate.add(trim)
+    const inset = new THREE.Mesh(new THREE.BoxGeometry(1.07, 0.014, 1.07), insetMat)
+    inset.position.y = 0.064
+    plate.add(inset)
+    const symbol = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.86), symbolMats[i])
     symbol.rotation.x = -Math.PI / 2
-    symbol.position.y = 0.055
+    symbol.position.y = 0.075
     plate.add(symbol)
 
     group.add(plate)
-    plates.push({ plate, slab, symbol })
+    // Each plate owns its own emissive surface and icon so completed steps
+    // can remain lit independently until the route resets.
+    const lamp = new THREE.Mesh(
+      new THREE.BoxGeometry(1.04, 0.008, 1.04),
+      new THREE.MeshBasicMaterial({ color: 0xffbc54, transparent: true, opacity: 0, depthWrite: false })
+    )
+    lamp.position.y = 0.073
+    plate.add(lamp)
+    // Keep the pictogram above its backlight to preserve the icon silhouette.
+    symbol.position.y = 0.079
+    symbol.material = symbolMats[i].clone()
+    plates.push({ plate, slab, symbol, lamp, restingY: plate.position.y, activated: false })
   }
 
-  // Wall relay displays the four-symbol route as a short animated sequence.
+  // Wall relay displays the four-emblem route as a short animated sequence.
   // The player may replay it at any time, making this a memory/observation
   // puzzle rather than another dial-code puzzle.
   const panel = new THREE.Group()
@@ -149,8 +219,8 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   const panelMarkers = []
   for (let i = 0; i < 4; i++) {
     const mat = symbolMats[i].clone()
-    mat.emissiveIntensity = 0.18
-    const symbol = new THREE.Mesh(markerGeometry(i), mat)
+    mat.emissiveIntensity = 0.12
+    const symbol = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.38), mat)
     symbol.position.set(-0.9 + i * 0.6, -0.05, 0.12)
     panel.add(symbol)
     panelMarkers.push(symbol)
@@ -164,6 +234,21 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   let replayCooldown = 0
   let inputStarted = false
 
+  // Move the complete plate assembly (rim, inset and symbol) so it reads as a
+  // physical pressure switch instead of only changing its emissive material.
+  const plateTravel = 0.055
+  const plateResponse = 16
+
+  function setPlateLit(entry, lit, completed = false) {
+    entry.activated = lit
+    entry.slab.material.emissive.setHex(completed ? 0x136d54 : lit ? 0x9b5e19 : inactiveGlow)
+    entry.slab.material.emissiveIntensity = completed ? 1.65 : lit ? 1.25 : 0.12
+    entry.symbol.material.emissive.setHex(completed ? solvedSymbolGlow : activatedSymbolGlow)
+    entry.symbol.material.emissiveIntensity = lit ? 3.5 : 0.12
+    entry.lamp.material.color.setHex(completed ? 0x37f3ad : 0xffbd54)
+    entry.lamp.material.opacity = lit ? 0.22 : 0
+  }
+
   const playbackLeadIn = 0.35
   const playbackStepOn = 0.52
   const playbackStepGap = 0.16
@@ -173,7 +258,8 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
 
   function setPanelStep(activeMarker = -1) {
     panelMarkers.forEach((mesh, index) => {
-      mesh.material.emissiveIntensity = index === activeMarker ? 3.2 : 0.18
+      mesh.material.emissive.setHex(index === activeMarker ? signalGlow : 0xffffff)
+      mesh.material.emissiveIntensity = index === activeMarker ? 1.8 : 0.12
       mesh.scale.setScalar(index === activeMarker ? 1.22 : 1)
     })
   }
@@ -200,10 +286,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
 
   function resetProgress(showMessage = true) {
     progress = 0
-    plates.forEach(({ slab }, index) => {
-      slab.material.emissive.setHex(baseColors[index])
-      slab.material.emissiveIntensity = 0.35
-    })
+    plates.forEach((entry) => setPlateLit(entry, false))
     if (showMessage) hud?.showToast?.('Wrong pressure plate — routing sequence reset. Replay the wall relay and try again.', 2100)
   }
 
@@ -227,16 +310,14 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
       setPanelStep(-1)
     }
     progress += 1
+    setPlateLit(plates[index], true)
 
     if (progress < target.length) return
 
     solved = true
     playbackActive = false
     setPanelStep(-1)
-    plates.forEach(({ slab }) => {
-      slab.material.emissive.setHex(0x10b981)
-      slab.material.emissiveIntensity = 2.5
-    })
+    plates.forEach((entry) => setPlateLit(entry, true, true))
     panelMarkers.forEach((mesh) => {
       mesh.material.emissive.setHex(0x10b981)
       mesh.material.emissiveIntensity = 2.2
@@ -262,7 +343,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
           const withinStep = sequenceTime - step * playbackStepDuration
           setPanelStep(withinStep < playbackStepOn ? target[step] : -1)
         } else {
-          // Clear pause between complete sequence loops so the four-symbol
+          // Clear pause between complete sequence loops so the four-emblem
           // route has a readable beginning/end rather than becoming a blur.
           setPanelStep(-1)
         }
@@ -274,7 +355,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
       }
     }
 
-    if (solved || !player?.mesh) return
+    if (!player?.mesh) return
 
     const p = player.mesh.position
     let inside = -1
@@ -289,12 +370,28 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
       }
     }
 
-    if (inside !== -1 && occupiedPlate !== inside) activatePlate(inside)
+    // Animate the switch independently of puzzle correctness, including after
+    // the door unlocks. The plate rises again when the player steps away.
+    const blend = 1 - Math.exp(-plateResponse * Math.max(0, delta))
+    plates.forEach(({ plate, restingY }, index) => {
+      const desiredY = restingY - (inside === index ? plateTravel : 0)
+      plate.position.y += (desiredY - plate.position.y) * blend
+    })
+
+    if (!solved && inside !== -1 && occupiedPlate !== inside) activatePlate(inside)
     occupiedPlate = inside
   }
 
   function dispose() {
     unregisters.forEach((unregister) => unregister())
+    markerTextures.forEach((texture) => texture.dispose())
+    symbolMats.forEach((material) => material.dispose())
+    plates.forEach(({ slab, symbol, lamp }) => {
+      slab.material.dispose()
+      symbol.material.dispose()
+      lamp.material.dispose()
+    })
+    panelMarkers.forEach((marker) => marker.material.dispose())
   }
 
   return {
@@ -617,7 +714,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
     id: 'signal-step-puzzle',
     center: { x: worldX(-24.2), y: GUARD_PASSAGE_FLOOR_Y, z: CORRIDOR_Z },
     size: { x: 5.0, y: 3.2, z: 6.5 },
-    text: 'ROUTING FLOOR — watch the wall relay flash four symbols, then step on the matching floor plates in that order. Interact with the relay to replay it.',
+    text: 'ROUTING FLOOR — watch the wall relay flash four railway emblems, then step on the matching floor plates in that order. Interact with the relay to replay it.',
     duration: 4700
   })
   hints.addZone({
@@ -684,11 +781,8 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
       initialWaypoint: 1
     })
 
-    // Keep the camera body and its downward-tilted beam clear of the north
-    // wall/ceiling. The old 0.12 m wall offset buried the housing in the
-    // passage shell and let the visibility ray clip the cone immediately.
     stealth.addCamera({
-      position: new THREE.Vector3(worldX(-34.7), GUARD_PASSAGE_FLOOR_Y + 3.85, CORRIDOR_Z + MAIN_WIDTH / 2 - 0.72),
+      position: new THREE.Vector3(worldX(-34.7), GUARD_PASSAGE_FLOOR_Y + 4.45, CORRIDOR_Z + MAIN_WIDTH / 2 - 0.12),
       baseAngle: Math.PI,
       sweepRange: Math.PI / 4.7,
       sweepSpeed: 0.58,
