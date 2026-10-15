@@ -74,26 +74,27 @@ const DOOR_HEIGHT = 2.6
 // Ordered station work areas: luggage, baggage sorting, then sparse vendors.
 // Each opaque body is also the visible LOS core; open frames are decor only.
 export const PLATFORM_COVER = [
-  ['porter-cart', -2.35, -22, 1.5, 3.8, 1.75, 'trolley'],
-  ['steamer-trunks', 2.45, -18.5, 1.5, 3, 1.05, 'trunks'],
-  ['mail-and-scale', -0.6, -9.5, 1.6, 3.4, 1.7, 'mail'],
-  ['timetable', 2.6, -7.5, 1.4, 0.7, 1.9, 'board'],
-  ['newspaper-kiosk', -1.3, 1, 1.5, 4, 1.8, 'kiosk'],
-  ['parcel-trolley', 1.3, 2.5, 1.4, 3, 1, 'trolley'],
-  ['centre-parcels', 0, 6, 1.5, 1.8, 1.1, 'crates'],
-  ['milk-and-scale', -1.3, 8, 1.4, 3, 1.05, 'milk'],
-  ['deck-chairs', 1.3, 10.5, 1.4, 3.5, 1.7, 'chairs'],
-  ['sorting-south', -0.85, 17.1, 3.3, 0.8, 1.75, 'crates'],
-  ['sorting-west', -2.5, 18.8, 0.8, 4, 1.75, 'mail'],
-  ['sorting-east', 0.8, 18.8, 0.8, 4, 1.75, 'crates'],
-  ['flower-cart', -2, 24, 1.5, 2.8, 1.05, 'flowers'],
-  ['mail-crates', 2.25, 27, 1.4, 2.2, 1, 'crates'],
-  ['final-trunks', -1.8, 33.5, 1.5, 2.5, 1.75, 'trunks'],
-  ['final-parcel-cart', 2.35, 37.5, 1.5, 2.5, 1.05, 'trolley'],
-  ['open-bench', -2.5, 42, 1.6, 0.7, 1.2, 'bench']
+  ['hat-box-tower', -1.3, -23, 0.9, 1.0, 1.65, 'hats'],
+  ['single-suitcase', 1.3, -18, 1.0, 0.8, 0.9, 'trunks'],
+  ['paired-crates', -1.3, -12, 1.2, 1.2, 1.0, 'crates'],
+  ['checkpoint-luggage', -1.3, -7, 1.2, 1.3, 1.7, 'trunks'],
+  ['sandwich-board', 1.9, -10, 0.8, 0.8, 1.1, 'board'],
+  ['steamer-trunk', 1.3, -2, 1.3, 0.9, 0.95, 'trunks'],
+  ['milk-pair', -1.3, 3, 1.0, 1.0, 1.0, 'milk'],
+  ['open-trolley', 0, 5.5, 0.9, 1.2, 1.1, 'frame'],
+  ['two-suitcases', 1.3, 8, 1.0, 0.9, 1.0, 'trunks'],
+  ['single-mail-sack', -1.3, 13, 0.8, 0.8, 1.0, 'mail'],
+  ['checkpoint-crates', -1.3, 18, 1.2, 1.2, 1.7, 'crates'],
+  ['hat-box-pair', 1.3, 23, 0.9, 0.9, 1.0, 'hats'],
+  ['small-bench', -1.3, 25.5, 1.2, 0.8, 1.0, 'bench'],
+  ['parcel-pair', -1.3, 28, 1.1, 1.0, 1.05, 'crates'],
+  ['final-luggage-stack', 1.3, 33, 1.1, 1.2, 1.65, 'trunks'],
+  ['lamp-post-base', -1.3, 35.5, 0.8, 0.8, 0.4, 'lamp'],
+  ['single-trunk', -1.3, 38, 1.2, 0.9, 0.95, 'trunks'],
+  ['door-parcels', 1.3, 42.5, 1.0, 1.0, 1.0, 'crates']
 ].map(([id, x, z, width, length, height, type]) => ({
   id, x, z, centres: [x], width, length, height, type,
-  seeThrough: type === 'board' || type === 'bench'
+  seeThrough: ['board', 'bench', 'frame', 'lamp'].includes(type)
 }))
 
 // Axis-aligned outer bounds. The west side is extended for the new
@@ -667,9 +668,19 @@ function createOpenPlatform() {
           box(b, k.iron, 0.07, 0.5, length, cover.x + dx, 0.25, z)
           box(b, k.iron, 0.07, height - 0.5, 0.07, cover.x + dx, (height + 0.5) / 2, z + 0.3)
         }
-        for (const y of [0.8, 1.1]) box(b, k.wood, width, 0.09, 0.06, cover.x, y, z + 0.3)
+        for (const y of [height - 0.3, height - 0.05]) box(b, k.wood, width, 0.09, 0.06, cover.x, y, z + 0.3)
       }
-      else {
+      else if (type === 'lamp') {
+        box(b, k.iron, width, height, length, cover.x, height / 2, z)
+        box(b, k.iron, 0.07, 2.7, 0.07, cover.x, 1.75, z)
+        box(b, k.brass, 0.28, 0.25, 0.28, cover.x, 3.1, z)
+      } else if (type === 'frame') {
+        for (const side of [-1, 1]) {
+          box(b, k.iron, 0.05, height, 0.05, cover.x + side * width * 0.4, height / 2, z - length * 0.4)
+          box(b, k.iron, 0.05, 0.05, length, cover.x + side * width * 0.4, 0.2, z)
+        }
+        box(b, k.brass, width, 0.05, 0.05, cover.x, height, z - length * 0.4)
+      } else {
         for (const side of [-1, 1]) box(b, k.iron, 0.07, height, 0.07, cover.x + side * width * 0.4, height / 2, z)
         box(b, k.wood, width, 0.28, 0.12, cover.x, height - 0.14, z)
         box(b, k.brass, width * 0.85, 0.02, 0.14, cover.x, height - 0.1, z)
@@ -702,11 +713,12 @@ function createOpenPlatform() {
           box(b, k.paper, width + 0.02, 0.12, 0.65, x, height * 0.65, z + dz)
           box(b, k.newsprint, width + 0.025, 0.015, 0.5, x, height * 0.65 + 0.07, z + dz)
         }
-      } else if (type === 'milk' || type === 'mail' || type === 'flowers') {
-        for (const dz of [-length * 0.3, 0, length * 0.3]) {
+      } else if (type === 'milk' || type === 'mail' || type === 'flowers' || type === 'hats') {
+        const offsets = type === 'mail' ? [0] : type === 'milk' ? [-length * 0.25, length * 0.25] : [-length * 0.3, 0, length * 0.3]
+        for (const dz of offsets) {
           const body = type === 'mail' ? new THREE.SphereGeometry(Math.min(width * 0.45, 0.38), 8, 6) : new THREE.CylinderGeometry(0.17, 0.24, 0.3, 10)
-          body.translate(x, height - 0.12, z + dz)
-          b.add(type === 'milk' ? k.iron : type === 'mail' ? k.sack : k.pot, body)
+          body.translate(x, height - (type === 'mail' ? Math.min(width * 0.45, 0.38) : 0.15), z + dz)
+          b.add(type === 'milk' ? k.iron : type === 'mail' ? k.sack : type === 'hats' ? k.leather : k.pot, body)
           if (type === 'flowers') {
             const bouquet = new THREE.SphereGeometry(0.22, 8, 6)
             bouquet.translate(x, height + 0.12, z + dz)
@@ -715,8 +727,7 @@ function createOpenPlatform() {
           }
         }
         if (type !== 'flowers') {
-          box(b, k.iron, 0.3, 0.35, 0.3, x, height + 0.175, z)
-          box(b, k.brass, 0.55, 0.04, 0.5, x, height + 0.37, z)
+          for (let y = 0.25; y < height; y += 0.35) box(b, k.brass, width + 0.012, 0.025, length, x, y, z)
         }
       } else if (type === 'chairs') {
         for (let i = 0; i < 6; i++) {
