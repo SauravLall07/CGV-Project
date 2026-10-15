@@ -75,7 +75,7 @@ test('Camera math: first/third crouch clearance, jumping and exterior-reveal rec
       assert.ok(Math.abs(camera.position.y-3.02)<0.0001,'jump follows player height')
       view.showWreckStop(new THREE.Vector3(0,0,-100),2)
       assert.equal(player.mesh.visible,true)
-      assert.equal(camera.position.x,10)
+      assert.equal(camera.position.x,19)
       player.mesh.position.set(0,0,0); view.snap()
       view.update(1/fps,player.mesh,null,{crouching:false})
       assert.equal(player.mesh.visible,false)

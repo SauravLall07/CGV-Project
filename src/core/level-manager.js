@@ -225,6 +225,7 @@ export function createLevelManager({
     advance,
     update,
     handleAction,
+    setPresentationPaused: value => current?.setPresentationPaused?.(value),
     dispose,
     getState: () => currentState,
     isTransitioning: () => transitioning,
