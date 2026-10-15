@@ -19,20 +19,31 @@ export function createRelayFeedback({ doors, linkage, doorZ, catchZ, brass }) {
   linkage.userData.noCameraCollision = true
   const pose = new THREE.Object3D()
   bars.userData.noCameraCollision = catchLink.userData.noCameraCollision = true
+  let previousFill = null
+  let previousColor = null
   function update(held, echoSeconds, latched) {
     // Eight bars drain with actual echo lifetime. A physical occupant keeps
     // the row full; an unheld release collapses it to eight short tick marks.
     const fill = latched || (held && echoSeconds === 0) ? 8 : held ? Math.min(8, echoSeconds) : 0
-    for (let i = 0; i < 8; i++) {
-      pose.position.set((i - 3.5) * 0.15, 2.78, doorZ + 0.3)
-      pose.scale.set(1, 0.12 + 0.88 * THREE.MathUtils.clamp(fill - i, 0, 1), 1)
-      pose.updateMatrix()
-      bars.setMatrixAt(i, pose.matrix)
+    if (fill !== previousFill) {
+      for (let i = 0; i < 8; i++) {
+        pose.position.set((i - 3.5) * 0.15, 2.78, doorZ + 0.3)
+        pose.scale.set(1, 0.12 + 0.88 * THREE.MathUtils.clamp(fill - i, 0, 1), 1)
+        pose.updateMatrix()
+        bars.setMatrixAt(i, pose.matrix)
+      }
+      bars.instanceMatrix.needsUpdate = true
+      previousFill = fill
     }
-    bars.instanceMatrix.needsUpdate = true
-    material.emissive.setHex(latched ? 0x55ff99 : held ? 0x38bdf8 : 0xffb060)
-    linkage.position.y = held ? 0.025 : 0.04
-    catchLink.position.y = latched ? 0.025 : 0.04
+    const color = latched ? 0x55ff99 : held ? 0x38bdf8 : 0xffb060
+    if (color !== previousColor) {
+      material.emissive.setHex(color)
+      previousColor = color
+    }
+    const releaseY = held ? 0.025 : 0.04
+    const catchY = latched ? 0.025 : 0.04
+    if (linkage.position.y !== releaseY) linkage.position.y = releaseY
+    if (catchLink.position.y !== catchY) catchLink.position.y = catchY
   }
   update(false, 0, false)
   return { update }

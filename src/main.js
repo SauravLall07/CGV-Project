@@ -7,6 +7,7 @@ import { createCamera } from './core/camera.js'
 import { createClock } from './core/clock.js'
 import { createLoop } from './core/loop.js'
 import { createAssetLoader } from './core/assets.js'
+import { createLoadingTasks } from './core/loading-tasks.js'
 import { createLevelManager } from './core/level-manager.js'
 import { resolveInputState } from './core/input-state.js'
 import { initAudio, resumeAudio, getContext } from './core/audio.js'
@@ -31,8 +32,6 @@ import { createCredits } from './ui/credits.js'
 import { createBoardingLevel } from './levels/boarding.js'
 import { LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
 import { loadBoardingAssets } from './environment/nature-props.js'
-import { createMovingHeistLevel } from './levels/moving-heist.js'
-import { createTimewreckLevel } from './levels/timewreck.js'
 import { createCompleteLevel } from './levels/complete.js'
 import { createModelEditor } from './dev/model-editor.js'
 import { mountRenderOverlay } from './dev/render-overlay.js'
@@ -98,14 +97,19 @@ const clock = createClock()
 
 const assets = createAssetLoader()
 const hud = createHud()
-const loadingScreen = createLoadingScreen(assets)
+const startupTasks = createLoadingTasks(['detective', 'police', 'backdrop', 'presentation'])
+const loadingScreen = createLoadingScreen(assets, { tasks: startupTasks })
 
 // The player persists across levels; the level manager repositions it to
 // each level's checkpoint on load.
 const player = createPlayer()
 scene.add(player.mesh)
-const detectiveReady = player.loadVisual(assets)
-const policeReady = preloadPoliceVisual(assets)
+const detectiveReady = startupTasks.track('detective', player.loadVisual(assets))
+const policeReady = startupTasks.track('police', preloadPoliceVisual(assets))
+const charactersReady = Promise.all([detectiveReady, policeReady])
+// Observe early rejection while the backdrop is still being prepared. The
+// startup barrier below also awaits this same promise before showing the menu.
+charactersReady.catch(() => {})
 
 const minimap = createMinimap({
   scene,
@@ -300,13 +304,20 @@ const levelManager = createLevelManager({
     modelEditor?.sceneChanged?.()
     if (state === 'Complete') showCompleteCredits()
     else timeSystem.warmGhost(renderer, camera)
+    // Start the next module after presentation, never alongside boot FBXs.
+    // Prefetch failure is optional; enter() will retry under the loading screen.
+    const next = state === 'Boarding' ? 'MovingHeist' : state === 'MovingHeist' ? 'Timewreck' : null
+    if (next) requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (levelManager.getState() === state) levelManager.prefetch(next)
+    }))
   },
   onLeave: stopLevelMusic,
   onInputStateChange: () => syncInputState(),
   levels: [
     { state: 'Boarding', create: createBoardingLevel },
-    { state: 'MovingHeist', create: (ctx) => createMovingHeistLevel({ ...ctx, post }) },
-    { state: 'Timewreck', create: createTimewreckLevel },
+    { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
+      .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
+    { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })
@@ -508,7 +519,9 @@ function getInputState() {
 }
 
 function syncInputState() {
-  const enabled = getInputState() === 'PLAYING' && !benchmark?.isHolding()
+  const state = getInputState()
+  levelManager.setPresentationPaused(state !== 'PLAYING' && state !== 'CINEMATIC')
+  const enabled = state === 'PLAYING' && !benchmark?.isHolding()
   keyboard.setEnabled(enabled)
   interaction.setEnabled(enabled)
   playerView.setEnabled(enabled)
@@ -687,30 +700,34 @@ async function quitToTitle() {
 }
 
 // Defer by two animation frames: the first paints the loading screen,
-// the second runs the synchronous station build. This matches the
+// the second starts asset preparation and the station build. This matches the
 // pattern used by levelManager.enter() — see core/level-manager.js.
 requestAnimationFrame(() => requestAnimationFrame(async () => {
-  titleBackdrop = await buildTitleBackdrop()
+  try {
+    titleBackdrop = await startupTasks.track('backdrop', buildTitleBackdrop())
 
-  // Compile Ghost materials/lights while the loading overlay still covers
-  // the canvas — first Ghost press must not pay that shader cost in-game.
-  timeSystem.warmGhost(renderer, camera)
+    // Compile Ghost materials/lights while the loading overlay still covers
+    // the canvas — first Ghost press must not pay that shader cost in-game.
+    timeSystem.warmGhost(renderer, camera)
 
-  await Promise.all([detectiveReady, policeReady])
+    await charactersReady
 
-  // One more frame so the station has rendered behind the loading
-  // overlay before it fades away to reveal the menu.
-  requestAnimationFrame(() => {
-    loadingScreen.setProgress(1)
-    loadingScreen.hide()
-    menu.show()
-    if (benchTarget) {
-      menu.hide()
-      startGame()
-    }
-  })
+    // Keep the existing extra frame before revealing the title scene.
+    requestAnimationFrame(() => {
+      startupTasks.complete('presentation')
+      loadingScreen.hide()
+      menu.show()
+      if (benchTarget) {
+        menu.hide()
+        startGame()
+      }
+    })
 
-  menu.onStart(startGame)
+    menu.onStart(startGame)
+  } catch (error) {
+    startupTasks.fail()
+    console.error('[startup] required preparation failed', error)
+  }
 }))
 
 const loop = createLoop({
@@ -718,6 +735,7 @@ const loop = createLoop({
   scene,
   camera,
   clock,
+  instrumentation: renderOverlay,
   render(world, view) {
     benchmark?.beforeRender()
     post.render(world, view)

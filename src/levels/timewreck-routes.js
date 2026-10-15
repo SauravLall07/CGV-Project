@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { switchingRecessGeometry } from '../environment/mechanical-reference.js'
 import { signMaterial } from '../environment/textures.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // One-shot failures keep their intact baseline while the player observes.
 export function createMaintenanceShutter({ root, timeSystem, unregisters, obstacles, player, z, minX, maxX, name }) {
@@ -117,9 +118,22 @@ export function createPassengerRack({ root, span, player, timeSystem, unregister
     const luggage = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.55, 0.8), wood)
     luggage.position.set(x + 1.05, 0.36, 0); rack.add(luggage)
   }
-  const marker = new THREE.Mesh(new THREE.BoxGeometry(3, 0.015, 1.1),
+  // Same actual fall footprint, outlined so intact wood remains visible.
+  const brackets = []
+  for (const x of [-1, 1]) for (const z of [-1, 1]) {
+    const side = new THREE.BoxGeometry(0.045, 0.015, 0.3)
+    side.translate(x * 1.4775, 0, z * 0.4)
+    const end = new THREE.BoxGeometry(0.3, 0.015, 0.045)
+    end.translate(x * 1.35, 0, z * 0.5275)
+    brackets.push(side, end)
+  }
+  const markerGeometry = mergeGeometries(brackets, false)
+  brackets.forEach(part => part.dispose())
+  const marker = new THREE.Mesh(markerGeometry,
     new THREE.MeshStandardMaterial({ color: 0x9d6c28, emissive: 0xe49a30, emissiveIntensity: 0.8 }))
   marker.position.set(-1.05, 0.02, z); group.add(marker)
+  marker.name = 'passenger-rack-fall-footprint'
+  marker.userData.noCameraCollision = true
   const block = { minX: -2.55, maxX: 0.45, minZ: z - 0.55, maxZ: z + 0.55, enabled: false }
   obstacles.push(block)
   let clock = -1
