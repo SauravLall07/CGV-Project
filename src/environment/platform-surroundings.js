@@ -27,6 +27,8 @@ export function createPlatformSurroundings(valley, timeUniform) {
     : THREE.MathUtils.lerp(-1.75, backdropY(13, z), smooth((x - 9.8) / 3.2))
   const leftY = (x, z) => -1.75 + 3.4 * smooth((4.5 - x) / 32)
     + 0.25 * Math.sin(z * 0.045) * smooth((4.5 - x) / 20)
+  // Only this static platform valley owns this material; scrolling L2 is unchanged.
+  valley.chunks[0].ground.material.color.setHex(0x4d5c61)
   function add(object) {
     object.castShadow = object.receiveShadow = false
     object.raycast = () => {}
@@ -41,7 +43,7 @@ export function createPlatformSurroundings(valley, timeUniform) {
   // One vertex-colour batch: warm gravel, smooth shoulder and both end cuttings.
   // At x=13 the edge is exactly the existing terrain edge, without overlap.
   const positions = [], colors = [], indices = []
-  const gravel = new THREE.Color(0x302d28), grass = new THREE.Color(0x293326)
+  const gravel = new THREE.Color(0x302d28), grass = new THREE.Color(0x18242a)
   function strip(xs, z0, z1, height, ballast = false) {
     const rows = Math.ceil((z1 - z0) / 4), start = positions.length / 3
     for (let row = 0; row <= rows; row++) {
@@ -82,33 +84,72 @@ export function createPlatformSurroundings(valley, timeUniform) {
   ], 2))
   cards.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7])
   const plants = [[], [], []]
+  const rowStats = Array.from({ length: 4 }, (_, row) => ({ row: row + 1,
+    farSide: 0, endCuttings: 0, count: 0, minHeight: Infinity, maxHeight: 0 }))
   const plant = (variant, x, z, h, width = h * 0.5) => {
     plants[variant].push({ x, y: (x >= 9.8 ? rightY(x, z) : leftY(x, z)) - .08,
       z, h, width, angle: random() * Math.PI * 2 })
   }
-  // Stratified jitter guarantees coverage: each 4 m interval has a bush and
-  // young fir, plus a second row; taller trees bridge to the existing forest.
-  for (let i = 0; i < 75; i++) {
-    const z = -118 + i * 4 + (random() - .5) * 1.5
-    plant(2, 11.6 + random() * 1.2, z, 1.2 + random() * .8)
-    plant(i % 2, 15 + random() * 4, z, 3.5 + random() * 2.5)
-    plant((i + 1) % 2, 21 + random() * 3, z + 1, 5 + random() * 3)
-    if (i % 2 === 0) plant(i % 3 === 0 ? 0 : 1, 27 + random() * 16, z, 9 + random() * 5)
+  // Four overlapping depths, with jittered heights/positions rather than steps.
+  const rows = [[11.8, 12.8, 7, .12], [14, 17, 10, .10],
+    [18, 23, 13.5, .11], [24, 30, 16.5, .09]]
+  const skylineSlope = Math.tan(8 * Math.PI / 180)
+  function forestEdge(z0, z1, side) {
+    const count = Math.ceil((z1 - z0) / .8)
+    rows.forEach(([x0, x1, middle, variation], row) => {
+      for (let i = 0; i < count; i++) {
+        const z = THREE.MathUtils.lerp(z0, z1, (i + .15 + random() * .7) / count)
+        const rawX = x0 + random() * (x1 - x0)
+        const x = side > 0 ? rawX : 14 - rawX
+        const base = (side > 0 ? rightY(x, z) : leftY(x, z)) - .08
+        let h = middle * (1 + (random() * 2 - 1) * variation)
+        // The ~14.5-degree moon and >=~8.8-degree upper mountain ring must
+        // remain above the new edge. Check the nearest point of the entire
+        // platform rectangle, including each card's full rotated footprint.
+        // Conservative nominal radius remains valid after shortening a tree.
+        const radius = h * .25
+        const dx = Math.max(x - radius - 4.5, -5 - x - radius, 0)
+        const dz = Math.max(z - radius - 62, -28 - z - radius, 0)
+        h = Math.min(h, 1.6 + Math.hypot(dx, dz) * skylineSlope - base)
+        plant((row + i) % 2, x, z, h)
+        const stats = rowStats[row]
+        stats.count++; stats[side > 0 ? 'farSide' : 'endCuttings']++
+        stats.minHeight = Math.min(stats.minHeight, h)
+        stats.maxHeight = Math.max(stats.maxHeight, h)
+      }
+    })
   }
-  for (const [z0, z1] of [[-118, -36], [70, 178]]) {
-    for (let z = z0; z <= z1; z += 4) {
-      const jitterZ = z + (random() - .5)
-      plant(2, 1.5 - random() * 2, jitterZ, 1.4 + random())
-      plant(Math.floor(random() * 2), -2 - random() * 4, jitterZ, 5 + random() * 3)
-      plant(Math.floor(random() * 2), -12 - random() * 12, jitterZ + 1, 9 + random() * 5)
-      plant(Math.floor(random() * 2), -30 - random() * 10, jitterZ, 12 + random() * 4)
-    }
-  }
+  forestEdge(-120, 180, 1)
+  forestEdge(-118, -36, -1)
+  forestEdge(70, 178, -1)
+  // Isolated, very low dark bushes ahead of the front row, not another row.
+  for (let i = 0; i < 20; i++) plant(2, 11.1 + random() * .5, -117 + random() * 294, .35 + random() * .3)
+  for (const [z0, z1] of [[-117, -36], [71, 177]])
+    for (let i = 0; i < 6; i++) plant(2, 2.4 - random(), z0 + random() * (z1 - z0), .35 + random() * .3)
   const loader = new THREE.TextureLoader()
   ;[pineAUrl, pineBUrl, bushUrl].forEach((url, variant) => {
     const map = loader.load(url); map.colorSpace = THREE.SRGBColorSpace; textures.push(map)
-    const material = new THREE.MeshBasicMaterial({ map, color: variant === 2 ? 0x465447 : 0x61756b,
+    // Trim the pine cards' bare lower stems so the low boughs meet the soil.
+    if (variant !== 2) { map.offset.y = .25; map.repeat.y = .75 }
+    const material = new THREE.MeshBasicMaterial({ map, color: variant === 2 ? 0x273536 : 0x61756b,
       alphaTest: .5, side: THREE.DoubleSide, fog: true })
+    // Keep wide foliage outside the fence/track and the platform end walls.
+    material.onBeforeCompile = shader => {
+      shader.vertexShader = 'varying vec3 vEdgeWorld;\n' + shader.vertexShader
+      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `
+        #include <project_vertex>
+        vEdgeWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.)).xyz;
+      `)
+      shader.fragmentShader = 'varying vec3 vEdgeWorld;\n' + shader.fragmentShader
+      shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>', `
+        #include <clipping_planes_fragment>
+        if (vEdgeWorld.x > 3. && vEdgeWorld.x < 10.9) discard;
+        if (vEdgeWorld.x <= 3. && vEdgeWorld.z > -29. && vEdgeWorld.z < 64.) discard;
+        if (vEdgeWorld.x > -5.4 && vEdgeWorld.x < -.6 &&
+            vEdgeWorld.z > 87. && vEdgeWorld.z < 93.6 && vEdgeWorld.y < 3.) discard;
+      `)
+    }
+    material.customProgramCacheKey = () => 'platform-rising-forest-edge-v1'
     const mesh = new THREE.InstancedMesh(cards, material, plants[variant].length)
     mesh.name = `platform-vegetation-${variant}`
     plants[variant].forEach((p, i) => {
@@ -218,10 +259,11 @@ export function createPlatformSurroundings(valley, timeUniform) {
     transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, fog: true
   })
   add(new THREE.Mesh(mistGeometry, mistMaterial))
-  const stats = { drawCalls: 0, triangles: 0, wireSegments: wirePoints.length / 2 }
+  const stats = { drawCalls: 0, triangles: 0, particles: 0, rows: rowStats, wireSegments: wirePoints.length / 2 }
   group.traverse(node => {
     if (!node.geometry) return
     stats.drawCalls++
+    if (node.isPoints) stats.particles += node.geometry.attributes.position.count
     if (node.isMesh) stats.triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count)
       / 3 * (node.isInstancedMesh ? node.count : 1)
   })
@@ -230,6 +272,8 @@ export function createPlatformSurroundings(valley, timeUniform) {
   if (import.meta.env?.DEV) {
     console.info('[platform surroundings]', stats)
     console.assert(stats.drawCalls <= 12, 'Platform surroundings draw budget exceeded')
+    console.assert(stats.particles === 0, 'Forest edge must not allocate particles')
+    console.table(rowStats)
   }
   return { group, stats, dispose() {
     group.traverse(node => { if (node.isInstancedMesh) node.dispose() })

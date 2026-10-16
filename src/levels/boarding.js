@@ -322,7 +322,7 @@ export function createBoardingLevel({
   const surroundings = createPlatformSurroundings(platformValley, sky.timeUniform)
   surroundings.group.visible = false
 
-  // Two low sheets, with procedural alpha and soft edges. No texture, lights,
+  // Far sheet, with procedural alpha and soft edges. No texture, lights,
   // collision or per-frame geometry uploads; the shared sky clock drifts noise.
   const mistMaterial = new THREE.ShaderMaterial({
     uniforms: THREE.UniformsUtils.merge([
@@ -370,7 +370,9 @@ export function createBoardingLevel({
   // UniformsUtils.merge clones uniforms; restore this clock's shared identity.
   mistMaterial.uniforms.uTime = sky.timeUniform
   const mistGeometry = new THREE.PlaneGeometry(1, 1)
-  for (const [x, y, z, width, length] of [[65, 1.0, 0, 100, 260], [145, 2.4, 20, 180, 300]]) {
+  // Remove only the near floating blob formerly centred at world (65,1,0).
+  // Retain the distant sheet and the separate end fog banks unchanged.
+  for (const [x, y, z, width, length] of [[145, 2.4, 20, 180, 300]]) {
     const mist = new THREE.Mesh(mistGeometry, mistMaterial)
     mist.name = 'platform-valley-mist'
     mist.rotation.x = -Math.PI / 2
@@ -382,12 +384,12 @@ export function createBoardingLevel({
     mist.userData.noInteractionBlocker = true
     platformBackdrop.add(mist)
   }
-  platformBackdrop.userData.drawCalls = platformValley.stats.drawCalls + 2
-  platformBackdrop.userData.triangles = platformValley.stats.triangles + 4
+  platformBackdrop.userData.drawCalls = platformValley.stats.drawCalls + 1
+  platformBackdrop.userData.triangles = platformValley.stats.triangles + 2
   if (import.meta.env?.DEV) console.info('[boarding platform backdrop]', {
     drawCalls: platformBackdrop.userData.drawCalls,
     triangles: platformBackdrop.userData.triangles,
-    terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 2
+    terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 1
   })
 
   scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights)
