@@ -337,6 +337,7 @@ export function createOutdoorEnvironment(options = {}) {
   terrainGeo.computeVertexNormals()
 
   const terrainMesh = new THREE.Mesh(terrainGeo, terrainMaterial)
+  terrainMesh.name = 'legacy-terrain'
   terrainMesh.receiveShadow = true
   group.add(terrainMesh)
 
@@ -596,6 +597,17 @@ export function createOutdoorEnvironment(options = {}) {
     mesh.castShadow = false
     mesh.receiveShadow = false
   }
+
+  // Stable inspection names; keep batches under their existing zone parent.
+  for (const [mesh, name] of [
+    [pineMesh, 'legacy-pines'], [spruceMesh, 'legacy-spruce'],
+    [youngMesh, 'legacy-saplings'], [deadMesh, 'legacy-dead-trees'],
+    [decMesh, 'legacy-broadleaf'], [bushMesh, 'legacy-bushes'],
+    [grassMesh, 'legacy-grass-cards'], [fernMesh, 'legacy-fern-cards'],
+    [rockMesh, 'legacy-rocks'], [outcropMesh, 'legacy-outcrops'],
+    [slabMesh, 'legacy-slabs'], [logMesh, 'legacy-logs'],
+    [stumpMesh, 'legacy-stumps']
+  ]) mesh.name = name
 
   // Moonlight shadows stay on the station and the characters. Trees and the
   // rest of the distant scenery would fill the shadow map with noise.
@@ -1526,6 +1538,7 @@ function addCreek(group, skyUniforms, getTerrainHeight) {
     }
   }
   rocks.count = n
+  rocks.name = 'creek-bank-rocks'
   rocks.castShadow = false
   rocks.receiveShadow = false
   rocks.instanceMatrix.needsUpdate = true
@@ -1627,6 +1640,8 @@ function addValleySetDressing(group, getTerrainHeight) {
   fenceRun(fenceX0, fenceZ1, fenceX0, fenceZ0)
   const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 1.05, 0.1), wood, posts.length)
   const railMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.08, 1), wood, rails.length)
+  postMesh.name = 'valley-field-posts'
+  railMesh.name = 'valley-field-rails'
   const dummy = new THREE.Object3D()
   posts.forEach(([x, y, z], i) => {
     dummy.position.set(x, y + 0.5, z)
