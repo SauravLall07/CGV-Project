@@ -40,7 +40,8 @@ export const LAMP_MOTION = {
   enabled: true,
   swingAmp: 0.055, // radians
   bobAmp: 0.018, // metres
-  stormFlicker: 0.12 // extra intensity mul amplitude on top of env flicker
+  // Phase-1 polish: slightly snappier storm breath; unrest still scales it.
+  stormFlicker: 0.16 // extra intensity mul amplitude on top of env flicker
 }
 
 // 4) Overhead grab handles / straps (decorative only).
@@ -48,10 +49,27 @@ export const GRAB_HANDLES = {
   enabled: true,
   // One pair every `spacing` metres along each listed span key.
   spacing: 3.6,
-  swayAmp: 0.22, // radians
+  swayAmp: 0.26, // radians — stronger sway as unrest climbs toward the cab
   hangY: CARRIAGE_CEILING_Y - 0.55,
   // Side offset — clear of centre aisle.
   sideX: 0.72
+}
+
+// Progressive storm intensity (visual only). timewreck.js folds this into the
+// existing unrest / exteriorScale multipliers — no new particle systems.
+export const STORM_PROGRESS = {
+  // Added to unrest as the player travels Vault (+Z) → Cab (−Z).
+  progressUnrest: 1.35,
+  // Extra exterior scrap travel rate at the locomotive end.
+  exteriorSpeedBoost: 0.4
+}
+
+/** 0 at Vault rear → 1 at Cab nose. Safe if spans are incomplete. */
+export function stormProgressAlongTrain(playerZ, spans) {
+  const a = spans?.vault?.maxZ
+  const b = spans?.cab?.minZ
+  if (!(Number.isFinite(a) && Number.isFinite(b) && a > b)) return 0
+  return Math.min(1, Math.max(0, (a - playerZ) / (a - b)))
 }
 
 // 5) Dash-door open-window timing (Relay blast doors).

@@ -27,7 +27,9 @@ import {
   createCarriageShake,
   createStormDebris,
   createLampMotion,
-  createGrabHandles
+  createGrabHandles,
+  STORM_PROGRESS,
+  stormProgressAlongTrain
 } from './timewreck-atmosphere.js'
 // Level 3 — "The Timewreck". The escape run: the player now sprints BACK down
 // the train they just robbed, from the vault to the locomotive, as the Chrono
@@ -57,6 +59,8 @@ const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
 const NIGHT_COLOR = new THREE.Color(0x0d1218)
 const DAWN_COLOR = new THREE.Color(0x2c3a56)
 const FINALE_FREEZE_COLOR = new THREE.Color(0x1a3358)
+const FOG_COOL = new THREE.Color(0x121a28)
+const FOG_STORM = new THREE.Color(0x1a1430)
 // Inset from the shell wall, so floor voids, lips and the collapse slab stop
 // just short of the panelling. Derived from the shell rather than hardcoded:
 // the wreck is built at the same width as Level 2, and these set pieces have
@@ -387,6 +391,156 @@ export function createTimewreckLevel({
     pad.name = 'vault-safe-observation'; pad.position.set(0, 0.01, z); root.add(pad)
   }
 
+  // Flying storm debris — one sideways wreckage dash after the second laser rack,
+  // before the Convergence doorway. Clear of gate hit slices (~center-4.6 ±0.11).
+  const DEBRIS_Z = spans.vault.center - 6.8
+  const DEBRIS_PERIOD = 4.6
+  const DEBRIS_WARN = 0.75
+  const DEBRIS_MOVE = 0.7
+  const DEBRIS_PARK_X = -2.25
+  const DEBRIS_END_X = 2.2
+  const DEBRIS_HALF_X = 0.42
+  const DEBRIS_HALF_Y = 0.32
+  const DEBRIS_HALF_Z = 0.28
+  const DEBRIS_FLY_Y = 1.05
+  let debrisClock = 0
+  const debrisWood = new THREE.MeshStandardMaterial({
+    color: 0x6a4528, roughness: 0.82, metalness: 0.05, emissive: 0x2a180c, emissiveIntensity: 0.12
+  })
+  const debrisMetal = new THREE.MeshStandardMaterial({
+    color: 0x8a949c, roughness: 0.38, metalness: 0.85, emissive: 0x1a2030, emissiveIntensity: 0.14
+  })
+  const debrisWarnMat = new THREE.MeshBasicMaterial({ color: 0x9b5cff })
+  const debrisTrailMat = new THREE.MeshBasicMaterial({
+    color: 0xc4a0ff, transparent: true, opacity: 0.35, depthWrite: false
+  })
+  const debrisGroup = new THREE.Group()
+  debrisGroup.name = 'vault-flying-storm-debris'
+  debrisGroup.position.set(DEBRIS_PARK_X, DEBRIS_FLY_Y, DEBRIS_Z)
+  const debrisPlank = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.12, 0.38), debrisWood)
+  debrisPlank.rotation.z = 0.18
+  debrisGroup.add(debrisPlank)
+  const debrisBrace = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.45, 0.14), debrisMetal)
+  debrisBrace.position.set(0.2, 0.08, -0.05)
+  debrisBrace.rotation.x = 0.35
+  debrisGroup.add(debrisBrace)
+  const debrisShard = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.5), debrisMetal)
+  debrisShard.position.set(-0.18, -0.06, 0.08)
+  debrisShard.rotation.y = -0.4
+  debrisGroup.add(debrisShard)
+  const debrisWarnLamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.1), debrisWarnMat)
+  debrisWarnLamp.name = 'vault-debris-warn-lamp'
+  debrisWarnLamp.position.set(0, 0.28, 0.22)
+  debrisGroup.add(debrisWarnLamp)
+  const debrisTrails = []
+  for (let i = 0; i < 4; i++) {
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.22 - i * 0.03, 0.08, 0.16), debrisTrailMat.clone())
+    t.visible = false
+    t.userData.noCameraCollision = true
+    root.add(t)
+    debrisTrails.push(t)
+  }
+  debrisGroup.traverse((n) => { n.userData.noCameraCollision = true })
+  root.add(debrisGroup)
+  const debrisLaunchLight = new THREE.PointLight(0xb57bff, 0, 5.5, 2)
+  debrisLaunchLight.name = 'vault-debris-storm-flash'
+  debrisLaunchLight.position.set(0, 1.6, DEBRIS_Z)
+  root.add(debrisLaunchLight)
+  // Safe wait pad just before the flight plane (between second rack and debris).
+  const debrisSafePad = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 0.015, 0.85),
+    new THREE.MeshStandardMaterial({ color: 0x315954, emissive: 0x5b21b6, emissiveIntensity: 0.45 })
+  )
+  debrisSafePad.name = 'vault-debris-safe-wait'
+  debrisSafePad.position.set(0, 0.01, DEBRIS_Z + 1.15)
+  root.add(debrisSafePad)
+
+  function debrisPhase() {
+    const p = ((debrisClock % DEBRIS_PERIOD) + DEBRIS_PERIOD) % DEBRIS_PERIOD
+    if (p < DEBRIS_WARN) return { mode: 'warn', u: p / DEBRIS_WARN, p }
+    if (p < DEBRIS_WARN + DEBRIS_MOVE) return { mode: 'move', u: (p - DEBRIS_WARN) / DEBRIS_MOVE, p }
+    return { mode: 'idle', u: 0, p }
+  }
+
+  function applyFlyingDebris() {
+    const { mode, u } = debrisPhase()
+    if (mode === 'move') {
+      const ease = u * u * (3 - 2 * u)
+      debrisGroup.position.x = DEBRIS_PARK_X + (DEBRIS_END_X - DEBRIS_PARK_X) * ease
+      debrisGroup.position.y = DEBRIS_FLY_Y + Math.sin(u * Math.PI) * 0.22
+      debrisGroup.position.z = DEBRIS_Z
+      debrisGroup.rotation.x = u * 2.4
+      debrisGroup.rotation.y = u * 1.8
+      debrisGroup.rotation.z = Math.sin(u * Math.PI * 5) * 0.35
+      debrisWarnMat.color.setHex(0xff66ee)
+      debrisWarnLamp.scale.setScalar(1.1 + Math.sin(debrisClock * 30) * 0.15)
+      debrisLaunchLight.intensity = u < 0.18 ? 7.5 * (1 - u / 0.18) : Math.max(0, 1.2 - u * 1.2)
+      debrisLaunchLight.color.setHex(0xd8b4fe)
+      for (let i = 0; i < debrisTrails.length; i++) {
+        const trail = debrisTrails[i]
+        const back = ease - (i + 1) * 0.07
+        if (back <= 0) { trail.visible = false; continue }
+        const te = Math.max(0, Math.min(1, back))
+        trail.visible = true
+        trail.position.set(
+          DEBRIS_PARK_X + (DEBRIS_END_X - DEBRIS_PARK_X) * te,
+          DEBRIS_FLY_Y + Math.sin(te * Math.PI) * 0.18,
+          DEBRIS_Z
+        )
+        trail.material.opacity = 0.32 - i * 0.06
+        trail.scale.setScalar(1 - i * 0.12)
+      }
+    } else if (mode === 'warn') {
+      debrisGroup.position.set(DEBRIS_PARK_X, DEBRIS_FLY_Y, DEBRIS_Z)
+      debrisGroup.rotation.set(
+        Math.sin(debrisClock * 19) * 0.12,
+        Math.sin(debrisClock * 14) * 0.1,
+        Math.sin(debrisClock * 23) * 0.16
+      )
+      debrisWarnMat.color.setHex(Math.sin(debrisClock * 18) > 0 ? 0xd8b4fe : 0x7c3aed)
+      debrisWarnLamp.scale.setScalar(1.3 + Math.sin(debrisClock * 22) * 0.4)
+      debrisLaunchLight.intensity = 1.2 + Math.abs(Math.sin(debrisClock * 16)) * 2.8
+      debrisLaunchLight.color.setHex(0x9b5cff)
+      for (const trail of debrisTrails) trail.visible = false
+    } else {
+      debrisGroup.position.set(DEBRIS_PARK_X, DEBRIS_FLY_Y, DEBRIS_Z)
+      debrisGroup.rotation.set(0.1, 0.2, 0.05)
+      debrisWarnMat.color.setHex(0x6d28d9)
+      debrisWarnLamp.scale.setScalar(1)
+      debrisLaunchLight.intensity = 0
+      for (const trail of debrisTrails) trail.visible = false
+    }
+  }
+
+  function updateFlyingDebris(playerPos) {
+    applyFlyingDebris()
+    if (!playerPos) return
+    if (debrisPhase().mode !== 'move') return
+    const cx = debrisGroup.position.x
+    const cy = debrisGroup.position.y
+    const cz = debrisGroup.position.z
+    const overlapsX = Math.abs(playerPos.x - cx) <= DEBRIS_HALF_X + 0.18
+    const overlapsZ = Math.abs(playerPos.z - cz) <= DEBRIS_HALF_Z + 0.18
+    const bodyTop = playerPos.y + (player.isCrouching() ? 1.15 : 1.85)
+    const overlapsY = playerPos.y < cy + DEBRIS_HALF_Y && bodyTop > cy - DEBRIS_HALF_Y
+    if (overlapsX && overlapsZ && overlapsY) {
+      failSoft('Flying storm debris hit you! Wait on the purple-teal pad, then dodge or Slow/Freeze the crossing.')
+    }
+  }
+
+  applyFlyingDebris()
+  unregisters.push(timeSystem.register(debrisGroup, {
+    onUpdate(scaledDelta) {
+      debrisClock += scaledDelta
+      applyFlyingDebris()
+    },
+    getSnapshot: () => ({ debrisClock }),
+    restoreSnapshot(s) {
+      debrisClock = s.debrisClock ?? 0
+      applyFlyingDebris()
+    }
+  }))
+
   // Convergence — electrical surges across the aisle. The ladder is at this
   // car's Vault end; the arcs sit further along the walk toward Mechanical.
   // Bolts are short additive mesh segments (WebGL lines stay 1px thick).
@@ -535,7 +689,7 @@ export function createTimewreckLevel({
 
     const panelMat = new THREE.MeshStandardMaterial({
       color: 0x1c2430, metalness: 0.55, roughness: 0.42,
-      emissive: 0x7dd3fc, emissiveIntensity: 0.25
+      emissive: 0xa855f7, emissiveIntensity: 0.35
     })
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.55, 1.05), panelMat)
     panel.position.set(side * 2.28, 1.2, 0)
@@ -553,14 +707,14 @@ export function createTimewreckLevel({
     group.add(cable)
 
     const glowMat = new THREE.MeshBasicMaterial({
-      color: 0x3db4ff,
+      color: 0x67e8f9,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     })
     const coreMat = new THREE.MeshBasicMaterial({
-      color: 0xf7fcff,
+      color: 0xfaf5ff,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
@@ -580,7 +734,7 @@ export function createTimewreckLevel({
     }
 
     const hazeMat = new THREE.MeshBasicMaterial({
-      color: 0x2488ff,
+      color: 0x7c3aed,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
@@ -591,10 +745,10 @@ export function createTimewreckLevel({
     haze.position.y = 1.05
     group.add(haze)
 
-    const light = new THREE.PointLight(0x66c8ff, 0.3, 6.5, 2)
+    const light = new THREE.PointLight(0xa78bfa, 0.3, 6.5, 2)
     light.position.set(0, 1.15, 0)
     group.add(light)
-    const panelLight = new THREE.PointLight(0x7ecfff, 0.2, 3.8, 2)
+    const panelLight = new THREE.PointLight(0x67e8f9, 0.2, 3.8, 2)
     panelLight.position.set(side * 2.1, 1.25, 0)
     group.add(panelLight)
 
@@ -602,7 +756,7 @@ export function createTimewreckLevel({
     const sparkGeo = new THREE.BufferGeometry()
     sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3))
     const sparkMat = new THREE.PointsMaterial({
-      color: 0xb8ecff,
+      color: 0xe9d5ff,
       size: 0.045,
       transparent: true,
       opacity: 0,
@@ -632,6 +786,146 @@ export function createTimewreckLevel({
   // Only the direct aisle is electrified; the brass partition shields maintenance.
   electricalSurges[0].group.scale.x = 0.59
   electricalSurges[0].group.position.x = -0.72
+
+  // Runaway service carts — open Convergence floor past the fork (well after surge ~center+4).
+  // Four staggered dashes from the walls: +X, −X, and both diagonals (covers all directions).
+  const CART_PERIOD = 5.0
+  const CART_WARN = 0.65
+  const CART_MOVE = 0.48
+  const CART_HALF_X = 0.38
+  const CART_HALF_Z = 0.32
+  const CART_HALF_Y = 0.48
+  const _cartC = spans.convergence.center
+  const CART_SPECS = [
+    { parkX: -2.15, parkZ: _cartC - 5.0, endX: 2.05, endZ: _cartC - 5.0 },   // across +X
+    { parkX: 2.15, parkZ: _cartC - 7.2, endX: -2.05, endZ: _cartC - 7.2 },   // across −X
+    { parkX: -2.15, parkZ: _cartC - 4.8, endX: 2.05, endZ: _cartC - 8.8 },   // diagonal +X/−Z
+    { parkX: 2.15, parkZ: _cartC - 10.2, endX: -2.05, endZ: _cartC - 5.4 }   // diagonal −X/+Z
+  ]
+  let cartClock = 0
+  const cartWood = new THREE.MeshStandardMaterial({
+    color: 0x5a3a22, roughness: 0.72, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.1
+  })
+  const cartBrass = new THREE.MeshStandardMaterial({
+    color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.16
+  })
+  const cartCloth = new THREE.MeshStandardMaterial({
+    color: 0x6e1c28, roughness: 0.9, metalness: 0.02, emissive: 0x1a0608, emissiveIntensity: 0.08
+  })
+  function createRunawayCart(spec, index) {
+    const warnMat = new THREE.MeshBasicMaterial({ color: 0xe49a30 })
+    const group = new THREE.Group()
+    group.name = index === 0 ? 'convergence-runaway-cart' : `convergence-runaway-cart-${index + 1}`
+    const facing = Math.atan2(spec.endX - spec.parkX, spec.endZ - spec.parkZ)
+    group.position.set(spec.parkX, 0, spec.parkZ)
+    group.rotation.y = facing
+    function cartBox(w, h, d, mat, x, y, lz) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+      m.position.set(x, y, lz)
+      group.add(m)
+      return m
+    }
+    cartBox(0.72, 0.1, 0.58, cartWood, 0, 0.42, 0)
+    cartBox(0.68, 0.55, 0.08, cartWood, 0, 0.72, -0.25)
+    cartBox(0.08, 0.55, 0.5, cartWood, -0.32, 0.72, 0)
+    cartBox(0.08, 0.55, 0.5, cartWood, 0.32, 0.72, 0)
+    cartBox(0.62, 0.04, 0.4, cartCloth, 0, 0.5, 0.02)
+    cartBox(0.76, 0.03, 0.62, cartBrass, 0, 0.98, 0)
+    for (const x of [-0.34, 0.34]) cartBox(0.04, 0.04, 0.56, cartBrass, x, 0.72, 0)
+    for (const [x, wz] of [[-0.28, -0.22], [0.28, -0.22], [-0.28, 0.22], [0.28, 0.22]]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 8), cartBrass)
+      wheel.rotation.z = Math.PI / 2
+      wheel.position.set(x, 0.08, wz)
+      group.add(wheel)
+    }
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.08), warnMat)
+    lamp.name = index === 0 ? 'runaway-cart-warn-lamp' : `runaway-cart-warn-lamp-${index + 1}`
+    lamp.position.set(0, 1.05, 0.28)
+    group.add(lamp)
+    group.traverse((n) => { n.userData.noCameraCollision = true })
+    root.add(group)
+    return {
+      group, lamp, warnMat, facing,
+      parkX: spec.parkX, parkZ: spec.parkZ, endX: spec.endX, endZ: spec.endZ,
+      // Start every cart in idle so the open floor is clear when the room loads.
+      phaseOffset: CART_WARN + CART_MOVE + 0.2 + index * 1.15
+    }
+  }
+  const runawayCarts = CART_SPECS.map((spec, i) => createRunawayCart(spec, i))
+
+  function cartPhase(cart) {
+    const p = (((cartClock + cart.phaseOffset) % CART_PERIOD) + CART_PERIOD) % CART_PERIOD
+    if (p < CART_WARN) return { mode: 'warn', u: p / CART_WARN, p }
+    if (p < CART_WARN + CART_MOVE) return { mode: 'move', u: (p - CART_WARN) / CART_MOVE, p }
+    return { mode: 'idle', u: 0, p }
+  }
+
+  function applyRunawayCart(cart) {
+    const { mode, u } = cartPhase(cart)
+    const t = cartClock + cart.phaseOffset
+    if (mode === 'move') {
+      const ease = u * u * (3 - 2 * u)
+      cart.group.position.x = cart.parkX + (cart.endX - cart.parkX) * ease
+      cart.group.position.z = cart.parkZ + (cart.endZ - cart.parkZ) * ease
+      cart.group.rotation.y = cart.facing
+      cart.group.rotation.z = Math.sin(u * Math.PI * 6) * 0.04
+      cart.group.position.y = Math.abs(Math.sin(u * Math.PI * 8)) * 0.02
+      cart.warnMat.color.setHex(0xff2a2a)
+      cart.lamp.scale.setScalar(1.15 + Math.sin(t * 28) * 0.2)
+    } else if (mode === 'warn') {
+      cart.group.position.x = cart.parkX
+      cart.group.position.z = cart.parkZ
+      cart.group.position.y = 0
+      cart.group.rotation.y = cart.facing + Math.sin(t * 17) * 0.05
+      cart.group.rotation.z = Math.sin(t * 22) * 0.08
+      cart.warnMat.color.setHex(Math.sin(t * 16) > 0 ? 0xffb060 : 0xe49a30)
+      cart.lamp.scale.setScalar(1.25 + Math.sin(t * 20) * 0.35)
+    } else {
+      cart.group.position.x = cart.parkX
+      cart.group.position.z = cart.parkZ
+      cart.group.position.y = 0
+      cart.group.rotation.y = cart.facing
+      cart.group.rotation.z = 0
+      cart.warnMat.color.setHex(0xe49a30)
+      cart.lamp.scale.setScalar(1)
+    }
+  }
+
+  function applyRunawayCarts() {
+    for (const cart of runawayCarts) applyRunawayCart(cart)
+  }
+
+  function updateRunawayCart(playerPos) {
+    applyRunawayCarts()
+    if (!playerPos) return
+    for (const cart of runawayCarts) {
+      if (cartPhase(cart).mode !== 'move') continue
+      const cx = cart.group.position.x
+      const cz = cart.group.position.z
+      const cy = CART_HALF_Y
+      const overlapsX = Math.abs(playerPos.x - cx) <= CART_HALF_X + 0.18
+      const overlapsZ = Math.abs(playerPos.z - cz) <= CART_HALF_Z + 0.18
+      const bodyTop = playerPos.y + (player.isCrouching() ? 1.15 : 1.85)
+      const overlapsY = playerPos.y < cy + CART_HALF_Y && bodyTop > cy - CART_HALF_Y
+      if (overlapsX && overlapsZ && overlapsY) {
+        failSoft('A runaway service cart caught you! Sidestep the open-floor rolls or Slow to cross.')
+        return
+      }
+    }
+  }
+
+  applyRunawayCarts()
+  unregisters.push(timeSystem.register(runawayCarts[0].group, {
+    onUpdate(scaledDelta) {
+      cartClock += scaledDelta
+      applyRunawayCarts()
+    },
+    getSnapshot: () => ({ cartClock }),
+    restoreSnapshot(s) {
+      cartClock = s.cartClock ?? 0
+      applyRunawayCarts()
+    }
+  }))
 
   function updateSurgeSparks(surge, seed, active, strong) {
     const arr = surge.sparkPos
@@ -667,7 +961,14 @@ export function createTimewreckLevel({
       }
       const pulse = Math.abs(Math.sin(surgeT * (dangerous ? 22 : warning ? 34 : 8) + surge.offset))
       const crackle = Math.abs(Math.sin(surgeT * 47 + surge.offset * 3))
+      // Visual identity only: violet danger vs ice-cyan warn (timing unchanged).
       if (dangerous) {
+        surge.glowMat.color.setHex(0xd8b4fe)
+        surge.hazeMat.color.setHex(0x7c3aed)
+        surge.panelMat.emissive.setHex(0xa855f7)
+        surge.light.color.setHex(0xc084fc)
+        surge.panelLight.color.setHex(0xe9d5ff)
+        surge.sparkMat.color.setHex(0xf5e1ff)
         surge.coreMat.opacity = 0.95
         surge.glowMat.opacity = 0.55 + pulse * 0.25
         surge.hazeMat.opacity = 0.16 + pulse * 0.1
@@ -677,6 +978,12 @@ export function createTimewreckLevel({
         surge.sparkMat.opacity = 0.55 + pulse * 0.35
         surge.sparkMat.size = 0.04 + crackle * 0.03
       } else if (warning) {
+        surge.glowMat.color.setHex(0x67e8f9)
+        surge.hazeMat.color.setHex(0x38bdf8)
+        surge.panelMat.emissive.setHex(0x22d3ee)
+        surge.light.color.setHex(0x67e8f9)
+        surge.panelLight.color.setHex(0xa5f3fc)
+        surge.sparkMat.color.setHex(0xb8ecff)
         surge.coreMat.opacity = 0.4 + pulse * 0.45
         surge.glowMat.opacity = 0.2 + pulse * 0.32
         surge.hazeMat.opacity = 0.03 + pulse * 0.05
@@ -686,10 +993,14 @@ export function createTimewreckLevel({
         surge.sparkMat.opacity = 0.25 + pulse * 0.45
         surge.sparkMat.size = 0.035
       } else {
+        surge.glowMat.color.setHex(0x67e8f9)
+        surge.panelMat.emissive.setHex(0x6366f1)
+        surge.light.color.setHex(0xa78bfa)
+        surge.panelLight.color.setHex(0x67e8f9)
         surge.coreMat.opacity = 0.06 + pulse * 0.05
         surge.glowMat.opacity = 0.03 + pulse * 0.03
         surge.hazeMat.opacity = 0
-        surge.panelMat.emissiveIntensity = 0.22
+        surge.panelMat.emissiveIntensity = 0.28
         surge.light.intensity = 0.25
         surge.panelLight.intensity = 0.15
         surge.sparkMat.opacity = 0.04 + pulse * 0.04
@@ -722,7 +1033,7 @@ export function createTimewreckLevel({
     color: 0x3a5c56, metalness: 0.18, roughness: 0.55, emissive: 0x152420, emissiveIntensity: 0.14
   })
   const blastScar = new THREE.MeshStandardMaterial({
-    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4
+    color: 0x0f172a, emissive: 0x22d3ee, emissiveIntensity: 0.95, roughness: 0.35
   })
   const blastLampMat = new THREE.MeshStandardMaterial({
     color: 0x3a2410, emissive: 0xffb060, emissiveIntensity: 0.12, roughness: 0.28
@@ -852,10 +1163,12 @@ export function createTimewreckLevel({
     for (const ram of blastRams) ram.mesh.position.x = ram.side * (1.55 - close * 0.35)
     catchHandle.rotation.z = relayLatched ? -0.8 : 0
     relayFeedback.update(relayHeld, relayEchoRemaining, relayLatched)
-    blastLampMat.emissive.setHex(relayLatched ? 0x55ff99 : relayOpen > 0.9 ? 0x38bdf8 : 0xffb060)
+    blastLampMat.emissive.setHex(relayLatched ? 0x55ff99 : relayOpen > 0.9 ? 0x22d3ee : 0xffb060)
     blastLampMat.emissiveIntensity = relayLatched ? 1.2 : 0.5 + relayOpen
     blastLight.intensity = 0.6 + relayOpen * 1.2
     blastFillL.intensity = blastFillR.intensity = 0.3
+    // Temporal scar breath — visual only; open-hold timing untouched.
+    blastScar.emissiveIntensity = 0.75 + relayOpen * 0.55 + (relayLatched ? 0.35 : 0)
   }
 
   unregisters.push(interaction.register(manualCatch, {
@@ -1027,15 +1340,15 @@ export function createTimewreckLevel({
     rams.push({ head, phase, z })
   }
 
-  // Existing Mechanical fills: warm practical aisle + cool exterior at damage.
+  // Mechanical identity: warmer aisle fills + cooler storm accent at the breach.
   // Same light count — no new PointLights.
-  for (const [dz, intensity] of [[6, 5.5], [0, 7.2], [-6, 5.5]]) {
-    const mechFill = new THREE.PointLight(0xffc090, intensity, 11, 2)
+  for (const [dz, intensity] of [[6, 5.8], [0, 7.4], [-6, 5.8]]) {
+    const mechFill = new THREE.PointLight(0xffb888, intensity, 11, 2)
     mechFill.position.set(0, 2.6, spans.mechanical.center + dz)
     mechFill.userData.noCameraCollision = true
     root.add(mechFill)
   }
-  const mechAccent = new THREE.PointLight(0x9bb9cf, 3.8, 9, 2)
+  const mechAccent = new THREE.PointLight(0x7dd3fc, 4.4, 9, 2)
   mechAccent.position.set(-2.25, 2.6, spans.mechanical.center + 3.4)
   mechAccent.userData.noCameraCollision = true
   root.add(mechAccent)
@@ -1248,11 +1561,21 @@ export function createTimewreckLevel({
 
   // Wall-mounted phase indicator so the cycle is learnable rather than guessed.
   const loopRingMat = new THREE.MeshStandardMaterial({
-    color: 0x10b981, emissive: 0x10b981, emissiveIntensity: 2.6, roughness: 0.3
+    color: 0x10b981, emissive: 0x10b981, emissiveIntensity: 3.1, roughness: 0.28
   })
   const loopRing = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.05, 10, 24), loopRingMat)
   loopRing.rotation.y = Math.PI / 2
   addProp(loopRing, loopDoorZ + 1.4, -(INTERIOR_HALF_WIDTH - 0.14), 1.7)
+  // Thin halo keeps the phase ring readable against warm cargo fills.
+  const loopRingHalo = new THREE.Mesh(
+    new THREE.TorusGeometry(0.34, 0.018, 8, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0x10b981, transparent: true, opacity: 0.35,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    })
+  )
+  loopRingHalo.rotation.y = Math.PI / 2
+  addProp(loopRingHalo, loopDoorZ + 1.4, -(INTERIOR_HALF_WIDTH - 0.14), 1.7)
   const loopRingLight = new THREE.PointLight(0x10b981, 6.5, 7, 2)
   addProp(loopRingLight, loopDoorZ + 1.4, -(INTERIOR_HALF_WIDTH - 0.5), 1.7)
 
@@ -1271,7 +1594,13 @@ export function createTimewreckLevel({
     loopBeam.position.y = 2.25 - loopBeamDown * 1.85
     loopRingMat.color.setHex(colour)
     loopRingMat.emissive.setHex(colour)
+    loopRingHalo.material.color.setHex(colour)
     loopRingLight.color.setHex(colour)
+    // Soft pulse — same phase colours, stronger read (no timing change).
+    const breath = 0.85 + 0.15 * Math.sin(loopT * 5.5)
+    loopRingMat.emissiveIntensity = 3.1 * breath
+    loopRingHalo.material.opacity = 0.22 + 0.2 * breath
+    loopRingLight.intensity = 6.2 + 1.4 * breath
   }
   applyLoop()
   unregisters.push(timeSystem.register(loopDoor, {
@@ -1332,7 +1661,7 @@ export function createTimewreckLevel({
     new THREE.BoxGeometry(INTERIOR_HALF_WIDTH * 2 - 0.28, 3.5, collapseMaxZ - collapseMinZ),
     new THREE.MeshStandardMaterial({
       color: 0x1a0a28, roughness: 1, metalness: 0,
-      emissive: 0x5b21b6, emissiveIntensity: 0.4
+      emissive: 0x7c3aed, emissiveIntensity: 0.55
     })
   )
   collapsePit.position.set(0, -1.72, (collapseMinZ + collapseMaxZ) / 2)
@@ -1344,7 +1673,7 @@ export function createTimewreckLevel({
     color: 0x5a3a22, roughness: 0.62, metalness: 0.08, emissive: 0x1a1008, emissiveIntensity: 0.08
   })
   const collapseLipCyan = new THREE.MeshStandardMaterial({
-    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.75, roughness: 0.35
+    color: 0x1a0a28, emissive: 0xc084fc, emissiveIntensity: 0.9, roughness: 0.35
   })
   const collapseLips = []
   for (const z of [collapseMinZ, collapseMaxZ]) {
@@ -1362,9 +1691,9 @@ export function createTimewreckLevel({
     root.add(lip)
   }
 
-  // Chrono field kept for FREEZE feedback; wood/brass dress matches Room 6 tiles.
+  // Violet chrono field — distinct from Security's ice-cyan freeze tiles.
   const collapseChronoMat = createChronoFieldMaterial({
-    baseColor: 0x4a3424, glowColor: 0x38bdf8, opacity: 0.9, doubleSided: true
+    baseColor: 0x3a2438, glowColor: 0xa855f7, opacity: 0.9, doubleSided: true
   })
   const collapseBrass = new THREE.MeshStandardMaterial({
     color: 0xc4a052, metalness: 0.88, roughness: 0.42, emissive: 0x3a2810, emissiveIntensity: 0.12
@@ -1373,7 +1702,7 @@ export function createTimewreckLevel({
     color: 0x5a3a22, metalness: 0.06, roughness: 0.58, emissive: 0x1a1008, emissiveIntensity: 0.1
   })
   const collapseCyan = new THREE.MeshStandardMaterial({
-    color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.65, roughness: 0.35
+    color: 0x1a0a28, emissive: 0xc084fc, emissiveIntensity: 0.85, roughness: 0.35
   })
 
   function markNoCam(rootObj) {
@@ -1511,7 +1840,7 @@ export function createTimewreckLevel({
   const floorCrack = new THREE.Mesh(
     new THREE.BoxGeometry(0.08, 0.04, collapseMaxZ - collapseMinZ - 0.4),
     new THREE.MeshStandardMaterial({
-      color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4
+      color: 0x1a0a28, emissive: 0xa855f7, emissiveIntensity: 0.75, roughness: 0.4
     })
   )
   floorCrack.position.y = 0.05
@@ -1534,7 +1863,7 @@ export function createTimewreckLevel({
     collapseSparks.push(sp)
   }
 
-  const collapseGlow = new THREE.PointLight(0x7dd3fc, 0, 8, 2)
+  const collapseGlow = new THREE.PointLight(0xc084fc, 0, 8, 2)
   collapseGlow.position.set(0, 0.7, (collapseMinZ + collapseMaxZ) / 2)
   collapseGlow.userData.noCameraCollision = true
   root.add(collapseGlow)
@@ -2426,9 +2755,14 @@ export function createTimewreckLevel({
       applyFailBurst()
       vaultGateT = 0
       updateVaultGates(0, null)
+      debrisClock = 0
+      applyFlyingDebris()
       surgeT = 0
       updateElectricalSurges(0, null)
+      cartClock = 0
+      applyRunawayCarts()
       ramT = 0
+
       applyRams()
       loopT = 0
       applyLoop()
@@ -2564,9 +2898,13 @@ export function createTimewreckLevel({
       else if (mode === 'FREEZE') motionScale = 0
       else if (mode === 'REWIND') motionScale = -1.25
       const envDt = (braking ? Math.max(0, 1 - brakeT / 2.5) : motionScale) * delta
+      // Visual storm ramp Vault→Cab; Freeze / brake still zero or ease as before.
+      const stormProgress = stormProgressAlongTrain(player.mesh.position.z, spans)
       const exteriorScale = braking
         ? Math.max(0, 1 - brakeT / 2.5)
-        : mode === 'FREEZE' ? 0 : resumeBoost * (mode === 'SLOW' ? 0.2 : 1)
+        : mode === 'FREEZE' ? 0
+          : resumeBoost * (mode === 'SLOW' ? 0.2 : 1) *
+            (1 + stormProgress * STORM_PROGRESS.exteriorSpeedBoost)
       wreckAudio.update(depleted && !brakeComplete, finaleFreeze, braking ? brakeT : null)
       outdoorEnv.update(envDt)
       wreckExterior.update(delta, exteriorScale)
@@ -2625,7 +2963,9 @@ export function createTimewreckLevel({
         failSoft('The connector folded. Rewind from solid floor, then Freeze its flat hinges.', 'fell')
       }
       if (vaultActive && !braking) updateVaultGates(envDt, pp)
+      if (vaultActive && !braking && !respawn.isFailing()) updateFlyingDebris(pp)
       if (surgeActive) updateElectricalSurges(envDt, pp)
+      if (!braking && !respawn.isFailing()) updateRunawayCart(pp)
       if (blastActive) updateBlastDoors(delta, pp)
       const modeInt = MODE_INT[mode] ?? 0
 
@@ -2738,7 +3078,12 @@ export function createTimewreckLevel({
         sparks.material.opacity = 1
       } else if (!braking) {
         scene.background.setHex(resumeWarm > 0.08 ? 0x1a1412 : NIGHT_COLOR.getHex())
-        scene.fog.color.set(resumeWarm > 0.08 ? 0x241814 : 0x121a28)
+        if (resumeWarm > 0.08) {
+          scene.fog.color.set(0x241814)
+        } else {
+          // Subtle violet fog deepen toward the Cab (readability preserved).
+          scene.fog.color.lerpColors(FOG_COOL, FOG_STORM, stormProgress * 0.55)
+        }
         scene.fog.near = 38
         scene.fog.far = resumeWarm > 0 ? 55 + (1 - resumeWarm) * 65 : 185
         restoreChunkMats(resumeWarm)
@@ -2809,7 +3154,8 @@ export function createTimewreckLevel({
       }
 
       // --- Atmosphere: shake / debris / handles (each independently toggled) ---
-      const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0)
+      const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0) +
+        stormProgress * STORM_PROGRESS.progressUnrest
       const slamKick = blastSlam
       const shook = carriageShake.update(delta, {
         elapsed,
@@ -2866,11 +3212,15 @@ export function createTimewreckLevel({
         `Teal pads are safe to observe. A horizontal green lamp means standing clearance; upright amber means wait. ${bindingLabel(settings.getBinding('slow'))} slows the racks; ${bindingLabel(settings.getBinding('freeze'))} holds their current pose.`, 5500)
       hint('vault-reassess', pp.z, spans.vault.center - 2.7,
         `Reassess the SECOND rack from this pad. Freeze holds dangerous beams too. Wait for its horizontal lamp, or watch clearance while using ${bindingLabel(settings.getBinding('duck'))} to crouch.`, 5000)
+      hint('vault-debris', pp.z, spans.vault.center - 5.4,
+        `Storm debris ahead: purple flash means wreckage is about to fly across. Wait on the purple-teal pad, then dodge or ${bindingLabel(settings.getBinding('slow'))}/${bindingLabel(settings.getBinding('freeze'))} Slow/Freeze the crossing.`, 5000)
       hint('convergence-threshold', pp.z, spans.convergence.center + 16.5,
         `Broken threshold: ${bindingLabel(settings.getBinding('jump'))} jump the low brass edge. Pass the open right end of the trolley, then choose either aisle.`, 4500)
       hint('convergence-surges', pp.z, spans.convergence.center + 11.5,
         `Choose before the split: brass DIRECT is fast but exposed to surges. Cyan MAINTENANCE is sheltered but slower: ${bindingLabel(settings.getBinding('duck'))} crouch, ${bindingLabel(settings.getBinding('rewind'))} repair the shutter, then ${bindingLabel(settings.getBinding('freeze'))} hold it open.`,
         6000)
+      hint('convergence-cart', pp.z, spans.convergence.center - 2.5,
+        `Open floor ahead: four runaway service carts cross in every direction. Flashing amber means a fast roll. Sidestep or ${bindingLabel(settings.getBinding('slow'))} Slow to cross.`, 5200)
       hint('mechanical', pp.z, spans.mechanical.center + 9.3,
         `${bindingLabel(settings.getBinding('slow'))} Slow the first luggage bank. Stop inside the teal brackets on solid floor; release time control to recharge. Then ${bindingLabel(settings.getBinding('rewind'))} repair the shutter and ${bindingLabel(settings.getBinding('freeze'))} hold it open. Another bank follows.`, 6500)
       if (pp.z > spans.mechanical.center + 9 && pp.z < spans.mechanical.maxZ) {
@@ -2949,9 +3299,10 @@ export function createTimewreckLevel({
         ? (frozen ? 8 : 2.4 + Math.sin(elapsed * 3.2) * 0.4)
         : 0
       if (collapseFxLive) {
-        collapseBrass.emissiveIntensity = frozen ? 1.1 : 0.12
-        collapseWood.emissiveIntensity = frozen ? 0.85 : 0.1
-        collapseCyan.emissiveIntensity = frozen ? 1.25 : 0.65
+        collapseBrass.emissiveIntensity = frozen ? 1.15 : 0.12
+        collapseWood.emissiveIntensity = frozen ? 0.9 : 0.1
+        collapseCyan.emissiveIntensity = frozen ? 1.55 : 0.85
+        collapseLipCyan.emissiveIntensity = frozen ? 1.4 : 0.9
       }
       if (frozen && collapseLive && collapseSettle > 0.98) {
         for (const p of collapsePieces) {

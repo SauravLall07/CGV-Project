@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { addMechanicalReference } from './mechanical-reference.js'
 import { refineWreckLandmark } from './wreck-landmarks.js'
 import { addCargoWreckBenchmark } from './cargo-wreck-benchmark.js'
+import { addLuxuryWallBenches, addLuxuryPassengerBays } from './luxury-seats.js'
 import {
   carpetMaterial,
   metalMaterial,
@@ -920,39 +921,13 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
     g.add(mesh)
   }
 
-  // Burgundy benches — ends of the car only (centre kept clear for door/beam).
-  const velvet = new THREE.MeshStandardMaterial({
-    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  // Luxury wall benches — ends only (centre clear for door/beam). Decorative.
+  addLuxuryWallBenches(g, {
+    namePrefix: 'cargo-bench',
+    zs: [-half + 3.2, half - 3.2],
+    wallX: WALL_X,
+    wreckChance: 0.3
   })
-  const seatWood = liftAlbedo(woodMaterial({
-    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 117
-  }), 0xe8d0b0)
-  const seatZs = [-half + 3.2, half - 3.2]
-  const sn = seatZs.length * 2
-  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.14, 0.8), seatWood, sn)
-  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.12, 0.74), velvet, sn)
-  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.68, 0.76), velvet, sn)
-  frames.name = 'cargo-bench-frames'
-  cushions.name = 'cargo-bench-cushions'
-  let si = 0
-  for (const z of seatZs) {
-    for (const s of [-1, 1]) {
-      const x = s * (WALL_X - 0.52)
-      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
-      frames.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
-      cushions.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(s * (WALL_X - 0.28), 0.68, z); dummy.updateMatrix()
-      backs.setMatrixAt(si, dummy.matrix)
-      si++
-    }
-  }
-  for (const mesh of [frames, cushions, backs]) {
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.castShadow = true
-    noCam(mesh)
-    g.add(mesh)
-  }
 
   // Wall clock + faint second clock deeper in the rupture (cheap geometry).
   addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, -half * 0.15, 1)
@@ -992,13 +967,13 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
   noCam(hangChain)
   g.add(hangChain)
 
-  // Same light budget as before (2 amber aisle + 1 violet temporal accent).
+  // Cargo identity: warm aisle + stronger violet loop accent (same 3 lights).
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(0xffc090, 7.5, 7.5, 2)
+    const l = new THREE.PointLight(0xffc090, 7.8, 7.5, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, l, true)
   }
-  const loopGlow = new THREE.PointLight(0xa855f7, 3.6, 5, 2)
+  const loopGlow = new THREE.PointLight(0xa855f7, 4.8, 5.5, 2)
   loopGlow.position.set(sites[0].side * 0.95, 1.5, sites[0].z)
   addLight(g, fx, loopGlow, true)
 }
@@ -1049,40 +1024,13 @@ function dressDamagedSecurity(g, half, shared, fx) {
     g.add(cyan)
   }
 
-  // Burgundy benches at the intact ends — centre kept clear for freeze tiles.
-  const velvet = new THREE.MeshStandardMaterial({
-    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  // Luxury benches at intact ends — centre clear for freeze tiles. Decorative.
+  addLuxuryWallBenches(g, {
+    namePrefix: 'security-bench',
+    zs: [-half + 3.2, half - 3.2],
+    wallX: WALL_X,
+    wreckChance: 0.32
   })
-  const seatWood = liftAlbedo(woodMaterial({
-    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 135
-  }), 0xe8d0b0)
-  const seatZs = [-half + 3.2, half - 3.2]
-  const sn = seatZs.length * 2
-  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.14, 0.8), seatWood, sn)
-  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.12, 0.74), velvet, sn)
-  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.78, 0.76), velvet, sn)
-  frames.name = 'security-bench-frames'
-  cushions.name = 'security-bench-cushions'
-  const dummy = new THREE.Object3D()
-  let si = 0
-  for (const z of seatZs) {
-    for (const s of [-1, 1]) {
-      const x = s * (WALL_X - 0.52)
-      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
-      frames.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
-      cushions.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(s * (WALL_X - 0.28), 0.72, z); dummy.updateMatrix()
-      backs.setMatrixAt(si, dummy.matrix)
-      si++
-    }
-  }
-  for (const mesh of [frames, cushions, backs]) {
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.castShadow = true
-    noCam(mesh)
-    g.add(mesh)
-  }
 
   // Antique clock on the approach side (reuse Room 4 helper).
   addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, half * 0.55, 1)
@@ -1094,6 +1042,7 @@ function dressDamagedSecurity(g, half, shared, fx) {
   const floatN = 4
   const floatPanels = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.08, 1.1), panelWood, floatN)
   floatPanels.name = 'security-float-panels'
+  const dummy = new THREE.Object3D()
   for (let i = 0; i < floatN; i++) {
     const s = i % 2 ? 1 : -1
     dummy.position.set(s * (WALL_X + 0.85), 1.2 + (i % 3) * 0.35, -half * 0.2 + i * 2.4)
@@ -1131,9 +1080,14 @@ function dressDamagedSecurity(g, half, shared, fx) {
     g.add(tear)
   }
 
-  // Same light budget as before (3 amber aisle fills).
-  for (const z of [-half * 0.55, 0, half * 0.55]) {
-    const l = new THREE.PointLight(0xffc090, 7.5, 7.5, 2)
+  // Security identity: warm ends + cool centre wash over the freeze walkway
+  // (same 3 PointLights — no pool growth).
+  for (const [z, hex, intensity] of [
+    [-half * 0.55, 0xffc090, 7.5],
+    [0, 0xb8d4e8, 6.8],
+    [half * 0.55, 0xffc090, 7.5]
+  ]) {
+    const l = new THREE.PointLight(hex, intensity, 7.5, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, l, true)
   }
@@ -1156,8 +1110,8 @@ function dressDamagedPassenger(g, half, shared, fx) {
 
   // Soft violet storm veils outside the hull — intensifies purple read through openings.
   const veilMat = new THREE.MeshStandardMaterial({
-    color: 0x1a0a30, emissive: 0x6d28d9, emissiveIntensity: 0.85,
-    roughness: 1, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide
+    color: 0x1a0a30, emissive: 0x7c3aed, emissiveIntensity: 1.05,
+    roughness: 1, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide
   })
   for (const s of [-1, 1]) {
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(half * 1.6, CARRIAGE_CEILING_Y * 1.2), veilMat)
@@ -1305,43 +1259,14 @@ function rememberVaultMat(fx, mat) {
 // L3 Vault luxury wreck: side benches hug the walls so the centre aisle and
 // laser gates stay clear. Decorative only — no colliders / noCam.
 function addVaultLuxuryBenches(g, half, shared) {
-  const wood = liftAlbedo(woodMaterial({
-    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 71
-  }), 0xe8d0b0)
-  const velvet = new THREE.MeshStandardMaterial({
-    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
-  })
+  void shared
   // Keep |x| high so the walkway (±~1.0) stays empty; lasers still span the aisle.
-  const zs = [-half + 3.2, 0.4, half - 5.2]
-  const n = zs.length * 2
-  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.52, 0.14, 0.9), wood, n)
-  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.12, 0.84), velvet, n)
-  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.72, 0.88), velvet, n)
-  const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(0.06, 0.05, 0.9), shared.brass, n)
-  frames.name = 'vault-bench-frames'
-  cushions.name = 'vault-bench-cushions'
-  const dummy = new THREE.Object3D()
-  let i = 0
-  for (const z of zs) {
-    for (const s of [-1, 1]) {
-      const x = s * (WALL_X - 0.55)
-      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
-      frames.setMatrixAt(i, dummy.matrix)
-      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
-      cushions.setMatrixAt(i, dummy.matrix)
-      dummy.position.set(s * (WALL_X - 0.28), 0.72, z); dummy.updateMatrix()
-      backs.setMatrixAt(i, dummy.matrix)
-      dummy.position.set(s * (WALL_X - 0.28), 1.1, z); dummy.updateMatrix()
-      rails.setMatrixAt(i, dummy.matrix)
-      i++
-    }
-  }
-  for (const mesh of [frames, cushions, backs, rails]) {
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.castShadow = true
-    noCam(mesh)
-    g.add(mesh)
-  }
+  addLuxuryWallBenches(g, {
+    namePrefix: 'vault-bench',
+    zs: [-half + 3.2, 0.4, half - 5.2],
+    wallX: WALL_X,
+    wreckChance: 0.22
+  })
 }
 
 function dressDamagedVault(g, half, shared, fx) {
@@ -1393,8 +1318,8 @@ function dressDamagedVault(g, half, shared, fx) {
     addSagCable(g, vein, c.side * (WALL_X - 0.45), 2.18, c.z - 0.3, c.side * 1.2, 0.7, c.z + 0.25, 0.24)
   }
 
-  // Existing temporal accent light — keep violet (no new PointLights).
-  const coreGlow = new THREE.PointLight(0x7c3aed, 5, 6, 2)
+  // Vault identity: stronger violet rupture wash (same single PointLight).
+  const coreGlow = new THREE.PointLight(0x8b5cf6, 6.4, 6.5, 2)
   coreGlow.position.set(0, 1.4, half - 1.2)
   addLight(g, fx, coreGlow, true)
 }
@@ -1419,50 +1344,23 @@ function dressPassenger(g, half, shared, damaged, fx) {
   strip.name = 'passenger-ceiling-strip'
   strip.position.y = CARRIAGE_CEILING_Y - 0.06
   g.add(strip)
-  // Same light budget as before (2 amber aisle fills — no new PointLights).
+  // Passenger identity: warmer aisle fills against violet storm veils/rupture.
   for (const z of [-half * 0.5, half * 0.5]) {
-    const l = new THREE.PointLight(0xffc090, 8.5, 6.5, 2)
+    const l = new THREE.PointLight(0xffb888, 9.0, 6.8, 2)
     l.position.set(0, CARRIAGE_CEILING_Y - 0.3, z)
     addLight(g, fx, l, true)
   }
   dressDamagedPassenger(g, half, shared, fx)
 }
 
-// Level 3: the original narrow-car seat bays, tilted and dropped near the
-// damage sites so the same instanced set reads as thrown about.
+// Level 3 passenger bays — luxury kit at the same Z/X as carriage-bounds seat
+// colliders (side * 1.02). Visual wreck tilt does not move the AABB.
 function addWreckedSeatBays(g, half) {
-  const bays = Math.max(1, Math.floor((half * 2 - 4) / 3.4))
-  // Deep crimson velvet — albedo high enough to survive ACES, not neon.
-  const seatMat = new THREE.MeshStandardMaterial({
-    color: 0x9a2c38,
-    roughness: 0.88,
-    metalness: 0.02,
-    emissive: 0x2a080c,
-    emissiveIntensity: 0.1
+  addLuxuryPassengerBays(g, half, {
+    sites: damageSites(half),
+    nearSite,
+    skew
   })
-  const bases = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.16, 0.95), seatMat, bays * 2)
-  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.8, 0.16), seatMat, bays * 2)
-  bases.name = 'seats-passenger-bases'
-  backs.name = 'seats-passenger-backs'
-  const dummy = new THREE.Object3D()
-  const sites = damageSites(half)
-  let i = 0
-  for (let b = 0; b < bays; b++) {
-    const z = -half + 3 + b * 3.4
-    for (const s of [-1, 1]) {
-      const wrecked = nearSite(sites, z, s, 1.8)
-      const tilt = wrecked ? skew(i + 1) * 0.18 : 0
-      const yaw = wrecked ? skew(i + 4) * 0.08 : 0
-      const drop = wrecked ? Math.abs(skew(i + 7)) * 0.05 : 0
-      dummy.rotation.set(wrecked ? Math.abs(skew(i + 2)) * 0.08 : 0, yaw, tilt)
-      dummy.position.set(s * 1.02, 0.42 - drop, z); dummy.updateMatrix()
-      bases.setMatrixAt(i, dummy.matrix)
-      dummy.position.set(s * 1.24, 0.82 - drop, z); dummy.updateMatrix()
-      backs.setMatrixAt(i, dummy.matrix)
-      i++
-    }
-  }
-  for (const m of [bases, backs]) { m.instanceMatrix.needsUpdate = true; m.castShadow = true; g.add(m) }
 }
 
 // Level 2 first-class carriage — the stealth introduction. Booths of red
@@ -1990,40 +1888,13 @@ function dressDamagedRelayLuxury(g, half, shared, fx) {
   noCam(runner)
   g.add(runner)
 
-  // Burgundy high-back benches — keep centre clear for the dash.
-  const velvet = new THREE.MeshStandardMaterial({
-    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  // Luxury high-back benches — centre clear for the dash. Decorative.
+  addLuxuryWallBenches(g, {
+    namePrefix: 'relay-bench',
+    zs: [-half + 3.4, -half * 0.15, half * 0.4, half - 3.6],
+    wallX: WALL_X,
+    wreckChance: 0.3
   })
-  const seatWood = liftAlbedo(woodMaterial({
-    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 125
-  }), 0xe8d0b0)
-  const seatZs = [-half + 3.4, -half * 0.15, half * 0.4, half - 3.6]
-  const sn = seatZs.length * 2
-  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.14, 0.8), seatWood, sn)
-  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.12, 0.74), velvet, sn)
-  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.78, 0.76), velvet, sn)
-  frames.name = 'relay-bench-frames'
-  cushions.name = 'relay-bench-cushions'
-  const dummy = new THREE.Object3D()
-  let si = 0
-  for (const z of seatZs) {
-    for (const s of [-1, 1]) {
-      const x = s * (WALL_X - 0.52)
-      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
-      frames.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
-      cushions.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(s * (WALL_X - 0.28), 0.72, z); dummy.updateMatrix()
-      backs.setMatrixAt(si, dummy.matrix)
-      si++
-    }
-  }
-  for (const mesh of [frames, cushions, backs]) {
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.castShadow = true
-    noCam(mesh)
-    g.add(mesh)
-  }
 
   // Antique clock on the approach wall (reuse Room 4 helper).
   addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, half * 0.55, 1)
@@ -2035,6 +1906,7 @@ function dressDamagedRelayLuxury(g, half, shared, fx) {
   const floatN = 5
   const floatBody = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.4, 0.75), trunkWood, floatN)
   floatBody.name = 'relay-float-luggage'
+  const dummy = new THREE.Object3D()
   for (let i = 0; i < floatN; i++) {
     const s = i % 2 ? 1 : -1
     dummy.position.set(s * (WALL_X + 0.95), 0.55 + (i % 3) * 0.45, -half + 3.2 + i * 3.2)
@@ -2072,9 +1944,9 @@ function dressDamagedRelayLuxury(g, half, shared, fx) {
     g.add(tear)
   }
 
-  // Same light budget as the old Relay dress (3 aisle fills — amber, not red).
+  // Relay identity: warmer warning amber so cyan blast scars read cooler.
   for (const z of [-half * 0.55, 0, half * 0.55]) {
-    const light = new THREE.PointLight(0xffc090, 7.5, 8, 2)
+    const light = new THREE.PointLight(0xffb070, 7.8, 8, 2)
     light.position.set(0, CARRIAGE_CEILING_Y - 0.35, z)
     addLight(g, fx, light, true)
   }
@@ -2291,40 +2163,13 @@ function dressDamagedMechanicalLuxury(g, half, shared, fx) {
     g.add(edge)
   }
 
-  // Burgundy benches — keep clear of the centre piston sweep.
-  const velvet = new THREE.MeshStandardMaterial({
-    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  // Luxury benches — clear of the centre piston sweep. Decorative.
+  addLuxuryWallBenches(g, {
+    namePrefix: 'mechanical-bench',
+    zs: [-half + 3.5, half - 4.5],
+    wallX: WALL_X,
+    wreckChance: 0.34
   })
-  const seatWood = liftAlbedo(woodMaterial({
-    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 105
-  }), 0xe8d0b0)
-  const seatZs = [-half + 3.5, half - 4.5]
-  const sn = seatZs.length * 2
-  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 0.14, 0.8), seatWood, sn)
-  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.12, 0.74), velvet, sn)
-  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.68, 0.76), velvet, sn)
-  frames.name = 'mechanical-bench-frames'
-  cushions.name = 'mechanical-bench-cushions'
-  const dummy = new THREE.Object3D()
-  let si = 0
-  for (const z of seatZs) {
-    for (const s of [-1, 1]) {
-      const x = s * (WALL_X - 0.52)
-      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
-      frames.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
-      cushions.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(s * (WALL_X - 0.28), 0.68, z); dummy.updateMatrix()
-      backs.setMatrixAt(si, dummy.matrix)
-      si++
-    }
-  }
-  for (const mesh of [frames, cushions, backs]) {
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.castShadow = true
-    noCam(mesh)
-    g.add(mesh)
-  }
 
   const glassMat = new THREE.MeshStandardMaterial({
     color: 0xffdeb0, emissive: 0xffc27a, emissiveIntensity: 0.95, roughness: 0.48
@@ -2341,11 +2186,11 @@ function dressDamagedMechanicalLuxury(g, half, shared, fx) {
     }
   }
 
-  // Retune existing mechanical fill lights to warm amber (same count, no new lights).
-  const boilerLight = new THREE.PointLight(0xffc090, 10, 9, 2)
+  // Warm practicals — cool storm accent is added in timewreck.js (same budget).
+  const boilerLight = new THREE.PointLight(0xffb070, 10.5, 9, 2)
   boilerLight.position.set(0, 1.6, half - 4)
   addLight(g, fx, boilerLight, true)
-  const ceil = new THREE.PointLight(0xffc090, 8, 9, 2)
+  const ceil = new THREE.PointLight(0xffc090, 8.2, 9, 2)
   ceil.position.set(0, CARRIAGE_CEILING_Y - 0.3, -half * 0.35)
   addLight(g, fx, ceil, true)
 
@@ -2354,10 +2199,11 @@ function dressDamagedMechanicalLuxury(g, half, shared, fx) {
 
 // Warm amber fill for the Timewreck Convergence car (existing 4-light budget).
 // Registered through addLight so they pick up that car's flicker only.
+// Phase-1: slightly warmer practicals so cyan surge arcs read as cool contrast.
 function addConvergenceFlickerLights(g, half, fx) {
   const spots = [-half + 5, -half * 0.35, half * 0.15, half - 3.2]
   for (const z of spots) {
-    const light = new THREE.PointLight(0xffc090, 5.2, 7.2, 2)
+    const light = new THREE.PointLight(0xffb888, 5.6, 7.2, 2)
     light.position.set(0, 2.15, z)
     addLight(g, fx, light, true)
   }
@@ -2436,39 +2282,13 @@ function dressDamagedConvergence(g, half, shared, fx) {
   noCam(edges)
   g.add(decks, edges)
 
-  // Burgundy benches along walls — aisle clear for surges / player.
-  const velvet = new THREE.MeshStandardMaterial({
-    color: 0x8a2432, roughness: 0.9, metalness: 0, emissive: 0x22080c, emissiveIntensity: 0.1
+  // Luxury benches along walls — aisle clear for surges / player. Decorative.
+  addLuxuryWallBenches(g, {
+    namePrefix: 'convergence-bench',
+    zs: [-half + 4.5, -half * 0.2, half * 0.35, half - 6],
+    wallX: WALL_X,
+    wreckChance: 0.28
   })
-  const seatWood = liftAlbedo(woodMaterial({
-    repeat: [1, 1], light: 0x5a3a22, dark: 0x2a180c, roughness: 0.55, seed: 85
-  }), 0xe8d0b0)
-  const seatZs = [-half + 4.5, -half * 0.2, half * 0.35, half - 6]
-  const sn = seatZs.length * 2
-  const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.14, 0.85), seatWood, sn)
-  const cushions = new THREE.InstancedMesh(new THREE.BoxGeometry(0.46, 0.12, 0.8), velvet, sn)
-  const backs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.7, 0.82), velvet, sn)
-  frames.name = 'convergence-bench-frames'
-  cushions.name = 'convergence-bench-cushions'
-  let si = 0
-  for (const z of seatZs) {
-    for (const s of [-1, 1]) {
-      const x = s * (WALL_X - 0.55)
-      dummy.position.set(x, 0.22, z); dummy.rotation.set(0, 0, 0); dummy.updateMatrix()
-      frames.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(x, 0.34, z); dummy.updateMatrix()
-      cushions.setMatrixAt(si, dummy.matrix)
-      dummy.position.set(s * (WALL_X - 0.3), 0.7, z); dummy.updateMatrix()
-      backs.setMatrixAt(si, dummy.matrix)
-      si++
-    }
-  }
-  for (const mesh of [frames, cushions, backs]) {
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.castShadow = true
-    noCam(mesh)
-    g.add(mesh)
-  }
 
   // Static floating debris planks outside the hull — storm rupture read, not walkable.
   const floatN = 8
@@ -2894,8 +2714,8 @@ function dressDamagedCabLuxury(g, half, shared, fx) {
 
   // Soft violet storm veils outside the hull.
   const veilMat = new THREE.MeshStandardMaterial({
-    color: 0x1a0a30, emissive: 0x6d28d9, emissiveIntensity: 0.9,
-    roughness: 1, transparent: true, opacity: 0.58, depthWrite: false, side: THREE.DoubleSide
+    color: 0x1a0a30, emissive: 0x7c3aed, emissiveIntensity: 1.15,
+    roughness: 1, transparent: true, opacity: 0.62, depthWrite: false, side: THREE.DoubleSide
   })
   for (const s of [-1, 1]) {
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(half * 2.2, CARRIAGE_CEILING_Y * 1.25), veilMat)
@@ -3037,8 +2857,8 @@ function dressDamagedCabLuxury(g, half, shared, fx) {
     }
   ))
 
-  // Cool storm fill through the openings (one light — pool already caps at 12).
-  const stormFill = new THREE.PointLight(0x7c3aed, 4.5, 6.5, 2)
+  // Cab identity: violet storm fill vs warm firebox/brake (one light, pool-capped).
+  const stormFill = new THREE.PointLight(0x8b5cf6, 5.6, 7, 2)
   stormFill.position.set(0, 1.6, half * 0.35)
   addLight(g, fx, stormFill, false)
 }
