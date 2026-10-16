@@ -15,17 +15,17 @@ function capture(t) {
   t.mock.method(sound, 'play', (name, options) => { events.push({ name, ...options }); return { stop() {} } })
   return { events, count: name => events.filter(e => e.name === name).length }
 }
-test('real player physics emits one successful jump/landing and stays silent against bounds', t => {
+test('real player physics keeps footsteps and jump takeoff silent while preserving landing', t => {
   const c = capture(t), player = createPlayer(), keyboard = { forward: true }
   t.after(() => disposeObject(player.mesh))
   const update = (bounds = null) => player.update(1 / 60, { keyboard, cameraYaw: 0, bounds })
   for (let i = 0; i < 60; i++) update({ minX: 0, maxX: 0, minZ: 0, maxZ: 0 })
   assert.equal(c.events.length, 0, 'walking input blocked by bounds is silent')
   for (let i = 0; i < 60; i++) update()
-  assert.ok(c.count('step-stone') >= 2)
+  assert.equal(c.count('step-stone'), 0)
   keyboard.forward = false; keyboard.jump = true
   for (let i = 0; i < 90; i++) update()
-  assert.equal(c.count('jump'), 1); assert.equal(c.count('land'), 1)
+  assert.equal(c.count('jump'), 0); assert.equal(c.count('land'), 1)
   const before = c.events.length
   player.setPose(new THREE.Vector3(20, 0, 20))
   keyboard.jump = false; update()

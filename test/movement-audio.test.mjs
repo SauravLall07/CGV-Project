@@ -13,7 +13,7 @@ function fixture() {
     airborne: false, wasAirborne: false, ...overrides })
   return { audio, events, handles, tick }
 }
-test('cadence uses resolved distance, accelerates running, quietens crouch and varies surfaces', () => {
+test('walking, running and crouching do not emit footsteps on any surface', () => {
   const walk = fixture(), run = fixture(), crouch = fixture()
   for (let i = 0; i < 120; i++) {
     walk.tick({ dz: 4 / 60, surface: 'wood' })
@@ -21,27 +21,21 @@ test('cadence uses resolved distance, accelerates running, quietens crouch and v
     crouch.tick({ dz: 1.68 / 60, crouching: true, surface: 'carpet' })
   }
   const steps = f => f.events.filter(e => e.name.startsWith('step-'))
-  assert.ok(steps(run).length > steps(walk).length)
-  assert.ok(steps(crouch).length < steps(walk).length)
-  assert.ok(steps(crouch)[0].volume < steps(walk)[0].volume)
-  assert.equal(steps(run)[0].name, 'step-metal')
-  assert.equal(steps(walk)[0].name, 'step-wood')
-  assert.equal(new Set(steps(walk).map(e => e.rate)).size, 4)
+  assert.equal(steps(walk).length, 0)
+  assert.equal(steps(run).length, 0)
+  assert.equal(steps(crouch).length, 0)
+  assert.deepEqual(crouch.events.map(e => e.name), ['cloth'], 'posture feedback remains')
 })
-test('blocked/stopped movement and airborne travel have no footsteps; current step stops immediately', () => {
+test('starting, stopping and jumping remain silent', () => {
   const f = fixture()
   for (let i = 0; i < 100; i++) f.tick()
   assert.equal(f.events.length, 0)
   f.tick({ dz: 1.4 })
-  assert.equal(f.events.length, 1)
   f.tick()
-  assert.equal(f.handles[0].stopped, true)
   f.tick({ dz: 1.4 })
   f.tick({ dz: 0.1, airborne: true, jumpStarted: true })
-  assert.equal(f.handles[1].stopped, true)
   for (let i = 0; i < 60; i++) f.tick({ dz: 0.1, airborne: true, wasAirborne: true })
-  assert.equal(f.events.filter(e => e.name === 'jump').length, 1)
-  assert.equal(f.events.filter(e => e.name.startsWith('step-')).length, 2)
+  assert.equal(f.events.length, 0)
 })
 test('landings require confirmed airborne transitions; large impacts are louder and resets are silent', () => {
   const f = fixture()

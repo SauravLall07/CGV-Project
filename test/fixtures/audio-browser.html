@@ -20,7 +20,7 @@ document.querySelector('#unlock').onclick = async () => {
     const ctx = getContext()
     assert(ctx.state === 'running', 'gesture resumes real AudioContext')
     assert(sound.info().buffers === Object.keys(SOUND_FILES).length, 'all real WAVs decode')
-    assert(playSfx('jump'), 'decoded source starts')
+    assert(playSfx('switch'), 'decoded source starts')
     sound.stopAll(true)
     settings.set('sfxVolume', 0.21)
     assert(getAudioBus('sfx').gain.value.toFixed(2) === '0.21', 'SFX volume')
@@ -45,14 +45,14 @@ document.querySelector('#unlock').onclick = async () => {
     sound.play = (name, options) => { emissions.push(name); return original(name, options) }
     keyboard.forward = true
     for (let i = 0; i < 60; i++) update(1 / 60)
-    assert(emissions.filter(n => n.startsWith('step-')).length >= 2, 'actual grounded player footsteps')
+    assert(emissions.filter(n => n.startsWith('step-')).length === 0, 'player footsteps disabled')
     keyboard.forward = false
     const beforeStop = emissions.length
     for (let i = 0; i < 30; i++) update(1 / 60)
     assert(emissions.length === beforeStop, 'stopped player silent')
     keyboard.jump = true
     for (let i = 0; i < 90; i++) update(1 / 60)
-    assert(emissions.filter(n => n === 'jump').length === 1, 'held key launches one jump')
+    assert(emissions.filter(n => n === 'jump').length === 0, 'jump takeoff sound disabled')
     assert(emissions.filter(n => n === 'land').length === 1, 'confirmed landing once')
     sound.stopAll(true)
     const transitions = createAudioTransitions()

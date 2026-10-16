@@ -1,10 +1,5 @@
 // Static asset URLs let Vite emit every real file for subdirectory hosting.
 export const SOUND_FILES = {
-  'step-stone': new URL('../assets/audio/sfx/step-stone.wav', import.meta.url),
-  'step-metal': new URL('../assets/audio/sfx/step-metal.wav', import.meta.url),
-  'step-wood': new URL('../assets/audio/sfx/step-wood.wav', import.meta.url),
-  'step-carpet': new URL('../assets/audio/sfx/step-carpet.wav', import.meta.url),
-  'jump': new URL('../assets/audio/sfx/jump.wav', import.meta.url),
   'land': new URL('../assets/audio/sfx/land.wav', import.meta.url),
   'cloth': new URL('../assets/audio/sfx/cloth.wav', import.meta.url),
   'door-open': new URL('../assets/audio/sfx/door-open.wav', import.meta.url),

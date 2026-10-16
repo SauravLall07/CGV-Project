@@ -1,5 +1,11 @@
 # Chrono Express audio implementation report
 
+Current audio preference: player footsteps and jump-takeoff sounds have been
+removed. Landing and posture sounds remain. The five unused WAVs remain in the
+repository with their license, but are excluded from the active catalog and
+preload (36 active sounds). The original implementation inventory and test
+results below describe the earlier 41-sound version.
+
 Implemented 16 October 2026. This report describes the repository changes and
 the verification actually performed.
 
