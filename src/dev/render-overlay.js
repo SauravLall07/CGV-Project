@@ -46,7 +46,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   let minimapOff = false
 
   let disposeSceneryInspector = () => {}
-  if (import.meta.env.DEV) {
+  if (import.meta.env?.DEV) {
     // Discover live objects on demand: no stale level registry, frame traversal,
     // reparenting or zone overrides. Only renderable leaves are registered.
     const originals = new Map()

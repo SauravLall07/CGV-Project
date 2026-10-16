@@ -220,7 +220,7 @@ export function createBoardingLevel({
   // Runs whenever the visible set changes; see boarding-zones.js.
   const floodIntensity = lights.spotLights.map((spot) => spot.intensity)
   function onZoneChange(zone) {
-    if (import.meta.env.DEV && isBoardingCinematic) logBoarding('zone', zone.name)
+    if (import.meta.env?.DEV && isBoardingCinematic) logBoarding('zone', zone.name)
     const onPlatform = zone.name === 'platform'
     // Leaving the platform restores the established look immediately, including
     // direct dev teleports to the forecourt. Entry blends over one real second.
@@ -380,7 +380,7 @@ export function createBoardingLevel({
   }
   platformBackdrop.userData.drawCalls = platformValley.stats.drawCalls + 2
   platformBackdrop.userData.triangles = platformValley.stats.triangles + 4
-  if (import.meta.env.DEV) console.info('[boarding platform backdrop]', {
+  if (import.meta.env?.DEV) console.info('[boarding platform backdrop]', {
     drawCalls: platformBackdrop.userData.drawCalls,
     triangles: platformBackdrop.userData.triangles,
     terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 2
@@ -724,7 +724,7 @@ export function createBoardingLevel({
     sentry.group.rotation.y = sentry.facing
   }
 
-  if (import.meta.env.DEV) {
+  if (import.meta.env?.DEV) {
     // Test the sheltered face of EVERY opaque piece against all routine guard
     // route positions. An isolated prop cannot hide someone on its exposed face.
     // Conservatively aim each guard directly at the probe (superset of its FOV).
@@ -889,10 +889,10 @@ export function createBoardingLevel({
   let boardingStartedAt = 0
   let boardingOverlayObserver = null
   function logBoarding(event, detail) {
-    if (import.meta.env.DEV) console.info(`[boarding +${((performance.now() - boardingStartedAt) / 1000).toFixed(3)}s @${performance.now().toFixed(0)}ms] ${event}`, detail)
+    if (import.meta.env?.DEV) console.info(`[boarding +${((performance.now() - boardingStartedAt) / 1000).toFixed(3)}s @${performance.now().toFixed(0)}ms] ${event}`, detail)
   }
   function watchBoardingOverlays() {
-    if (!import.meta.env.DEV) return
+    if (!import.meta.env?.DEV) return
     const previous = new WeakMap()
     const report = node => {
       if (!(node instanceof HTMLElement) || (node !== veil && !/loading|overlay|caught|transition/i.test(node.id))) return
@@ -932,7 +932,7 @@ export function createBoardingLevel({
   function beginBoardingPhase(phase) {
     boardingPhase = phase
     cinematicTimer = 0
-    if (import.meta.env.DEV) logBoarding('phase', phase)
+    if (import.meta.env?.DEV) logBoarding('phase', phase)
   }
 
   function startBoardingWalk() {
@@ -971,9 +971,9 @@ export function createBoardingLevel({
       if (isBoardingCinematic || respawn.isFailing()) return
       isBoardingCinematic = true
       boardingStartedAt = performance.now()
-      if (import.meta.env.DEV) watchBoardingOverlays()
+      if (import.meta.env?.DEV) watchBoardingOverlays()
       applyForecourtFill(BOARDING_PLATFORM_ANCHOR)
-      if (import.meta.env.DEV) logBoarding('platform lock', { zone: zones.zone?.name, train: train.visible, platform: platform.visible, background: scene.background?.getHexString() })
+      if (import.meta.env?.DEV) logBoarding('platform lock', { zone: zones.zone?.name, train: train.visible, platform: platform.visible, background: scene.background?.getHexString() })
       hideBoardingCues()
       beginBoardingPhase('returning')
       boardingReturn = player.returnInteractionPull?.(true)
@@ -1351,7 +1351,7 @@ export function createBoardingLevel({
         torchPool.update(BOARDING_PLATFORM_ANCHOR, delta)
 
         if (boardingPhase === 'departing' && cinematicTimer >= BOARDING_DEPART_SECONDS) {
-          if (import.meta.env.DEV) logBoarding('departure complete; advance/loading may begin', { trainZ: train.position.z })
+          if (import.meta.env?.DEV) logBoarding('departure complete; advance/loading may begin', { trainZ: train.position.z })
           isBoardingCinematic = false
           advance()
         }

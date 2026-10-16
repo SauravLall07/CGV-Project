@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import { createTerrainShaderMaterial } from '../shaders/terrain-shader.js'
 import { createVegetationShaderMaterial } from '../shaders/vegetation-shader.js'
-import { enableWind } from './nature-props.js'
 import { createDistantRangeMaterial } from '../shaders/distant-range-shader.js'
 import { createValleyLightsMaterial } from '../shaders/valley-lights-shader.js'
 import { createRockShaderMaterial } from '../shaders/rock-shader.js'
@@ -889,20 +888,21 @@ export function createOutdoorEnvironment(options = {}) {
   // source stays for the next visit. Nothing here casts a shadow.
   function placeRealNature(props) {
     const buckets = { tree: [], fern: [], rock: [], log: [], stump: [] }
-    for (const prop of props) {
-      if (trimStation && ['tree', 'fern', 'rock'].includes(prop.kind)) {
-        // Replay acceptance/random draws only; do not clone or attach the model.
+    if (trimStation) {
+      // Numeric replay data only: retired assets are no longer imported or
+      // loaded. Preserve their random draws so kept logs/stumps do not move.
+      for (const [kind, capacity, lo, hi] of [
+        ['tree', 20, 7.2, 10.2], ['tree', 20, 9.5, 13],
+        ['tree', 20, 1.15, 1.85], ['tree', 20, 1.25, 1.9],
+        ['fern', 100, 0.75, 1.45], ['fern', 100, 0.85, 1.6],
+        ['rock', 16, 0.55, 1.35], ['rock', 16, 0.45, 1.15], ['rock', 16, 0.6, 1.55]
+      ]) {
+        const prop = { kind, capacity, scale: [lo, hi] }
         buckets[prop.kind].push({ prop, mesh: placementCounter(prop.capacity), index: 0 })
-        continue
       }
+    }
+    for (const prop of props) {
       const material = prop.material.clone()
-      if (prop.swayHeight) {
-        enableWind(material, {
-          swayHeight: prop.swayHeight,
-          windStrength: prop.windStrength,
-          timeUniform: options.skyTime
-        })
-      }
       const mesh = new THREE.InstancedMesh(prop.geometry.clone(), material, prop.capacity)
       mesh.name = `nature-${prop.key}`
       mesh.castShadow = false

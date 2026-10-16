@@ -4,8 +4,7 @@ import { setImmediate } from 'node:timers/promises'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
-const keys = ['pine-sapling-small', 'fir-sapling', 'pine-sapling-medium', 'fir-sapling-medium',
-  'fern', 'fern-b', 'rock-moss-a', 'rock-moss-b', 'rock-moss-c', 'dead-tree-trunk', 'tree-stump']
+const keys = ['dead-tree-trunk', 'tree-stump']
 
 async function loadFixture(t, { failures = false } = {}) {
   const waiting = [], warnings = []
@@ -15,9 +14,9 @@ async function loadFixture(t, { failures = false } = {}) {
     started++; active++; peak = Math.max(peak, active)
     waiting.push(() => {
       active--
-      if (failures && /(?:pine-sapling-small\.glb|rock-face-diff\.jpg)$/.test(url)) {
+      if (failures && /(?:dead-tree-trunk\.glb|rock-face-diff\.jpg)$/.test(url)) {
         reject(new Error('fixture missing optional asset'))
-      } else if (failures && /\/fern\.glb$/.test(url)) {
+      } else if (failures && /\/tree-stump\.glb$/.test(url)) {
         resolve({ scene: new THREE.Group() })
       } else if (model) {
         const material = new THREE.MeshStandardMaterial({ map: new THREE.Texture(), normalMap: new THREE.Texture() })
@@ -47,9 +46,9 @@ async function loadFixture(t, { failures = false } = {}) {
   const result = await promise
   assert.equal(module.getBoardingAssets(), result)
   assert.equal(await module.loadBoardingAssets(), result, 'revisit reuses the completed cache')
-  assert.equal(started, 19)
+  assert.equal(started, 10, 'only two kept models and eight surface maps are requested')
   assert.equal(peak, 4, 'models and surface maps share the same four slots')
-  assert.equal(waves, 5)
+  assert.equal(waves, 3)
   return { result, warnings }
 }
 
@@ -64,10 +63,9 @@ test('bounded nature loads preserve catalogue order and material settings under 
     assert.equal(prop.material.map.wrapS, THREE.RepeatWrapping)
     assert.equal(prop.material.map.anisotropy, 4)
     assert.equal(prop.material.map.userData.sharedTexture, true)
-    if (['tree', 'fern'].includes(prop.kind)) {
-      assert.equal(prop.material.alphaTest, 0.5)
-      assert.equal(prop.material.side, THREE.DoubleSide)
-    }
+    assert.ok(['log', 'stump'].includes(prop.kind))
+    assert.equal(prop.material.alphaTest, 0)
+    assert.equal(prop.material.side, THREE.FrontSide)
   }
   assert.equal(result.groundMap.colorSpace, THREE.NoColorSpace, 'preserve existing surface interpretation')
   assert.equal(result.groundNormal.colorSpace, THREE.NoColorSpace)
@@ -75,7 +73,7 @@ test('bounded nature loads preserve catalogue order and material settings under 
 
 test('optional missing/meshless nature assets preserve ordered fallback and drain every queued job', async t => {
   const { result, warnings } = await loadFixture(t, { failures: true })
-  assert.deepEqual(result.props.map(prop => prop.key), keys.filter(key => !['pine-sapling-small', 'fern'].includes(key)))
+  assert.deepEqual(result.props.map(prop => prop.key), [])
   assert.equal(result.rockMap, null)
   assert.ok(result.rockNormal?.isTexture)
   assert.ok(result.groundMap?.isTexture)
