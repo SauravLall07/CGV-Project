@@ -631,9 +631,13 @@ export function createMoonlitValley(options = {}) {
   group.name = 'outdoor-environment'
   group.position.set(options.offsetX ?? 0, options.offsetY ?? 0, 0)
   const groundTexture = createGroundTexture()
-  const material = new THREE.MeshLambertMaterial({
-    color: 0x243b33, map: groundTexture, vertexColors: true, fog: true
-  })
+  // Platform-only unlit grass avoids blue station lights washing out the
+  // ground. Scrolling callers retain the original material and vertex tint.
+  const material = options.static === true && options.staticGroundColor !== undefined
+    ? new THREE.MeshBasicMaterial({ color: options.staticGroundColor, map: groundTexture, fog: true })
+    : new THREE.MeshLambertMaterial({
+      color: 0x243b33, map: groundTexture, vertexColors: true, fog: true
+    })
   const chunks = Array.from({ length: chunkCount }, () => createChunk(material, placement))
   const getViewerZ = options.centerZ !== undefined ? (() => options.centerZ) : options.getViewerZ || (() => 0)
   const viewerZ = { value: getViewerZ() }

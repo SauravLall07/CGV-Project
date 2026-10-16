@@ -89,7 +89,7 @@ const renderQuality = (() => {
   }
 })()
 let benchmark = null
-const benchTarget = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('bench') : null
+const benchTarget = import.meta.env?.DEV ? new URLSearchParams(window.location.search).get('bench') : null
 const scene = createScene()
 setScene(scene) // lets display settings recompile materials on a shadow toggle
 const { camera } = createCamera()
@@ -152,7 +152,7 @@ function ensureGameplayDrone() {
   if (!getContext()) return null
   musicSystem = new MusicSystem()
   musicSystem.setTimeDilation(1)
-  if (import.meta.env.DEV) window.musicSystem = musicSystem
+  if (import.meta.env?.DEV) window.musicSystem = musicSystem
   return musicSystem
 }
 
@@ -160,7 +160,7 @@ function disposeGameplayDrone() {
   if (!musicSystem) return
   musicSystem.dispose()
   musicSystem = null
-  if (import.meta.env.DEV) window.musicSystem = null
+  if (import.meta.env?.DEV) window.musicSystem = null
 }
 
 function playMusicForState(state) {
@@ -340,7 +340,7 @@ const levelManager = createLevelManager({
   ]
 })
 let renderOverlay = null
-if (import.meta.env.DEV) {
+if (import.meta.env?.DEV) {
   window.levelManager = levelManager
   window.musicSystem = musicSystem
   window.renderer = renderer
@@ -488,7 +488,7 @@ const pauseMenu = createPauseMenu({
 // This is deliberately DEV-only. Phase 2 edits the live Three.js scene, pauses
 // gameplay while open, and can persist transforms, names, materials, lights and
 // camera bookmarks to .model-workshop/layout.json through the Vite dev server.
-if (import.meta.env.DEV) {
+if (import.meta.env?.DEV) {
   modelEditor = createModelEditor({
     scene,
     camera,
@@ -680,7 +680,7 @@ function startGame() {
 //   mechanical, convergence,   roof run or in the Vault), with every ability
 //   roof, vault                and door from the earlier cars done
 function devStartOptions() {
-  if (!import.meta.env.DEV) return null
+  if (!import.meta.env?.DEV) return null
   if (benchTarget === 'platform') return { state: 'Boarding' }
   const target = new URLSearchParams(window.location.search).get('start')?.toLowerCase()
   if (!target) return null

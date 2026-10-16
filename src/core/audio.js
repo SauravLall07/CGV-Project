@@ -40,11 +40,6 @@ export function getMasterGain() {
   return master
 }
 
-export function setMasterVolume(v) {
-  if (!master) return
-  master.gain.value = v
-}
-
 settings.subscribe((_values, changed) => {
   if (
     changed !== undefined &&
