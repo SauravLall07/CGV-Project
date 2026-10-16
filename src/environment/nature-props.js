@@ -3,15 +3,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createLoadQueue } from '../core/load-queue.js'
 import { applyPassageSurfaceMaps } from './passageways/passage-exterior.js'
 
-import pineSmallUrl from '../assets/models/nature/pine-sapling-small.glb?url'
-import firSmallUrl from '../assets/models/nature/fir-sapling.glb?url'
-import pineMediumUrl from '../assets/models/nature/pine-sapling-medium.glb?url'
-import firMediumUrl from '../assets/models/nature/fir-sapling-medium.glb?url'
-import fernUrl from '../assets/models/nature/fern.glb?url'
-import fernBUrl from '../assets/models/nature/fern-b.glb?url'
-import rockAUrl from '../assets/models/nature/rock-moss-a.glb?url'
-import rockBUrl from '../assets/models/nature/rock-moss-b.glb?url'
-import rockCUrl from '../assets/models/nature/rock-moss-c.glb?url'
 import logUrl from '../assets/models/nature/dead-tree-trunk.glb?url'
 import stumpUrl from '../assets/models/nature/tree-stump.glb?url'
 
@@ -28,15 +19,6 @@ import rockNorUrl from '../assets/textures/nature/rock-face-nor.jpg?url'
 // range. swayHeight is the model's own height in metres, before that scale,
 // because the wind offset is applied in local space.
 const MODELS = [
-  { key: 'pine-sapling-small', url: pineSmallUrl, kind: 'tree', swayHeight: 1.3, windStrength: 0.035, scale: [7.2, 10.2], capacity: 20 },
-  { key: 'fir-sapling', url: firSmallUrl, kind: 'tree', swayHeight: 1.29, windStrength: 0.04, scale: [9.5, 13], capacity: 20 },
-  { key: 'pine-sapling-medium', url: pineMediumUrl, kind: 'tree', swayHeight: 6.78, windStrength: 0.14, scale: [1.15, 1.85], capacity: 20 },
-  { key: 'fir-sapling-medium', url: firMediumUrl, kind: 'tree', swayHeight: 8.61, windStrength: 0.16, scale: [1.25, 1.9], capacity: 20 },
-  { key: 'fern', url: fernUrl, kind: 'fern', swayHeight: 0.43, windStrength: 0.05, scale: [0.75, 1.45], capacity: 100 },
-  { key: 'fern-b', url: fernBUrl, kind: 'fern', swayHeight: 0.35, windStrength: 0.045, scale: [0.85, 1.6], capacity: 100 },
-  { key: 'rock-moss-a', url: rockAUrl, kind: 'rock', scale: [0.55, 1.35], capacity: 16 },
-  { key: 'rock-moss-b', url: rockBUrl, kind: 'rock', scale: [0.45, 1.15], capacity: 16 },
-  { key: 'rock-moss-c', url: rockCUrl, kind: 'rock', scale: [0.6, 1.55], capacity: 16 },
   { key: 'dead-tree-trunk', url: logUrl, kind: 'log', scale: [0.7, 1.25], capacity: 16 },
   { key: 'tree-stump', url: stumpUrl, kind: 'stump', scale: [0.65, 1.35], capacity: 12 }
 ]

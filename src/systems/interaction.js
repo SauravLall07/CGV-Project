@@ -127,7 +127,7 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     background: 'rgba(18,16,22,0.85)', border: '1px solid #b59961', display: 'none',
     borderRadius: '3px', pointerEvents: 'none', zIndex: '10' })
   Object.assign(progressFill.style, { height: '100%', width: '0%', background: '#ffdc99' })
-  progress.appendChild(progressFill)
+  progress.appendChild?.(progressFill)
   document.body.appendChild(progress)
   let holdEntry = null
   let holdProgress = 0
@@ -430,7 +430,7 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     entry.object.getWorldPosition(targetPos)
     lastPlayer.getWorldPosition(playerPos)
     const gesture = entry.gesture ?? (targetPos.y - playerPos.y < 0.7 ? 'pickup' : 'press')
-    if (import.meta.env.DEV && gesture === 'pickup') console.info(`[pickup @${performance.now().toFixed(1)}ms] press received`, entry.object.name)
+    if (import.meta.env?.DEV && gesture === 'pickup') console.info(`[pickup @${performance.now().toFixed(1)}ms] press received`, entry.object.name)
     if (gesture !== 'none') onTap?.({ object: entry.object, player: lastPlayer, gesture })
     entry.onInteract({ object: entry.object, entry, player: lastPlayer })
     return true
