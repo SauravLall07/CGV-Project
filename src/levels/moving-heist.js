@@ -1,3 +1,4 @@
+import { playSfx, createAudioTransitions } from '../systems/sound-effects.js'
 import * as THREE from 'three'
 import { disposeObject } from '../core/dispose.js'
 import {
@@ -308,6 +309,7 @@ export function createMovingHeistLevel({
   startAt = null,
   post = null
 }) {
+  const audio = createAudioTransitions()
   post?.setGrade({ warmth: 0 })
 
   const powerPickups = []
@@ -333,6 +335,7 @@ export function createMovingHeistLevel({
   let sceneryFrom = 1
   let sceneryEaseTime = 0.3
   const { root, spans, roof } = env
+  const audioCarpetSpans = [spans.passenger, spans.security, spans.relay]
 
   scene.add(sky.mesh, outdoorEnv.group, root)
   // Night sky. Fog matches the horizon so the hills don't drop to black
@@ -494,6 +497,7 @@ export function createMovingHeistLevel({
 
   function unlockAbility(id, toastText) {
     if (abilityState[id]) return
+    if (toastText) playSfx('pickup', { priority: 2 })
     abilityState[id] = true
     timeSystem?.setAbilityAvailability?.(abilityState)
     hud?.setChronoVisible?.(true)
@@ -833,6 +837,7 @@ export function createMovingHeistLevel({
     for (const bank of steamBanks) {
       const phase = (steamT + bank.offset) % STEAM_PERIOD
       bank.density = steamDensity(phase)
+      audio.edge('steam-bank-' + bank.z, bank.density > 0.5, bank.density > 0.5 && Math.abs(player.mesh.position.z - bank.z) < 10 ? 'steam' : null)
       bank.puffs.visible = bank.density > 0
       if (!bank.puffs.visible) continue
       bank.mat.opacity = 0.25 + 0.45 * bank.density
@@ -1142,6 +1147,7 @@ export function createMovingHeistLevel({
       onInteract: () => {
         if (relaySolved) return
         if (!relayLogged) {
+          playSfx('door-locked', { volume: 0.4 })
           interaction.flashPrompt(
             routeEngaged > 0.5
               ? 'The relay will not take an order until the route board has been read.'
@@ -1151,15 +1157,19 @@ export function createMovingHeistLevel({
         }
         if (relayInput.includes(i)) return
         if (relaySequence[relayInput.length] !== i) {
+          playSfx('error', { priority: 2 })
           relayInput.length = 0
           hud.showToast('ROUTING REJECTED — the levers spring back. Start again from I.', 2400)
           return
         }
+        playSfx('switch', { key: 'relay-lever', cooldown: 0.08 })
         relayInput.push(i)
         if (relayInput.length < RELAY_COUNT) {
           hud.showToast(`RELAY ${slot.label} THROWN — ${relayInput.length} / ${RELAY_COUNT}`, 1100)
           return
         }
+        playSfx('objective', { priority: 2 })
+        playSfx('unlock', { volume: 0.4 })
         relaySolved = true
         hud.showToast('ROUTE SET — forward door unlocked', 2600)
         hud.setObjective('Proceed to Cargo and acquire the next Chrono module')
@@ -1413,6 +1423,7 @@ export function createMovingHeistLevel({
 
     registerCargoHazard(load, (t) => {
       load.position.x = dwell(tri(t + phase * period, period)) * CRATE_TRAVEL
+      audio.motion('crate-' + z, load.position.x, Math.abs(player.mesh.position.z - z), { opening: 'machinery', closing: 'machinery', volume: 0.18 })
     })
     hangingCrates.push({ load, z })
   }
@@ -1451,6 +1462,7 @@ export function createMovingHeistLevel({
     root.add(stack)
     registerCargoHazard(stack, (t) => {
       stack.position.x = dwell(tri(t + phase * period, period)) * STACK_TRAVEL
+      audio.motion('stack-' + z, stack.position.x, Math.abs(player.mesh.position.z - z), { opening: 'machinery', closing: 'machinery', volume: 0.18 })
     })
     luggageStacks.push({ stack, z })
   }
@@ -1477,6 +1489,7 @@ export function createMovingHeistLevel({
     registerCargoHazard(gate, (t) => {
       const u = (((t / period) + phase) % 1 + 1) % 1
       entry.bottom = gateBottom(u)
+      audio.motion('drop-gate-' + z, entry.bottom, Math.abs(player.mesh.position.z - z))
       gate.position.y = entry.bottom + GATE_H / 2
     })
     dropGates.push(entry)
@@ -1503,6 +1516,7 @@ export function createMovingHeistLevel({
     registerCargoHazard(group, (t) => {
       // 0 = open against the pillar, PI/2 = closed across the aisle.
       pair.angle = Math.PI / 2 * (0.5 - 0.5 * Math.cos(t / period * Math.PI * 2))
+      audio.motion('barrier-' + z, -pair.angle, Math.abs(player.mesh.position.z - z))
       for (const { side, pivot } of pair.leaves) {
         // Leaf runs along local +X; point it from the hinge toward its tip.
         pivot.rotation.y = Math.atan2(-Math.cos(pair.angle), -side * Math.sin(pair.angle))
@@ -1636,6 +1650,7 @@ export function createMovingHeistLevel({
       const k = s < delay ? 0 : Math.min(1, (s - delay) / duration)
       m.p = k * k * (3 - 2 * k)
       m.moving = m.p > 0 && m.p < 1
+      audio.motion('rewind-machine-' + z, m.p, Math.abs(player.mesh.position.z - z), { opening: 'machinery', closing: 'machinery' })
       apply(m.p)
     }
     set(-1)
@@ -1848,6 +1863,7 @@ export function createMovingHeistLevel({
     recordWhen: () => hatchBroken && hatchOpen > 0,
     onUpdate(scaledDelta, timeScale) {
       if (timeScale > 0 && hatchBroken) hatchOpen = Math.max(0, hatchOpen - scaledDelta * 2.8)
+      audio.motion('roof-hatch', hatchOpen, Math.abs(player.mesh.position.z - spans.convergence.maxZ))
       hatchCover.position.x = -1.15 * hatchOpen
     },
     getSnapshot: () => ({ hatchBroken, hatchOpen }),
@@ -1855,6 +1871,7 @@ export function createMovingHeistLevel({
       if (hatchBroken && !s.hatchBroken) hatchRepaired = true
       hatchBroken = s.hatchBroken
       hatchOpen = s.hatchOpen
+      audio.motion('roof-hatch', hatchOpen, Math.abs(player.mesh.position.z - spans.convergence.maxZ))
       hatchCover.position.x = -1.15 * hatchOpen
     }
   }))
@@ -1864,13 +1881,17 @@ export function createMovingHeistLevel({
     isEligible: () => section === 'interior',
     onInteract: () => {
       if (!exitDoor.latched) {
+        playSfx('door-locked')
         interaction.flashPrompt('The Convergence exit door is still locked.')
         return
       }
       if (hatchOpen < 0.65) {
+        playSfx('door-locked')
         interaction.flashPrompt('The hatch motor failed shut — REWIND it to the open state.')
         return
       }
+      playSfx('cloth', { volume: 0.5 })
+      playSfx('metal-impact', { volume: 0.35 })
       enterRoof()
     }
   }))
@@ -1936,6 +1957,7 @@ export function createMovingHeistLevel({
       const apply = () => {
         const u = (((t / period) + phase) % 1 + 1) % 1
         entry.bottom = cageBottom(u)
+        audio.motion('cage-' + z, entry.bottom, Math.abs(player.mesh.position.z - z))
         cage.position.y = entry.bottom
       }
       apply()
@@ -1988,6 +2010,7 @@ export function createMovingHeistLevel({
     root.add(lamp)
     const station = { pos, held: false }
     station.update = (held) => {
+      audio.edge('plate-' + number, held, held ? 'switch' : 'switch-release', { volume: 0.4 })
       station.held = held
       plate.position.y = held ? 0.055 : 0.08
       lever.rotation.x = held ? 0.8 : -0.6
@@ -2224,6 +2247,8 @@ export function createMovingHeistLevel({
       // Down, lids lifting (warning wisps), full blast, lids closing.
       const lift = u < 0.2 ? 0 : u < 0.32 ? (u - 0.2) / 0.12 : u < 0.9 ? 1 : 1 - (u - 0.9) / 0.1
       ventSteam = u < 0.32 ? (u < 0.2 ? 0 : 0.2) : u < 0.9 ? 1 : 0.3
+      const steamActive = ventSteam > 0.5
+      audio.edge('roof-steam', steamActive, steamActive && Math.abs(player.mesh.position.z - VENT_Z) < 10 ? 'steam' : null, { volume: 0.45 })
       for (const hinge of lids) hinge.rotation.x = -lift * 1.1
       steamMat.opacity = ventSteam * 0.6
       puffs.visible = ventSteam > 0
@@ -2376,9 +2401,11 @@ export function createMovingHeistLevel({
       const ghost = timeSystem.getGhost()
       const leverHeld = ghost.isOccupying(leverPad, 0.56) || playerOnPad(leverPad, 0.56)
       if (!leverHeld) {
+        playSfx('door-locked')
         interaction.flashPrompt('The zipline brake is locked — something has to hold its release lever down.')
         return
       }
+      playSfx('zipline', { volume: 0.6, maxInstances: 1 })
       zipRide = 0
     }
   }))
@@ -2386,7 +2413,7 @@ export function createMovingHeistLevel({
   unregisters.push(interaction.register(roof.dropHatch, {
     prompt: 'Drop into the forward Vault car',
     isEligible: () => section === 'roof',
-    onInteract: () => enterVault()
+    onInteract: () => { playSfx('door-open'); enterVault() }
   }))
 
   // --------------------------------------------------------------------------
@@ -2406,6 +2433,8 @@ export function createMovingHeistLevel({
     isEligible: () => section === 'vault',
     onInteract: () => {
       if (taken) return
+      playSfx('pickup', { volume: 0.7, priority: 3 })
+      playSfx('warning', { volume: 0.6, priority: 3 })
       taken = true
       beginCinematic?.()
       interaction.flashPrompt('Chrono Core secured!')
@@ -2486,6 +2515,7 @@ export function createMovingHeistLevel({
       hazards: checkpointHazards.map((hazard) => hazard.getSnapshot())
     }
     return () => {
+      audio.reset()
       section = saved.section
       setBounds(saved.bounds)
       useObstacles(section === 'roof' ? roofObstacles : section === 'vault' ? vaultObstacles : corridorObstacles)
@@ -2625,6 +2655,13 @@ export function createMovingHeistLevel({
     // Roof run only: deck gaps are voids, and bridges / panels stand over them.
     get supports() { return section === 'roof' ? roofSupports : null },
     get voids() { return section === 'roof' ? roofVoids : null },
+    audioSurfaceAt: p => {
+      if (section === 'roof') return p.z >= spans.freight.minZ + ROOF_RUN.shell[0] && p.z <= spans.freight.minZ + ROOF_RUN.shell[1] ? 'wood' : 'metal'
+      if (Math.abs(p.x) < 0.9) {
+        for (const span of audioCarpetSpans) if (p.z >= span.minZ && p.z <= span.maxZ) return 'carpet'
+      }
+      return 'wood'
+    },
     getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return taken },
 
@@ -2693,6 +2730,7 @@ export function createMovingHeistLevel({
       const platformHeld =
         ghost.isOccupying(platformPos, 0.56) ||
         playerOnPad(platformPos, 0.56)
+      audio.edge('route-platform', platformHeld, platformHeld ? 'switch' : 'switch-release')
       routeEngaged += ((platformHeld ? 1 : 0) - routeEngaged) * Math.min(1, delta * 4)
       platformPlate.position.y = platformHeld ? 0.075 : 0.1
       platformLever.rotation.x = -0.7 + routeEngaged * 1.4
@@ -2723,6 +2761,7 @@ export function createMovingHeistLevel({
       if (!relayLogged && boardReveal > 0.97 && nearBoard) {
         routeReadT += delta
         if (routeReadT >= ROUTE_READ_SECONDS) {
+          playSfx('objective', { volume: 0.35 })
           relayLogged = true
           hud.showToast('ROUTING ORDER LOGGED — relays latched open. Throw them in order, I to IV.', 3400)
           hud.setObjective('Route Control — throw relays A–D in the order shown: I, II, III, IV')
@@ -2733,6 +2772,7 @@ export function createMovingHeistLevel({
       // thrown steps; gauges wake with the system.
       const boxesOpen = routeEngaged > 0.5 || relayLogged || relaySolved
       for (const box of relayBoxes) {
+        audio.edge('relay-cover-' + box.index, boxesOpen, boxesOpen ? 'switch' : 'switch-release', { volume: 0.25 })
         box.open += ((boxesOpen ? 1 : 0) - box.open) * Math.min(1, delta * 4)
         box.hinge.rotation.y = -1.9 * box.open
         const thrown = relaySolved || relayInput.includes(box.index)
@@ -2748,6 +2788,7 @@ export function createMovingHeistLevel({
 
       // Front door slides apart once the route is set.
       relayGateOpen += ((relaySolved ? 1 : 0) - relayGateOpen) * Math.min(1, delta * 3)
+      audio.motion('route-door', relayGateOpen, Math.abs(pp.z - relayGateZ))
       applyRouteDoor()
       if (
         !relaySolved &&
@@ -2974,6 +3015,7 @@ export function createMovingHeistLevel({
           hud.showToast('Switch engaged — its partner must be held at the same moment.', 3200)
         }
         if (switchOne.held && switchTwo.held && !switchDoor.latched) {
+          playSfx('objective', { volume: 0.4 })
           switchDoor.latched = true
           hud.showToast('BOTH SWITCHES HELD — the door is open', 2400)
         }
@@ -2985,6 +3027,7 @@ export function createMovingHeistLevel({
         }
         for (const door of [switchDoor, exitDoor]) {
           const target = door.latched || (door === exitDoor && exitSwitch.held) ? 1 : 0
+          audio.edge('crest-door-' + door.z, target, target ? 'door-open' : 'door-close')
           door.open += (target - door.open) * Math.min(1, delta * 4)
           door.apply()
           if (door.open < 0.7 && pp.z > door.z - 0.48 && pp.z < door.z + 0.3) {
@@ -3035,6 +3078,7 @@ export function createMovingHeistLevel({
         // Zipline: the brake only releases while the lever plate is weighted.
         const leverHeld =
           ghost.isOccupying(leverPad, 0.56) || playerOnPad(leverPad, 0.56)
+        audio.edge('zip-release', leverHeld, leverHeld ? 'switch' : 'switch-release')
         leverPlate.position.y = leverHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
         releaseLever.rotation.x = leverHeld ? 0.9 : -0.3
         zipLampMat.color.setHex(leverHeld ? 0x7ee08a : 0xffb454)
@@ -3066,16 +3110,19 @@ export function createMovingHeistLevel({
         // the player is across.
         const plateHeld =
           ghost.isOccupying(bridgePlatePos, 0.56) || playerOnPad(bridgePlatePos, 0.56)
+        audio.edge('bridge-plate', plateHeld, plateHeld ? 'switch' : 'switch-release')
         bridgePlate.position.y = plateHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
         if (!drawbridgeLatched && pp.z > V0 + 0.6 && pp.y > ROOF_Y - 0.2) drawbridgeLatched = true
         const bridgeTarget = plateHeld || drawbridgeLatched ? 1 : 0
         drawbridgeDown += (bridgeTarget - drawbridgeDown) * Math.min(1, delta * 2.5)
+        audio.motion('drawbridge', drawbridgeDown, Math.abs(pp.z - gapFrom), { opening: 'machinery', closing: 'machinery' })
         drawbridge.rotation.x = -(1 - drawbridgeDown) * Math.PI / 2
         placeSupport(drawbridgeSupport, 0, 0.8, gapFrom, V0 + 0.2, drawbridgeDown > 0.93)
       }
     },
 
     dispose() {
+      audio.reset()
       post?.resetGrade()
       if (scene.onBeforeRender === cullBeforeRender) scene.onBeforeRender = previousBeforeRender
       if (scene.onAfterRender === cullAfterRender) scene.onAfterRender = previousAfterRender

@@ -1,3 +1,4 @@
+import { playSfx } from './sound-effects.js'
 import * as THREE from 'three'
 import { createTimeGhost } from '../entities/time-ghost.js'
 import { playAbilitySfx } from './ability-sfx.js'
@@ -94,14 +95,17 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
       mode = TIME_MODES.NORMAL
     } else {
       if (newMode !== TIME_MODES.NORMAL && !availability[newMode]) {
+        playSfx('error', { cooldown: 0.3 })
         if (hud) hud.showToast('That chrono ability is offline', 1200)
         return
       }
       if (newMode !== TIME_MODES.NORMAL && energy < 10) {
+        playSfx('error', { cooldown: 0.3 })
         if (hud) hud.showToast('Chrono Core energy depleted!', 1200)
         return
       }
       if (newMode === TIME_MODES.FREEZE && freezeLockout > 0) {
+        playSfx('error', { cooldown: 0.3 })
         if (hud) {
           hud.showToast(
             `Chrono Interface overheated — FREEZE offline for ${freezeLockout.toFixed(1)}s`,
@@ -116,6 +120,7 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
       }
     }
 
+    if (mode !== previousMode && mode === TIME_MODES.NORMAL) playSfx('ability-end', { volume: 0.35 })
     if (mode !== previousMode) rewindPlaybackTime = 0
 
     // Notify registered objects of state changes
@@ -189,17 +194,21 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
   function triggerGhost() {
     if (ghost.isPlaying()) {
       ghost.stop()
+      playSfx('ability-end', { volume: 0.35 })
       return
     }
     if (!availability.GHOST) {
+      playSfx('error', { cooldown: 0.3 })
       if (hud) hud.showToast('Time Ghost is offline', 1200)
       return
     }
     if (ghostCooldown > 0) {
+      playSfx('error', { cooldown: 0.3 })
       if (hud) hud.showToast('Time Ghost on cooldown!', 1000)
       return
     }
     if (energy < GHOST_ENERGY_COST) {
+      playSfx('error', { cooldown: 0.3 })
       if (hud) hud.showToast('Not enough Chrono energy for Time Ghost!', 1200)
       return
     }
@@ -210,6 +219,7 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
         Math.abs(position.z - center.z) < halfSize
     })
     if (!onPad && playerHistory.length < 5) {
+      playSfx('error', { cooldown: 0.3 })
       if (hud) hud.showToast('Recording movement trajectory… try again in 1s', 1000)
       return
     }
@@ -240,6 +250,7 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
 
     ghost.startReplay(trajectory, {
       onComplete: () => {
+        playSfx('ability-end', { volume: 0.35 })
         notifyTimeDilation()
         if (hud) hud.showToast('Time Ghost faded', 1000)
       }
@@ -256,7 +267,6 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     setMode(TIME_MODES.SLOW)
     if (mode === TIME_MODES.SLOW && previous !== TIME_MODES.SLOW) {
       playAbilitySfx('SLOW')
-      player.playCast?.()
     }
   }
 
@@ -265,7 +275,6 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     setMode(TIME_MODES.FREEZE)
     if (mode === TIME_MODES.FREEZE && previous !== TIME_MODES.FREEZE) {
       playAbilitySfx('FREEZE')
-      player.playCast?.()
     }
   }
 
@@ -274,7 +283,6 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     setMode(TIME_MODES.REWIND)
     if (mode === TIME_MODES.REWIND && previous !== TIME_MODES.REWIND) {
       playAbilitySfx('REWIND')
-      player.playCast?.()
     }
   }
 
@@ -350,6 +358,7 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
       if (freezeLockout > 0) {
         freezeLockout = Math.max(0, freezeLockout - delta)
         if (freezeLockout === 0 && hud) {
+          playSfx('unlock', { volume: 0.35 })
           hud.showToast('Chrono Interface re-synchronised — FREEZE online', 1600)
         }
       }
@@ -358,6 +367,7 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
       if (strainRate > 0) {
         strain = Math.min(MAX_STRAIN, strain + strainRate * delta)
         if (strain >= MAX_STRAIN && mode === TIME_MODES.FREEZE) {
+          playSfx('warning', { priority: 2 })
           freezeLockout = STRAIN_LOCKOUT_SECONDS
           setMode(TIME_MODES.NORMAL)
           if (hud) hud.showToast('CHRONO INTERFACE OVERHEATED — FREEZE offline', 2400)
@@ -598,9 +608,9 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     resetForCheckpoint,
     captureCheckpointState,
 
-    triggerSlow: () => setMode(TIME_MODES.SLOW),
-    triggerFreeze: () => setMode(TIME_MODES.FREEZE),
-    triggerRewind: () => setMode(TIME_MODES.REWIND),
+    triggerSlow,
+    triggerFreeze,
+    triggerRewind,
     triggerGhost,
     resetGhost,
     getMode: () => mode,

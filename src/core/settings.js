@@ -145,13 +145,28 @@ export const OPTION_DEFS = [
   {
     id: 'masterVolume',
     label: 'Master Volume',
-    hint: 'Overall mix: music, ability cues and the time-distortion bed.',
+    hint: 'Overall mix: movement, interactions, ambience, music and menus.',
     group: 'Audio',
     type: 'slider',
     min: 0,
     max: 1,
     step: 0.01,
     format: (v) => `${Math.round(v * 100)}%`
+  },
+  {
+    id: 'sfxVolume', label: 'Sound Effects', hint: 'Movement, interactions, time abilities and menu feedback.',
+    group: 'Audio', type: 'slider', min: 0, max: 1, step: 0.01,
+    format: (v) => Math.round(v * 100) + '%'
+  },
+  {
+    id: 'ambienceVolume', label: 'Ambience', hint: 'Train motion, wind and environmental machinery.',
+    group: 'Audio', type: 'slider', min: 0, max: 1, step: 0.01,
+    format: (v) => Math.round(v * 100) + '%'
+  },
+  {
+    id: 'musicVolume', label: 'Music', hint: 'Menu, level and victory tracks.',
+    group: 'Audio', type: 'slider', min: 0, max: 1, step: 0.01,
+    format: (v) => Math.round(v * 100) + '%'
   },
   {
     id: 'mute',
@@ -183,6 +198,9 @@ export const DEFAULT_OPTIONS = {
   crouchMode: 'toggle',
   cameraDistance: 4.8,
   masterVolume: 0.5,
+  sfxVolume: 0.8,
+  ambienceVolume: 0.55,
+  musicVolume: 0.7,
   mute: false
 }
 

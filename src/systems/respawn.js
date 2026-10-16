@@ -1,3 +1,4 @@
+import { playSfx } from '../systems/sound-effects.js'
 import * as THREE from 'three'
 
 // Shared checkpoint / lives system.
@@ -52,6 +53,7 @@ export function createRespawnSystem({
   }
 
   function setCheckpoint(position, yaw = 0, { restore = () => {} } = {}) {
+    if (checkpoint && !checkpoint.position.equals(position)) playSfx('checkpoint', { priority: 2, cooldown: 0.6 })
     checkpoint = {
       position: new THREE.Vector3().copy(position),
       yaw,
@@ -85,6 +87,7 @@ export function createRespawnSystem({
     camera?.setYaw?.(checkpoint.yaw)
     camera?.snap?.()
 
+    playSfx('respawn', { priority: 3 })
     return true
   }
 
@@ -258,6 +261,7 @@ export function createRespawnSystem({
     // Let main's central input-state system immediately see CAUGHT.
     onStateChange?.()
 
+    playSfx(isGameOver() ? 'game-over' : 'fail', { priority: 3, cooldown: 0.5 })
     scheduleFailure()
 
     return true

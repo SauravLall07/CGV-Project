@@ -10,7 +10,10 @@ import { createAssetLoader } from './core/assets.js'
 import { createLoadingTasks } from './core/loading-tasks.js'
 import { createLevelManager } from './core/level-manager.js'
 import { resolveInputState } from './core/input-state.js'
-import { initAudio, resumeAudio, getContext } from './core/audio.js'
+import { sound, playSfx, preloadSfx } from './systems/sound-effects.js'
+import { installUISounds } from './systems/ui-audio.js'
+import { createSoundscape } from './systems/soundscape.js'
+import { initAudio, resumeAudio, getContext, setAudioPaused, setAudioFocused, disposeAudio } from './core/audio.js'
 import { preloadAbilitySfx } from './systems/ability-sfx.js'
 import { createPlayer } from './entities/player.js'
 import { preloadPoliceVisual } from './entities/police-visual.js'
@@ -145,6 +148,24 @@ const LEVEL_TRACKS = {
   Complete: { file: '../assets/audio/music/victory-theme.mp3', loop: false }
 }
 
+const soundscape = createSoundscape()
+const removeUISounds = installUISounds()
+function updateAudioFocus() { setAudioFocused(!document.hidden && document.hasFocus()) }
+window.addEventListener('blur', updateAudioFocus)
+window.addEventListener('focus', updateAudioFocus)
+document.addEventListener('visibilitychange', updateAudioFocus)
+const resumeOnGesture = () => { resumeAudio() }
+document.addEventListener('pointerdown', resumeOnGesture, true)
+document.addEventListener('keydown', resumeOnGesture, true)
+if (import.meta.hot) import.meta.hot.dispose(() => {
+  removeUISounds(); soundscape.dispose()
+  window.removeEventListener('blur', updateAudioFocus)
+  window.removeEventListener('focus', updateAudioFocus)
+  document.removeEventListener('visibilitychange', updateAudioFocus)
+  document.removeEventListener('pointerdown', resumeOnGesture, true)
+  document.removeEventListener('keydown', resumeOnGesture, true)
+  sound.dispose(); disposeAudio()
+})
 let musicSystem = null
 
 function ensureGameplayDrone() {
@@ -187,7 +208,8 @@ async function playMenuMusic() {
 
 function unlockAudio() {
   console.log('unlockAudio() called')
-  initAudio()
+  if (!initAudio()) return
+  preloadSfx()
   const preloading = preloadAbilitySfx()
   if (preloading && typeof preloading.then === 'function') {
     preloading.then(() => {
@@ -329,7 +351,7 @@ const levelManager = createLevelManager({
       if (levelManager.getState() === state) levelManager.prefetch(next)
     }))
   },
-  onLeave: stopLevelMusic,
+  onLeave: () => { stopLevelMusic(); sound.stopAll(); soundscape.stop() },
   onInputStateChange: () => syncInputState(),
   levels: [
     { state: 'Boarding', create: ctx => createBoardingLevel({ ...ctx, renderCamera: camera }) },
@@ -394,6 +416,8 @@ let modelEditor = null // DEV-only live scene/model workshop (F2)
 // rendered scene visible behind the guide. The HUD captures Enter/Space itself
 // so those keys dismiss the guide without also triggering a gameplay action.
 hud.onTutorialStateChange((open) => {
+  setAudioPaused(open || paused)
+  playSfx(open ? 'ui-open' : 'ui-close')
   const controlsEnabled = gameStarted && !paused && !open
   keyboard.setEnabled(controlsEnabled)
   interaction.setEnabled(controlsEnabled)
@@ -538,6 +562,7 @@ function getInputState() {
 
 function syncInputState() {
   const state = getInputState()
+  setAudioPaused(paused || hud.isTutorialOpen() || state === 'TRANSITION' || state === 'EDITOR')
   levelManager.setPresentationPaused(state !== 'PLAYING' && state !== 'CINEMATIC')
   const enabled = state === 'PLAYING' && !benchmark?.isHolding()
   if (!enabled) {
@@ -588,6 +613,7 @@ function showCompleteCredits() {
   credits.open({ source: 'complete', completionTime: elapsed })
   hud.setVisible(false)
   syncInputState()
+  playSfx('objective', { priority: 3 })
   keyboardLock.release({ exitFullscreen: false })
 }
 
@@ -786,6 +812,7 @@ loop.add((delta) => {
   // cinematic / credits all used to return before player.update(), which
   // left the detective frozen in bind pose after the first frame.
   player.updateVisual(delta)
+  soundscape.update(gameStarted && !credits.isOpen ? levelManager.getState() : null, player.mesh.position.y > 3, timeSystem.getMode() === 'FREEZE')
 
   hud.updateStats(delta)
   renderOverlay?.update(delta)
@@ -881,7 +908,8 @@ loop.add((delta) => {
     obstacles: levelManager.obstacles,
     groundHeightAt: levelManager.groundHeightAt,
     supports: levelManager.supports,
-    voids: levelManager.voids
+    voids: levelManager.voids,
+    audioSurfaceAt: levelManager.audioSurfaceAt
   })
 
   playerView.update(delta, player.mesh, scene, {

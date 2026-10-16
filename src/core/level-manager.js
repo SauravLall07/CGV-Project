@@ -277,6 +277,7 @@ export function createLevelManager({
     getState: () => currentState,
     isTransitioning: () => transitioning,
     isCinematic: () => Boolean(current?.isCinematic),
+    get audioSurfaceAt() { return current?.audioSurfaceAt ?? (() => 'stone') },
     get bounds() {
       return current && current.bounds ? current.bounds : null
     },

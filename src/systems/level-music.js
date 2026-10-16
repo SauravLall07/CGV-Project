@@ -1,4 +1,4 @@
-import { getContext, getMasterGain } from '../core/audio.js'
+import { getContext, getAudioBus } from '../core/audio.js'
 
 // Sampled level music, separate from the procedural drone in music-system.js.
 // Tracks live under src/assets/audio/music/ and are resolved with
@@ -119,7 +119,7 @@ export class LevelMusicPlayer {
     this.stop()
 
     const ctx = getContext()
-    const master = getMasterGain()
+    const master = getAudioBus('music')
 
     this.gain = ctx.createGain()
     this.gain.gain.value = volume
@@ -129,6 +129,8 @@ export class LevelMusicPlayer {
     this.source.buffer = this.buffer
     this.source.loop = loop
     this.source.connect(this.gain)
+    const playing = this.source
+    playing.onended = () => { if (this.source === playing) this.stop() }
     this.source.start()
     liveSources += 1
     console.log(
@@ -138,6 +140,7 @@ export class LevelMusicPlayer {
 
   stop() {
     if (this.source) {
+      this.source.onended = null
       try { this.source.stop() } catch { /* already stopped */ }
       this.source.disconnect()
       this.source = null

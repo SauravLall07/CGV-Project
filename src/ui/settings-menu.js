@@ -13,6 +13,7 @@
 // underneath it — and so the rebinder can grab any key the player presses,
 // including ones the game already uses.
 
+import { playSfx } from '../systems/sound-effects.js'
 import {
   settings, OPTION_DEFS, ACTIONS, RESERVED_CODES, codeLabel
 } from '../core/settings.js'
@@ -380,6 +381,7 @@ export function createSettingsMenu() {
     const conflict = code ? settings.findConflict(code, action) : null
 
     settings.setBinding(action, slot, code)
+    playSfx('ui-change')
     capture = null
     render()
 
@@ -466,6 +468,7 @@ export function createSettingsMenu() {
   function open(onClose) {
     onCloseCallback = onClose ?? null
     isOpen = true
+    playSfx('ui-open')
     activeTab = TABS[0].id
     clearNotice()
     render()
@@ -478,6 +481,7 @@ export function createSettingsMenu() {
   function close() {
     if (!isOpen) return
     isOpen = false
+    playSfx('ui-close')
     capture = null
     root.style.opacity = '0'
     panel.style.transform = 'translateY(12px) scale(0.99)'

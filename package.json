@@ -7,7 +7,10 @@
     "test": "node --import ./scripts/register-test-assets.mjs --test",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "audio:generate": "node scripts/generate-sfx.mjs",
+    "test:audio": "node --import ./scripts/register-test-assets.mjs --test test/audio-graph.test.mjs test/movement-audio.test.mjs test/sound-effects.test.mjs test/gameplay-audio.test.mjs test/wreck-audio.test.mjs test/wreck-hazard-audio.test.mjs test/level-music-cache.test.mjs",
+    "test:audio:browser": "node scripts/check-browser-audio.mjs"
   },
   "devDependencies": {
     "vite": "^8.2.2"

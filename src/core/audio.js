@@ -1,72 +1,71 @@
-import { settings } from '../core/settings.js'
+import { settings } from './settings.js'
 
-// Shared Web Audio plumbing: one AudioContext and a master GainNode every
-// later sound routes through. Created once; browsers start the context
-// suspended until a user gesture, so resumeAudio() exists to unlock it from
-// a click/keydown handler. No gameplay, no sound loading — just the graph.
-// Master gain follows settings.masterVolume / settings.mute so the settings
-// screen can change the mix immediately, including before initAudio() has run.
-
-let context = null
-let master = null
-
-function effectiveMasterVolume() {
-  if (settings.get('mute')) return 0
-  const value = settings.get('masterVolume')
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0.5
-}
-
-function applyMasterVolume() {
+// Shared graph: world categories pause together; UI remains available in menus.
+let context = null, master = null, world = null
+let paused = false, focused = true
+const buses = new Map(), pauseListeners = new Set()
+const clamp = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5
+function applyVolume() {
   if (!master) return
-  master.gain.value = effectiveMasterVolume()
+  master.gain.value = settings.get('mute') || !focused ? 0 : clamp(settings.get('masterVolume'))
+  for (const [name, bus] of buses) bus.gain.value = clamp(settings.get(name === 'ui' ? 'sfxVolume' : name + 'Volume'))
 }
-
 export function initAudio() {
-  if (context) return
-
-  const AudioCtx = window.AudioContext || window.webkitAudioContext
-  context = new AudioCtx()
-  master = context.createGain()
-  applyMasterVolume()
-  master.connect(context.destination)
-  console.log('Audio context created, state: ' + context.state)
-}
-
-export function getContext() {
-  return context
-}
-
-export function getMasterGain() {
-  return master
-}
-
-export function setMasterVolume(v) {
-  if (!master) return
-  master.gain.value = v
-}
-
-settings.subscribe((_values, changed) => {
-  if (
-    changed !== undefined &&
-    changed !== 'masterVolume' &&
-    changed !== 'mute' &&
-    changed !== 'options' &&
-    changed !== 'all'
-  ) return
-  applyMasterVolume()
-})
-
-export function resumeAudio() {
-  if (!context) return
-  console.log('Audio context state before resume: ' + context.state)
-  // Always resume on a user gesture, even if state already reads "running".
-  // Chrome/Firefox can report running for a context created at page load
-  // while still blocking audible output until resume() runs in a gesture.
-  const p = context.resume()
-  if (p && typeof p.then === 'function') {
-    return p.then(() => {
-      console.log('Audio context state after resume: ' + context.state)
-    })
+  if (context) return context
+  const AudioCtx = globalThis.window?.AudioContext || globalThis.window?.webkitAudioContext
+  if (!AudioCtx) return null
+  try {
+    context = new AudioCtx()
+    master = context.createGain(); master.connect(context.destination)
+    applyVolume()
+    return context
+  } catch (error) {
+    context = null
+    console.warn('[audio] unavailable; continuing silently', error)
+    return null
   }
-  console.log('Audio context state after resume: ' + context.state)
 }
+export const getContext = () => context
+export const getMasterGain = () => master
+export function getAudioBus(name = 'sfx') {
+  if (!context || !master) return null
+  if (!buses.has(name)) {
+    if (!world) { world = context.createGain(); world.gain.value = paused ? 0 : 1; world.connect(master) }
+    const bus = context.createGain()
+    bus.connect(name === 'ui' ? master : world)
+    buses.set(name, bus); applyVolume()
+  }
+  return buses.get(name)
+}
+export const isWorldAudioPaused = () => paused || !focused
+export const onAudioPause = listener => { pauseListeners.add(listener); return () => pauseListeners.delete(listener) }
+export function setAudioPaused(value) {
+  value = Boolean(value)
+  if (paused === value) return
+  paused = value
+  if (world) world.gain.value = value ? 0 : 1
+  for (const listener of pauseListeners) listener(isWorldAudioPaused())
+}
+export function setAudioFocused(value) {
+  value = Boolean(value)
+  if (focused === value) return
+  focused = value; applyVolume()
+  for (const listener of pauseListeners) listener(isWorldAudioPaused())
+  if (!focused) context?.suspend?.()?.catch?.(() => {})
+}
+export function setMasterVolume(v) { settings.set('masterVolume', clamp(v)) }
+const unsubscribeSettings = settings.subscribe((_v, changed) => {
+  if (changed === undefined || changed === 'mute' || changed === 'all' || changed === 'options' || changed.endsWith('Volume')) applyVolume()
+})
+export function resumeAudio() {
+  if (!context || !focused) return Promise.resolve()
+  try { return Promise.resolve(context.resume()).catch(() => {}) } catch { return Promise.resolve() }
+}
+export function disposeAudio() {
+  for (const listener of pauseListeners) listener(true)
+  for (const bus of buses.values()) bus.disconnect()
+  buses.clear(); world?.disconnect(); master?.disconnect()
+  context?.close?.()?.catch?.(() => {})
+  context = master = world = null
+}
+if (import.meta.hot) import.meta.hot.dispose(() => { unsubscribeSettings(); disposeAudio() })

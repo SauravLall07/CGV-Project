@@ -1,3 +1,4 @@
+import { playSfx } from '../../systems/sound-effects.js'
 import * as THREE from 'three'
 import { addLaserGlow, createSecurityLaserMaterial } from '../../shaders/security-laser.js'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
@@ -442,6 +443,7 @@ export function createPuzzleDoor({
     collider.enabled = false
     stripMat.color.setHex(0x063a24)
     stripMat.emissive.setHex(0x22e08a)
+    playSfx('unlock', { volume: 0.35 })
     playDoorOpen()
     dust.start()
   }

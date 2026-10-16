@@ -1,0 +1,56 @@
+Chrono Express original generated sound effects
+SPDX-License-Identifier: CC0-1.0
+
+The 37 WAV files listed below and scripts/generate-sfx.mjs were created for
+this project using deterministic mathematical synthesis. No recordings,
+downloaded samples, commercial game audio, or external sound libraries were
+used. They are dedicated to the public domain under CC0 1.0 Universal:
+https://creativecommons.org/publicdomain/zero/1.0/
+Attribution is not required.
+
+ability-end.wav
+checkpoint.wav
+cloth.wav
+debris-impact.wav
+dial.wav
+door-close.wav
+door-locked.wav
+door-open.wav
+electrical.wav
+error.wav
+fail.wav
+game-over.wav
+jump.wav
+land.wav
+machinery.wav
+metal-impact.wav
+objective.wav
+pickup.wav
+respawn.wav
+roof-wind.wav
+steam.wav
+step-carpet.wav
+step-metal.wav
+step-stone.wav
+step-wood.wav
+switch-release.wav
+switch.wav
+throw.wav
+train-air.wav
+ui-change.wav
+ui-click.wav
+ui-close.wav
+ui-nav.wav
+ui-open.wav
+unlock.wav
+warning.wav
+zipline.wav
+
+This dedication does NOT apply to the pre-existing sfx-slow.wav,
+sfx-freeze.wav, sfx-rewind.wav, sfx-ghost.wav, or the music directory.
+Their provenance/licensing is unchanged and was not established by this work.
+
+Regeneration: npm run audio:generate
+Encoding: 22,050 Hz, mono, signed 16-bit PCM WAV.
+Total new audio: 704,144 bytes. Short PCM assets avoid codec-specific
+dependencies and lossy transient artifacts; longer existing music stays MP3.

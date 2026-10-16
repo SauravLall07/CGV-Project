@@ -11,6 +11,7 @@
 // a status getter, which keeps the "what does pausing actually stop" decision
 // in the composition root where the loop lives.
 
+import { playSfx } from '../systems/sound-effects.js'
 import { ACTIONS, bindingLabel, codeLabel, settings } from '../core/settings.js'
 import {
   THEME, createButton, createHeading, createSectionLabel,
@@ -309,6 +310,7 @@ export function createPauseMenu({
   function open() {
     if (isOpen) return
     isOpen = true
+    playSfx('ui-open')
     renderStatus()
     root.style.display = 'flex'
     void root.offsetWidth
@@ -320,6 +322,7 @@ export function createPauseMenu({
   function close() {
     if (!isOpen) return
     isOpen = false
+    playSfx('ui-close')
     root.style.opacity = '0'
     panel.style.transform = 'translateY(12px) scale(0.99)'
     setTimeout(() => {

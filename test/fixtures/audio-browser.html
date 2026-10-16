@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Chrono Express audio verification</title>
+<button id="unlock">Unlock audio</button>
+<script type="module">
+import { initAudio, resumeAudio, getContext, getAudioBus, getMasterGain, setAudioPaused } from '/src/core/audio.js'
+import { sound, preloadSfx, playSfx, createAudioTransitions } from '/src/systems/sound-effects.js'
+import { SOUND_FILES } from '/src/systems/sound-catalog.js'
+import { settings } from '/src/core/settings.js'
+import { createPlayer } from '/src/entities/player.js'
+
+const assert = (value, message) => { if (!value) throw Error(message) }
+initAudio()
+window.audioInitialState = getContext()?.state
+window.audioReady = true
+document.querySelector('#unlock').onclick = async () => {
+  try {
+    await resumeAudio()
+    await preloadSfx()
+    const ctx = getContext()
+    assert(ctx.state === 'running', 'gesture resumes real AudioContext')
+    assert(sound.info().buffers === Object.keys(SOUND_FILES).length, 'all real WAVs decode')
+    assert(playSfx('jump'), 'decoded source starts')
+    sound.stopAll(true)
+    settings.set('sfxVolume', 0.21)
+    assert(getAudioBus('sfx').gain.value.toFixed(2) === '0.21', 'SFX volume')
+    settings.set('mute', true)
+    assert(getMasterGain().gain.value === 0, 'mute')
+    settings.set('mute', false)
+    const reloaded = await import('/src/core/settings.js?browser-persistence')
+    assert(reloaded.settings.get('sfxVolume') === 0.21, 'persisted setting reload')
+    settings.resetOptions()
+    setAudioPaused(true)
+    assert(!playSfx('land'), 'pause rejects world cue')
+    assert(playSfx('ui-click'), 'paused UI source starts')
+    sound.stopAll(true); setAudioPaused(false)
+
+    // Exercise the real primitive player physics against the real audio graph.
+    const player = createPlayer()
+    const keyboard = {}
+    const update = delta => player.update(delta, { keyboard, cameraYaw: 0 })
+    player.setPose({ x: 0, y: 0, z: 0 })
+    const emissions = []
+    const original = sound.play
+    sound.play = (name, options) => { emissions.push(name); return original(name, options) }
+    keyboard.forward = true
+    for (let i = 0; i < 60; i++) update(1 / 60)
+    assert(emissions.filter(n => n.startsWith('step-')).length >= 2, 'actual grounded player footsteps')
+    keyboard.forward = false
+    const beforeStop = emissions.length
+    for (let i = 0; i < 30; i++) update(1 / 60)
+    assert(emissions.length === beforeStop, 'stopped player silent')
+    keyboard.jump = true
+    for (let i = 0; i < 90; i++) update(1 / 60)
+    assert(emissions.filter(n => n === 'jump').length === 1, 'held key launches one jump')
+    assert(emissions.filter(n => n === 'land').length === 1, 'confirmed landing once')
+    sound.stopAll(true)
+    const transitions = createAudioTransitions()
+    transitions.motion('door', 0, 1)
+    transitions.motion('door', 0.1, 1)
+    transitions.motion('door', 0.2, 1)
+    transitions.motion('door', 0.1, 1, { cooldown: 0 })
+    assert(emissions.filter(n => n === 'door-open').length === 1, 'one opening transition')
+    assert(emissions.filter(n => n === 'door-close').length === 1, 'one closing transition')
+    sound.play = original
+    sound.stopAll(true)
+    window.audioResult = { ok: true, context: ctx.state, inventory: sound.info(), events: emissions }
+  } catch (error) {
+    window.audioResult = { ok: false, error: error.stack }
+  }
+}
+</script>

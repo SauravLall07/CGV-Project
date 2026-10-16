@@ -1,7 +1,7 @@
-import { getContext, getMasterGain } from '../core/audio.js'
+import { getContext, getAudioBus } from '../core/audio.js'
 
 // Two bounded L3 voices, created lazily after audio unlock. No gameplay timers.
-export function createWreckHazardAudio({ context = getContext, output = getMasterGain } = {}) {
+export function createWreckHazardAudio({ context = getContext, output = () => getAudioBus('ambience') } = {}) {
   let bus, creak, hiss, paused = false, disposed = false
   function release(voice) {
     if (!voice) return

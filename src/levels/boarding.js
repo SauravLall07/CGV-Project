@@ -1,3 +1,4 @@
+import { playSfx } from '../systems/sound-effects.js'
 import * as THREE from 'three'
 import {
   createStationBlockout,
@@ -495,10 +496,12 @@ export function createBoardingLevel({
       onInteract: () => {
         if (collected) return
         if (distractionInventory.count >= distractionInventory.max) {
+          playSfx('error', { volume: 0.35 })
           hud?.showToast?.(`Distractor pouch full — ${distractionInventory.count}/${distractionInventory.max}`, 1300)
           return
         }
 
+        playSfx('pickup', { volume: 0.5 })
         collected = true
         distractionInventory.count += 1
         pickup.visible = false
@@ -615,6 +618,8 @@ export function createBoardingLevel({
       onInteract: () => {
         if (isApproachGridDisabled) return
 
+        playSfx('switch')
+        playSfx('objective', { volume: 0.4 })
         isApproachGridDisabled = true
 
         approachLaserGrid.setActive(false)
@@ -968,6 +973,7 @@ export function createBoardingLevel({
     },
     onHoldComplete: () => {
       if (isBoardingCinematic || respawn.isFailing()) return
+      playSfx('switch', { volume: 0.55 })
       isBoardingCinematic = true
       boardingStartedAt = performance.now()
       if (import.meta.env.DEV) watchBoardingOverlays()
@@ -1162,6 +1168,7 @@ export function createBoardingLevel({
     range: 2.7,
     onInteract() {
       if (enteredStation || enterFade) return
+      playSfx('door-open')
       enteringStation = true
       enterFade = { t: 0, phase: 'out' }
       beginCinematic?.()
@@ -1190,6 +1197,7 @@ export function createBoardingLevel({
     },
     bounds: levelBounds,
     obstacles: wallColliders,
+    audioSurfaceAt: () => player.mesh.userData.tightCrouchCamera ? 'metal' : 'stone',
     groundHeightAt(x, z, fallback = 0) {
       if (
         x >= PLAZA.minX - 0.4 && x <= FACADE_X + 0.4 &&
@@ -1341,6 +1349,8 @@ export function createBoardingLevel({
           boardingView.allowPress = false
           beginBoardingPhase('pause')
         } else if (boardingPhase === 'pause' && cinematicTimer >= BOARDING_PAUSE_SECONDS) {
+          playSfx('steam', { volume: 0.6 })
+          playSfx('machinery', { volume: 0.6 })
           beginBoardingPhase('departing')
         } else if (boardingPhase === 'departing') {
           const t = Math.min(cinematicTimer, BOARDING_DEPART_SECONDS)

@@ -34,8 +34,8 @@ test('Wreck audio: silent before unlock; real master/mute, hush, pause, settling
     sound.update(false, false)
     assert.equal(nodes.length, 1, 'inactive L3 does not start machinery')
     sound.update(true, false)
-    const master = getMasterGain(), bus = nodes[1], bed = nodes[2]
-    assert.equal(bus.destination, master)
+    const master = getMasterGain(), bed = sources[0].destination.destination, bus = bed.destination
+    assert.equal(bus.destination.destination.destination, master, 'ambience through world gate to master')
     assert.equal(bed.gain.target, 0.045)
     sound.update(true, true)
     assert.equal(bed.gain.target, 0.0005)
@@ -64,7 +64,7 @@ test('Wreck audio: silent before unlock; real master/mute, hush, pause, settling
     sound.update(true, false, 3.5); assert.equal(sources.length, settled, 'settling sound occurs once')
     sound.reset()
     assert.ok(sources.every(s => s.stopped && s.disconnected))
-    assert.ok(nodes.slice(1).every(n => n.disconnected))
+    assert.ok(nodes.slice(nodes.indexOf(bus)).every(n => n.disconnected))
     sound.update(true, false); assert.ok(sources.length > settled, 'checkpoint can start fresh audio')
     sound.dispose()
     const disposedCount = nodes.length

@@ -1,3 +1,4 @@
+import { playSfx } from '../systems/sound-effects.js'
 import { THEME, createOverlayRoot } from './ui-theme.js'
 
 // Rolling credits overlay. Two entry points share this panel: the title
@@ -233,6 +234,7 @@ export function createCredits({ onDismiss } = {}) {
     if (isOpen) return
     source = nextSource
     isOpen = true
+    playSfx('ui-open')
     ignoreUntil = performance.now() + DISMISS_GRACE_MS
     if (source === 'complete' && completionTime != null && Number.isFinite(completionTime)) {
       heistCompleteBlock.style.display = 'flex'
@@ -251,6 +253,7 @@ export function createCredits({ onDismiss } = {}) {
   function close() {
     if (!isOpen) return
     isOpen = false
+    playSfx('ui-close')
     roll.style.animation = 'none'
     root.style.opacity = '0'
     root.style.pointerEvents = 'none'

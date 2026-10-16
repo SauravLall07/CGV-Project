@@ -1,3 +1,4 @@
+import { playSfx } from '../../systems/sound-effects.js'
 import * as THREE from 'three'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
@@ -394,6 +395,7 @@ export function createOnboardingPassage({ interaction, hud, player } = {}) {
     isEligible: () => !exitDoor.isUnlocked(),
     onInteract: () => {
       if (exitDoor.isUnlocked()) return
+      playSfx('switch', { volume: 0.4 })
       exitDoor.unlock()
       const screenMat = accessPanel.userData.screenMaterial
       screenMat?.color?.setHex?.(0x10b981)

@@ -1,3 +1,4 @@
+import { playSfx } from '../systems/sound-effects.js'
 import * as THREE from 'three'
 import { getKitMaterials } from '../environment/level1-kit/kit-materials.js'
 import { createKitBuilder, kbox, rod } from '../environment/level1-kit/kit-props.js'
@@ -628,10 +629,12 @@ export function createTrain() {
   const hideBoardingCues = () => { boardingMarker.group.visible = false }
   function openDoor() {
     hideBoardingCues()
+    if (doorTarget !== DOOR_OPEN_ANGLE) playSfx('door-open', { key: 'boarding-door', volume: 0.6 })
     doorTarget = DOOR_OPEN_ANGLE
   }
   function closeDoor() {
     hideBoardingCues()
+    if (doorTarget !== 0) playSfx('door-close', { key: 'boarding-door', volume: 0.6 })
     doorTarget = 0
   }
 

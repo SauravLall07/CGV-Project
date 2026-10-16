@@ -1,3 +1,4 @@
+import { playSfx, createAudioTransitions } from '../systems/sound-effects.js'
 import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
@@ -175,6 +176,7 @@ function createEmergencyBrake() {
 export function createTimewreckLevel({
   scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic, startCarriage = null
 }) {
+  const audio = createAudioTransitions()
   // Level 3 is the "unstable" end of the scale — the shaders read this.
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.8)
   // Boarding / Level 2 hide the Chrono deck until powers unlock; L3 starts with them.
@@ -953,6 +955,7 @@ export function createTimewreckLevel({
       const dangerous = phase < surge.danger
       const warning = !dangerous && phase > surge.period - SURGE_WARN
       const mode = dangerous ? 'danger' : warning ? 'warn' : 'safe'
+      audio.edge('surge-' + surge.z, mode, playerPos && Math.abs(playerPos.z - surge.z) < 10 ? dangerous ? 'electrical' : warning ? 'warning' : null : null, { cooldown: 0.4, volume: 0.45 })
       const flickerHz = dangerous ? 16 : warning ? 24 : 6
       const seed = Math.floor(Math.abs(surgeT) * flickerHz + surge.offset * 10)
       if (seed !== surge.boltSeed || mode !== surge.boltMode) {
@@ -1181,6 +1184,7 @@ export function createTimewreckLevel({
           Math.abs(player.mesh.position.y) >= 0.25 ||
           Math.hypot(player.mesh.position.x - 0.8, player.mesh.position.z - catchZ) > 1.6) return
       // The manual catch can recover an expired echo after the player crosses.
+      playSfx('unlock', { volume: 0.5, priority: 2 })
       relayLatched = true
       relayOpen = 1
       applyRelay()
@@ -1198,6 +1202,7 @@ export function createTimewreckLevel({
     const ghost = timeSystem.getGhost()
     const echoOnRelease = ghost.isOccupying(releasePos, 0.56)
     const held = playerOnRelease || echoOnRelease
+    audio.edge('fire-release', held, held ? 'switch' : 'switch-release')
     relayHeld = held
     relayEchoRemaining = echoOnRelease && !playerOnRelease ? ghost.getRemainingSeconds() : 0
     const target = relayLatched || held ? 1 : 0
@@ -1207,6 +1212,7 @@ export function createTimewreckLevel({
     if (target || !inSeam) {
       relayOpen = THREE.MathUtils.clamp(relayOpen + (target ? dt / 0.4 : -dt / 0.45), 0, 1)
     }
+    audio.motion('fire-door', relayOpen, Math.abs(playerPos.z - doorZ))
     releaseDeck.position.y = held ? -0.015 : 0
     applyRelay()
   }
@@ -1461,9 +1467,13 @@ export function createTimewreckLevel({
       const z = player.mesh.position.z
       cargoGangway.state.step(dt, z <= cargoGap.triggerZ && z > cargoGap.minZ)
       cargoGangway.apply()
+      audio.motion('cargo-gangway', cargoGangway.state.angle, Math.abs(z - cargoGap.maxZ), { opening: 'machinery', closing: 'machinery' })
     },
     getSnapshot: () => cargoGangway.state.snapshot(),
-    restoreSnapshot(snapshot) { cargoGangway.state.restore(snapshot); cargoGangway.apply() }
+    restoreSnapshot(snapshot) {
+      cargoGangway.state.restore(snapshot); cargoGangway.apply()
+      audio.motion('cargo-gangway', cargoGangway.state.angle, Math.abs(player.mesh.position.z - cargoGap.maxZ), { opening: 'machinery', closing: 'machinery' })
+    }
   }))
 
   // Brass-edged, intact landing between gangway and door. The shell remains
@@ -1588,6 +1598,7 @@ export function createTimewreckLevel({
   function applyLoop() {
     const pose = cargoLoopPose(loopT, loopPose)
     loopDoorOpen = pose.door
+    audio.motion('cargo-loop-door', loopDoorOpen, Math.abs(player.mesh.position.z - loopDoor.position.z))
     loopBeamDown = pose.beam
     const colour = pose.colour
     loopDoor.position.y = 1.15 + loopDoorOpen * 2.35
@@ -1931,6 +1942,7 @@ export function createTimewreckLevel({
 
   function startCollapse() {
     if (!collapseArmed) return
+    playSfx('debris-impact', { priority: 2, volume: 0.7 })
     collapseArmed = false
     collapseLive = true
     collapseFallT = 0
@@ -2066,6 +2078,14 @@ export function createTimewreckLevel({
       angularDamping: 0.08
     })
     debrisWorld.addBody(body)
+    const impactSound = event => {
+      const speed = Math.abs(event.contact.getImpactVelocityAlongNormal())
+      if (speed > 2.5 && body.sleepState !== CANNON.Body.SLEEPING && Math.abs(player.mesh.position.z - body.position.z) < 12) {
+        playSfx('debris-impact', { volume: Math.min(0.6, speed * 0.04), cooldown: 0.18, maxInstances: 2 })
+      }
+    }
+    body.addEventListener('collide', impactSound)
+    unregisters.push(() => body.removeEventListener('collide', impactSound))
     const c = { mesh, body, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0 }
     respawnChunk(c)
     // Stagger so they don't arrive as one volley.
@@ -2181,6 +2201,14 @@ export function createTimewreckLevel({
     })
     body.sleep()
     debrisWorld.addBody(body)
+    const impactSound = event => {
+      const speed = Math.abs(event.contact.getImpactVelocityAlongNormal())
+      if (speed > 2.5 && body.sleepState !== CANNON.Body.SLEEPING && Math.abs(player.mesh.position.z - body.position.z) < 12) {
+        playSfx('debris-impact', { volume: Math.min(0.6, speed * 0.04), cooldown: 0.18, maxInstances: 2 })
+      }
+    }
+    body.addEventListener('collide', impactSound)
+    unregisters.push(() => body.removeEventListener('collide', impactSound))
     burstDebris.push({ mesh, body })
   }
 
@@ -2327,6 +2355,7 @@ export function createTimewreckLevel({
   }
 
   function startFailBurst() {
+    playSfx('electrical', { priority: 2, volume: 0.65 })
     failBurstArmed = false
     failBurstT = 0
     failBurstSettled = false
@@ -2596,6 +2625,8 @@ export function createTimewreckLevel({
     onInteract: () => {
       if (disposed || braking || brakeComplete || !depleted || Math.abs(player.mesh.position.z - brake.position.z) > 2.5) return
       braking = true
+      playSfx('door-open', { volume: 0.45, priority: 2 })
+      playSfx('switch', { volume: 0.7, priority: 3 })
       wreckAudio.brake()
       timeSystem.setMode('NORMAL')
       timeSystem.resetGhost()
@@ -2729,6 +2760,7 @@ export function createTimewreckLevel({
     }
 
     return () => {
+      audio.reset()
       depleted = saved.depleted
       breakupT = saved.breakupT
       lastCheckpointZ = saved.lastCheckpointZ
@@ -2869,6 +2901,7 @@ export function createTimewreckLevel({
     obstacles: blastObstacles,
     supports: slabSupports,
     voids: gapVoids,
+    audioSurfaceAt: () => player.mesh.userData.tightCrouchCamera ? 'metal' : 'wood',
     getCarriageVolumes: () => listCarriageVolumes(spans),
     get isCinematic() { return braking },
     setPresentationPaused(value) { wreckAudio.setPaused(value); hazardAudio.setPaused(value); feedback.setPaused(value) },
@@ -3371,6 +3404,7 @@ export function createTimewreckLevel({
 
       // --- FINAL SEQUENCE: depletion, then the sprint ----------------------
       if (!depleted && pp.z < DEPLETE_Z) {
+        playSfx('warning', { volume: 0.7, priority: 3 })
         depleted = true
         timeSystem.setAbilityAvailability({ SLOW: false, REWIND: false, GHOST: false })
         lastCheckpointZ = -Infinity // no further checkpoints past here
@@ -3407,6 +3441,7 @@ export function createTimewreckLevel({
     },
 
     dispose() {
+      audio.reset()
       disposed = true
       feedback.stop()
       spatial.dispose(slabSupports)
