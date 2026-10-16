@@ -18,7 +18,6 @@ import { APPROACH_START_X, APPROACH_CENTER_Z } from '../station-blockout.js'
 import {
   createAxisAlignedCorridor,
   createAxisAlignedRoom,
-  createLaserFloor,
   createPuzzleDoor,
   createTimedLaserController
 } from './passage-components.js'
@@ -1343,18 +1342,6 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     5.8
   )
 
-  const laserFloor = createLaserFloor({
-    start: new THREE.Vector3(laserHallStartX + 0.7, BRIDGE_PASSAGE_FLOOR_Y, LASER_ROOM_Z),
-    end: new THREE.Vector3(laserHallEndX - 0.7, BRIDGE_PASSAGE_FLOOR_Y, LASER_ROOM_Z),
-    width: 4.25,
-    rowCount: 5,
-    onHit: () => {
-      hud?.showToast?.('Laser floor tripped — jump cleanly over each glowing row.', 1500)
-      respawn?.fail?.('laser')
-    }
-  })
-  group.add(laserFloor.group)
-
   // ---------------------------------------------------------------------------
   // Hints
   // ---------------------------------------------------------------------------
@@ -1372,13 +1359,6 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     size: { x: 4.5, y: 3.4, z: 3.0 },
     text: () => `PASSAGEWAY 3 — read the guard and camera together. Use cover, or spend a collected distractor with ${bindingLabel(settings.getBinding('distract'))} when you need space.`,
     duration: 4400
-  })
-  hints.addZone({
-    id: 'bridge-laser-floor',
-    center: { x: (laserHallStartX + laserHallEndX) / 2, y: BRIDGE_PASSAGE_FLOOR_Y, z: LASER_ROOM_Z },
-    size: { x: Math.max(3.0, laserHallEndX - laserHallStartX), y: 3.4, z: 4.6 },
-    text: 'LASER FLOOR — the dark slabs are landing zones. Jump each glowing row; do not sprint straight through them.',
-    duration: 4300
   })
   hints.addZone({
     id: 'bridge-timed-recall',
@@ -1540,7 +1520,6 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
       respawn?.fail?.('fell')
       return
     }
-    laserFloor.update(delta, player?.mesh?.position)
     timedController?.update(delta)
     distraction?.update(delta)
     puzzleDoor.update(delta)
@@ -1569,7 +1548,6 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     pickupUnregisters.forEach((unregister) => unregister())
     distraction?.dispose()
     distraction = null
-    laserFloor.dispose?.()
     hints.dispose()
   }
 
