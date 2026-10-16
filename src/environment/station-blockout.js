@@ -71,16 +71,30 @@ const APPROACH_Z_MAX = APPROACH_CENTER_Z + APPROACH_WIDTH / 2
 
 const DOOR_HEIGHT = 2.6
 
-// Every core is 1.3 X × at least 6 Z; pockets are OUTSIDE on its sheltered side.
-// At x=±4.1, |dz|max=sqrt(7.5²-4.1²-0.83²)=6.226. At the inner
-// face |x|=2.4, t=2.4/4.1: y=1.064 and |dz from centre|<=2.581<3.
-// This bound covers every facing, including endpoint scans, not only the FOV.
-export const PLATFORM_COVER = [-20, -12, -4, 6, 14, 22, 30, 38, 46, 54].map((z, i) => ({
-  id: `cover-${i + 1}`, z, x: (i % 2 ? 1 : -1) * 3.05,
-  pocketX: (i % 2 ? 1 : -1) * 4.1,
-  width: 1.3, length: i === 2 || i === 3 ? 8 : 6,
-  height: i === 0 || i === 6 ? 1.8 : 1.35,
-  type: ['trunks', 'trolley', 'trunks', 'trunks', 'crates'][i % 5]
+// Ordered station work areas: luggage, baggage sorting, then sparse vendors.
+// Each opaque body is also the visible LOS core; open frames are decor only.
+export const PLATFORM_COVER = [
+  ['hat-box-tower', -1.3, -23, 0.9, 1.0, 1.65, 'hats'],
+  ['single-suitcase', 1.3, -18, 1.0, 0.8, 0.9, 'trunks'],
+  ['paired-crates', -1.3, -12, 1.2, 1.2, 1.0, 'crates'],
+  ['checkpoint-luggage', -1.3, -7, 1.2, 1.3, 1.7, 'trunks'],
+  ['sandwich-board', 1.9, -10, 0.8, 0.8, 1.1, 'board'],
+  ['steamer-trunk', 1.3, -2, 1.3, 0.9, 0.95, 'trunks'],
+  ['milk-pair', -1.3, 3, 1.0, 1.0, 1.0, 'milk'],
+  ['open-trolley', 0, 5.5, 0.9, 1.2, 1.1, 'frame'],
+  ['two-suitcases', 1.3, 8, 1.0, 0.9, 1.0, 'trunks'],
+  ['single-mail-sack', -1.3, 13, 0.8, 0.8, 1.0, 'mail'],
+  ['checkpoint-crates', -1.3, 18, 1.2, 1.2, 1.7, 'crates'],
+  ['hat-box-pair', 1.3, 23, 0.9, 0.9, 1.0, 'hats'],
+  ['small-bench', -1.3, 25.5, 1.2, 0.8, 1.0, 'bench'],
+  ['parcel-pair', -1.3, 28, 1.1, 1.0, 1.05, 'crates'],
+  ['final-luggage-stack', 1.3, 33, 1.1, 1.2, 1.65, 'trunks'],
+  ['lamp-post-base', -1.3, 35.5, 0.8, 0.8, 0.4, 'lamp'],
+  ['single-trunk', -1.3, 38, 1.2, 0.9, 0.95, 'trunks'],
+  ['door-parcels', 1.3, 42.5, 1.0, 1.0, 1.0, 'crates']
+].map(([id, x, z, width, length, height, type]) => ({
+  id, x, z, centres: [x], width, length, height, type,
+  seeThrough: ['board', 'bench', 'frame', 'lamp'].includes(type)
 }))
 
 // Axis-aligned outer bounds. The west side is extended for the new
@@ -96,9 +110,9 @@ export const bounds = {
 function createTrackBed() {
   const group = new THREE.Group()
   group.name = 'platform-track'
-  // Rail covers the locomotive at rest and its ~19 m departure roll. Each
-  // 20 m section has ballast, two rails, and one instanced sleeper draw.
-  const length = Math.max(160, PLATFORM_LENGTH + 16, TRAIN_LENGTH + 48)
+  // The 2.2 s cut leaves the nose at -70.03; the retained -107.5 rail
+  // endpoint has 37.47 m spare. Keep eight batched sleeper draws.
+  const length = Math.max(220, PLATFORM_LENGTH + 16, TRAIN_LENGTH + 48)
   const ballastMaterial = plasterMaterial({ repeat: [3, 7], base: 0x3b3830, roughness: 1 })
   const sleeperMaterial = woodMaterial({ repeat: [2, 1], light: 0x4a3826, dark: 0x241a11, roughness: 0.95 })
   const railMaterial = metalMaterial({ repeat: [1, 8], base: 0x8d8a83, roughness: 0.78, metalness: 0.45 })
@@ -644,34 +658,95 @@ function createOpenPlatform() {
   // Detail is batched separately and can never create holes in the core.
   const cores = new Map()
   for (const cover of PLATFORM_COVER) {
-    const { id, x, z, width, height, length, type } = cover
+    const { id, centres, z, width, height, length, type } = cover
     const builder = createKitBuilder()
-    builder.add(type === 'crates' ? k.crate : k.leather, kbox(width, height, length, x, height / 2, z))
+    const b = sectionAt(z).b
+    if (cover.seeThrough) {
+      if (type === 'bench') {
+        for (const dz of [-0.24, 0, 0.24]) box(b, k.wood, width, 0.06, 0.16, cover.x, 0.5, z + dz)
+        for (const dx of [-width * 0.4, width * 0.4]) {
+          box(b, k.iron, 0.07, 0.5, length, cover.x + dx, 0.25, z)
+          box(b, k.iron, 0.07, height - 0.5, 0.07, cover.x + dx, (height + 0.5) / 2, z + 0.3)
+        }
+        for (const y of [height - 0.3, height - 0.05]) box(b, k.wood, width, 0.09, 0.06, cover.x, y, z + 0.3)
+      }
+      else if (type === 'lamp') {
+        box(b, k.iron, width, height, length, cover.x, height / 2, z)
+        box(b, k.iron, 0.07, 2.7, 0.07, cover.x, 1.75, z)
+        box(b, k.brass, 0.28, 0.25, 0.28, cover.x, 3.1, z)
+      } else if (type === 'frame') {
+        for (const side of [-1, 1]) {
+          box(b, k.iron, 0.05, height, 0.05, cover.x + side * width * 0.4, height / 2, z - length * 0.4)
+          box(b, k.iron, 0.05, 0.05, length, cover.x + side * width * 0.4, 0.2, z)
+        }
+        box(b, k.brass, width, 0.05, 0.05, cover.x, height, z - length * 0.4)
+      } else {
+        for (const side of [-1, 1]) box(b, k.iron, 0.07, height, 0.07, cover.x + side * width * 0.4, height / 2, z)
+        box(b, k.wood, width, 0.28, 0.12, cover.x, height - 0.14, z)
+        box(b, k.brass, width * 0.85, 0.02, 0.14, cover.x, height - 0.1, z)
+      }
+      colliders.push({ minX: cover.x - width / 2, maxX: cover.x + width / 2,
+        minZ: z - length / 2, maxZ: z + length / 2, kind: 'seat' })
+      continue
+    }
+    for (const x of centres) {
+      const material = ['crates', 'kiosk', 'chairs', 'flowers'].includes(type) ? k.crate : type === 'milk' ? k.iron : type === 'mail' ? k.sack : k.leather
+      builder.add(material, kbox(width, height, length, x, height / 2, z))
+    }
     const coreGroup = new THREE.Group()
     const [mesh] = builder.build(coreGroup, id)
     mesh.userData.coverId = id
     cores.set(id, mesh); group.add(coreGroup)
-    colliders.push({ minX: x - width / 2, maxX: x + width / 2,
-      minZ: z - length / 2, maxZ: z + length / 2, kind: type === 'crates' ? 'crate' : 'trunk' })
-    const b = sectionAt(z).b
-    // Panel seams and brass straps make each long body read as a luggage stack.
-    for (const dz of [-2.8, -1.4, 0, 1.4, 2.8]) {
-      box(b, k.brass, width + 0.012, 0.035, 0.06, x, height + 0.01, z + dz)
-      for (const side of [-1, 1]) box(b, k.brass, 0.025, height, 0.06, x + side * (width / 2 + 0.01), height / 2, z + dz)
-    }
-    for (const dz of [-1.8, 0, 1.8]) trunk(b, k, at(x, height, z + dz), 1.1, 0.32, 1.2)
-    if (type === 'trolley') {
-      // Long baggage cart: its loaded body is the solid cover core.
-      for (const dz of [-2.4, 2.4]) for (const side of [-1, 1]) {
-        const wheel = new THREE.CylinderGeometry(0.15, 0.15, 0.06, 10)
-        wheel.rotateZ(Math.PI / 2); wheel.translate(x + side * 0.58, 0.15, z + dz)
-        b.add(k.iron, wheel)
+    for (const x of centres) {
+      colliders.push({ minX: x - width / 2, maxX: x + width / 2,
+        minZ: z - length / 2, maxZ: z + length / 2, kind: type === 'crates' ? 'crate' : 'trunk' })
+      // Details stay inside each footprint; paired cores share one mesh/material.
+      for (const dz of [-length * 0.4, 0, length * 0.4]) {
+        box(b, k.brass, width + 0.012, 0.035, 0.06, x, height + 0.01, z + dz)
+        for (const side of [-1, 1]) box(b, k.brass, 0.025, height, 0.06, x + side * (width / 2 + 0.01), height / 2, z + dz)
+      }
+      if (type === 'trunks' || type === 'trolley') {
+        for (const dz of [-length * 0.3, length * 0.3]) trunk(b, k, at(x, height - 0.32, z + dz), Math.min(width, 1.1), 0.32, Math.min(1.2, length * 0.35))
+      } else if (type === 'kiosk') {
+        box(b, k.iron, width + 0.1, 0.08, length + 0.1, x, height, z)
+        for (const dz of [-1.2, 0, 1.2]) {
+          box(b, k.paper, width + 0.02, 0.12, 0.65, x, height * 0.65, z + dz)
+          box(b, k.newsprint, width + 0.025, 0.015, 0.5, x, height * 0.65 + 0.07, z + dz)
+        }
+      } else if (type === 'milk' || type === 'mail' || type === 'flowers' || type === 'hats') {
+        const offsets = type === 'mail' ? [0] : type === 'milk' ? [-length * 0.25, length * 0.25] : [-length * 0.3, 0, length * 0.3]
+        for (const dz of offsets) {
+          const body = type === 'mail' ? new THREE.SphereGeometry(Math.min(width * 0.45, 0.38), 8, 6) : new THREE.CylinderGeometry(0.17, 0.24, 0.3, 10)
+          body.translate(x, height - (type === 'mail' ? Math.min(width * 0.45, 0.38) : 0.15), z + dz)
+          b.add(type === 'milk' ? k.iron : type === 'mail' ? k.sack : type === 'hats' ? k.leather : k.pot, body)
+          if (type === 'flowers') {
+            const bouquet = new THREE.SphereGeometry(0.22, 8, 6)
+            bouquet.translate(x, height + 0.12, z + dz)
+            b.add(k.cushion, bouquet)
+            box(b, k.green, 0.05, 0.25, 0.05, x, height, z + dz)
+          }
+        }
+        if (type !== 'flowers') {
+          for (let y = 0.25; y < height; y += 0.35) box(b, k.brass, width + 0.012, 0.025, length, x, y, z)
+        }
+      } else if (type === 'chairs') {
+        for (let i = 0; i < 6; i++) {
+          box(b, k.wood, width + 0.02, 0.04, length, x, 0.2 + i * 0.25, z)
+          for (const side of [-1, 1]) box(b, k.brass, 0.04, height, 0.07, x + side * width * 0.4, height / 2, z)
+        }
+      } else {
+        for (const dz of [-length * 0.25, length * 0.25]) box(b, k.brass, width * 0.5, 0.12, 0.015, x, height * 0.65, z + dz)
+      }
+      if (type === 'trolley') {
+        for (const dz of [-length * 0.4, length * 0.4]) for (const side of [-1, 1]) {
+          const wheel = new THREE.CylinderGeometry(0.15, 0.15, 0.06, 10)
+          wheel.rotateZ(Math.PI / 2); wheel.translate(x + side * 0.53, 0.15, z + dz)
+          b.add(k.iron, wheel)
+        }
       }
     }
   }
-  // Full furniture footprints, not just centres, stay >=2 m beyond every
-  // wall-side core end (exceeding the 1.5 m reserved approach). Preserve six
-  // benches and five conifers; none can cap either end of a hiding channel.
+  // Preserve six benches and five conifers along the wall, away from middle pockets.
   // They have movement boxes, but their slats/foliage are deliberately not cover.
   for (const z of [-13.7, 3, 20, 36, 52, 59]) {
     cushionedBench(sectionAt(z).b, k, at(-4.25, 0, z))

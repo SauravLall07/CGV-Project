@@ -251,6 +251,111 @@ export function createPlayer() {
   let crouchToggled = false
 
   let visual = null
+  let scriptedWalk = null
+  let scriptedTurn = null
+  let cinematicView = null
+  let poseResetCallback = null
+  let interactionPlanted = false
+  let pickupHandle = null
+  const interactionTarget = new THREE.Vector3()
+
+  function startInteractionPull(target) {
+    pickupHandle = null
+    target.getWorldPosition(interactionTarget)
+    facing = Math.atan2(interactionTarget.x - group.position.x, interactionTarget.z - group.position.z)
+    group.rotation.y = facing
+    interactionPlanted = true
+    crouchToggled = false
+    crouchAmount = 0
+    crouching = false
+    running = false
+    moving = false
+    visual?.startPull()
+  }
+
+  function returnInteractionPull(completed = false) {
+    interactionPlanted = false
+    return visual?.returnPull(completed) ?? { finished: true }
+  }
+
+  function resetInteractionAnimation() {
+    interactionPlanted = false
+    pickupHandle = null
+    visual?.resetInteractionAnimation()
+  }
+
+  function playPickup() {
+    if (interactionPlanted || airborne) return
+    pickupHandle = visual?.playPickup() ?? { finished: true }
+    if (pickupHandle.finished) { pickupHandle = null; return }
+    interactionPlanted = true
+    crouchToggled = false
+    crouchAmount = 0
+    crouching = false
+    moving = false
+    running = false
+  }
+
+  function cancelScriptedWalk() {
+    if (!scriptedWalk) return
+    scriptedWalk = null
+    visual?.setScriptedWalking(false)
+  }
+
+  function startScriptedWalk(path, duration, onDone) {
+    const points = path.map(point => point.clone())
+    const distances = [0]
+    for (let i = 1; i < points.length; i++) {
+      distances.push(distances[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z))
+    }
+    scriptedWalk = { path: points, distances, length: distances[distances.length - 1],
+      duration, elapsed: 0, onDone }
+    group.position.copy(path[0])
+    visual?.setScriptedWalking(true)
+  }
+
+  function startScriptedTurn(yaw, duration) {
+    visual?.setScriptedWalking(false)
+    scriptedTurn = { from: facing, yaw, duration, elapsed: 0 }
+  }
+
+  function updateScriptedTurn(delta) {
+    if (!scriptedTurn) return true
+    const turn = scriptedTurn
+    turn.elapsed += delta
+    const t = Math.min(1, turn.elapsed / turn.duration)
+    const smooth = t * t * (3 - 2 * t)
+    facing = turn.from + (turn.yaw - turn.from) * smooth
+    group.rotation.y = facing
+    if (t >= 1) scriptedTurn = null
+    return t >= 1
+  }
+
+  // Driven by the level during its cinematic, bypassing ordinary track collision.
+  function updateScriptedWalk(delta) {
+    if (!scriptedWalk) return
+    const walk = scriptedWalk
+    walk.elapsed += delta
+    const t = Math.min(1, walk.elapsed / walk.duration)
+    const distance = walk.length * t * t * (3 - 2 * t)
+    let index = 0
+    while (index < walk.path.length - 2 && walk.distances[index + 1] < distance) index++
+    const from = walk.path[index], to = walk.path[index + 1]
+    const u = Math.min(1, (distance - walk.distances[index]) / Math.max(1e-6, walk.distances[index + 1] - walk.distances[index]))
+    const oldX = group.position.x, oldZ = group.position.z
+    group.position.lerpVectors(from, to, u)
+    group.position.y = THREE.MathUtils.lerp(from.y, to.y, u * u * (3 - 2 * u))
+    const yaw = Math.atan2(to.x - from.x, to.z - from.z)
+    const difference = Math.atan2(Math.sin(yaw - facing), Math.cos(yaw - facing))
+    facing += difference * (1 - Math.exp(-8 * delta))
+    group.rotation.y = facing
+    visual?.setScriptedWalkSpeed(Math.hypot(group.position.x - oldX, group.position.z - oldZ) / Math.max(delta, 1e-6))
+    if (walk.elapsed >= walk.duration) {
+      scriptedWalk = null
+      visual?.setScriptedWalking(false)
+      walk.onDone?.()
+    }
+  }
 
   function setPrimitiveVisible(visible) {
     body.visible = visible
@@ -280,6 +385,10 @@ export function createPlayer() {
 
   function updateVisual(delta) {
     visual?.update(delta)
+    if (pickupHandle?.finished) {
+      pickupHandle = null
+      interactionPlanted = false
+    }
   }
 
   function playCast() {
@@ -347,6 +456,12 @@ export function createPlayer() {
 
   // Used by respawn and level transitions.
   function setPose(position, yaw = 0) {
+    poseResetCallback?.()
+    resetInteractionAnimation()
+    cancelScriptedWalk()
+    scriptedTurn = null
+    cinematicView = null
+    visual?.setScriptedWalking(false)
     visual?.cancelThrow()
     group.position.copy(position)
     group.rotation.y = yaw
@@ -424,6 +539,13 @@ export function createPlayer() {
       voids
     }
   ) {
+    if (interactionPlanted) {
+      moving = false
+      running = false
+      crouching = false
+      visual?.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false })
+      return
+    }
     const sin = Math.sin(cameraYaw)
     const cos = Math.cos(cameraYaw)
 
@@ -716,6 +838,21 @@ export function createPlayer() {
     updateVisual,
     playCast,
     playThrow,
+    playPress: () => visual?.playPress(),
+    stopPress: () => visual?.stopPress(),
+    playPickup,
+    cancelPickup: () => { if (pickupHandle) resetInteractionAnimation() },
+    startInteractionPull,
+    returnInteractionPull,
+    resetInteractionAnimation,
+    startScriptedWalk,
+    updateScriptedWalk,
+    startScriptedTurn,
+    updateScriptedTurn,
+    cancelScriptedWalk,
+    onPoseReset: callback => { poseResetCallback = callback },
+    setCinematicView: value => { cinematicView = value },
+    getCinematicView: () => cinematicView,
     isCrouching: () => crouching,
     isRunning: () => running,
     isAirborne: () => airborne,

@@ -241,7 +241,14 @@ canvas.addEventListener('click', () => {
 })
 console.log('Audio click listener attached to: ' + canvas.tagName)
 
-const interaction = createInteractionSystem({ camera, input: keyboard })
+const interaction = createInteractionSystem({ camera, input: keyboard,
+  onTap: ({ gesture }) => {
+    if (getInputState() !== 'PLAYING') return
+    if (gesture === 'pickup') player.playPickup()
+    else if (gesture === 'press') player.playPress()
+  }
+})
+player.onPoseReset(() => interaction.resetHold())
 const timeSystem = createTimeSystem({
   scene,
   player,
@@ -321,7 +328,7 @@ const levelManager = createLevelManager({
   onLeave: stopLevelMusic,
   onInputStateChange: () => syncInputState(),
   levels: [
-    { state: 'Boarding', create: createBoardingLevel },
+    { state: 'Boarding', create: ctx => createBoardingLevel({ ...ctx, renderCamera: camera }) },
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
@@ -404,7 +411,7 @@ async function buildTitleBackdrop() {
   await loadBoardingAssets()
   const ctx = {
     scene, interaction, assets, hud, timeSystem, renderer,
-    player, camera: playerView, respawn,
+    player, camera: playerView, renderCamera: camera, respawn,
     advance: () => levelManager.advance(),
     beginCinematic() {
       respawn.cancel()
@@ -529,6 +536,12 @@ function syncInputState() {
   const state = getInputState()
   levelManager.setPresentationPaused(state !== 'PLAYING' && state !== 'CINEMATIC')
   const enabled = state === 'PLAYING' && !benchmark?.isHolding()
+  if (!enabled) {
+    if (state !== 'CINEMATIC' || !player.getCinematicView()?.allowPress) player.stopPress()
+    // Successful boarding keeps its reversing pull alive during the cinematic.
+    if (state !== 'CINEMATIC') player.resetInteractionAnimation()
+    else player.cancelPickup()
+  }
   keyboard.setEnabled(enabled)
   interaction.setEnabled(enabled)
   playerView.setEnabled(enabled)
@@ -744,7 +757,9 @@ const loop = createLoop({
   clock,
   instrumentation: renderOverlay,
   render(world, view) {
-    benchmark?.beforeRender()
+    // A DEV benchmark can retain a pose after gameplay stops; it must not
+    // overwrite the boarding shot immediately before rendering.
+    if (!player.getCinematicView()) benchmark?.beforeRender()
     post.render(world, view)
   },
 
@@ -759,6 +774,7 @@ const loop = createLoop({
   }
 })
 
+const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
   renderQuality.update(performance.now())
   benchmark?.update()
@@ -832,6 +848,22 @@ loop.add((delta) => {
   // Cinematics and other non-playing states may still need level animation,
   // but movement and interaction must not resume during the same frame.
   if (getInputState() !== 'PLAYING') {
+    const view = player.getCinematicView()
+    if (view?.mode === 'fixed') {
+      view.moveElapsed = Math.min(view.moveSeconds, view.moveElapsed + delta)
+      const t = view.moveElapsed / view.moveSeconds
+      const ease = t * t * (3 - 2 * t)
+      camera.position.lerpVectors(view.initialPosition, view.position, ease)
+      camera.quaternion.slerpQuaternions(view.initialRotation, view.targetRotation, ease)
+      // The render camera is currently unparented. Preserve the world-space
+      // shot if a scene rig is attached later, without allocating per frame.
+      if (camera.parent) {
+        camera.parent.updateWorldMatrix(true, false)
+        camera.parent.worldToLocal(camera.position)
+        camera.parent.getWorldQuaternion(cinematicParentRotation).invert()
+        camera.quaternion.premultiply(cinematicParentRotation)
+      }
+    }
     syncInputState()
     return
   }
@@ -852,7 +884,7 @@ loop.add((delta) => {
     crouching: player.isCrouching()
   })
 
-  interaction.update(player.mesh, playerView.getYaw())
+  interaction.update(player.mesh, playerView.getYaw(), delta)
   respawn.update()
 
   hud.updateTimeState({

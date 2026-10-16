@@ -34,6 +34,25 @@ import { createZoneVisibility } from './boarding-zones.js'
 import { capRegionLights } from './boarding-lighting.js'
 import { resetKitMaterials } from '../environment/level1-kit/kit-materials.js'
 
+const BOARDING_HOLD_SECONDS = 5
+const BOARDING_RETURN_TIMEOUT = 2
+const BOARDING_OPEN_SECONDS = 0.6
+const BOARDING_WALK_SECONDS = 1.6
+const BOARDING_TURN_SECONDS = 0.6
+const BOARDING_CLOSE_SECONDS = 0.6
+const BOARDING_PAUSE_SECONDS = 0.4
+const BOARDING_DEPART_SECONDS = 2.6
+const BOARDING_ACCELERATION = 6.5
+// 8.35 m from the x=5.55 carriage side, below the canopy and outside cover.
+const BOARDING_CAMERA_POSITION = new THREE.Vector3(-2.8, 2.6, 35.5)
+const BOARDING_CAMERA_LOOK = new THREE.Vector3(5.8, 1.5, 45.5)
+const BOARDING_CAMERA_MOVE_SECONDS = 1.0
+const BOARDING_PLATFORM_ANCHOR = new THREE.Vector3(3.8, 0, 43.2)
+const PLATFORM_CHECKPOINTS = [
+  { threshold: -6, position: new THREE.Vector3(-1.3, 0, -5.7) },
+  { threshold: 18, position: new THREE.Vector3(-1.3, 0, 19.2) }
+]
+
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
 // - Wall-mounted sweeping security cameras with vision cone projections
@@ -48,6 +67,7 @@ export function createBoardingLevel({
   hud,
   player,
   camera,
+  renderCamera,
   respawn,
   timeSystem,
   advance,
@@ -133,7 +153,8 @@ export function createBoardingLevel({
     { minX: PLAZA.minX - 0.3, maxX: FACADE_X + 0.4, minZ: PLAZA.maxZ - 0.05, maxZ: 90 }
   )
 
-  const { train, boardingDoor, closeDoor, update: updateTrain } = createTrain()
+  const { train, stationSteam, boardingDoor, hideBoardingCues, openDoor, closeDoor,
+    getDoorOpenFraction, warmBoardingVisuals, update: updateTrain } = createTrain()
   const lights = createStationLighting()
   const sunlight = lights.find((node) => node.name === 'station-sun')
   const skyFill = lights.find((node) => node.name === 'station-sky')
@@ -199,6 +220,7 @@ export function createBoardingLevel({
   // Runs whenever the visible set changes; see boarding-zones.js.
   const floodIntensity = lights.spotLights.map((spot) => spot.intensity)
   function onZoneChange(zone) {
+    if (import.meta.env.DEV && isBoardingCinematic) logBoarding('zone', zone.name)
     const onPlatform = zone.name === 'platform'
     // Leaving the platform restores the established look immediately, including
     // direct dev teleports to the forecourt. Entry blends over one real second.
@@ -223,6 +245,9 @@ export function createBoardingLevel({
 
   function applyForecourtFill(viewer) {
     if (!viewer) return
+    // The carriage interior overlaps the forecourt's x>=6 zone. Keep the
+    // platform's regions, sky, fog and lighting while the actor walks inside.
+    if (isBoardingCinematic) viewer = BOARDING_PLATFORM_ANCHOR
     const onPlaza = viewer.x > 6 && viewer.x < 36 && viewer.z > -10 && viewer.z < 48
     if (skyFill) skyFill.intensity = onPlaza ? 0.1 : FORECOURT_FILL.sky
     if (ambientFill) ambientFill.intensity = onPlaza ? 0.01 : FORECOURT_FILL.ambient
@@ -360,7 +385,7 @@ export function createBoardingLevel({
     terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 2
   })
 
-  scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, landing.group, ...lights)
+  scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights)
 
   // Capture each look once. Retain the original environment map everywhere
   // outside the platform; no per-frame capture or forecourt reflection change.
@@ -448,19 +473,24 @@ export function createBoardingLevel({
     metalness: 0.9
   })
 
-  function addStationDistractorPickup(position, name) {
+  function addStationDistractorPickup(position, name, bottle = false) {
     const pickup = new THREE.Group()
     pickup.name = name
     pickup.position.copy(position)
 
-    const body = new THREE.Mesh(stationPickupGeometry, stationPickupMaterial)
+    const body = new THREE.Mesh(bottle ? new THREE.CylinderGeometry(0.07, 0.09, 0.25, 10) : stationPickupGeometry, stationPickupMaterial)
     body.position.y = 0.16
     pickup.add(body)
+    if (bottle) {
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.12, 8), stationPickupMaterial)
+      neck.position.y = 0.34
+      pickup.add(neck)
+    }
     station.add(pickup)
 
     let collected = false
     const unregister = interaction.register(pickup, {
-      prompt: 'Pick up loose metal distractor',
+      prompt: bottle ? 'Pick up bottle distractor' : 'Pick up loose metal distractor',
       range: 2.2,
       onInteract: () => {
         if (collected) return
@@ -484,6 +514,7 @@ export function createBoardingLevel({
   addStationDistractorPickup(new THREE.Vector3(-14.5, 0.02, -22.7), 'distractor-pickup-p4-b')
   addStationDistractorPickup(new THREE.Vector3(0.2, 0.02, -10.0), 'distractor-pickup-p5-a')
   addStationDistractorPickup(new THREE.Vector3(-2.8, 0.02, 10.0), 'distractor-pickup-p5-b')
+  addStationDistractorPickup(new THREE.Vector3(-1.3, 0.02, 19.4), 'distractor-pickup-sentry-bottle', true)
 
   // -------------------------------------------------------------
   // New west-side infiltration wing — four extra stealth zones before the
@@ -637,75 +668,130 @@ export function createBoardingLevel({
     range: 8.0
   })
 
-  // Open platform patrols. All segments stay on the unobstructed centre lane.
+  // Native waypoint patrols preserve detection, scanning and distractions.
   const platformPatrols = [
-    { id: 'platform-rear', start: -16, end: 0, speed: 1.25, waitTime: 3, initialWaypoint: 0, delay: 0 },
-    { id: 'platform-middle', start: 7, end: 23, speed: 1.35, waitTime: 3.5, initialWaypoint: 1, delay: 0 },
-    { id: 'platform-front', start: 30, end: 39, speed: 1.2, waitTime: 4, initialWaypoint: 0, delay: 3 }
+    { id: 'platform-A', points: [[-3.2, -16], [3.65, -16]], speed: 1.25, waitTime: 2, yaw: Math.PI / 2 },
+    { id: 'platform-B', points: [[-3.2, -8], [-3.2, -24]], speed: 1.1, waitTime: 4, yaw: Math.PI },
+    { id: 'platform-C', points: [[3, -4], [3, 16], [-3, 16], [-3, -4]], speed: 1.3, waitTime: 2, yaw: 0 },
+    { id: 'platform-D', points: [[3.65, 16], [3.65, -4]], speed: 1.15, waitTime: 4, yaw: Math.PI },
+    { id: 'platform-E', points: [[0, 30]], speed: 1.2, waitTime: 0, yaw: Math.PI },
+    { id: 'platform-F', points: [[3.65, 20], [3.65, 35]], speed: 1.2, waitTime: 4, yaw: 0 }
   ]
   const platformGuards = platformPatrols.map(route => {
+    route.waypoints = route.points.map(([x, z]) => new THREE.Vector3(x, 0, z))
     const guard = stealth.addGuard({
-      waypoints: [new THREE.Vector3(0, 0, route.start), new THREE.Vector3(0, 0, route.end)],
-      speed: route.speed, waitTime: route.waitTime, initialWaypoint: route.initialWaypoint
+      waypoints: route.waypoints,
+      speed: route.speed, waitTime: route.waitTime, initialWaypoint: 0
     })
     guard.group.userData.patrolId = route.id
-    guard.facing = route.initialWaypoint === 0 ? 0 : Math.PI
+    guard.facing = route.yaw
     guard.scanBase = guard.facing
     guard.group.rotation.y = guard.facing
-    guard.waitTimer = route.delay
+    guard.waitTimer = route.waitTime
     return guard
   })
+  const sentry = platformGuards[4], sentryHome = platformPatrols[4].waypoints
+  const sentryReturn = [sentryHome[0], sentryHome[0]]
+  let sentryTime = 0
+  function resetPlatformGuards() {
+    stealth.reset()
+    platformGuards.forEach((guard, i) => {
+      const route = platformPatrols[i]
+      guard.waypoints = route.waypoints
+      guard.group.position.copy(route.waypoints[0])
+      guard.targetIdx = route.waypoints.length > 1 ? 1 : 0
+      guard.facing = route.yaw
+      guard.scanBase = route.yaw
+      guard.group.rotation.y = route.yaw
+      guard.waitTimer = route.waitTime
+    })
+    sentryTime = 0
+  }
+  function updatePlatformSentry(delta) {
+    if (sentry.state !== 'PATROL') { sentryTime = 0; return }
+    if (sentry.group.position.distanceToSquared(sentryHome[0]) > 0.04) {
+      if (sentry.waypoints !== sentryReturn) {
+        sentry.waypoints = sentryReturn; sentry.targetIdx = 0; sentry.waitTimer = 0
+      }
+      return // Let native patrol movement bring him home after a distraction.
+    }
+    sentry.waypoints = sentryHome
+    sentryTime = (sentryTime + delta) % 10
+    sentry.facing = sentryTime < 4 ? Math.PI : sentryTime < 5 ? Math.PI * (1 - THREE.MathUtils.smoothstep(sentryTime, 4, 5))
+      : sentryTime < 9 ? 0 : Math.PI * THREE.MathUtils.smoothstep(sentryTime, 9, 10)
+    sentry.scanBase = sentry.facing
+    sentry.group.rotation.y = sentry.facing
+  }
 
   if (import.meta.env.DEV) {
-    // Runs once during construction, before visibility regions hide anything.
-    // These mirror stealth.js's REAL detection constants, not the narrower cone mesh.
-    const range = 7.5, fovDot = 0.52, scanAmplitude = Math.PI / 3.4
+    // Test the sheltered face of EVERY opaque piece against all routine guard
+    // route positions. An isolated prop cannot hide someone on its exposed face.
+    // Conservatively aim each guard directly at the probe (superset of its FOV).
+    const range = 7.5
     const ray = new THREE.Raycaster(), eye = new THREE.Vector3(), target = new THREE.Vector3()
-    const direction = new THREE.Vector3(), flat = new THREE.Vector3()
+    const direction = new THREE.Vector3()
     station.updateMatrixWorld(true)
-    const table = PLATFORM_COVER.map(pocket => {
-      target.set(pocket.pocketX, 0.72, pocket.z)
-      let tested = 0, exposed = null
-      // Include every station guard whose route is at platform height. This also
-      // checks the hall junction patrol, which can see through the entrance.
+    const table = PLATFORM_COVER.filter(p => !p.seeThrough).map(piece => {
+      let tested = 0, failed = null
       for (const guard of stealth.getGuards()) {
         if (guard.waypoints.some(p => Math.abs(p.y) > 0.01)) continue
         for (let segment = 0; segment < guard.waypoints.length; segment++) {
           const a = guard.waypoints[segment], b = guard.waypoints[(segment + 1) % guard.waypoints.length]
-          const length = a.distanceTo(b), steps = Math.max(1, Math.ceil(length / 0.5))
-          const heading = Math.atan2(b.x - a.x, b.z - a.z)
+          const steps = Math.max(1, Math.ceil(a.distanceTo(b) / 0.25))
           for (let step = 0; step <= steps; step++) {
             eye.lerpVectors(a, b, step / steps); eye.y += 1.55
-            direction.subVectors(target, eye)
-            const distance = direction.length()
-            if (distance > range || distance < 0.1) continue
-            flat.set(direction.x, 0, direction.z).normalize()
-            // Both travel directions everywhere; dense endpoint scan samples and
-            // the exact angle toward the pocket if it lies inside a scan sweep.
-            const angles = [heading, heading + Math.PI]
-            if (step === 0 || step === steps) for (const base of [heading, heading + Math.PI]) {
-              for (let i = 0; i <= 40; i++) angles.push(base - scanAmplitude + 2 * scanAmplitude * i / 40)
-              const toward = Math.atan2(flat.x, flat.z)
-              const difference = Math.atan2(Math.sin(toward - base), Math.cos(toward - base))
-              if (Math.abs(difference) <= scanAmplitude) angles.push(toward)
-            }
-            for (const angle of angles) {
-              if (flat.x * Math.sin(angle) + flat.z * Math.cos(angle) < fovDot) continue
+            const dx = piece.x - eye.x, dz = piece.z - eye.z
+            const extent = Math.max(Math.abs(dx) / (piece.width / 2), Math.abs(dz) / (piece.length / 2))
+            if (extent < 1) continue
+            const norm = Math.hypot(dx, dz)
+            const px = piece.x + dx / extent + dx / norm * 0.5
+            const pz = piece.z + dz / extent + dz / norm * 0.5
+            for (const [ox, oz] of [[0, 0], [-0.18, -0.18], [-0.18, 0.18], [0.18, -0.18], [0.18, 0.18]]) {
+              target.set(px + ox, piece.height >= 1.6 ? 1.2 : 0.72, pz + oz)
+              direction.subVectors(target, eye)
+              const distance = direction.length()
+              if (distance > range) continue
               tested++
-              ray.set(eye, direction.clone().normalize()); ray.far = distance
-              const blocked = ray.intersectObjects(collidables, false).some(hit => hit.distance < distance - 0.3)
-              if (!blocked && !exposed) exposed = `${guard.group.userData.patrolId || 'hall-guard'} at (${eye.x.toFixed(2)},${eye.y.toFixed(2)},${eye.z.toFixed(2)}), yaw ${angle.toFixed(3)}`
+              ray.set(eye, direction.normalize()); ray.far = distance - 0.3
+              if (!ray.intersectObject(coverCores.get(piece.id), false).length)
+                failed ||= `${guard.group.userData.patrolId || 'hall-guard'} at ${eye.x.toFixed(2)},${eye.z.toFixed(2)}`
             }
           }
         }
       }
-      return { pocket: pocket.id, x: pocket.pocketX, z: pocket.z,
-        result: exposed ? 'EXPOSED' : 'safe', samplesInFov: tested, exposedFrom: exposed || '—' }
+      return { piece: piece.id, posture: piece.height >= 1.6 ? 'standing' : 'crouched',
+        tested, result: failed ? 'EXPOSED' : 'correct', failed }
     })
     console.table(table)
-    console.info(`cover self-test: ${table.filter(row => row.result === 'safe').length}/${table.length} pockets safe`)
-    console.info('Cover test uses y=1.55 / target=0.72, range=7.5, detection dot>=0.52; animated torch origin still needs playtesting.')
-
+    console.info(`cover self-test: ${table.filter(row => row.result === 'correct').length}/${table.length} pieces correct`)
+    console.assert(table.every(row => row.result === 'correct'), 'Cover core fails sheltered-side LOS test')
+    // These checkpoints promise safety at respawn, with guards reset to their
+    // initial positions/facings, rather than permanent immunity during patrol.
+    for (const checkpoint of PLATFORM_CHECKPOINTS) {
+      let safe = true
+      for (const guard of stealth.getGuards()) for (const height of [0.72, 1.2]) {
+        eye.copy(guard.group.position); eye.y += 1.55
+        target.copy(checkpoint.position); target.y += height
+        direction.subVectors(target, eye)
+        const distance = direction.length(), flatDistance = Math.hypot(direction.x, direction.z)
+        if (distance > range) continue
+        const dot = (direction.x * Math.sin(guard.facing) + direction.z * Math.cos(guard.facing)) / Math.max(flatDistance, 1e-6)
+        if (dot < 0.52 && flatDistance >= 1.6) continue
+        ray.set(eye, direction.normalize()); ray.far = distance - 0.3
+        if (!ray.intersectObjects(collidables, false).length) safe = false
+      }
+      console.assert(safe, 'Checkpoint exposed at reset:', checkpoint.position)
+    }
+    const doorRoute = platformPatrols[5]
+    const [routeStart, routeEnd] = doorRoute.points.map(point => point[1])
+    // F's entire route now lies beyond door detection range. Report one
+    // complete nominal cycle (turn time only extends it), not a fictitious
+    // crossing of the range boundary beyond his northern endpoint.
+    const safeWindow = routeEnd < 43.2 - range
+      ? 2 * (routeEnd - routeStart) / doorRoute.speed + 2 * doorRoute.waitTime
+      : 2 * (43.2 - range - routeStart) / doorRoute.speed + doorRoute.waitTime
+    console.info(`door window: ${safeWindow.toFixed(1)} s`)
+    console.assert(safeWindow >= 7 && 43.2 - 30 > range, 'Door window too short')
     // Match PLAYER_COLLISION_RADIUS in entities/player.js (0.18 m). That
     // module does not export the constant, and is outside this edit's scope.
     // Movement uses circle-vs-AABB distance, not expanded-square corners.
@@ -727,24 +813,10 @@ export function createBoardingLevel({
       return Math.hypot(dx, dz)
     }
     const segmentClear = (a, b, radius) => movementBoxes.every(box => segmentDistance(a, b, box) >= radius - 1e-8)
-    const entryTable = PLATFORM_COVER.map(pocket => {
-      const endClearance = sign => {
-        const entryZ = pocket.z + sign * (pocket.length / 2 + 0.75)
-        const lane = { x: 0, z: entryZ }, bend = { x: pocket.pocketX, z: entryZ }
-        const centre = { x: pocket.pocketX, z: pocket.z }
-        return Math.min(...movementBoxes.map(box => Math.min(
-          segmentDistance(lane, bend, box), segmentDistance(bend, centre, box)
-        ))) - playerRadius
-      }
-      const rear = endClearance(-1), front = endClearance(1)
-      const entries = [rear >= spareClearance - 1e-8 ? 'rear (-Z)' : '',
-        front >= spareClearance - 1e-8 ? 'front (+Z)' : ''].filter(Boolean).join(', ')
-      return { pocket: pocket.id, entries: entries || 'BLOCKED',
-        rearSpare: rear.toFixed(3), frontSpare: front.toFixed(3), playerDiameter: 2 * playerRadius,
-        result: entries ? 'OK (>=0.15 m per side)' : 'BLOCKED' }
-    })
-    console.table(entryTable)
-    console.assert(entryTable.every(row => row.entries !== 'BLOCKED'), 'A cover pocket has no entry with 0.15 m spare clearance')
+    for (const route of platformPatrols) for (let i = 0; i < route.waypoints.length; i++) {
+      const a = route.waypoints[i], b = route.waypoints[(i + 1) % route.waypoints.length]
+      console.assert(segmentClear(a, b, 0.6), 'Guard route lacks 0.6 m geometry clearance:', route.id, a, b)
+    }
     const indexAt = p => Math.round((p.z - gridMinZ) / gridStep) * columns + Math.round((p.x - gridMinX) / gridStep)
     const pointAt = index => ({ x: gridMinX + (index % columns) * gridStep,
       z: gridMinZ + Math.floor(index / columns) * gridStep })
@@ -772,17 +844,16 @@ export function createBoardingLevel({
           reached[next] = 1; queue[tail++] = next
         }
       }
-      return pocket => Boolean(reached[indexAt({ x: pocket.pocketX, z: pocket.z })])
+      return point => Boolean(reached[indexAt(point)])
     }
-    const reachable = flood(playerRadius)
-    const reachableWithSpare = flood(probeRadius)
-    const reachTable = PLATFORM_COVER.map(pocket => ({ pocket: pocket.id,
-      result: reachable(pocket) ? 'reachable' : 'BLOCKED',
-      with015mSpare: reachableWithSpare(pocket) ? 'reachable' : 'BLOCKED' }))
-    console.table(reachTable)
-    console.info(`cover reachability: ${reachTable.filter(row => row.result === 'reachable').length}/${reachTable.length} pockets reachable`)
-    console.info(`cover reachability with 0.15 m spare: ${reachTable.filter(row => row.with015mSpare === 'reachable').length}/${reachTable.length} pockets reachable`)
-    console.assert(reachTable.every(row => row.with015mSpare === 'reachable'), 'A cover pocket is disconnected from the platform start')
+    const reachable = flood(playerRadius), reachableWithSpare = flood(probeRadius)
+    const destinations = [{ name: 'boarding spot', x: 4.1, z: 43.2 },
+      ...PLATFORM_CHECKPOINTS.map((checkpoint, i) => ({ name: `checkpoint-${i + 1}`, x: checkpoint.position.x, z: checkpoint.position.z }))]
+    for (const point of destinations) {
+      console.assert(reachable(point), 'Route blocked:', point)
+      console.assert(reachableWithSpare(point), 'Route lacks 0.15 m spare clearance:', point)
+    }
+    console.info(destinations.every(reachable) ? 'route reachability: OK' : 'route reachability: BLOCKED — see coordinates above')
     // Mesh/point submissions, not a GPU/frame measurement. Include instance
     // multiplicity and geometry groups; shadows/postprocessing are excluded.
     const count = root => {
@@ -812,14 +883,100 @@ export function createBoardingLevel({
   // -------------------------------------------------------------
   let isBoardingCinematic = false
   let cinematicTimer = 0
+  let boardingPhase = null
+  let boardingReturn = null
+  let boardingStartedAt = 0
+  let boardingOverlayObserver = null
+  function logBoarding(event, detail) {
+    if (import.meta.env.DEV) console.info(`[boarding +${((performance.now() - boardingStartedAt) / 1000).toFixed(3)}s @${performance.now().toFixed(0)}ms] ${event}`, detail)
+  }
+  function watchBoardingOverlays() {
+    if (!import.meta.env.DEV) return
+    const previous = new WeakMap()
+    const report = node => {
+      if (!(node instanceof HTMLElement) || (node !== veil && !/loading|overlay|caught|transition/i.test(node.id))) return
+      const style = getComputedStyle(node)
+      const state = `${style.display}/${style.visibility}/${style.opacity}`
+      if (previous.get(node) === state) return
+      previous.set(node, state)
+      logBoarding('overlay', { element: node.id || 'station-entry-veil', state })
+    }
+    document.querySelectorAll('[id]').forEach(report)
+    report(veil)
+    boardingOverlayObserver = new MutationObserver(records => {
+      for (const record of records) report(record.target)
+    })
+    boardingOverlayObserver.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] })
+  }
+  const departureStartZ = train.position.z
+  const boardingTarget = new THREE.Vector3()
+  const boardingView = { mode: 'fixed', position: BOARDING_CAMERA_POSITION.clone(),
+    target: BOARDING_CAMERA_LOOK.clone(), allowPress: false,
+    initialPosition: new THREE.Vector3(),
+    initialRotation: new THREE.Quaternion(), targetRotation: new THREE.Quaternion(),
+    moveSeconds: BOARDING_CAMERA_MOVE_SECONDS, moveElapsed: 0 }
 
-  // Front carriage, world z=43.2; departure sequencing stays shared with Level 2.
+  function startBoardingCamera() {
+    // Capture before changing view mode, including the first-person eye pose.
+    renderCamera.getWorldPosition(boardingView.initialPosition)
+    renderCamera.getWorldQuaternion(boardingView.initialRotation)
+    const look = new THREE.Matrix4().lookAt(boardingView.position, boardingView.target, new THREE.Vector3(0, 1, 0))
+    boardingView.targetRotation.setFromRotationMatrix(look)
+    boardingView.moveElapsed = 0
+    camera.setMode('third', { announce: false })
+    player.mesh.visible = true
+    player.setCinematicView(boardingView)
+  }
+
+  function beginBoardingPhase(phase) {
+    boardingPhase = phase
+    cinematicTimer = 0
+    if (import.meta.env.DEV) logBoarding('phase', phase)
+  }
+
+  function startBoardingWalk() {
+    beginBoardingPhase('walking')
+    boardingDoor.getWorldPosition(boardingTarget)
+    const z = boardingTarget.z
+    player.startScriptedWalk([
+      player.mesh.position.clone(),
+      new THREE.Vector3(4.55, 0.05, z),
+      new THREE.Vector3(5.05, 0.24, z),
+      new THREE.Vector3(5.55, 0.55, z),
+      new THREE.Vector3(6.3, 0.55, z)
+    ], BOARDING_WALK_SECONDS, () => {
+      player.startScriptedTurn(player.mesh.rotation.y + Math.PI, BOARDING_TURN_SECONDS)
+      beginBoardingPhase('turning')
+    })
+  }
+
+  // Last carriage, world z=43.2; departure sequencing stays shared with Level 2.
   const unregisterBoarding = interaction.register(boardingDoor, {
-    prompt: 'Sneak aboard',
-    onInteract: () => {
-      if (isBoardingCinematic) return
+    prompt: 'Force the door',
+    holdSeconds: BOARDING_HOLD_SECONDS,
+    isEligible: () => {
+      boardingDoor.getWorldPosition(boardingTarget)
+      const p = player.mesh.position
+      return !isBoardingCinematic && !respawn.isFailing() &&
+        !player.isAirborne() && Math.abs(p.y) < 0.15 &&
+        p.x >= 3.8 && Math.abs(p.z - boardingTarget.z) <= 0.6
+    },
+    onHoldStart: () => player.startInteractionPull?.(boardingDoor),
+    onHoldCancel: ({ reset }) => {
+      if (reset) player.resetInteractionAnimation?.()
+      else player.returnInteractionPull?.()
+    },
+    onHoldComplete: () => {
+      if (isBoardingCinematic || respawn.isFailing()) return
       isBoardingCinematic = true
-      closeDoor()
+      boardingStartedAt = performance.now()
+      if (import.meta.env.DEV) watchBoardingOverlays()
+      applyForecourtFill(BOARDING_PLATFORM_ANCHOR)
+      if (import.meta.env.DEV) logBoarding('platform lock', { zone: zones.zone?.name, train: train.visible, platform: platform.visible, background: scene.background?.getHexString() })
+      hideBoardingCues()
+      beginBoardingPhase('returning')
+      boardingReturn = player.returnInteractionPull?.(true)
+      startBoardingCamera()
       beginCinematic?.()
       interaction.flashPrompt('Boarding the Chrono Express…')
       if (hud) hud.setObjective('Departing station… hold on!')
@@ -835,12 +992,13 @@ export function createBoardingLevel({
   let approachZoneIndex = -1
 
   const zoneNames = [
-    'Reach the front carriage — use luggage as cover',
-    'Keep low and watch the patrols',
-    'The front carriage door is ahead — sneak aboard'
+    'Two patrols cover the platform — watch both before crossing',
+    'Weave through the small baggage stacks — watch the loop and track patrol',
+    'A sentry and track patrol watch the far end — a bottle might turn his head'
   ]
   let zoneIndex = -1
   let platformCheckpointActive = false
+  let platformCheckpointIndex = -1
 
   // The level manager needs an initial respawn position before any checkpoint
   // has been reached. Once the player reaches the old spawn/junction, this is
@@ -919,7 +1077,7 @@ export function createBoardingLevel({
   zones.addRegion('p3', bridgePassage.group, regionLights[2].pools)
   zones.addRegion('p4', hallRegion, hallDressing, regionLights[3].pools)
   zones.addRegion('platform', platformRegion, regionLights[4].pools)
-  zones.addRegion('train', train)
+  zones.addRegion('train', train, stationSteam)
   zones.addRegion('landing', landing.group)
   zones.addRegion('outdoor', outdoorEnv.group)
   zones.addRegion('platform-backdrop', platformBackdrop)
@@ -1010,6 +1168,18 @@ export function createBoardingLevel({
     }
   })
 
+  // Compile and render the open vestibule while the level loading overlay owns
+  // the screen; nothing new is constructed or uploaded during the walk-in.
+  const savedFog = scene.fog, savedEnvironment = scene.environment
+  try {
+    scene.fog = platformFog
+    scene.environment = platformSkyTarget?.texture ?? savedEnvironment
+    warmBoardingVisuals(renderer, scene)
+  } finally {
+    scene.fog = savedFog
+    scene.environment = savedEnvironment
+  }
+
   return {
     objective: 'Enter the station',
     checkpoint: {
@@ -1073,7 +1243,7 @@ export function createBoardingLevel({
       updateDoorFade(delta)
       applyForecourtFill(player.mesh.position)
       sky.update(delta, timeSystem)
-      updateStationSunShadow(sunlight, player.mesh.position,
+      updateStationSunShadow(sunlight, isBoardingCinematic ? BOARDING_PLATFORM_ANCHOR : player.mesh.position,
         zones.zone?.name === 'platform' ? sky.uniforms.uMoonDirection.value : SUN_DIRECTION)
       updateVisibleScenery(delta)
       tutorialPassage.update(delta)
@@ -1135,55 +1305,70 @@ export function createBoardingLevel({
       const p = player.mesh.position
       const onPlatform = p.y > -0.15 && p.x > -4.8 && p.x < 4.5 && p.z > PLATFORM_MIN_Z && p.z < PLATFORM_MAX_Z
       if (onPlatform && !isBoardingCinematic) {
-        const crossed = p.z > 34 ? 2 : p.z > 8 ? 1 : 0
+        const crossed = p.z >= 18 ? 2 : p.z >= -6 ? 1 : 0
         if (crossed !== zoneIndex) {
           zoneIndex = crossed
           if (hud) hud.showToast(zoneNames[zoneIndex], 2200)
-          hud?.setObjective('Reach the open door on the front carriage — Sneak aboard')
+          hud?.setObjective('Time the patrols and reach the last carriage — Force the door')
         }
-        if (!platformCheckpointActive && p.z >= 6) {
+        const checkpointIndex = p.z >= PLATFORM_CHECKPOINTS[1].threshold ? 1 : p.z >= PLATFORM_CHECKPOINTS[0].threshold ? 0 : -1
+        if (checkpointIndex > platformCheckpointIndex) {
+          platformCheckpointIndex = checkpointIndex
           platformCheckpointActive = true
-          // Protected pocket centre, not the exposed patrol lane. No passage
-          // prerequisite: Shift+6 is also able to exercise this checkpoint.
-          respawn.setCheckpoint(new THREE.Vector3(4.1, 0, 6), 0, {
-            restore: () => {
-              stealth.reset()
-              platformGuards.forEach((guard, i) => {
-                const route = platformPatrols[i]
-                guard.group.position.copy(guard.waypoints[route.initialWaypoint])
-                guard.targetIdx = 1 - route.initialWaypoint
-                guard.facing = route.initialWaypoint === 0 ? 0 : Math.PI
-                guard.scanBase = guard.facing
-                guard.group.rotation.y = guard.facing
-                guard.waitTimer = route.delay
-              })
-            }
-          })
-          hud?.showToast('Checkpoint reached — platform luggage shelter', 2400)
+          const checkpoint = PLATFORM_CHECKPOINTS[checkpointIndex]
+          respawn.setCheckpoint(checkpoint.position, 0, { restore: resetPlatformGuards })
+          hud?.showToast(`Checkpoint ${checkpointIndex + 1} reached — luggage shelter`, 2400)
         }
       }
 
       if (isBoardingCinematic) {
         cinematicTimer += delta
-        // Same +Z roll as before (~19 m over 2.4 s). The track is centered on
-        // the scaled consist, so the nose still has rail under it as it leaves.
-        train.position.z += delta * (cinematicTimer * 6.5)
-        pointPool.update(player.mesh.position, delta)
-        torchPool.update(player.mesh.position, delta)
+        if (boardingPhase === 'returning' && (!boardingReturn || boardingReturn.finished || cinematicTimer >= BOARDING_RETURN_TIMEOUT)) {
+          player.resetInteractionAnimation?.()
+          openDoor()
+          beginBoardingPhase('opening')
+        } else if (boardingPhase === 'opening' && cinematicTimer >= BOARDING_OPEN_SECONDS && getDoorOpenFraction() >= 0.8) {
+          startBoardingWalk()
+        } else if (boardingPhase === 'walking') {
+          player.updateScriptedWalk(delta)
+        } else if (boardingPhase === 'turning' && player.updateScriptedTurn(delta)) {
+          boardingView.allowPress = true
+          player.playPress()
+          closeDoor()
+          beginBoardingPhase('closing')
+        } else if (boardingPhase === 'closing' && cinematicTimer >= BOARDING_CLOSE_SECONDS) {
+          player.mesh.visible = false
+          boardingView.allowPress = false
+          beginBoardingPhase('pause')
+        } else if (boardingPhase === 'pause' && cinematicTimer >= BOARDING_PAUSE_SECONDS) {
+          beginBoardingPhase('departing')
+        } else if (boardingPhase === 'departing') {
+          const t = Math.min(cinematicTimer, BOARDING_DEPART_SECONDS)
+          train.position.z = departureStartZ - 0.5 * BOARDING_ACCELERATION * t * t
+        }
+        pointPool.update(BOARDING_PLATFORM_ANCHOR, delta)
+        torchPool.update(BOARDING_PLATFORM_ANCHOR, delta)
 
-        if (cinematicTimer >= 2.4) {
+        if (boardingPhase === 'departing' && cinematicTimer >= BOARDING_DEPART_SECONDS) {
+          if (import.meta.env.DEV) logBoarding('departure complete; advance/loading may begin', { trainZ: train.position.z })
           isBoardingCinematic = false
           advance()
         }
         return
       }
 
+      updatePlatformSentry(delta)
       stealth.update(delta)
       pointPool.update(player.mesh.position, delta)
       torchPool.update(player.mesh.position, delta)
     },
 
     dispose() {
+      boardingOverlayObserver?.disconnect()
+      player.setCinematicView(null)
+      player.cancelScriptedWalk()
+      player.resetInteractionAnimation?.()
+      if (boardingPhase) player.mesh.visible = true
       unregisterRespawnSuspicionReset()
       unregisterStationBlocker()
       unregisterTrainBlocker()
@@ -1210,8 +1395,8 @@ export function createBoardingLevel({
       }
       platformSkyTarget?.dispose()
       platformSkyTarget = null
-      scene.remove(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, landing.group, ...lights, lightPools, lampPools)
-      disposeObject([station, hallDressing, train, landing.group, ...lights, lightPools, lampPools])
+      scene.remove(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights, lightPools, lampPools)
+      disposeObject([station, hallDressing, train, stationSteam, landing.group, ...lights, lightPools, lampPools])
     }
   }
 }
