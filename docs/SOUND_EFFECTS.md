@@ -164,6 +164,8 @@ MP3. No network access or external sample pack was required.
 `src/assets/audio/sfx/LICENSE.generated.txt` lists every new WAV and dedicates
 the generator/new sounds to CC0-1.0. Existing ability and music asset licenses
 are unchanged; this work does not establish or relicense their provenance.
+The in-game Sound Effects credits list the 37 new effects and their CC0 1.0
+dedication alongside the existing imported SFX credits.
 
 ## Files changed
 
@@ -206,7 +208,7 @@ are unchanged; this work does not establish or relicense their provenance.
 | src/systems/wreck-hazard-audio.js | Existing hazard mix routes through ambience |
 | src/ui/pause-menu.js | Pause/resume panel cues |
 | src/ui/settings-menu.js | Settings panel and committed binding cues |
-| src/ui/credits.js | Credits panel cues |
+| src/ui/credits.js | Credits panel cues and CC0 attribution for the 37 generated effects |
 | test/audio-graph.test.mjs | Category routing, pause/focus/unlock/mute and persistence verification |
 | test/movement-audio.test.mjs | Cadence, surfaces, stopped/airborne filtering and impact scaling |
 | test/sound-effects.test.mjs | Cache/load failures/caps/priority/cleanup and actual WAV integrity |

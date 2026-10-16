@@ -118,6 +118,10 @@ function buildRollContent() {
 
   addBlock(roll, [
     label('Sound Effects'),
+    line('Original gameplay, interface and ambience effects created for Chrono Express'),
+    line('37 synthesized effects — CC0 1.0 Universal (Public Domain)', { dim: true }),
+    line('creativecommons.org/publicdomain/zero/1.0/', { dim: true, size: '13px' }),
+    spacer(8),
     line('"Freeze Sound Effect FX" by antonsoederberg (Freesound.org) — CC0'),
     line('"Quick Zoom Slow Down" by bevibeldesign (Freesound.org) — CC0'),
     line('"Vinyl Rewind" by tasmanianpower (Freesound.org) — CC0'),
