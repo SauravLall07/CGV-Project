@@ -9,7 +9,6 @@ import { createLakeMaterial } from '../shaders/lake-shader.js'
 import { SUN_DIRECTION } from './station-blockout.js'
 import { insideLanding, LANDING_CLEAR } from './landing/layout.js'
 import { disposeObject } from '../core/dispose.js'
-import { createGrassField, grassDistance } from './grass-field.js'
 import { createMoonlitValley } from './moonlit-valley.js'
 
 /**
@@ -136,6 +135,23 @@ function makeRng(seed) {
   }
 }
 
+// Removed station batches still advance the shared seeded placement stream:
+// later logs/stumps must keep exactly the same transforms. These counters have
+// no Three.js objects, geometry, materials, instance buffers or scene attachment.
+function placementCounter(count) {
+  return { count, setMatrixAt() {}, instanceMatrix: {}, instanceColor: { setXYZ() {} } }
+}
+
+// Legacy fern acceptance mask, retained only to replay that seeded stream.
+// Independent of grass-field.js so the retired blade builder is no longer loaded.
+function legacyMeadowDistance(x, z) {
+  let distance = Infinity
+  for (const [minX, maxX, minZ, maxZ] of [
+    [-189.2, -168, -27.7, -21.3], [-177.2, -157.8, -28.2, -20.8], [-160, -142, -41, -20.6]
+  ]) distance = Math.min(distance, distOutsideRect(x, z, minX, maxX, minZ, maxZ))
+  return distance
+}
+
 export function createOutdoorEnvironment(options = {}) {
   // Opt-in only. Missing sceneryStyle (or 'legacy') follows the original body
   // unchanged, including Timewreck's terrain, scatter, fog and motion.
@@ -143,6 +159,8 @@ export function createOutdoorEnvironment(options = {}) {
     return createMoonlitValley(options)
   }
   const mode = options.mode || 'station' // 'station' | 'moving'
+  // Boarding alone opts in. Moving/Timewreck construction stays unchanged.
+  const trimStation = mode === 'station' && options.trimLegacyScenery === true
   const speed = options.speed || 35.0 // Speed for moving train mode
   const isStormy = options.stormy || false
 
@@ -155,7 +173,6 @@ export function createOutdoorEnvironment(options = {}) {
   group.name = 'outdoor-environment'
 
   let disposed = false
-  let grassField = null
 
   // -------------------------------------------------------------
   // 1. Sun and fog colours for the terrain and trees. The visible sky is the
@@ -483,9 +500,9 @@ export function createOutdoorEnvironment(options = {}) {
   const deadGeo = createDeadTreeGeometry()
   const decGeo = createDeciduousTreeGeometry()
   const bushGeo = createBushGeometry()
-  const rockGeo = createRockGeometry([1.4, 0.68, 1.08], 0.22, 1.2)
-  const outcropGeo = createRockGeometry([1.8, 1.15, 1.1], 0.35, 4.4)
-  const slabGeo = createRockGeometry([2.1, 0.38, 1.4], 0.16, 8.1)
+  const rockGeo = trimStation ? null : createRockGeometry([1.4, 0.68, 1.08], 0.22, 1.2)
+  const outcropGeo = trimStation ? null : createRockGeometry([1.8, 1.15, 1.1], 0.35, 4.4)
+  const slabGeo = trimStation ? null : createRockGeometry([2.1, 0.38, 1.4], 0.16, 8.1)
   const logGeo = new THREE.CylinderGeometry(0.16, 0.2, 2.4, 6)
   logGeo.rotateZ(Math.PI / 2)
   logGeo.translate(0, 0.18, 0)
@@ -504,8 +521,8 @@ export function createOutdoorEnvironment(options = {}) {
     parts.forEach((part) => part.dispose())
     return merged
   }
-  const grassGeo = createTuftGeometry(0.28, 0.42)
-  const fernGeo = createTuftGeometry(0.55, 0.32)
+  const grassGeo = trimStation ? null : createTuftGeometry(0.28, 0.42)
+  const fernGeo = trimStation ? null : createTuftGeometry(0.55, 0.32)
 
 
   // Tree distribution & instance count based on Quality
@@ -530,7 +547,7 @@ export function createOutdoorEnvironment(options = {}) {
   })
   // Boarding shares the sky clock. Writing elapsed here would ignore Slow,
   // Freeze and Rewind. Moving levels have no sky time, so they keep elapsed.
-  const grassMaterial = createVegetationShaderMaterial({
+  const grassMaterial = trimStation ? null : createVegetationShaderMaterial({
     windSpeed: 2.2,
     windStrength: 0.55,
     swayHeight: 0.48,
@@ -549,7 +566,7 @@ export function createOutdoorEnvironment(options = {}) {
   if (options.skyTime) {
     vegMaterial.customUniforms.uTime = options.skyTime
     deadMaterial.customUniforms.uTime = options.skyTime
-    grassMaterial.customUniforms.uTime = options.skyTime
+    if (grassMaterial) grassMaterial.customUniforms.uTime = options.skyTime
   }
 
   function attachTint(mesh, count) {
@@ -566,15 +583,15 @@ export function createOutdoorEnvironment(options = {}) {
   const bushMesh = new THREE.InstancedMesh(bushGeo, vegMaterial, bushCount)
   const grassCount = mode === 'station' ? 420 : 1
   const fernCount = mode === 'station' ? 140 : 1
-  const grassMesh = new THREE.InstancedMesh(grassGeo, grassMaterial, grassCount)
-  const fernMesh = new THREE.InstancedMesh(fernGeo, grassMaterial, fernCount)
-  for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh]) {
+  const grassMesh = trimStation ? placementCounter(grassCount) : new THREE.InstancedMesh(grassGeo, grassMaterial, grassCount)
+  const fernMesh = trimStation ? placementCounter(fernCount) : new THREE.InstancedMesh(fernGeo, grassMaterial, fernCount)
+  for (const mesh of [pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh].filter(mesh => mesh.isObject3D)) {
     attachTint(mesh, mesh.instanceColor ? mesh.count : mesh.count)
     mesh.castShadow = false
     mesh.receiveShadow = false
   }
   
-  const rockMaterial = createRockShaderMaterial({
+  const rockMaterial = trimStation ? null : createRockShaderMaterial({
     sunDirection: sunPosition.clone().normalize(),
     sunColor,
     skyColor,
@@ -588,9 +605,9 @@ export function createOutdoorEnvironment(options = {}) {
     rockColor: new THREE.Color(0x4a3424),
     ambient: mode === 'station' ? 0.6 : 0.35
   })
-  const rockMesh = new THREE.InstancedMesh(rockGeo, rockMaterial, rockCount)
-  const outcropMesh = new THREE.InstancedMesh(outcropGeo, rockMaterial, mode === 'station' ? 48 : 1)
-  const slabMesh = new THREE.InstancedMesh(slabGeo, rockMaterial, mode === 'station' ? 28 : 1)
+  const rockMesh = trimStation ? placementCounter(rockCount) : new THREE.InstancedMesh(rockGeo, rockMaterial, rockCount)
+  const outcropMesh = trimStation ? placementCounter(48) : new THREE.InstancedMesh(outcropGeo, rockMaterial, mode === 'station' ? 48 : 1)
+  const slabMesh = trimStation ? placementCounter(28) : new THREE.InstancedMesh(slabGeo, rockMaterial, mode === 'station' ? 28 : 1)
   const logMesh = new THREE.InstancedMesh(logGeo, woodRock, mode === 'station' ? 36 : 1)
   const stumpMesh = new THREE.InstancedMesh(stumpGeo, woodRock, mode === 'station' ? 24 : 1)
   for (const mesh of [rockMesh, outcropMesh, slabMesh, logMesh, stumpMesh]) {
@@ -873,6 +890,11 @@ export function createOutdoorEnvironment(options = {}) {
   function placeRealNature(props) {
     const buckets = { tree: [], fern: [], rock: [], log: [], stump: [] }
     for (const prop of props) {
+      if (trimStation && ['tree', 'fern', 'rock'].includes(prop.kind)) {
+        // Replay acceptance/random draws only; do not clone or attach the model.
+        buckets[prop.kind].push({ prop, mesh: placementCounter(prop.capacity), index: 0 })
+        continue
+      }
       const material = prop.material.clone()
       if (prop.swayHeight) {
         enableWind(material, {
@@ -959,7 +981,7 @@ export function createOutdoorEnvironment(options = {}) {
       const rz = -72 + rand() * 90
       const gap = gapOutsideFootprints(rx, rz)
       if (gap < 1.4 || gap > 9 || onDeck(rx, rz) || lakeDrop(rx, rz) > 0.15) continue
-      if (grassDistance(rx, rz) > 24) continue
+      if (legacyMeadowDistance(rx, rz) > 24) continue
       const groundY = getTerrainHeight(rx, rz)
       if (groundY < -0.45 || groundY > 3) continue
       const entry = ferns[fernN % ferns.length]
@@ -1009,23 +1031,8 @@ export function createOutdoorEnvironment(options = {}) {
 
   if (mode === 'station' && options.nature?.props?.length) placeRealNature(options.nature.props)
 
-  // Spawn meadow. One draw, no shadows. Moving levels do not build it.
-  if (mode === 'station') {
-    grassField = createGrassField({
-      getTerrainHeight,
-      gapOutsideFootprints,
-      skyTime: options.skyTime || null,
-      sunDirection: sunPosition.clone().normalize(),
-      fogColor,
-      fogNear,
-      fogFar,
-      fogMax,
-      mist: 0.36
-    })
-    group.add(grassField.mesh)
-  }
-
-  group.add(pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh, rockMesh, outcropMesh, slabMesh, logMesh, stumpMesh)
+  group.add(...[pineMesh, spruceMesh, youngMesh, deadMesh, decMesh, bushMesh, grassMesh, fernMesh,
+    rockMesh, outcropMesh, slabMesh, logMesh, stumpMesh].filter(mesh => mesh.isObject3D))
 
   // -------------------------------------------------------------
   // 4. Trackside Infrastructure (Telegraph Poles, Wires, Gantries, Fences)
@@ -1168,8 +1175,7 @@ export function createOutdoorEnvironment(options = {}) {
     addDistantRanges(group)
     valleyLightMaterial = addValleyLights(group, getTerrainHeight, options.skyTime)
     if (options.skyUniforms) {
-      addLake(group, options.skyUniforms, getTerrainHeight)
-      addCreek(group, options.skyUniforms, getTerrainHeight)
+      addCreek(group, options.skyUniforms, getTerrainHeight, !trimStation)
     }
     addValleySetDressing(group, getTerrainHeight)
   }
@@ -1248,7 +1254,6 @@ export function createOutdoorEnvironment(options = {}) {
     writeFog(vegMaterial, options)
     writeFog(deadMaterial, options)
     writeFog(grassMaterial, options)
-    if (grassField) writeFog(grassField.material, options)
   }
 
   function setFogColor(color) {
@@ -1273,9 +1278,7 @@ export function createOutdoorEnvironment(options = {}) {
       if (terrainMaterial.customUniforms) terrainMaterial.customUniforms.uTime.value = elapsed
       if (vegMaterial.customUniforms && !options.skyTime) vegMaterial.customUniforms.uTime.value = elapsed
       if (deadMaterial.customUniforms && !options.skyTime) deadMaterial.customUniforms.uTime.value = elapsed
-      if (grassMaterial.customUniforms && !options.skyTime) grassMaterial.customUniforms.uTime.value = elapsed
-      // Boarding grass shares the sky clock. This is only the fallback.
-      if (grassField && !options.skyTime) grassField.material.customUniforms.uTime.value = elapsed
+      if (grassMaterial?.customUniforms && !options.skyTime) grassMaterial.customUniforms.uTime.value = elapsed
       // Shared with the sky when Boarding passes skyTime, so time powers
       // already drive the twinkle. This is only the fallback.
       if (valleyLightMaterial && !options.skyTime) {
@@ -1300,7 +1303,6 @@ export function createOutdoorEnvironment(options = {}) {
     dispose() {
       if (disposed) return
       disposed = true
-      if (grassField) grassField.dispose()
       disposeObject(group)
     }
   }
@@ -1454,23 +1456,6 @@ function addDistantRanges(group) {
   }
 }
 
-// One ellipse, one draw call. The water sits a little under the shore
-// height so the basin rim covers the edge. No collider.
-function addLake(group, skyUniforms, getTerrainHeight) {
-  const shore = getTerrainHeight(LAKE_CX + LAKE_RX * 0.92, LAKE_CZ)
-  const waterY = shore - 0.35
-  const geometry = new THREE.CircleGeometry(1, 48)
-  geometry.rotateX(-Math.PI / 2)
-  geometry.scale(LAKE_RX, 1, LAKE_RZ)
-  const mesh = new THREE.Mesh(geometry, createLakeMaterial(skyUniforms))
-  mesh.name = 'valley-lake'
-  mesh.position.set(LAKE_CX, waterY, LAKE_CZ)
-  mesh.castShadow = false
-  mesh.receiveShadow = false
-  mesh.raycast = () => {}
-  group.add(mesh)
-}
-
 // A narrow ribbon of the same lake shader, plus stones on the banks.
 // The points run off the eastern hillside into the north shore of the lake.
 const CREEK_POINTS = [
@@ -1481,7 +1466,7 @@ const CREEK_POINTS = [
   [-62, 48]
 ]
 
-function addCreek(group, skyUniforms, getTerrainHeight) {
+function addCreek(group, skyUniforms, getTerrainHeight, includeBankRocks = true) {
   const half = 1.7
   const positions = []
   const indices = []
@@ -1512,6 +1497,7 @@ function addCreek(group, skyUniforms, getTerrainHeight) {
   mesh.raycast = () => {}
   group.add(mesh)
 
+  if (!includeBankRocks) return
   const stone = new THREE.DodecahedronGeometry(0.35, 0)
   const flat = stone.toNonIndexed()
   flat.computeVertexNormals()

@@ -285,6 +285,7 @@ export function createBoardingLevel({
   }
   const outdoorEnv = createOutdoorEnvironment({
     mode: 'station',
+    trimLegacyScenery: true,
     stationSpotLights: lights.spotLights,
     // Darker than the sky's purple horizon tint, so the mountain fades out
     // instead of picking up the afterglow.
@@ -300,8 +301,8 @@ export function createBoardingLevel({
     fogMax: 0.88,
     terrainAmbient: 0.88,
     vegAmbient: 0.64,
-    // Same clock as the sky, so valley-light twinkle and the lake follow
-    // Slow/Freeze/Rewind. The lake also shares the sky colour uniforms.
+    // Same clock as the sky, so valley lights and creek water follow
+    // Slow/Freeze/Rewind. The creek also shares the sky colour uniforms.
     skyTime: sky.timeUniform,
     skyUniforms: sky.uniforms,
     nature: getBoardingAssets()

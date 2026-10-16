@@ -51,13 +51,10 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
     // reparenting or zone overrides. Only renderable leaves are registered.
     const originals = new Map()
     const legacyNames = new Map([
-      ['boarding-grass', 'grass'], ['legacy-terrain', 'terrain'],
-      ['valley-lake', 'lake'], ['valley-creek', 'creek'],
-      ['creek-bank-rocks', 'creek-rocks'],
-      ['legacy-rocks', 'rocks'], ['legacy-outcrops', 'rocks'], ['legacy-slabs', 'rocks'],
+      ['legacy-terrain', 'terrain'], ['valley-creek', 'creek'],
       ['legacy-pines', 'trees'], ['legacy-spruce', 'trees'],
       ['legacy-saplings', 'trees'], ['legacy-dead-trees', 'trees'], ['legacy-broadleaf', 'trees'],
-      ['legacy-bushes', 'plants'], ['legacy-grass-cards', 'plants'], ['legacy-fern-cards', 'plants'],
+      ['legacy-bushes', 'plants'],
       ['legacy-logs', 'stumps/logs'], ['legacy-stumps', 'stumps/logs'],
       ['valley-lights', 'valley-lights']
     ])
@@ -100,10 +97,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
             else if (/^valley-(walls|roofs|windows|chimneys|field-posts|field-rails)$/.test(node.name)) kind = 'set-dressing'
             else if (node.parent?.name === 'trackside-infrastructure') kind = 'trackside'
             else if (node.name.startsWith('nature-')) {
-              if (/pine|fir/.test(node.name)) kind = 'trees'
-              else if (/fern/.test(node.name)) kind = 'plants'
-              else if (/rock/.test(node.name)) kind = 'rocks'
-              else if (/trunk|stump/.test(node.name)) kind = 'stumps/logs'
+              if (/trunk|stump/.test(node.name)) kind = 'stumps/logs'
             }
             if (kind) add(kind, node)
           })
