@@ -10,6 +10,7 @@ export function createDistractionSystem({
   stealth,
   hud,
   groundHeightAt,
+  obstacles = [],
   isEnabled = () => true,
   hearingRadius = 10,
   inventory = { count: 0, max: 3 }
@@ -44,6 +45,9 @@ export function createDistractionSystem({
   let pulseAge = 0
   let firstThrow = true
   let pendingThrow = null
+  const projectileRadius = 0.11
+  const wallRestitution = 0.42
+  const impactDrag = 0.78
 
   function removeProjectile() {
     if (!projectile) return
@@ -129,6 +133,78 @@ export function createDistractionSystem({
     }
   }
 
+  // Sweep the projectile centre against expanded obstacle rectangles. Unlike an
+  // endpoint push-out, this also catches a fast throw crossing a thin wall in
+  // a single frame. The outward face normal determines the bounce direction.
+  function firstWallHit(start, step) {
+    let best = null
+    for (const box of obstacles) {
+      if (!box || box.enabled === false) continue
+      const minX = box.minX - projectileRadius
+      const maxX = box.maxX + projectileRadius
+      const minZ = box.minZ - projectileRadius
+      const maxZ = box.maxZ + projectileRadius
+      if (![minX, maxX, minZ, maxZ].every(Number.isFinite)) continue
+      let enter = 0
+      let exit = 1
+      let nx = 0
+      let nz = 0
+      let miss = false
+      for (const [origin, movement, low, high, ax, az] of [
+        [start.x, step.x, minX, maxX, 1, 0],
+        [start.z, step.z, minZ, maxZ, 0, 1]
+      ]) {
+        if (Math.abs(movement) < 1e-9) {
+          if (origin < low || origin > high) { miss = true; break }
+          continue
+        }
+        const t1 = (low - origin) / movement
+        const t2 = (high - origin) / movement
+        const near = Math.min(t1, t2)
+        const far = Math.max(t1, t2)
+        if (near > enter) {
+          enter = near
+          const sign = movement > 0 ? -1 : 1
+          nx = ax * sign
+          nz = az * sign
+        }
+        exit = Math.min(exit, far)
+        if (enter > exit) { miss = true; break }
+      }
+      // Ignore boxes containing the starting point; these can be structural
+      // floor/room bounds, and have no incoming wall face to reflect against.
+      if (miss || (nx === 0 && nz === 0) || enter < 0 || enter > 1) continue
+      if (!best || enter < best.t) best = { t: enter, nx, nz }
+    }
+    return best
+  }
+
+  function moveProjectile(delta) {
+    let remaining = delta
+    // Multiple rebounds can happen during a long frame or in a narrow room.
+    for (let i = 0; i < 5 && remaining > 0.00001; i++) {
+      const start = projectile.position.clone()
+      const step = velocity.clone().multiplyScalar(remaining)
+      const hit = firstWallHit(start, step)
+      if (!hit) {
+        projectile.position.add(step)
+        break
+      }
+      projectile.position.addScaledVector(step, Math.max(0, hit.t))
+      projectile.position.x += hit.nx * 0.002
+      projectile.position.z += hit.nz * 0.002
+      const vn = velocity.x * hit.nx + velocity.z * hit.nz
+      if (vn < 0) {
+        velocity.x -= (1 + wallRestitution) * vn * hit.nx
+        velocity.z -= (1 + wallRestitution) * vn * hit.nz
+        velocity.x *= impactDrag
+        velocity.z *= impactDrag
+      }
+      remaining *= 1 - hit.t
+      if (remaining < 0.00001) break
+    }
+  }
+
   function update(delta) {
     cooldown = Math.max(0, cooldown - delta)
 
@@ -141,20 +217,29 @@ export function createDistractionSystem({
     }
 
     if (projectile && velocity) {
-      velocity.y -= 12.5 * delta
-      projectile.position.addScaledVector(velocity, delta)
-      projectile.rotation.x += delta * 8
-      projectile.rotation.z += delta * 4.5
-
-      const fallbackGround = player?.mesh?.position?.y ?? -4
-      const groundY = typeof groundHeightAt === 'function'
-        ? groundHeightAt(projectile.position.x, projectile.position.z, fallbackGround)
-        : fallbackGround
-
-      if (projectile.position.y <= groundY + 0.08 && velocity.y <= 0) {
-        projectile.position.y = groundY + 0.08
-        land(projectile.position)
+      velocity.y -= 12.5 * Math.min(delta, 1 / 60)
+      // Substep so gravity and landing checks stay stable during long frames.
+      const steps = Math.max(1, Math.ceil(delta / (1 / 60)))
+      const stepDelta = delta / steps
+      for (let i = 0; i < steps && projectile; i++) {
+        if (i > 0) velocity.y -= 12.5 * stepDelta
+        moveProjectile(stepDelta)
+        const fallbackGround = player?.mesh?.position?.y ?? -4
+        const groundY = typeof groundHeightAt === 'function'
+          ? groundHeightAt(projectile.position.x, projectile.position.z, fallbackGround)
+          : fallbackGround
+        if (projectile.position.y <= groundY + 0.08 && velocity.y <= 0) {
+          projectile.position.y = groundY + 0.08
+          land(projectile.position)
+        }
       }
+      // Landing removes the projectile. Do not animate a disposed projectile.
+      if (projectile) {
+        projectile.rotation.x += delta * 8
+        projectile.rotation.z += delta * 4.5
+      }
+
+
     }
 
     if (noisePulse) {

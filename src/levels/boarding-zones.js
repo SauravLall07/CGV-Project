@@ -72,18 +72,18 @@ const PLATFORM = {
 // does not flip it back and forth.
 const HYSTERESIS = 0.6
 
-function inside(box, p, pad = 0) {
+function inside(box, p, pad = 0, ignoreHeight = false) {
   if (!box) return false
   if (p.x < box.minX - pad || p.x > box.maxX + pad) return false
   if (p.z < box.minZ - pad || p.z > box.maxZ + pad) return false
-  if (box.minY !== undefined && p.y < box.minY - pad) return false
-  if (box.maxY !== undefined && p.y > box.maxY + pad) return false
+  if (!ignoreHeight && box.minY !== undefined && p.y < box.minY - pad) return false
+  if (!ignoreHeight && box.maxY !== undefined && p.y > box.maxY + pad) return false
   return true
 }
 
-export function zoneAt(position) {
+export function zoneAt(position, ignoreHeight = false) {
   for (const zone of ZONES) {
-    if (inside(zone.box, position)) return zone
+    if (inside(zone.box, position, 0, ignoreHeight)) return zone
   }
   return PLATFORM
 }
@@ -107,7 +107,9 @@ export function createZoneVisibility({ dynamic = () => [], onChange } = {}) {
       for (const object of objects) object.visible = visible
     }
     for (const object of dynamic()) {
-      object.visible = shown.has(zoneAt(object.position).region)
+      // Elevated cameras and their cones belong to the passage under their mount,
+      // not the platform just because their Y is above the player-height zone.
+      object.visible = shown.has(zoneAt(object.position, true).region)
     }
     onChange?.(current)
   }

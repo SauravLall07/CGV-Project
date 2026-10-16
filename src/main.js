@@ -260,10 +260,17 @@ const respawn = createRespawnSystem({
 
 // Time abilities. The key codes live in core/settings.js and are rebindable
 // from the settings screen — everything here works in actions, not keys.
-keyboard.onAction('slow', () => timeSystem.triggerSlow())
-keyboard.onAction('freeze', () => timeSystem.triggerFreeze())
-keyboard.onAction('rewind', () => timeSystem.triggerRewind())
-keyboard.onAction('ghost', () => timeSystem.triggerGhost())
+// Time powers are first introduced in Level 2. Silently ignore their input
+// throughout Boarding (Level 1), including any rebound ability keys. Guard
+// before calling the time system so no unavailable-ability HUD message plays.
+function triggerTimeAbilityOutsideBoarding(trigger) {
+  if (!gameStarted || levelManager.getState() === 'Boarding') return
+  trigger()
+}
+keyboard.onAction('slow', () => triggerTimeAbilityOutsideBoarding(() => timeSystem.triggerSlow()))
+keyboard.onAction('freeze', () => triggerTimeAbilityOutsideBoarding(() => timeSystem.triggerFreeze()))
+keyboard.onAction('rewind', () => triggerTimeAbilityOutsideBoarding(() => timeSystem.triggerRewind()))
+keyboard.onAction('ghost', () => triggerTimeAbilityOutsideBoarding(() => timeSystem.triggerGhost()))
 
 keyboard.onAction('restart', () => {
   if (gameStarted && !credits.isOpen) {

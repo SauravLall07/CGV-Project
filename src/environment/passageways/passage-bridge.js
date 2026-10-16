@@ -261,6 +261,15 @@ function createCrouchVent({ group, colliders, floorMat, wallMat, ironMat, player
     clearanceGates.push(gate)
   }
 
+  // Authoritative low-clearance region for the player controller. This keeps
+  // the character crouched even when crouch is released or toggled off, or
+  // when jump/run is pressed while crawling through the vent.
+  const forceCrouchInVent = (position) => Boolean(
+    position && position.x >= startX - 0.1 && position.x <= endX + 0.1 &&
+    Math.abs(position.z - z) <= width / 2 + 0.1
+  )
+  if (player?.mesh) player.mesh.userData.forceCrouchInVent = forceCrouchInVent
+
   let warnedStanding = false
   function update() {
     const crouched = Boolean(player?.isCrouching?.())
@@ -279,6 +288,12 @@ function createCrouchVent({ group, colliders, floorMat, wallMat, ironMat, player
 
   return {
     update,
+    dispose() {
+      if (player?.mesh?.userData.forceCrouchInVent === forceCrouchInVent) {
+        delete player.mesh.userData.forceCrouchInVent
+        player.mesh.userData.tightCrouchCamera = false
+      }
+    },
     contains(x, zPos) {
       return x >= startX - 0.1 && x <= endX + 0.1 && Math.abs(zPos - z) <= width / 2 + 0.1
     },
@@ -928,7 +943,7 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
   }
 }
 
-export function createBridgePassage({ scene, interaction, hud, player, respawn, camera, distractionInventory } = {}) {
+export function createBridgePassage({ scene, interaction, hud, player, respawn, camera, distractionInventory, worldObstacles = [] } = {}) {
   const group = new THREE.Group()
   group.name = 'passage-bridge'
   const colliders = []
@@ -1485,6 +1500,7 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
       stealth,
       hud,
       groundHeightAt: getGroundHeight,
+      obstacles: worldObstacles,
       isEnabled: () => isInsidePassage(),
       hearingRadius: 9.5,
       inventory: sharedInventory
@@ -1515,10 +1531,12 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
     const p = player?.mesh?.position
     if (vent.hasCleared(p)) bridgeEntered = true
 
-    // Secondary containment guard. If a future geometry/collider regression lets
-    // the player escape a lower Passageway 3 wall, fail immediately instead of
-    // letting the fallback ground sampler create an invisible outdoor floor.
-    if (bridgeEntered && p && p.y < -1.0 && !isInsidePassage(p)) {
+    // Only enforce Passageway 3 containment when the player is on its side of
+    // the vent. Backtracking through the vent into Passageway 2 is legitimate;
+    // Passageway 2 owns that space and must not trigger this fail condition.
+    // Preserve the guard against escaping a Passageway 3 wall/void.
+    const onBridgeSideOfVent = p && p.x > VENT_EXIT_X + 0.3
+    if (bridgeEntered && onBridgeSideOfVent && p.y < -1.0 && !isInsidePassage(p)) {
       respawn?.fail?.('fell')
       return
     }
@@ -1546,6 +1564,7 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
   dressBridgePassage(group, colliders)
 
   function dispose() {
+    vent.dispose()
     powerPuzzle.dispose()
     pickupUnregisters.forEach((unregister) => unregister())
     distraction?.dispose()

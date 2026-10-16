@@ -27,11 +27,17 @@ export function createPlayerView({ camera, domElement, player, hud }) {
   // — the level manager and the respawn system call snap() without knowing
   // whether the player is crouched.
   let crouching = false
+  // Walls can force third-person closer than the model’s head and torso.
+  // Hide the avatar only at these distances, with hysteresis to avoid flicker.
+  let wallOccludingAvatar = false
+  const AVATAR_HIDE_DISTANCE = 1.05
+  const AVATAR_SHOW_DISTANCE = 1.3
 
   function setMode(next, { announce = true } = {}) {
     if (next !== VIEW_MODES.FIRST && next !== VIEW_MODES.THIRD) return
     if (mode === next) return
     mode = next
+    wallOccludingAvatar = false
 
     if (mode === VIEW_MODES.FIRST) {
       // The camera sits inside the character's head, so the body would fill
@@ -63,10 +69,18 @@ export function createPlayerView({ camera, domElement, player, hud }) {
       })
     } else {
       third.update(delta, playerMesh, collidables, { crouching })
+      const orbitDistance = third.getDistance()
+      if (wallOccludingAvatar) {
+        if (orbitDistance >= AVATAR_SHOW_DISTANCE) wallOccludingAvatar = false
+      } else if (orbitDistance <= AVATAR_HIDE_DISTANCE) {
+        wallOccludingAvatar = true
+      }
+      player.mesh.visible = !wallOccludingAvatar
     }
   }
 
   function snap() {
+    wallOccludingAvatar = false
     player.mesh.visible = mode !== VIEW_MODES.FIRST
     third.snap()
     first.snap(crouching)

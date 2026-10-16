@@ -341,6 +341,12 @@ export function buildFacade(parent, materials, stats) {
     rails.push(box(2.6, 0.06, 0.06, FACADE_X - 1.7, 1.05, z))
     rails.push(box(0.06, 0.85, 0.06, FACADE_X - 0.5, 0.55, z))
     rails.push(box(0.06, 0.55, 0.06, FACADE_X - 2.9, 0.4, z))
+    // Give the lantern a proper iron upright tied into the handrail.
+    // Its top meets the lantern cage; the lower section reaches the stair.
+    const lampX = FACADE_X - 1.2
+    rails.push(box(0.12, 1.73, 0.12, lampX, 1.29, z))
+    rails.push(box(0.20, 0.09, 0.20, lampX, 2.12, z))
+    rails.push(box(0.22, 0.12, 0.22, lampX, 0.48, z))
   }
   addMesh(parent, mergeParts(rails), materials.iron, { name: 'landing-step-rails' }, stats)
 
@@ -377,6 +383,26 @@ export function buildFacade(parent, materials, stats) {
   return facadeColliders(canopyW)
 }
 
+// Keep the player's feet on the actual horizontal tops of the visible steps.
+// The steps are individual boxes, not a ramp: interpolating between tread
+// heights lets the feet sink through each step as the player crosses it.
+export function entranceStairHeightAt(x, z) {
+  const depth = 0.72
+  const canopyW = (1.38 + 0.42) * 2 + 1.38 + 1.1
+  for (let i = 0; i < 4; i += 1) {
+    const front = FACADE_X - 0.35 - (i + 1) * depth
+    const back = front + depth
+    const width = canopyW - 0.4 + i * 0.35
+    if (x >= front && x <= back && Math.abs(z - CENTER_Z) <= width / 2) {
+      // Use exactly the same box centre Y and thickness as buildFacade().
+      const centreY = 0.1 + (3 - i) * 0.14
+      const thickness = 0.16 + i * 0.02
+      return centreY + thickness / 2
+    }
+  }
+  return null
+}
+
 function facadeColliders(canopyW) {
   const boxes = [{
     minX: FACADE_X - 0.25,
@@ -384,20 +410,20 @@ function facadeColliders(canopyW) {
     minZ: Z_MIN - 0.3,
     maxZ: Z_MAX + 0.3
   }]
-  const depth = 0.72
-  let minX = Infinity
-  let maxX = -Infinity
-  let minZ = Infinity
-  let maxZ = -Infinity
-  for (let i = 0; i < 4; i += 1) {
-    const x = FACADE_X - 0.35 - i * depth - depth / 2
-    const width = canopyW - 0.4 + i * 0.35
-    minX = Math.min(minX, x - depth / 2)
-    maxX = Math.max(maxX, x + depth / 2)
-    minZ = Math.min(minZ, CENTER_Z - width / 2)
-    maxZ = Math.max(maxZ, CENTER_Z + width / 2)
+  // The rendered steps are traversable ground, not an impassable wall.
+  // Match the two thin handrails along the stair edges with horizontal
+  // blockers. The player uses X/Z collision, so each rail needs one continuous
+  // footprint (including the gap between its posts), not just post colliders.
+  // Keep the middle of the stairs completely unobstructed.
+  for (const side of [-1, 1]) {
+    const railZ = CENTER_Z + side * (canopyW / 2 + 0.15)
+    boxes.push({
+      minX: FACADE_X - 3.03,
+      maxX: FACADE_X - 0.37,
+      minZ: railZ - 0.09,
+      maxZ: railZ + 0.09
+    })
   }
-  boxes.push({ minX, maxX, minZ, maxZ })
   for (const side of [-1, 1]) {
     const z = CENTER_Z + side * (canopyW / 2 - 0.2)
     boxes.push({

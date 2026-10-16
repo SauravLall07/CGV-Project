@@ -147,21 +147,128 @@ function addStairRailings(group, stair, material, {
   }
 }
 
+// Railway signalling pictograms replace the abstract cipher shapes.
+// Canvas textures make the controls readable even without external assets.
 function createSymbolMesh(type, material) {
-  let geometry
-  if (type === 0) geometry = new THREE.CircleGeometry(0.13, 20)
-  else if (type === 1) geometry = new THREE.PlaneGeometry(0.23, 0.23)
-  else geometry = new THREE.CircleGeometry(0.15, 3)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 256
+  const ctx = canvas.getContext('2d')
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.strokeStyle = '#f3e4c4'
+  ctx.fillStyle = '#f3e4c4'
+  ctx.lineWidth = 13
+  const line = (x1, y1, x2, y2) => {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+  }
+  if (type === 0) { // points / track switch
+    line(75, 215, 75, 42)
+    line(181, 215, 181, 42)
+    ctx.beginPath(); ctx.moveTo(75, 215); ctx.bezierCurveTo(82, 140, 150, 94, 181, 42); ctx.stroke()
+    for (const y of [68, 106, 148, 190]) line(57, y, 199, y)
+  } else if (type === 1) { // semaphore signal
+    line(118, 211, 118, 49)
+    line(86, 211, 151, 211)
+    ctx.fillStyle = '#bd4c3c'
+    ctx.fillRect(118, 65, 94, 27)
+    ctx.fillStyle = '#f3e4c4'
+    ctx.fillRect(188, 65, 24, 27)
+    ctx.beginPath(); ctx.arc(118, 79, 13, 0, Math.PI * 2); ctx.fill()
+  } else if (type === 2) { // tunnel portal
+    ctx.beginPath(); ctx.moveTo(49, 217); ctx.lineTo(49, 113)
+    ctx.arc(128, 113, 79, Math.PI, Math.PI * 2)
+    ctx.lineTo(207, 217); ctx.stroke()
+    line(95, 215, 117, 126)
+    line(161, 215, 139, 126)
+    for (const y of [158, 185, 213]) {
+      const spread = (y - 125) * 0.25 + 8
+      line(128 - spread, y, 128 + spread, y)
+    }
+  } else if (type === 3) { // railway crossing: unmistakable crossed gates and rails
+    line(62, 206, 62, 110)
+    line(194, 206, 194, 110)
+    line(48, 96, 208, 32)
+    line(48, 32, 208, 96)
+    line(78, 221, 178, 221)
+    ctx.beginPath(); ctx.arc(128, 155, 22, 0, Math.PI * 2); ctx.stroke()
+    line(128, 133, 128, 177)
+    line(106, 155, 150, 155)
+  } else if (type === 4) { // station clock
+    ctx.beginPath(); ctx.arc(128, 125, 83, 0, Math.PI * 2); ctx.stroke()
+    for (let hour = 0; hour < 12; hour++) {
+      const a = hour * Math.PI / 6 - Math.PI / 2
+      line(128 + Math.cos(a) * 64, 125 + Math.sin(a) * 64,
+        128 + Math.cos(a) * 75, 125 + Math.sin(a) * 75)
+    }
+    line(128, 125, 128, 70)
+    line(128, 125, 164, 147)
+    ctx.beginPath(); ctx.arc(128, 125, 7, 0, Math.PI * 2); ctx.fill()
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.29, 0.29),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false })
+  )
+  mesh.userData.puzzleLabelTexture = texture
+  return mesh
+}
 
-  const mesh = new THREE.Mesh(geometry, material)
+function createPuzzleHeading(text, width = 1.85) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 768
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#e8d5ac'
+  ctx.font = 'bold 48px Georgia, serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, 384, 64)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.22),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false }))
+  mesh.userData.puzzleLabelTexture = texture
+  return mesh
+}
+
+// Canvas lettering stays crisp and legible on both sides of the corridor.
+function createPuzzleNumeral(text, materialColor = '#f6e4b3') {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.font = 'bold 90px Georgia, serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth = 5
+  ctx.strokeStyle = '#151b23'
+  ctx.strokeText(text, 128, 65)
+  ctx.fillStyle = materialColor
+  ctx.fillText(text, 128, 65)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.28, 0.14),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false })
+  )
+  mesh.userData.puzzleLabelTexture = texture
   return mesh
 }
 
 function createSymbolPuzzle({ group, interaction, hud, door }) {
   const unregisters = []
-  const symbols = ['circle', 'square', 'triangle']
-  const target = [2, 0, 1]
+  const symbols = ['track switch', 'semaphore signal', 'rail tunnel', 'rail crossing', 'station clock']
   const current = [0, 1, 2]
+  // Choose a fresh three-symbol code when this passage is created.
+  // Avoid starting with an already solved combination.
+  let target
+  do {
+    target = Array.from({ length: 3 }, () => Math.floor(Math.random() * symbols.length))
+  } while (target.every((value, index) => value === current[index]))
+  const numerals = ['I', 'II', 'III']
 
   const panel = new THREE.Group()
   panel.name = 'tutorial-symbol-puzzle'
@@ -169,24 +276,26 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
   panel.rotation.y = Math.PI
   group.add(panel)
 
-  const casingMat = new THREE.MeshStandardMaterial({ color: 0x222b34, roughness: 0.42, metalness: 0.72 })
+  const casingMat = new THREE.MeshStandardMaterial({ color: 0x26312f, roughness: 0.72, metalness: 0.62 })
+  const plateMat = new THREE.MeshStandardMaterial({ color: 0x514b40, roughness: 0.76, metalness: 0.57 })
+  const dialMat = new THREE.MeshStandardMaterial({ color: 0x171d1c, roughness: 0.62, metalness: 0.65 })
   const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.88 })
-  const symbolMats = [
-    new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0c4a6e, emissiveIntensity: 1.6 }),
-    new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0x78350f, emissiveIntensity: 1.5 }),
-    new THREE.MeshStandardMaterial({ color: 0xc084fc, emissive: 0x581c87, emissiveIntensity: 1.5 })
-  ]
+  const symbolMats = Array(symbols.length).fill(null)
 
-  const casing = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.85, 0.18), casingMat)
+  const casing = new THREE.Mesh(new THREE.BoxGeometry(2.22, 1.2, 0.18), casingMat)
   panel.add(casing)
+
+  const dialHeading = createPuzzleHeading('SIGNAL CONTROL / RESET')
+  dialHeading.position.set(0, 0.47, 0.107)
+  panel.add(dialHeading)
 
   const solvedLampMat = new THREE.MeshStandardMaterial({
     color: 0xef4444,
     emissive: 0x7f1d1d,
     emissiveIntensity: 2
   })
-  const solvedLamp = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.04), solvedLampMat)
-  solvedLamp.position.set(0, 0.33, 0.115)
+  const solvedLamp = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.028, 0.04), solvedLampMat)
+  solvedLamp.position.set(0, 0.32, 0.12)
   panel.add(solvedLamp)
 
   const dialGroups = []
@@ -194,19 +303,36 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
   for (let i = 0; i < 3; i++) {
     const dial = new THREE.Group()
     dial.name = `symbol-dial-${i + 1}`
-    dial.position.set(-0.62 + i * 0.62, -0.05, 0.12)
+    dial.position.set(-0.66 + i * 0.66, -0.14, 0.13)
 
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 8, 20), brassMat)
+    const backplate = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.62, 0.035), plateMat)
+    backplate.position.z = -0.002
+    dial.add(backplate)
+    const face = new THREE.Mesh(new THREE.CircleGeometry(0.23, 32), dialMat)
+    face.position.z = 0.025
+    dial.add(face)
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.235, 0.024, 8, 32), brassMat)
+    ring.position.z = 0.038
     dial.add(ring)
+    // Keep the centre clear: no raised hub covering the selected pictogram.
+    const pointer = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.11, 3), brassMat)
+    pointer.position.set(0, 0.245, 0.065)
+    pointer.rotation.z = Math.PI
+    dial.add(pointer)
 
     const variants = []
-    for (let s = 0; s < 3; s++) {
+    for (let s = 0; s < symbols.length; s++) {
       const symbol = createSymbolMesh(s, symbolMats[s])
-      symbol.position.z = 0.025
+      symbol.position.z = 0.062
+      symbol.scale.setScalar(1.18)
       symbol.visible = s === current[i]
       dial.add(symbol)
       variants.push(symbol)
     }
+
+    const numeral = createPuzzleNumeral(numerals[i])
+    numeral.position.set(0, 0.34, 0.075)
+    dial.add(numeral)
 
     dial.userData.variants = variants
     panel.add(dial)
@@ -221,13 +347,23 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
   clue.position.set(worldX(-70.2), 1.55, -27.42)
   group.add(clue)
 
-  const cluePlate = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 0.13), casingMat)
+  const cluePlate = new THREE.Mesh(new THREE.BoxGeometry(2.22, 1.15, 0.13), casingMat)
   clue.add(cluePlate)
+  const inset = new THREE.Mesh(new THREE.BoxGeometry(2.08, 0.91, 0.02), plateMat)
+  inset.position.z = 0.077
+  clue.add(inset)
+  const clueHeading = createPuzzleHeading('SIGNAL RESET SEQUENCE')
+  clueHeading.position.set(0, 0.43, 0.092)
+  clue.add(clueHeading)
 
   for (let i = 0; i < 3; i++) {
     const symbol = createSymbolMesh(target[i], symbolMats[target[i]])
-    symbol.position.set(-0.62 + i * 0.62, 0, 0.075)
+    symbol.position.set(-0.66 + i * 0.66, -0.12, 0.096)
     clue.add(symbol)
+
+    const numeral = createPuzzleNumeral(numerals[i])
+    numeral.position.set(-0.66 + i * 0.66, 0.16, 0.098)
+    clue.add(numeral)
   }
 
   let solved = false
@@ -252,13 +388,13 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
 
   dialGroups.forEach((dial, i) => {
     const unregister = interaction.register(dial, {
-      prompt: `Rotate cipher dial ${i + 1}`,
+      prompt: `Rotate cipher dial ${numerals[i]}`,
       range: 2.4,
       onInteract: () => {
         if (solved) return
         current[i] = (current[i] + 1) % symbols.length
         syncDial(i)
-        interaction?.flashPrompt?.(`Dial ${i + 1}: ${symbols[current[i]]}`)
+        interaction?.flashPrompt?.(`Dial ${numerals[i]}: ${symbols[current[i]]}`)
         checkSolved()
       }
     })
@@ -268,6 +404,15 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
   return {
     dispose() {
       unregisters.forEach((unregister) => unregister())
+      // Texture maps aren't automatically disposed along with meshes.
+      panel.traverse((object) => {
+        object.userData.puzzleLabelTexture?.dispose()
+        if (object.userData.puzzleLabelTexture) object.material.dispose()
+      })
+      clue.traverse((object) => {
+        object.userData.puzzleLabelTexture?.dispose()
+        if (object.userData.puzzleLabelTexture) object.material.dispose()
+      })
     },
     isSolved: () => solved
   }
