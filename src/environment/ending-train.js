@@ -18,7 +18,8 @@ const SPRING_GAIN = 1.8
 const GLOW_PEAK = 5
 
 export function createEndingTrain() {
-  const sharedMaterials = new Set(Object.values(getKitMaterials()).flat().filter(value => value?.isMaterial))
+  const kit = getKitMaterials()
+  const sharedMaterials = new Set(Object.values(kit).flat().filter(value => value?.isMaterial))
   const source = createTrain()
   const root = new THREE.Group()
   root.name = 'ending-train'
@@ -36,9 +37,22 @@ export function createEndingTrain() {
   function ownMaterial(material) {
     if (!materialClones.has(material)) {
       const owned = material.clone()
-      for (const [key, value] of Object.entries(material)) if (value?.isTexture) owned[key] = cloneTexture(value)
+      for (const [key, value] of Object.entries(material)) if (value?.isTexture) {
+        // The distant finale uses even lamplight, without the station's curtain illustration.
+        owned[key] = material === kit.carriageWindow && (key === 'map' || key === 'emissiveMap') ? null : cloneTexture(value)
+      }
       for (const [key, uniform] of Object.entries(material.uniforms ?? {})) {
         if (uniform.value?.isTexture) owned.uniforms[key].value = cloneTexture(uniform.value)
+      }
+      if (material === kit.carriageGreen || material === kit.carriageRoof) {
+        const color = material === kit.carriageGreen ? 0x2c4a36 : 0x2a2e33
+        owned.color.setHex(color); owned.emissive.setHex(color); owned.emissiveIntensity = 0.04
+        owned.roughness = material === kit.carriageGreen ? 0.52 : 0.72
+        owned.metalness = 0.08; owned.envMapIntensity = 1
+      } else if (material === kit.carriageWindow) {
+        owned.name = 'ending-amber-windows'
+        owned.color.setHex(0x6a3d16); owned.emissive.setHex(0xffb35c)
+        owned.emissiveIntensity = 0.85; owned.roughness = 0.3; owned.metalness = 0
       }
       materialClones.set(material, owned)
       if (!sharedMaterials.has(material)) factoryMaterials.add(material)
@@ -121,7 +135,10 @@ export function createEndingTrain() {
     geometry.dispose()
   }
   locomotive.add(tender)
-  const hero = createEndingLocomotive(ownMaterial(getKitMaterials().carriageGreen))
+  const locomotivePaint = ownMaterial(kit.carriageGreen).clone()
+  locomotivePaint.color.setHex(0x252a30); locomotivePaint.emissive.setHex(0x252a30)
+  locomotivePaint.emissiveIntensity = 0.03; locomotivePaint.metalness = 0.12
+  const hero = createEndingLocomotive(locomotivePaint)
   locomotive.add(hero.root)
   noseOffset = 0
   hero.root.traverse(node => {

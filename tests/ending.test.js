@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT,
   TITLE_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS } from '../src/levels/ending.js'
-import { STOP_NOSE_Z } from '../src/environment/ending-train.js'
+import { createEndingTrain, STOP_CENTER_Z, STOP_NOSE_Z, TRAIN_SPEED } from '../src/environment/ending-train.js'
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../src/shaders/ending-plate.js'
 import { createTrain } from '../src/entities/train.js'
 import { getKitMaterials } from '../src/environment/level1-kit/kit-materials.js'
@@ -81,6 +81,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       assert.deepEqual(ENDING_CAMERA_POSITION, PLATE_CAMERA_POSITION)
       assert.deepEqual(ENDING_CAMERA_TARGET, PLATE_CAMERA_TARGET)
       assert.equal(ENDING_CAMERA_FOV, PLATE_CAMERA_FOV)
+      assert.equal(ENDING_CAMERA_FOV, 39.5)
       assert.deepEqual(h.renderCamera.position, PLATE_CAMERA_POSITION)
       assert.deepEqual(h.view.position, PLATE_CAMERA_POSITION)
       assert.deepEqual(h.view.target, PLATE_CAMERA_TARGET)
@@ -128,8 +129,10 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       assert.ok(glow.isSprite); assert.equal(glow.material.depthWrite, false)
       assert.equal(glow.material.blending, THREE.AdditiveBlending)
       assert.equal(world.getObjectByName(plate.name), undefined)
-      assert.deepEqual(WORLD_ALIGN_DEFAULTS, { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 })
-      assert.equal(world.position.length(), 0); assert.equal(world.rotation.x + world.rotation.y + world.rotation.z, 0)
+      assert.deepEqual(WORLD_ALIGN_DEFAULTS, { x: -0.75, y: -3.25, z: -0.75, yaw: -20.25, pitch: -2.75, roll: 0, scale: 1 })
+      assert.deepEqual(world.position, new THREE.Vector3(-0.75, -3.25, -0.75))
+      assert.equal(world.rotation.x, THREE.MathUtils.degToRad(-2.75))
+      assert.equal(world.rotation.y, THREE.MathUtils.degToRad(-20.25)); assert.equal(world.rotation.z, 0)
       assert.equal(world.scale.x, 1)
       assert.equal(h.grade.warmth, 0); assert.equal(h.postEnabled, false, 'the painting bypasses final global tone mapping')
       let calls = 0, triangles = 0
@@ -148,6 +151,9 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       }
       const locomotive = h.scene.getObjectByName('ending-locomotive'), bounds = new THREE.Box3(), part = new THREE.Box3()
       const instance = new THREE.Matrix4(), worldMatrix = new THREE.Matrix4()
+      // Keep the physical clearance checks in track coordinates after baking the painted-track alignment.
+      world.updateMatrixWorld(true)
+      const trackInverse = world.matrixWorld.clone().invert()
       function noseZ() {
         train.updateMatrixWorld(true); bounds.makeEmpty()
         locomotive.traverse(node => {
@@ -156,6 +162,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
           for (let i = 0; i < (node.isInstancedMesh ? node.count : 1); i++) {
             if (node.isInstancedMesh) { node.getMatrixAt(i, instance); worldMatrix.multiplyMatrices(node.matrixWorld, instance) }
             else worldMatrix.copy(node.matrixWorld)
+            worldMatrix.premultiply(trackInverse)
             part.copy(node.geometry.boundingBox).applyMatrix4(worldMatrix); bounds.union(part)
           }
         })
@@ -177,6 +184,15 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         assert.equal(h.player.mesh.visible, false)
       }
       if (fps === 60) t.diagnostic(`Physical nose: settled ${noseZ()}, minimum ${minimumNose}`)
+      const stopped = createEndingTrain()
+      try {
+        stopped.update(STOP_CENTER_Z, TRAIN_SPEED * (APPROACH + BRAKE / 2), -1, SETTLE + HOLD)
+        stopped.root.updateMatrix()
+        const alignedStop = new THREE.Matrix4().multiplyMatrices(world.matrixWorld, stopped.root.matrix)
+        train.updateMatrixWorld(true)
+        for (let i = 0; i < 16; i++) assert.ok(Math.abs(train.matrixWorld.elements[i] - alignedStop.elements[i]) < 1e-10,
+          `full approach reaches the aligned stopped pose, matrix element ${i}`)
+      } finally { stopped.dispose() }
       assert.equal(h.manager.advances, 0); assert.equal(h.overlay.children[0].style.opacity, '1')
       h.level.update(0.02); assert.equal(h.manager.state, 'Complete'); assert.equal(h.manager.advances, 1)
       h.level.update(100); assert.equal(h.manager.advances, 1); assert.equal(h.begins, 1)
@@ -228,6 +244,11 @@ test('Ending: completed disposal releases the plate once and restores FOV, grade
 
 test('Ending: teardown leaves cached kit materials/maps valid for a fresh platform train', () => {
   const kit = getKitMaterials(), cachedMaterials = new Set(Object.values(kit).flat().filter(value => value?.isMaterial))
+  const windowState = () => ({ color: kit.carriageWindow.color.getHex(), emissive: kit.carriageWindow.emissive.getHex(),
+    intensity: kit.carriageWindow.emissiveIntensity, map: kit.carriageWindow.map, emissiveMap: kit.carriageWindow.emissiveMap,
+    colorSpace: kit.carriageWindow.map.colorSpace, version: kit.carriageWindow.map.version,
+    roughness: kit.carriageWindow.roughness, metalness: kit.carriageWindow.metalness, toneMapped: kit.carriageWindow.toneMapped })
+  const originalWindow = windowState()
   const watched = new Set(cachedMaterials)
   for (const material of cachedMaterials) for (const value of Object.values(material)) if (value?.isTexture) watched.add(value)
   let sharedDisposals = 0
@@ -236,6 +257,12 @@ test('Ending: teardown leaves cached kit materials/maps valid for a fresh platfo
   const h = harness()
   let fresh = null
   try {
+    const windowClone = h.scene.getObjectByName('ending-carriage-1').children.find(
+      node => node.material?.name === 'ending-amber-windows')?.material
+    assert.ok(windowClone); assert.notEqual(windowClone, kit.carriageWindow)
+    assert.equal(windowClone.map, null); assert.equal(windowClone.emissiveMap, null)
+    assert.equal(windowClone.emissive.getHex(), 0xffb35c); assert.equal(windowClone.emissiveIntensity, 0.85)
+    assert.deepEqual(windowState(), originalWindow, 'creating the ending leaves the shared station window unchanged')
     h.scene.getObjectByName('ending-real-train').traverse(node => {
       if (!node.material) return
       for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
@@ -244,6 +271,7 @@ test('Ending: teardown leaves cached kit materials/maps valid for a fresh platfo
       }
     })
     h.level.update(TOTAL + 1); h.level.dispose(); assert.equal(sharedDisposals, 0)
+    assert.deepEqual(windowState(), originalWindow, 'disposing the ending leaves the shared station window unchanged')
     fresh = createTrain(); assert.equal(getKitMaterials(), kit)
     let sharedMeshes = 0
     fresh.train.traverse(node => {

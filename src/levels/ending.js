@@ -19,7 +19,7 @@ export const START_CENTER_Z = STOP_CENTER_Z + APPROACH_DISTANCE + BRAKING_DISTAN
 export const ENDING_CAMERA_POSITION = PLATE_CAMERA_POSITION
 export const ENDING_CAMERA_TARGET = PLATE_CAMERA_TARGET
 export const ENDING_CAMERA_FOV = PLATE_CAMERA_FOV
-export const WORLD_ALIGN_DEFAULTS = Object.freeze({ x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 })
+export const WORLD_ALIGN_DEFAULTS = Object.freeze({ x: -0.75, y: -3.25, z: -0.75, yaw: -20.25, pitch: -2.75, roll: 0, scale: 1 })
 const PHASES = ['fadeIn', 'approach', 'braking', 'settle', 'hold', 'fadeOut', 'title', 'done']
 const DURATIONS = [ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT, TITLE_FADE + TITLE_HOLD]
 

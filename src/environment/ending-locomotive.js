@@ -7,9 +7,12 @@ export const HEADLIGHT_GLOW_SIZE = 2.2
 export function createEndingLocomotive(paint) {
   const root = new THREE.Group()
   root.name = 'ending-hero-locomotive'
-  const metal = new THREE.MeshStandardMaterial({ color: 0x252a30, roughness: 0.48, metalness: 0.8 })
-  const brass = new THREE.MeshStandardMaterial({ color: 0xa68a48, roughness: 0.4, metalness: 0.8 })
-  const red = new THREE.MeshStandardMaterial({ color: 0x6e1a14, roughness: 0.7 })
+  const metal = new THREE.MeshStandardMaterial({ color: 0x252a30, roughness: 0.48, metalness: 0.3,
+    emissive: 0x252a30, emissiveIntensity: 0.03 })
+  const brass = new THREE.MeshStandardMaterial({ color: 0xb69851, roughness: 0.4, metalness: 0.55,
+    emissive: 0xb69851, emissiveIntensity: 0.025 })
+  const red = new THREE.MeshStandardMaterial({ color: 0x942a20, roughness: 0.7,
+    emissive: 0x942a20, emissiveIntensity: 0.03 })
   const glass = new THREE.MeshStandardMaterial({ color: 0x6a3d16, emissive: 0xffa84a, emissiveIntensity: 0.75, roughness: 0.4 })
   const lens = new THREE.MeshStandardMaterial({ color: 0xffdb98, emissive: 0xffd68a, emissiveIntensity: 1.8 })
   const parts = new Map()
@@ -111,8 +114,8 @@ export function createEndingLocomotive(paint) {
   glow.geometry = glow.geometry.clone()
   glow.name = 'ending-headlight-glow'; glow.position.set(0, 3.55, 5.66)
   glow.scale.set(HEADLIGHT_GLOW_SIZE, HEADLIGHT_GLOW_SIZE, 1); root.add(glow)
-  const plume = createSteam({ count: 30, height: 9, spread: 0.8, period: 9, size: 2.8,
-    color: 0xc8ccd4, opacity: 0.5, wind: new THREE.Vector3(0, 0.4, -0.6) })
+  const plume = createSteam({ count: 46, height: 6, spread: 1.7, period: 7, size: 0.96,
+    color: 0xc8ccd4, opacity: 0.3, wind: new THREE.Vector3(0, 0.6, -5) })
   plume.points.name = 'ending-chimney-steam'
   plume.points.position.set(0, 5.15, 3.8)
   root.add(plume.points)
@@ -130,7 +133,7 @@ export function createEndingLocomotive(paint) {
   let wheelAngle = 0
   function update(distance, delta = 0, speed = 0, settleTime = -1) {
     plume.update(delta * (0.2 + 0.8 * speed / 26))
-    plume.points.material.uniforms.uWind.value.z = -0.6 - speed * 0.2
+    plume.points.material.uniforms.uWind.value.z = -5 - speed * 0.18
     for (const hiss of hisses) {
       hiss.update(delta)
       hiss.points.material.uniforms.uOpacity.value = settleTime >= 0 && settleTime < 0.6

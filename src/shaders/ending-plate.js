@@ -3,7 +3,7 @@ import plateUrl from '../assets/textures/backdrop/ending-plate.jpg'
 
 export const PLATE_CAMERA_POSITION = new THREE.Vector3(47.1, 19.43, -3.01)
 export const PLATE_CAMERA_TARGET = new THREE.Vector3(1.09, -1.13, 9.74)
-export const PLATE_CAMERA_FOV = 45
+export const PLATE_CAMERA_FOV = 39.5
 export const PLATE_CAMERA_ASPECT = 1671 / 941
 
 export function createEndingPlate(onReady) {
