@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { createSteam } from './landing/steam.js'
 
+export const HEADLIGHT_GLOW_SIZE = 2.2
+
 export function createEndingLocomotive(paint) {
   const root = new THREE.Group()
   root.name = 'ending-hero-locomotive'
@@ -94,6 +96,21 @@ export function createEndingLocomotive(paint) {
   const cone = new THREE.Mesh(beamGeometry, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true,
     opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }))
   cone.name = 'ending-headlight-cone'; cone.position.set(0, 3.55, 8.63); root.add(cone)
+  const glowPixels = new Uint8Array(64 * 64 * 4)
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const radius = Math.hypot((x - 31.5) / 31.5, (y - 31.5) / 31.5)
+    const index = (y * 64 + x) * 4
+    glowPixels[index] = glowPixels[index + 1] = glowPixels[index + 2] = 255
+    glowPixels[index + 3] = Math.round(255 * Math.max(0, 1 - radius) ** 2 * Math.exp(-2 * radius * radius))
+  }
+  const glowMap = new THREE.DataTexture(glowPixels, 64, 64)
+  glowMap.needsUpdate = true
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowMap, color: 0xffd69a,
+    blending: THREE.AdditiveBlending, transparent: true, opacity: 0.75, depthWrite: false, toneMapped: false, fog: false }))
+  // Sprite's default quad is shared by Three.js: clone before ending-owned teardown.
+  glow.geometry = glow.geometry.clone()
+  glow.name = 'ending-headlight-glow'; glow.position.set(0, 3.55, 5.66)
+  glow.scale.set(HEADLIGHT_GLOW_SIZE, HEADLIGHT_GLOW_SIZE, 1); root.add(glow)
   const plume = createSteam({ count: 30, height: 9, spread: 0.8, period: 9, size: 2.8,
     color: 0xc8ccd4, opacity: 0.5, wind: new THREE.Vector3(0, 0.4, -0.6) })
   plume.points.name = 'ending-chimney-steam'

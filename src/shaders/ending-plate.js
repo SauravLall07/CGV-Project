@@ -73,10 +73,18 @@ export function createEndingPlate(onReady) {
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(1500, 32, 24), material)
   mesh.name = 'ending-plate-sphere'; mesh.position.copy(PLATE_CAMERA_POSITION)
   mesh.renderOrder = -10000; mesh.frustumCulled = false
+  function setFov(value) {
+    camera.fov = THREE.MathUtils.clamp(value, 10, 100)
+    camera.updateProjectionMatrix()
+    viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    return camera.fov
+  }
   return { mesh, camera, texture, get ready() { return ready },
+    setFov,
     update(delta) { material.uniforms.uTime.value += Math.max(0, delta) * material.uniforms.uFlow.value },
     dispose() {
       if (disposed) return
-      disposed = true; mesh.removeFromParent(); mesh.geometry.dispose(); material.dispose(); texture.dispose()
+      disposed = true; setFov(PLATE_CAMERA_FOV)
+      mesh.removeFromParent(); mesh.geometry.dispose(); material.dispose(); texture.dispose()
     } }
 }

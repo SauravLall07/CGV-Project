@@ -99,9 +99,34 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       projected.sub(PLATE_CAMERA_POSITION).normalize().multiplyScalar(1500).add(PLATE_CAMERA_POSITION)
       projected.applyMatrix4(material.uniforms.uPlateViewProj.value)
       assert.ok(Math.abs(projected.x - 0.4) < 1e-10 && Math.abs(projected.y + 0.2) < 1e-10, 'projective plate matches the shot camera')
+      for (const fov of [52, 37.5, PLATE_CAMERA_FOV]) {
+        assert.equal(h.level.setShotFov(fov), fov)
+        h.level.update(0)
+        assert.equal(h.renderCamera.fov, fov)
+        assert.equal(h.renderCamera.aspect, PLATE_CAMERA_ASPECT)
+        const expected = new THREE.Matrix4().multiplyMatrices(h.renderCamera.projectionMatrix, h.renderCamera.matrixWorldInverse)
+        const actual = material.uniforms.uPlateViewProj.value
+        for (let i = 0; i < 16; i++) assert.ok(Math.abs(actual.elements[i] - expected.elements[i]) < 1e-10)
+        projected.set(0.4, -0.2, 0.5).unproject(h.renderCamera)
+        projected.sub(PLATE_CAMERA_POSITION).normalize().multiplyScalar(1500).add(PLATE_CAMERA_POSITION).applyMatrix4(actual)
+        assert.ok(Math.abs(projected.x - 0.4) < 1e-10 && Math.abs(projected.y + 0.2) < 1e-10, 'plate pixels stay fixed as FOV changes')
+      }
       const world = h.scene.getObjectByName('WORLD_ALIGN'), train = h.scene.getObjectByName('ending-train')
-      const bridge = h.scene.getObjectByName('ending-gorge')
-      assert.equal(train.parent, world); assert.equal(bridge.parent, world); assert.equal(plate.parent, h.scene)
+      assert.equal(train.parent, world); assert.deepEqual(world.children, [train]); assert.equal(plate.parent, h.scene)
+      for (const name of ['ending-all-timber', 'ending-steel-rails', 'ending-stone-piers', 'ending-ledge-ballast']) {
+        assert.equal(h.scene.getObjectByName(name), undefined, `no redundant 3D geometry: ${name}`)
+      }
+      const lighting = h.scene.getObjectByName('ending-gorge')
+      assert.notEqual(lighting.parent, world)
+      lighting.traverse(node => assert.ok(!node.isMesh && !node.isSprite && !node.isPoints))
+      assert.equal(h.scene.fog, null)
+      const moonlight = h.scene.getObjectByName('ending-moonlight')
+      const moonDirection = moonlight.position.clone().sub(moonlight.target.position).normalize()
+      const elevation = THREE.MathUtils.radToDeg(Math.asin(moonDirection.y))
+      assert.ok(elevation >= 35 && elevation <= 45, `moon elevation: ${elevation}`)
+      const glow = h.scene.getObjectByName('ending-headlight-glow')
+      assert.ok(glow.isSprite); assert.equal(glow.material.depthWrite, false)
+      assert.equal(glow.material.blending, THREE.AdditiveBlending)
       assert.equal(world.getObjectByName(plate.name), undefined)
       assert.deepEqual(WORLD_ALIGN_DEFAULTS, { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 })
       assert.equal(world.position.length(), 0); assert.equal(world.rotation.x + world.rotation.y + world.rotation.z, 0)
@@ -109,13 +134,18 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       assert.equal(h.grade.warmth, 0); assert.equal(h.postEnabled, false, 'the painting bypasses final global tone mapping')
       let calls = 0, triangles = 0
       h.scene.traverse(node => {
-        if (!node.isMesh && !node.isPoints) return
+        if (!node.isMesh && !node.isPoints && !node.isSprite) return
         for (let parent = node; parent; parent = parent.parent) if (!parent.visible) return
         assert.equal(node.castShadow, false); calls++
         if (node.isMesh) triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3 * (node.isInstancedMesh ? node.count : 1)
+        else if (node.isSprite) triangles += 2
       })
-      assert.ok(calls <= 120, `draws: ${calls}`); assert.ok(triangles <= 150000, `triangles: ${triangles}`)
-      if (fps === 60) t.diagnostic(`Matte scene estimate: ${calls} drawable objects, ${triangles} triangles`)
+      assert.ok(calls <= 80, `draws: ${calls}`); assert.ok(triangles <= 100000, `triangles: ${triangles}`)
+      if (fps === 60) {
+        t.diagnostic(`Train-only scene estimate: ${calls} drawable objects, ${triangles} triangles`)
+        t.diagnostic(`Moonlight: ${JSON.stringify({ direction: moonDirection, elevation, intensity: moonlight.intensity,
+          hemisphereIntensity: h.scene.getObjectByName('ending-hemisphere').intensity, glowSize: glow.scale.x })}`)
+      }
       const locomotive = h.scene.getObjectByName('ending-locomotive'), bounds = new THREE.Box3(), part = new THREE.Box3()
       const instance = new THREE.Matrix4(), worldMatrix = new THREE.Matrix4()
       function noseZ() {
@@ -172,11 +202,21 @@ test('Ending: completed disposal releases the plate once and restores FOV, grade
   try {
     h.level.update(0)
     const staleSkip = h.skip, texture = h.scene.getObjectByName('ending-plate-sphere').material.uniforms.uPlate.value
+    const projection = h.scene.getObjectByName('ending-plate-sphere').material.uniforms.uPlateViewProj.value
+    const defaultProjection = projection.clone()
+    const glow = h.scene.getObjectByName('ending-headlight-glow')
+    let glowTextureDisposals = 0, glowGeometryDisposals = 0
+    glow.material.map.addEventListener('dispose', () => glowTextureDisposals++)
+    glow.geometry.addEventListener('dispose', () => glowGeometryDisposals++)
+    h.level.setShotFov(57)
+    assert.notDeepEqual(projection.elements, defaultProjection.elements)
     let textureDisposals = 0
     texture.addEventListener('dispose', () => textureDisposals++)
     h.level.update(TOTAL + 1); assert.equal(h.manager.advances, 1)
     assert.doesNotThrow(() => { h.level.dispose(); h.level.dispose() })
     assert.equal(textureDisposals, 1)
+    assert.equal(glowTextureDisposals, 1); assert.equal(glowGeometryDisposals, 1)
+    assert.deepEqual(projection.elements, defaultProjection.elements, 'plate projection restores its initial camera FOV')
     assert.equal(h.renderCamera.fov, h.originalFov); assert.equal(h.renderCamera.aspect, h.originalAspect)
     assert.deepEqual(h.grade, h.defaultGrade); assert.equal(h.postEnabled, true)
     assert.equal(h.scene.children.length, 0); assert.equal(h.scene.fog, h.originalFog); assert.equal(h.scene.background, h.originalBackground)
