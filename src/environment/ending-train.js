@@ -3,6 +3,8 @@ import { createTrain, RAIL_OFFSET } from '../entities/train.js'
 import { getKitMaterials } from './level1-kit/kit-materials.js'
 import { disposeObject } from '../core/dispose.js'
 import { createEndingLocomotive } from './ending-locomotive.js'
+import { CARRIAGE_HOLES, createDamageUniforms, patchTimeDamage } from '../shaders/ending-time-damage.js'
+import { createEndingDebris } from './ending-debris.js'
 
 export const TRAIN_SPEED = 26
 export const STOP_NOSE_Z = 0.6
@@ -96,6 +98,7 @@ export function createEndingTrain() {
   const locomotive = makePivot('ending-locomotive', [...engine.children], engineCenter)
   const carriages = []
   const carCenters = []
+  const damageUniforms = []
   for (let i = 0; i < 4; i++) {
     const batches = visual.children.filter(mesh => mesh.name.startsWith(`carriage-${i}-`))
     // Union the vehicle's batches: an individual roof/window batch may be asymmetric.
@@ -105,6 +108,17 @@ export function createEndingTrain() {
     }
     const center = (bounds.min.z + bounds.max.z) / 2
     const pivot = makePivot(`ending-carriage-${i + 1}`, batches, center)
+    const uniforms = createDamageUniforms(CARRIAGE_HOLES[i])
+    damageUniforms.push(uniforms)
+    pivot.userData.holes = CARRIAGE_HOLES[i]
+    const patches = new Map()
+    for (const mesh of batches) {
+      const patch = material => {
+        if (!patches.has(material)) patches.set(material, patchTimeDamage(material.clone(), uniforms))
+        return patches.get(material)
+      }
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(patch) : patch(mesh.material)
+    }
     pivot.rotation.y = THREE.MathUtils.degToRad(YAW_DEGREES[i])
     pivot.rotation.z = THREE.MathUtils.degToRad(ROLL_DEGREES[i])
     carriages.push(pivot); carCenters.push(center)
@@ -140,6 +154,11 @@ export function createEndingTrain() {
   locomotivePaint.emissiveIntensity = 0.03; locomotivePaint.metalness = 0.12
   const hero = createEndingLocomotive(locomotivePaint)
   locomotive.add(hero.root)
+  const tenderDamage = createDamageUniforms()
+  damageUniforms.push(tenderDamage)
+  for (const mesh of tender.children) {
+    if (!mesh.material.userData.endingTimeDamage) patchTimeDamage(mesh.material, tenderDamage)
+  }
   noseOffset = 0
   hero.root.traverse(node => {
     if (!node.isMesh || node.isInstancedMesh || node.name === 'ending-headlight-cone') return
@@ -162,8 +181,23 @@ export function createEndingTrain() {
   }
   contactGlows(locomotive, [-0.8, 1, 2.8, 4.4, 5.25])
   contactGlows(carriages[0], [-8.25, -5.75, 5.75, 8.25])
+  const debris = createEndingDebris(root, carriages, hero.root)
+  // Per-carriage copies share only ending-owned texture wrappers. Release unused base material objects.
+  const usedMaterials = new Set()
+  root.traverse(node => {
+    if (node.material) for (const material of Array.isArray(node.material) ? node.material : [node.material]) usedMaterials.add(material)
+  })
+  for (const material of materialClones.values()) if (!usedMaterials.has(material)) material.dispose()
   let disposed = false
-  function update(centerZ, distance, brakingProgress, settleTime = -1, delta = 0, speed = 0) {
+  let rift = 1, releaseTime = -1
+  function setTimeState(value, fallTime, steamFrozen) {
+    rift = value; releaseTime = fallTime
+    hero.setSteamFrozen(steamFrozen)
+    for (const uniforms of damageUniforms) uniforms.uRift.value = value
+    hero.damage.uRift.value = value
+  }
+  function update(centerZ, distance, brakingProgress, settleTime = -1, delta = 0, speed = 0,
+    brakeTime = -1, brakeDuration = 4.5, settleDuration = 1.6) {
     const stopCenter = STOP_NOSE_Z + noseOffset
     root.position.z = Math.max(stopCenter, centerZ + stopCenter - STOP_CENTER_Z)
     locomotive.rotation.x = settleTime >= 0
@@ -175,8 +209,11 @@ export function createEndingTrain() {
     }
     glow.emissiveIntensity = brakingProgress >= 0 ? GLOW_PEAK * Math.sin(Math.PI * brakingProgress) : 0
     hero.update(distance, delta, speed, settleTime)
+    for (const uniforms of damageUniforms) uniforms.uTime.value += Math.max(0, delta)
+    debris.update(brakeTime, brakeDuration, settleDuration, releaseTime, rift)
   }
-  return { root, locomotive, carriages, noseOffset, update,
+  return { root, locomotive, carriages, noseOffset, damageUniforms, debris, update, setTimeState,
+    release: () => debris.release(),
     dispose() {
       if (disposed) return
       disposed = true

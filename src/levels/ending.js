@@ -71,6 +71,50 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   title.appendChild(subtitle)
   overlay.appendChild(title)
   document.body.appendChild(overlay)
+  const vignette = document.createElement('div')
+  vignette.id = 'ending-time-vignette'
+  Object.assign(vignette.style, { position: 'fixed', inset: '0', zIndex: '59', pointerEvents: 'none', opacity: '0',
+    background: 'radial-gradient(ellipse at center, transparent 42%, rgba(61,125,255,0.9) 100%)' })
+  document.body.appendChild(vignette)
+  const timeState = { frozen: false, released: false, releaseCount: 0, rift: 1, freezeTime: 0, releaseTime: 0 }
+  let releaseVignette = 0
+  function freeze() {
+    if (timeState.frozen || timeState.released) return
+    timeState.frozen = true
+    train.setTimeState(1, -1, true)
+    if (import.meta.env?.DEV) console.info('[ending] freeze')
+  }
+  function release() {
+    if (disposed || timeState.released) return false
+    releaseVignette = Number(vignette.style.opacity)
+    timeState.released = true; timeState.frozen = false; timeState.releaseCount++
+    train.release(); train.setTimeState(1, 0, false)
+    gorge.plate.mesh.material.uniforms.uFlow.value = 1
+    if (import.meta.env?.DEV) console.info('[ending] release')
+    return true
+  }
+  function updateTimeEffects(delta) {
+    const flow = gorge.plate.mesh.material.uniforms.uFlow
+    if (timeState.released) {
+      timeState.releaseTime += delta
+      timeState.rift = Math.max(0, 1 - timeState.releaseTime / 0.6)
+      flow.value = 1
+      vignette.style.opacity = String(releaseVignette * timeState.rift)
+    } else if (timeState.frozen) {
+      timeState.freezeTime += delta
+      flow.value = Math.max(0, 1 - timeState.freezeTime / 0.4)
+      vignette.style.opacity = String(0.35 * Math.min(1, timeState.freezeTime / 0.5))
+    }
+    train.setTimeState(timeState.rift, timeState.released ? timeState.releaseTime : -1, timeState.frozen)
+    const finalFlow = flow.value
+    // Integrate the short linear flow ramp without moving the river while fully frozen.
+    if (timeState.frozen && delta > 0) {
+      const a = Math.min(0.4, Math.max(0, timeState.freezeTime - delta)), b = Math.min(0.4, timeState.freezeTime)
+      flow.value = (b - a - (b * b - a * a) / 0.8) / delta
+    }
+    gorge.update(delta)
+    flow.value = finalFlow
+  }
   player.mesh.visible = false
   // HUD is hidden, so mount the same native skip control in its own UI layer.
   const skipRoot = document.createElement('div')
@@ -162,8 +206,16 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     renderer.getScissor(savedScissor)
     const previousScissorTest = renderer.getScissorTest()
     const savedCulling = []
+    const savedRifts = new Map()
     gorge.root.traverse(node => { if (node.isMesh || node.isPoints) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
     train.root.traverse(node => { if (node.isMesh || node.isPoints || node.isSprite) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
+    train.root.traverse(node => {
+      if (!node.material) return
+      for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+        const uniform = material.userData.endingTimeDamage?.uRift
+        if (uniform && !savedRifts.has(uniform)) savedRifts.set(uniform, uniform.value)
+      }
+    })
     if (gorge.plate.ready) renderer.initTexture?.(gorge.plate.texture)
     try {
       scene.updateMatrixWorld(true)
@@ -171,7 +223,11 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       renderer.setRenderTarget(target)
       renderer.setScissorTest(false)
       renderer.render(scene, warmCamera)
+      // Frozen and released use the same compiled programs; exercise both uniform states under black.
+      for (const uniform of savedRifts.keys()) uniform.value = 0
+      renderer.render(scene, warmCamera)
     } finally {
+      for (const [uniform, value] of savedRifts) uniform.value = value
       for (const [node, culling] of savedCulling) node.frustumCulled = culling
       renderer.setRenderTarget(previousTarget)
       renderer.setViewport(savedViewport)
@@ -185,7 +241,8 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     phaseIndex = index
     phaseTime = 0
     if (import.meta.env?.DEV) console.info(`[ending +${timeline.toFixed(3)}s @${(performance.now() - startedAt).toFixed(0)}ms] ${PHASES[index]}`)
-    if (PHASES[index] === 'fadeOut') { hud.hideCinematicSkip?.(); skipControl.hide() }
+    if (PHASES[index] === 'hold') freeze()
+    if (PHASES[index] === 'fadeOut') { release(); hud.hideCinematicSkip?.(); skipControl.hide() }
     if (PHASES[index] === 'done' && !advanced) {
       advanced = true
       hud.hideCinematicSkip?.()
@@ -216,13 +273,14 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       settleTime = phase === 'settle' ? phaseTime : SETTLE + (phase === 'hold' ? phaseTime : HOLD)
     }
     const speed = phase === 'approach' ? TRAIN_SPEED : phase === 'braking' ? TRAIN_SPEED * (1 - phaseTime / BRAKE) : 0
-    train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime, delta, speed)
+    const brakeTime = phase === 'braking' ? phaseTime : phaseIndex >= 3 ? BRAKE + (phase === 'settle' ? phaseTime : SETTLE) : -1
+    train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime, delta, speed, brakeTime, BRAKE, SETTLE)
   }
 
   return {
     objective: '', checkpoint: { position: new THREE.Vector3(0, 0, STOP_CENTER_Z), yaw: 0 },
     isCinematic: true,
-    setShotFov,
+    setShotFov, release, timeState,
     update(delta) {
       if (disposed || advanced) return
       if (!initialized) {
@@ -246,16 +304,18 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       if (renderCamera && (renderCamera.fov !== shotFov || renderCamera.aspect !== PLATE_CAMERA_ASPECT)) {
         setShotFov(shotFov)
       }
-      gorge.update(delta)
       let remaining = gorge.plate.ready && !alignMode ? Math.max(0, delta) : 0
       while (remaining > 0 && !advanced) {
         const step = Math.min(remaining, DURATIONS[phaseIndex] - phaseTime)
         phaseTime += step
         timeline += step
         remaining -= step
+        updateTimeEffects(step)
+        present(step)
         if (phaseTime >= DURATIONS[phaseIndex] - 1e-9) enterPhase(phaseIndex + 1)
       }
-      present(Math.max(0, delta))
+      if (alignMode) { updateTimeEffects(Math.max(0, delta)); present(Math.max(0, delta)) }
+      else present(0)
       if (import.meta.env?.DEV && !budgetLogged && timeline >= ENDING_FADE_IN + APPROACH + BRAKE + 1) {
         budgetLogged = true
         console.info('[ending render budget, previous rendered frame]', {
@@ -274,6 +334,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       }
       hud.hideCinematicSkip?.()
       overlay.remove()
+      vignette.remove()
       skipControl.dispose()
       skipRoot.remove()
       player.setCinematicView(null)

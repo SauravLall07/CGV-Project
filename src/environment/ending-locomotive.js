@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { createSteam } from './landing/steam.js'
+import { BOILER_HOLE, createDamageUniforms, patchTimeDamage } from '../shaders/ending-time-damage.js'
 
 export const HEADLIGHT_GLOW_SIZE = 2.2
 
@@ -15,6 +16,9 @@ export function createEndingLocomotive(paint) {
     emissive: 0x942a20, emissiveIntensity: 0.03 })
   const glass = new THREE.MeshStandardMaterial({ color: 0x6a3d16, emissive: 0xffa84a, emissiveIntensity: 0.75, roughness: 0.4 })
   const lens = new THREE.MeshStandardMaterial({ color: 0xffdb98, emissive: 0xffd68a, emissiveIntensity: 1.8 })
+  const damage = createDamageUniforms([BOILER_HOLE])
+  for (const material of [paint, metal, brass, red, glass]) patchTimeDamage(material, damage)
+  root.userData.holes = [BOILER_HOLE]
   const parts = new Map()
   function add(mat, geometry, x, y, z, rx = 0, ry = 0, rz = 0) {
     geometry.rotateX(rx); geometry.rotateY(ry); geometry.rotateZ(rz); geometry.translate(x, y, z)
@@ -73,6 +77,19 @@ export function createEndingLocomotive(paint) {
     geometries.forEach(part => part.dispose())
     root.add(new THREE.Mesh(geometry, mat))
   }
+  const dark = new THREE.MeshStandardMaterial({ color: 0x151716, roughness: 0.95 })
+  const coreGeometry = new THREE.CylinderGeometry(0.57, 0.57, 2.45, 20)
+  coreGeometry.rotateX(Math.PI / 2); coreGeometry.translate(0, 2.6, 1.65)
+  const core = new THREE.Mesh(coreGeometry, dark); core.name = 'ending-boiler-interior'; root.add(core)
+  const ribs = []
+  for (let i = 0; i < 6; i++) {
+    const rib = new THREE.TorusGeometry(0.73, 0.035, 6, 24)
+    rib.translate(0, 2.6, 0.7 + i * 0.38); ribs.push(rib)
+  }
+  const ribMaterial = new THREE.MeshStandardMaterial({ color: 0x665d49, roughness: 0.6, metalness: 0.3 })
+  patchTimeDamage(ribMaterial, createDamageUniforms())
+  const ribMesh = new THREE.Mesh(mergeGeometries(ribs), ribMaterial)
+  ribs.forEach(rib => rib.dispose()); ribMesh.name = 'ending-boiler-ribs'; root.add(ribMesh)
   const wheelParts = []
   const disc = new THREE.CylinderGeometry(0.72, 0.72, 0.12, 24); disc.rotateZ(Math.PI / 2)
   // Open spokes over a small hub; avoid an opaque disc hiding the spokes.
@@ -131,11 +148,12 @@ export function createEndingLocomotive(paint) {
   const up = new THREE.Vector3(0, 1, 0)
   const sides = [-1, 1], driverSites = [-0.8, 1, 2.8], leadingSites = [4.4, 5.25]
   let wheelAngle = 0
+  let steamFrozen = false
   function update(distance, delta = 0, speed = 0, settleTime = -1) {
-    plume.update(delta * (0.2 + 0.8 * speed / 26))
+    plume.update(steamFrozen ? 0 : delta * (0.2 + 0.8 * speed / 26))
     plume.points.material.uniforms.uWind.value.z = -5 - speed * 0.18
     for (const hiss of hisses) {
-      hiss.update(delta)
+      hiss.update(steamFrozen ? 0 : delta)
       hiss.points.material.uniforms.uOpacity.value = settleTime >= 0 && settleTime < 0.6
         ? 0.12 * (1 - settleTime / 0.6) : 0
     }
@@ -161,9 +179,12 @@ export function createEndingLocomotive(paint) {
       pose.updateMatrix(); rods.setMatrixAt(n++, pose.matrix)
     }
     drivers.instanceMatrix.needsUpdate = true; leading.instanceMatrix.needsUpdate = true; rods.instanceMatrix.needsUpdate = true
+    damage.uTime.value += Math.max(0, delta)
+    ribMaterial.userData.endingTimeDamage.uTime.value = damage.uTime.value
+    ribMaterial.userData.endingTimeDamage.uRift.value = damage.uRift.value
   }
   // Known animated envelopes avoid per-frame bounds rebuilding.
   for (const mesh of [drivers, leading, rods]) { mesh.frustumCulled = false }
   update(0)
-  return { root, update, chimney: new THREE.Vector3(0, 5.15, 3.8) }
+  return { root, update, damage, setSteamFrozen(value) { steamFrozen = value }, chimney: new THREE.Vector3(0, 5.15, 3.8) }
 }

@@ -7,6 +7,7 @@ import { createEndingTrain, STOP_CENTER_Z, STOP_NOSE_Z, TRAIN_SPEED } from '../s
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../src/shaders/ending-plate.js'
 import { createTrain } from '../src/entities/train.js'
 import { getKitMaterials } from '../src/environment/level1-kit/kit-materials.js'
+import { CARRIAGE_HOLES, BOILER_HOLE, CRACK_REACH } from '../src/shaders/ending-time-damage.js'
 
 const TITLE_FADE = 0.6
 const TOTAL = ENDING_FADE_IN + APPROACH + BRAKE + SETTLE + HOLD + FADE_OUT + TITLE_FADE + TITLE_HOLD
@@ -137,13 +138,15 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       assert.equal(h.grade.warmth, 0); assert.equal(h.postEnabled, false, 'the painting bypasses final global tone mapping')
       let calls = 0, triangles = 0
       h.scene.traverse(node => {
-        if (!node.isMesh && !node.isPoints && !node.isSprite) return
+        if (!node.isMesh && !node.isPoints && !node.isSprite && !node.isLine) return
         for (let parent = node; parent; parent = parent.parent) if (!parent.visible) return
-        assert.equal(node.castShadow, false); calls++
+        assert.equal(node.castShadow, false)
+        const materials = Array.isArray(node.material) ? node.material : [node.material]
+        calls += materials.reduce((count, material) => count + (material.transparent && material.side === THREE.DoubleSide && !material.forceSinglePass ? 2 : 1), 0)
         if (node.isMesh) triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3 * (node.isInstancedMesh ? node.count : 1)
         else if (node.isSprite) triangles += 2
       })
-      assert.ok(calls <= 80, `draws: ${calls}`); assert.ok(triangles <= 100000, `triangles: ${triangles}`)
+      assert.ok(calls <= 110, `draws: ${calls}`); assert.ok(triangles <= 120000, `triangles: ${triangles}`)
       if (fps === 60) {
         t.diagnostic(`Train-only scene estimate: ${calls} drawable objects, ${triangles} triangles`)
         t.diagnostic(`Moonlight: ${JSON.stringify({ direction: moonDirection, elevation, intensity: moonlight.intensity,
@@ -157,7 +160,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       function noseZ() {
         train.updateMatrixWorld(true); bounds.makeEmpty()
         locomotive.traverse(node => {
-          if (!node.isMesh || node.name === 'ending-headlight-cone') return
+          if (!node.isMesh || node.name === 'ending-headlight-cone' || node.userData.endingDecoration) return
           node.geometry.computeBoundingBox()
           for (let i = 0; i < (node.isInstancedMesh ? node.count : 1); i++) {
             if (node.isInstancedMesh) { node.getMatrixAt(i, instance); worldMatrix.multiplyMatrices(node.matrixWorld, instance) }
@@ -198,6 +201,123 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       h.level.update(100); assert.equal(h.manager.advances, 1); assert.equal(h.begins, 1)
     } finally { h.restore() }
   }
+})
+
+test('Ending: damage uniforms use pivot-local holes, protect the first carriage and leave shared shaders intact', () => {
+  const kit = getKitMaterials(), h = harness()
+  try {
+    h.level.update(0); h.scene.updateMatrixWorld(true)
+    for (const material of Object.values(kit).flat().filter(value => value?.isMaterial)) {
+      assert.equal(material.userData.endingTimeDamage, undefined)
+      assert.notEqual(material.customProgramCacheKey(), 'ending-time-damage-v1')
+    }
+    let patched = 0
+    for (let i = 0; i < 4; i++) {
+      const pivot = h.scene.getObjectByName(`ending-carriage-${i + 1}`)
+      const towardCamera = h.renderCamera.position.clone().sub(pivot.getWorldPosition(new THREE.Vector3()))
+      const outward = new THREE.Vector3(-1, 0, 0).transformDirection(pivot.matrixWorld)
+      assert.ok(outward.dot(towardCamera) > 0, 'local -X faces the shot camera')
+      for (const node of pivot.children.filter(node => node.name.startsWith(`carriage-${i}-`))) {
+        const uniforms = node.material.userData.endingTimeDamage
+        assert.ok(uniforms); assert.equal(uniforms.uHoles.value.length, 4)
+        assert.equal(uniforms.uTime.value, 0); assert.equal(uniforms.uRift.value, 1)
+        assert.deepEqual(uniforms.uHoles.value.slice(0, CARRIAGE_HOLES[i].length), CARRIAGE_HOLES[i])
+        const shader = { uniforms: {}, vertexShader: '#include <begin_vertex>', fragmentShader: '#include <emissivemap_fragment>' }
+        node.material.onBeforeCompile(shader)
+        for (const key of ['uHoles', 'uTime', 'uRift']) assert.equal(shader.uniforms[key], uniforms[key])
+        assert.match(shader.vertexShader, /vDamageLocal = transformed/)
+        assert.match(shader.fragmentShader, /discard/); assert.match(shader.fragmentShader, /damageCells/)
+        assert.match(shader.fragmentShader, /if\(!gl_FrontFacing\)/)
+        patched++
+      }
+    }
+    assert.ok(patched > 12)
+    for (const hole of CARRIAGE_HOLES[0]) {
+      assert.equal(hole.roof, 0)
+      assert.ok(hole.center.z + hole.halfSize.z + 0.19 + CRACK_REACH < 6,
+        'including torn-edge noise and the entire crack reach, damage stays behind the reserved front 4 m')
+    }
+    const firstPanels = h.scene.getObjectByName('ending-carriage-1').children.filter(node => node.name === 'ending-torn-panel')
+    assert.equal(firstPanels.length, 1)
+    assert.ok(firstPanels[0].position.z + CARRIAGE_HOLES[0][0].halfSize.z < 6)
+    assert.equal(BOILER_HOLE.halfSize.z * 2, 2.2)
+    assert.ok(h.scene.getObjectByName('ending-boiler-ribs'))
+  } finally { h.restore() }
+})
+
+test('Ending: panels lift, freeze steam/river, release once and fall below the shot', () => {
+  const h = harness()
+  try {
+    h.level.update(0)
+    const panels = [], uniforms = new Set()
+    h.scene.traverse(node => {
+      if (node.name === 'ending-torn-panel') panels.push(node)
+      for (const material of node.material ? Array.isArray(node.material) ? node.material : [node.material] : []) {
+        if (material.userData.endingTimeDamage) uniforms.add(material.userData.endingTimeDamage)
+      }
+    })
+    assert.equal(panels.length, 7)
+    for (const panel of panels) assert.deepEqual(panel.position, panel.userData.hole.center)
+    const staleSkip = h.skip
+    h.level.update(ENDING_FADE_IN + APPROACH)
+    for (const panel of panels) assert.deepEqual(panel.position, panel.userData.hole.center)
+    h.level.update(BRAKE + SETTLE)
+    assert.equal(h.level.timeState.frozen, true)
+    for (const panel of panels) {
+      const lift = panel.position.y - panel.userData.hole.center.y
+      assert.ok(lift >= 2.5 && lift <= 4)
+    }
+    const frozenPoses = panels.map(panel => panel.matrix.clone())
+    const steam = h.scene.getObjectByName('ending-chimney-steam').material.uniforms.uTime
+    const plateUniforms = h.scene.getObjectByName('ending-plate-sphere').material.uniforms
+    const steamTime = steam.value
+    h.level.update(0.6)
+    assert.equal(steam.value, steamTime); assert.equal(plateUniforms.uFlow.value, 0)
+    const riverTime = plateUniforms.uTime.value
+    h.level.update(0.1)
+    assert.equal(plateUniforms.uTime.value, riverTime)
+    for (let i = 0; i < panels.length; i++) assert.deepEqual(panels[i].matrix.elements, frozenPoses[i].elements)
+    for (const uniform of uniforms) assert.equal(uniform.uRift.value, 1)
+    const vignette = h.doc.body.children.find(node => node.id === 'ending-time-vignette')
+    assert.equal(Number(vignette.style.opacity), 0.35)
+    h.level.update(HOLD - 0.7)
+    assert.equal(h.level.timeState.releaseCount, 1)
+    assert.equal(h.level.release(), false); staleSkip(); staleSkip()
+    assert.equal(h.level.timeState.releaseCount, 1)
+    assert.equal(h.scene.getObjectByName('ending-time-threads').visible, false)
+    h.level.update(0.61)
+    for (const uniform of uniforms) assert.equal(uniform.uRift.value, 0)
+    assert.equal(Number(vignette.style.opacity), 0)
+    assert.equal(plateUniforms.uFlow.value, 1); assert.ok(steam.value > steamTime)
+    h.level.update(3.67)
+    h.scene.updateMatrixWorld(true)
+    for (const panel of panels) {
+      const projected = panel.getWorldPosition(new THREE.Vector3()).project(h.renderCamera)
+      assert.ok(projected.y < -1, `released panel below frame: ${projected.y}`)
+    }
+  } finally { h.restore() }
+})
+
+test('Ending: damage resources dispose once, vignette detaches and restart resets the anomaly', () => {
+  const h = harness(), resources = new Map()
+  h.scene.traverse(node => {
+    if (node.geometry) resources.set(node.geometry, 0)
+    for (const material of node.material ? Array.isArray(node.material) ? node.material : [node.material] : []) resources.set(material, 0)
+  })
+  for (const resource of resources.keys()) resource.addEventListener('dispose', () => resources.set(resource, resources.get(resource) + 1))
+  try {
+    h.level.update(0); assert.equal(h.level.release(), true); assert.equal(h.level.release(), false)
+    h.level.dispose(); h.level.dispose()
+    for (const count of resources.values()) assert.equal(count, 1)
+    assert.equal(h.doc.body.children.length, 0); assert.equal(h.scene.children.length, 0)
+    assert.equal(h.level.release(), false)
+  } finally { h.restore() }
+  const restarted = harness()
+  try {
+    restarted.level.update(0)
+    assert.equal(restarted.level.timeState.rift, 1); assert.equal(restarted.level.timeState.releaseCount, 0)
+    assert.equal(restarted.level.timeState.frozen, false); assert.equal(restarted.level.timeState.released, false)
+  } finally { restarted.restore() }
 })
 
 test('Ending: skip uses fade/title and advances once despite repeated or stale activation', () => {
