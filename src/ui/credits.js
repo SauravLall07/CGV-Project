@@ -150,6 +150,7 @@ function buildRollContent() {
   // --- PLACEHOLDER: third-party assets ---
   addBlock(roll, [
     label('Additional Assets'),
+    line('Ending background painting — AI-generated with ChatGPT (OpenAI), edited for Chrono Express'),
     line('Physics library: cannon-es'),
     line('Built with Three.js', { size: '13px' }),
     spacer(8),

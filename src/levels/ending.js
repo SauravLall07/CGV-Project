@@ -1,10 +1,11 @@
 import * as THREE from 'three'
 import { createEndingGorge } from '../environment/ending-gorge.js'
 import { createEndingTrain, TRAIN_SPEED, STOP_CENTER_Z, STOP_NOSE_Z } from '../environment/ending-train.js'
-import { TRAIN_START_NOSE_Z } from '../environment/ending-landmarks.js'
+import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../shaders/ending-plate.js'
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
 
 export const ENDING_FADE_IN = 1.0
+export const TRAIN_START_NOSE_Z = 125
 export const BRAKE = 4.5
 export const APPROACH = (TRAIN_START_NOSE_Z - STOP_NOSE_Z - TRAIN_SPEED * BRAKE / 2) / TRAIN_SPEED
 export const SETTLE = 1.6
@@ -15,15 +16,18 @@ const TITLE_FADE = 0.6
 const BRAKING_DISTANCE = TRAIN_SPEED * BRAKE / 2
 const APPROACH_DISTANCE = TRAIN_SPEED * APPROACH
 export const START_CENTER_Z = STOP_CENTER_Z + APPROACH_DISTANCE + BRAKING_DISTANCE
-export const ENDING_CAMERA_POSITION = new THREE.Vector3(47.1, 19.43, -3.01)
-export const ENDING_CAMERA_TARGET = new THREE.Vector3(1.09, -1.13, 9.74)
-export const ENDING_CAMERA_FOV = 45
+export const ENDING_CAMERA_POSITION = PLATE_CAMERA_POSITION
+export const ENDING_CAMERA_TARGET = PLATE_CAMERA_TARGET
+export const ENDING_CAMERA_FOV = PLATE_CAMERA_FOV
+export const WORLD_ALIGN_DEFAULTS = Object.freeze({ x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 })
 const PHASES = ['fadeIn', 'approach', 'braking', 'settle', 'hold', 'fadeOut', 'title', 'done']
 const DURATIONS = [ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT, TITLE_FADE + TITLE_HOLD]
 
 export function createEndingLevel({ scene, player, camera, renderCamera, hud, beginCinematic, advance, renderer, post = null }) {
   // Timewreck and direct starts use the postprocessor's default grade; mirror Level 2's ownership.
   post?.setGrade({ warmth: 0 })
+  const previousPostEnabled = post?.isEnabled?.()
+  if (previousPostEnabled !== undefined) post.setEnabled(false)
   let phaseIndex = 0
   let phaseTime = 0
   let initialized = false
@@ -37,9 +41,16 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const previousEnvironment = scene.environment
   const previousEnvironmentIntensity = scene.environmentIntensity
   const previousFov = renderCamera?.fov
-  const gorge = createEndingGorge(scene, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV)
+  const previousAspect = renderCamera?.aspect
+  const gorge = createEndingGorge(scene, renderer)
   const train = createEndingTrain()
-  scene.add(train.root)
+  const worldAlign = new THREE.Group()
+  worldAlign.name = 'WORLD_ALIGN'
+  worldAlign.position.set(WORLD_ALIGN_DEFAULTS.x, WORLD_ALIGN_DEFAULTS.y, WORLD_ALIGN_DEFAULTS.z)
+  worldAlign.rotation.set(THREE.MathUtils.degToRad(WORLD_ALIGN_DEFAULTS.pitch),
+    THREE.MathUtils.degToRad(WORLD_ALIGN_DEFAULTS.yaw), THREE.MathUtils.degToRad(WORLD_ALIGN_DEFAULTS.roll))
+  worldAlign.scale.setScalar(WORLD_ALIGN_DEFAULTS.scale)
+  worldAlign.add(gorge.root, train.root); scene.add(worldAlign)
   train.update(START_CENTER_Z, 0, -1)
   const viewRotation = new THREE.Quaternion().setFromRotationMatrix(
     new THREE.Matrix4().lookAt(ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, new THREE.Vector3(0, 1, 0)))
@@ -66,12 +77,62 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   Object.assign(skipRoot.style, { position: 'fixed', inset: '0', zIndex: '65', pointerEvents: 'none' })
   document.body.appendChild(skipRoot)
   const skipControl = createCinematicSkip(skipRoot)
-  const warmCamera = new THREE.PerspectiveCamera(ENDING_CAMERA_FOV, renderCamera?.aspect ?? 16 / 9, 0.1, 1800)
+  const warmCamera = new THREE.PerspectiveCamera(ENDING_CAMERA_FOV, PLATE_CAMERA_ASPECT, 0.1, 1800)
   warmCamera.position.copy(ENDING_CAMERA_POSITION)
   warmCamera.quaternion.copy(viewRotation)
   const savedViewport = new THREE.Vector4()
   const savedScissor = new THREE.Vector4()
   let budgetLogged = false
+  let alignMode = false, removeAlignment = null
+  if (import.meta.env?.DEV) {
+    const parameters = new URLSearchParams(globalThis.location?.search ?? '')
+    if (parameters.get('start') === 'ending' && parameters.has('align')) {
+      alignMode = true
+      phaseIndex = PHASES.indexOf('hold'); phaseTime = 0
+      timeline = ENDING_FADE_IN + APPROACH + BRAKE + SETTLE + 1
+      const values = { ...WORLD_ALIGN_DEFAULTS }
+      const materials = new Map()
+      let translucent = false
+      const apply = () => {
+        worldAlign.position.set(values.x, values.y, values.z)
+        worldAlign.rotation.set(THREE.MathUtils.degToRad(values.pitch), THREE.MathUtils.degToRad(values.yaw), THREE.MathUtils.degToRad(values.roll))
+        worldAlign.scale.setScalar(values.scale)
+      }
+      const toggle = () => {
+        if (!materials.size) worldAlign.traverse(node => {
+          if (!node.material) return
+          for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+            if (!materials.has(material)) materials.set(material, { opacity: material.opacity,
+              transparent: material.transparent, depthWrite: material.depthWrite, steam: material.uniforms?.uOpacity?.value })
+          }
+        })
+        translucent = !translucent
+        for (const [material, original] of materials) {
+          material.opacity = original.opacity * (translucent ? 0.5 : 1)
+          material.transparent = translucent || original.transparent
+          material.depthWrite = translucent ? false : original.depthWrite
+          if (original.steam !== undefined) material.uniforms.uOpacity.value = original.steam * (translucent ? 0.5 : 1)
+          material.needsUpdate = true
+        }
+      }
+      const key = event => {
+        const tag = event.target?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable || event.ctrlKey || event.metaKey) return
+        const fine = event.altKey ? 0.1 : 1
+        const movement = { KeyJ: ['x', 'yaw', -1], KeyL: ['x', 'yaw', 1],
+          KeyI: ['z', 'pitch', -1], KeyK: ['z', 'pitch', 1], KeyU: ['y', 'roll', -1], KeyO: ['y', 'roll', 1] }[event.code]
+        if (movement) values[movement[event.shiftKey ? 1 : 0]] += movement[2] * 0.25 * fine
+        else if (event.code === 'BracketLeft' || event.code === 'BracketRight') {
+          values.scale = Math.max(0.005, values.scale + (event.code === 'BracketRight' ? 1 : -1) * 0.005 * fine)
+        } else if (event.code === 'KeyP') console.info(`WORLD_ALIGN = ${JSON.stringify(values)}`)
+        else if (event.code === 'KeyT') { if (!event.repeat) toggle() }
+        else return
+        event.preventDefault(); event.stopPropagation(); apply()
+      }
+      window.addEventListener('keydown', key, true)
+      removeAlignment = () => { window.removeEventListener('keydown', key, true); materials.clear() }
+    }
+  }
 
   function warmScene() {
     if (!renderer) return
@@ -83,6 +144,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     const savedCulling = []
     gorge.root.traverse(node => { if (node.isMesh || node.isPoints) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
     train.root.traverse(node => { if (node.isMesh || node.isPoints) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
+    if (gorge.plate.ready) renderer.initTexture?.(gorge.plate.texture)
     try {
       scene.updateMatrixWorld(true)
       renderer.compile(scene, warmCamera)
@@ -145,23 +207,26 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       if (!initialized) {
         initialized = true
         camera.setMode?.('third', { announce: false })
-        if (renderCamera) { renderCamera.fov = ENDING_CAMERA_FOV; renderCamera.updateProjectionMatrix() }
+        if (renderCamera) {
+          renderCamera.fov = ENDING_CAMERA_FOV; renderCamera.aspect = PLATE_CAMERA_ASPECT
+          renderCamera.position.copy(ENDING_CAMERA_POSITION); renderCamera.quaternion.copy(viewRotation)
+          renderCamera.updateProjectionMatrix(); renderCamera.updateMatrixWorld(true)
+        }
         player.mesh.visible = false
         player.setCinematicView(view)
         hud.setVisible(false)
         beginCinematic?.()
-        hud.showCinematicSkip?.(skip)
-        skipControl.show(skip)
+        if (!alignMode) { hud.showCinematicSkip?.(skip); skipControl.show(skip) }
         warmScene()
         if (import.meta.env?.DEV) console.info('[ending] fadeIn')
       }
       player.mesh.visible = false
       // Settings subscribers may run while paused; keep this shot's lens static.
-      if (renderCamera && renderCamera.fov !== ENDING_CAMERA_FOV) {
-        renderCamera.fov = ENDING_CAMERA_FOV; renderCamera.updateProjectionMatrix()
+      if (renderCamera && (renderCamera.fov !== ENDING_CAMERA_FOV || renderCamera.aspect !== PLATE_CAMERA_ASPECT)) {
+        renderCamera.fov = ENDING_CAMERA_FOV; renderCamera.aspect = PLATE_CAMERA_ASPECT; renderCamera.updateProjectionMatrix()
       }
       gorge.update(delta)
-      let remaining = Math.max(0, delta)
+      let remaining = gorge.plate.ready && !alignMode ? Math.max(0, delta) : 0
       while (remaining > 0 && !advanced) {
         const step = Math.min(remaining, DURATIONS[phaseIndex] - phaseTime)
         phaseTime += step
@@ -174,15 +239,17 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         budgetLogged = true
         console.info('[ending render budget, previous rendered frame]', {
           calls: renderer?.info.render.calls, triangles: renderer?.info.render.triangles,
-          timberInstances: gorge.timberCount, terrainClearance: gorge.clearance })
+          timberInstances: gorge.timberCount })
       }
     },
     dispose() {
       if (disposed) return
       disposed = true
+      removeAlignment?.()
       post?.resetGrade()
+      if (previousPostEnabled !== undefined) post.setEnabled(previousPostEnabled)
       if (renderCamera && previousFov !== undefined) {
-        renderCamera.fov = previousFov; renderCamera.updateProjectionMatrix()
+        renderCamera.fov = previousFov; renderCamera.aspect = previousAspect; renderCamera.updateProjectionMatrix()
       }
       hud.hideCinematicSkip?.()
       overlay.remove()
@@ -193,6 +260,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       player.mesh.visible = true
       gorge.dispose()
       train.dispose()
+      worldAlign.removeFromParent()
       scene.fog = previousFog
       scene.background = previousBackground
       scene.environment = previousEnvironment
