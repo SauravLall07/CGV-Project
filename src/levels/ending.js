@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { createEndingGorge } from '../environment/ending-gorge.js'
-import { createEndingTrain, TRAIN_SPEED, STOP_CENTER_X } from '../environment/ending-train.js'
+import { createEndingTrain, TRAIN_SPEED, STOP_CENTER_Z } from '../environment/ending-train.js'
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
 
 export const ENDING_FADE_IN = 1.0
@@ -13,10 +13,10 @@ export const TITLE_HOLD = 2.5
 const TITLE_FADE = 0.6
 const BRAKING_DISTANCE = TRAIN_SPEED * BRAKE / 2
 const APPROACH_DISTANCE = TRAIN_SPEED * APPROACH
-export const START_CENTER_X = STOP_CENTER_X - APPROACH_DISTANCE - BRAKING_DISTANCE
-// At 60 degrees / 16:9, z=46 clips the rear carriage. z=64 fits the consist.
-export const ENDING_CAMERA_POSITION = new THREE.Vector3(-70, 12, 64)
-export const ENDING_CAMERA_TARGET = new THREE.Vector3(-25, -3, 0)
+export const START_CENTER_Z = STOP_CENTER_Z + APPROACH_DISTANCE + BRAKING_DISTANCE
+export const ENDING_CAMERA_POSITION = new THREE.Vector3(13, 3.5, -14)
+// Aim nearer than z=22 so both broken edges fit at the default 60-degree FOV.
+export const ENDING_CAMERA_TARGET = new THREE.Vector3(-1, 1.5, 12)
 const PHASES = ['fadeIn', 'approach', 'braking', 'settle', 'hold', 'fadeOut', 'title', 'done']
 const DURATIONS = [ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT, TITLE_FADE + TITLE_HOLD]
 
@@ -33,10 +33,10 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const previousBackground = scene.background
   const previousEnvironment = scene.environment
   const previousEnvironmentIntensity = scene.environmentIntensity
-  const gorge = createEndingGorge(scene)
+  const gorge = createEndingGorge(scene, ENDING_CAMERA_POSITION)
   const train = createEndingTrain()
   scene.add(train.root)
-  train.update(START_CENTER_X, 0, -1)
+  train.update(START_CENTER_Z, 0, -1)
   const viewRotation = new THREE.Quaternion().setFromRotationMatrix(
     new THREE.Matrix4().lookAt(ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, new THREE.Vector3(0, 1, 0)))
   const view = { mode: 'fixed', position: ENDING_CAMERA_POSITION.clone(), target: ENDING_CAMERA_TARGET.clone(),
@@ -129,11 +129,11 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       distance = APPROACH_DISTANCE + BRAKING_DISTANCE
       settleTime = phase === 'settle' ? phaseTime : SETTLE + (phase === 'hold' ? phaseTime : HOLD)
     }
-    train.update(START_CENTER_X + distance, distance, brakingProgress, settleTime)
+    train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime)
   }
 
   return {
-    objective: '', checkpoint: { position: new THREE.Vector3(-7.6, 0, 0), yaw: 0 },
+    objective: '', checkpoint: { position: new THREE.Vector3(0, 0, STOP_CENTER_Z), yaw: 0 },
     isCinematic: true,
     update(delta) {
       if (disposed || advanced) return
@@ -164,7 +164,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         budgetLogged = true
         console.info('[ending render budget, previous rendered frame]', {
           calls: renderer?.info.render.calls, triangles: renderer?.info.render.triangles,
-          timberInstances: gorge.timberCount })
+          timberInstances: gorge.timberCount, terrainClearance: gorge.clearance })
       }
     },
     dispose() {
