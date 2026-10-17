@@ -15,8 +15,9 @@ const TITLE_FADE = 0.6
 const BRAKING_DISTANCE = TRAIN_SPEED * BRAKE / 2
 const APPROACH_DISTANCE = TRAIN_SPEED * APPROACH
 export const START_CENTER_Z = STOP_CENTER_Z + APPROACH_DISTANCE + BRAKING_DISTANCE
-export const ENDING_CAMERA_POSITION = new THREE.Vector3(2.6, 1.9, -24)
-export const ENDING_CAMERA_TARGET = new THREE.Vector3(-0.6, 2.2, 20)
+export const ENDING_CAMERA_POSITION = new THREE.Vector3(95, 40, -20)
+export const ENDING_CAMERA_TARGET = new THREE.Vector3(0, -2, 25)
+export const ENDING_CAMERA_FOV = 45
 const PHASES = ['fadeIn', 'approach', 'braking', 'settle', 'hold', 'fadeOut', 'title', 'done']
 const DURATIONS = [ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT, TITLE_FADE + TITLE_HOLD]
 
@@ -33,7 +34,8 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const previousBackground = scene.background
   const previousEnvironment = scene.environment
   const previousEnvironmentIntensity = scene.environmentIntensity
-  const gorge = createEndingGorge(scene, ENDING_CAMERA_POSITION)
+  const previousFov = renderCamera?.fov
+  const gorge = createEndingGorge(scene, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV)
   const train = createEndingTrain()
   scene.add(train.root)
   train.update(START_CENTER_Z, 0, -1)
@@ -62,7 +64,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   Object.assign(skipRoot.style, { position: 'fixed', inset: '0', zIndex: '65', pointerEvents: 'none' })
   document.body.appendChild(skipRoot)
   const skipControl = createCinematicSkip(skipRoot)
-  const warmCamera = new THREE.PerspectiveCamera(renderCamera?.fov ?? 60, renderCamera?.aspect ?? 16 / 9, 0.1, 1800)
+  const warmCamera = new THREE.PerspectiveCamera(ENDING_CAMERA_FOV, renderCamera?.aspect ?? 16 / 9, 0.1, 1800)
   warmCamera.position.copy(ENDING_CAMERA_POSITION)
   warmCamera.quaternion.copy(viewRotation)
   const savedViewport = new THREE.Vector4()
@@ -77,8 +79,8 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     renderer.getScissor(savedScissor)
     const previousScissorTest = renderer.getScissorTest()
     const savedCulling = []
-    gorge.root.traverse(node => { if (node.isMesh) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
-    train.root.traverse(node => { if (node.isMesh) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
+    gorge.root.traverse(node => { if (node.isMesh || node.isPoints) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
+    train.root.traverse(node => { if (node.isMesh || node.isPoints) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
     try {
       scene.updateMatrixWorld(true)
       renderer.compile(scene, warmCamera)
@@ -141,6 +143,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       if (!initialized) {
         initialized = true
         camera.setMode?.('third', { announce: false })
+        if (renderCamera) { renderCamera.fov = ENDING_CAMERA_FOV; renderCamera.updateProjectionMatrix() }
         player.mesh.visible = false
         player.setCinematicView(view)
         hud.setVisible(false)
@@ -151,6 +154,10 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         if (import.meta.env?.DEV) console.info('[ending] fadeIn')
       }
       player.mesh.visible = false
+      // Settings subscribers may run while paused; keep this shot's lens static.
+      if (renderCamera && renderCamera.fov !== ENDING_CAMERA_FOV) {
+        renderCamera.fov = ENDING_CAMERA_FOV; renderCamera.updateProjectionMatrix()
+      }
       gorge.update(delta)
       let remaining = Math.max(0, delta)
       while (remaining > 0 && !advanced) {
@@ -171,6 +178,9 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     dispose() {
       if (disposed) return
       disposed = true
+      if (renderCamera && previousFov !== undefined) {
+        renderCamera.fov = previousFov; renderCamera.updateProjectionMatrix()
+      }
       hud.hideCinematicSkip?.()
       overlay.remove()
       skipControl.dispose()

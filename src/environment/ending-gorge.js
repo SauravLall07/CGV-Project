@@ -6,7 +6,7 @@ import { RAIL_OFFSET } from '../entities/train.js'
 import { disposeObject } from '../core/dispose.js'
 import { createEndingLandmarks, TUNNEL_PORTAL_Z } from './ending-landmarks.js'
 
-export const GORGE_DROP = 38
+export const GORGE_DROP = 45
 export const BRIDGE_END = TUNNEL_PORTAL_Z
 export const GAP_START = 0
 export const GAP_END = -9
@@ -18,11 +18,16 @@ const MOON_DISTANCE = 400
 const MOON_SIZE = 28
 const ROOF_MOON_DIRECTION = new THREE.Vector3(-0.75, 0.6, -0.28).normalize()
 
-export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(2.6, 1.9, -24)) {
+export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 40, -20),
+  cameraTarget = new THREE.Vector3(0, -2, 25), fov = 45) {
   const root = new THREE.Group()
   root.name = 'ending-gorge'
   const sky = createSkyDome('moving-heist')
-  sky.uniforms.uMoonDirection.value.set(0.388, 0.267, 1.029).normalize()
+  const shotRotation = new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().lookAt(cameraPosition, cameraTarget, new THREE.Vector3(0, 1, 0)))
+  // A direction through NDC (+.74,+.81), at the reference 16:9 aspect.
+  sky.uniforms.uMoonDirection.value.set(0.74 * (16 / 9) * Math.tan(THREE.MathUtils.degToRad(fov / 2)),
+    0.81 * Math.tan(THREE.MathUtils.degToRad(fov / 2)), -1).normalize().applyQuaternion(shotRotation)
   const valley = createMoonlitValley({ static: true, speed: 0, rails: false, poles: false,
     centerZ: 45, offsetY: -GORGE_DROP, valleySide: -1, omitHillSide: false,
     fogColor: sky.horizonColor })
@@ -57,7 +62,29 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(2.6,
     node.computeBoundingBox(); node.computeBoundingSphere()
   })
   root.userData.removedInstances = removed
+  const hiddenGround = []
+  for (const chunk of valley.chunks) {
+    // The new rock masses replace the entire near basin; retain the distant ring/forest.
+    if (chunk.group.position.z >= -320 && chunk.group.position.z <= 320) {
+      chunk.ground.visible = false
+      hiddenGround.push(chunk.ground.parent.name)
+    }
+  }
+  valley.group.traverse(node => {
+    if (!node.isInstancedMesh || node.name.startsWith('mountain-ring')) return
+    for (let i = 0; i < node.count; i++) {
+      node.getMatrixAt(i, treeMatrix)
+      treePosition.setFromMatrixPosition(treeMatrix).applyMatrix4(node.matrixWorld)
+      if (treePosition.x > -220 && treePosition.x < 240 && treePosition.z > -180 && treePosition.z < 225) {
+        treeMatrix.makeScale(0, 0, 0); node.setMatrixAt(i, treeMatrix)
+      }
+    }
+    node.instanceMatrix.needsUpdate = true; node.computeBoundingBox(); node.computeBoundingSphere()
+  })
+  root.userData.hiddenGroundChunks = hiddenGround
   sky.uniforms.uCloudAmount.value = 0
+  sky.uniforms.uStarDensity.value = 0.008
+  sky.uniforms.uStarBrightness.value = 0.7
   function terrainHeightAt(x, z) {
     const chunk = valley.chunks.find(entry => z >= entry.group.position.z && z <= entry.group.position.z + 160)
     return (chunk ? valley.surfaceHeightAt(chunk, x, z) : valley.heightAt(x, z)) + valley.group.position.y

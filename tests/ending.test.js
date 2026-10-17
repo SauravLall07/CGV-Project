@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT,
-  TITLE_HOLD, START_CENTER_Z, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET } from '../src/levels/ending.js'
+  TITLE_HOLD, START_CENTER_Z, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV } from '../src/levels/ending.js'
 import { STOP_CENTER_Z, STOP_NOSE_Z } from '../src/environment/ending-train.js'
 import { createTrain } from '../src/entities/train.js'
 import { getKitMaterials } from '../src/environment/level1-kit/kit-materials.js'
@@ -44,12 +44,14 @@ function harness() {
   const hud = { root: doc.createElement('div'), setVisible(value) { this.root.style.display = value ? 'block' : 'none' },
     showCinematicSkip(value) { callback = value }, hideCinematicSkip() { callback = null } }
   hud.root.style.display = 'block'
-  const level = createEndingLevel({ scene, player, hud, camera: { setMode() {} },
+  const renderCamera = new THREE.PerspectiveCamera(67, 16 / 9, 0.1, 1800)
+  const originalFov = renderCamera.fov
+  const level = createEndingLevel({ scene, player, hud, renderCamera, camera: { setMode() {} },
     beginCinematic() { begins++ }, advance: () => manager.advance() })
   // Match the manager's post-factory setPose clearing the cinematic view.
   player.setCinematicView(null)
   const overlay = doc.body.children.find(child => child.id === 'ending-overlay')
-  return { doc, scene, player, hud, manager, level, overlay, originalFog, originalBackground,
+  return { doc, scene, player, hud, manager, level, overlay, originalFog, originalBackground, renderCamera, originalFov,
     get view() { return cinematicView }, get skip() { return callback }, get begins() { return begins },
     restore() { level.dispose(); globalThis.document = previousDocument } }
 }
@@ -61,6 +63,7 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
       assert.equal(h.view, null)
       assert.equal(h.level.isCinematic, true)
       h.level.update(0)
+      assert.equal(h.renderCamera.fov, ENDING_CAMERA_FOV)
       assert.equal(h.begins, 1)
       assert.deepEqual(h.view.position, ENDING_CAMERA_POSITION)
       assert.deepEqual(h.view.initialPosition, h.view.position)
@@ -83,9 +86,12 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
       assert.ok(Math.abs(measureLocomotive() - TUNNEL_PORTAL_Z - TUNNEL_START_INSET) < 0.01, 'nose starts 8 m inside the tunnel')
       assert.ok(APPROACH >= 2.2 && APPROACH <= 3.2)
       assert.equal(train.position.x, 0)
-      const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 1800)
+      const camera = new THREE.PerspectiveCamera(ENDING_CAMERA_FOV, 16 / 9, 0.1, 1800)
       camera.position.copy(ENDING_CAMERA_POSITION); camera.lookAt(ENDING_CAMERA_TARGET)
       camera.updateMatrixWorld(true)
+      const viewDirection = ENDING_CAMERA_TARGET.clone().sub(ENDING_CAMERA_POSITION).normalize()
+      const downAngle = THREE.MathUtils.radToDeg(Math.asin(-viewDirection.y))
+      assert.ok(downAngle >= 15 && downAngle <= 25, `downward view angle: ${downAngle}`)
       const gapProjection = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
       for (const z of [0, -9]) for (const x of [-1.6, 1.6]) {
         const edge = new THREE.Vector3(x, 0, z).project(camera)
@@ -96,11 +102,24 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
         gapProjection.maxY = Math.max(gapProjection.maxY, edge.y)
       }
       const distantNose = new THREE.Vector3(0, 2.8, TUNNEL_PORTAL_Z + TUNNEL_START_INSET).project(camera)
-      assert.ok(Math.abs(distantNose.x) < 0.8 && Math.abs(distantNose.y) < 0.8, 'approach starts inside the frame')
+      assert.ok(Math.abs(distantNose.x) < 1 && Math.abs(distantNose.y) < 1, 'approach starts inside the frame')
       const clearance = h.scene.getObjectByName('ending-gorge').userData.clearance
       const gorge = h.scene.getObjectByName('ending-gorge')
       const portalProjection = new THREE.Vector3(0, 3.4, TUNNEL_PORTAL_Z).project(camera)
-      assert.ok(Math.abs(portalProjection.x) < 1 && Math.abs(portalProjection.y) < 1, 'portal is in frame')
+      assert.ok(portalProjection.x >= -0.95 && portalProjection.x <= -0.55, 'portal upper-left X')
+      assert.ok(portalProjection.y >= 0.30 && portalProjection.y <= 0.80, 'portal upper-left Y')
+      for (const x of [-4.1, 4.1]) for (const y of [0, 8.2]) {
+        const edge = new THREE.Vector3(x, y, TUNNEL_PORTAL_Z).project(camera)
+        assert.ok(Math.abs(edge.x) < 1 && Math.abs(edge.y) < 1, 'whole arch fits in frame')
+      }
+      const abutmentProjection = new THREE.Vector3(0, -2, -40).project(camera)
+      assert.ok(abutmentProjection.x >= 0.55 && abutmentProjection.x <= 1)
+      assert.ok(abutmentProjection.y >= -0.85 && abutmentProjection.y <= -0.25)
+      const moonProjection = h.scene.getObjectByName('ending-round-moon').position.clone().project(camera)
+      assert.ok(moonProjection.x >= 0.55 && moonProjection.x <= 0.92)
+      assert.ok(moonProjection.y >= 0.70 && moonProjection.y <= 0.92)
+      const riverProjection = new THREE.Vector3(-40, gorge.userData.heightAt(-40, 33), 33).project(camera)
+      assert.ok(Math.abs(riverProjection.x) < 1 && riverProjection.y > -1 && riverProjection.y < 0, 'river in lower frame')
       let nearestPost = Infinity
       for (const post of gorge.userData.guardPosts) {
         const box = new THREE.Box3(new THREE.Vector3(post.x - 0.06, 0, post.z - 0.06),
@@ -132,6 +151,9 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
       assert.ok(heroTriangles <= 25000, `new locomotive triangles: ${heroTriangles}`)
       assert.ok(puffs <= 40)
       if (fps === 60) t.diagnostic(`Layout/budget: ${JSON.stringify({ portalProjection, nearestPost,
+        abutmentProjection, moonProjection, riverProjection, downAngle,
+        scenery: h.scene.getObjectByName('ending-landmarks').userData.sceneryCounts,
+        hiddenGroundChunks: gorge.userData.hiddenGroundChunks,
         removedInstances: gorge.userData.removedInstances, heroCalls, heroTriangles, puffs, APPROACH })}`)
       if (fps === 60) t.diagnostic(`Ending allocated geometry: ${calls} mesh draws, ${triangles} triangles (before culling/postprocessing)`)
       let elapsedTime = 0
@@ -153,6 +175,9 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
         }
         if (elapsedTime >= ENDING_FADE_IN + APPROACH + BRAKE + SETTLE) {
           assert.ok(Math.abs(noseZ - STOP_NOSE_Z) <= 0.1, `settled physical nose Z: ${noseZ}`)
+          const noseProjection = new THREE.Vector3(0, 0, noseZ).project(camera)
+          assert.ok(noseProjection.x >= 0.05 && noseProjection.x <= 0.45, 'stopped nose X')
+          assert.ok(noseProjection.y >= -0.20 && noseProjection.y <= 0.15, 'stopped nose Y')
           const tail = h.scene.getObjectByName('ending-carriage-4')
           const tailBounds = new THREE.Box3().setFromObject(tail)
           const tailToPortal = TUNNEL_PORTAL_Z - tailBounds.max.z
@@ -170,6 +195,7 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
               minX = Math.min(minX, corner.x); maxX = Math.max(maxX, corner.x)
               minY = Math.min(minY, corner.y); maxY = Math.max(maxY, corner.y)
             }
+            assert.ok((maxX - minX) / 2 >= 0.09, `locomotive frame width: ${(maxX - minX) / 2}`)
             // Exact point-to-triangle distance over visible scene geometry, including instances.
             const triangle = new THREE.Triangle(), closest = new THREE.Vector3()
             const instance = new THREE.Matrix4(), world = new THREE.Matrix4()
@@ -194,8 +220,12 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
                 }
               }
             })
+            assert.ok(nearestDistance >= 8, `camera-to-nearest-mesh distance: ${nearestDistance}`)
+            const coneDirection = new THREE.Vector3(0, 0, 1).transformDirection(
+              h.scene.getObjectByName('ending-headlight-cone').matrixWorld)
+            assert.ok(coneDirection.z < -0.99, 'headlight points along world -Z')
             t.diagnostic(`Composition: ${JSON.stringify({ noseZ, locomotiveFrameWidth: (maxX - minX) / 2,
-              locomotiveFrameHeight: (maxY - minY) / 2, tailToPortal, doorPosition, doorTerrain,
+              locomotiveFrameHeight: (maxY - minY) / 2, noseProjection, coneDirection, tailToPortal, doorPosition, doorTerrain,
               gapProjection, nearestMesh, nearestDistance })}`)
           }
         }
@@ -241,6 +271,7 @@ test('Ending: disposal after completion is idempotent and restores scene/UI/play
     h.level.update(TOTAL + 1)
     assert.equal(h.manager.advances, 1)
     assert.doesNotThrow(() => { h.level.dispose(); h.level.dispose() })
+    assert.equal(h.renderCamera.fov, h.originalFov, 'ending restores the previous camera FOV')
     assert.equal(h.scene.children.length, 0)
     assert.equal(h.scene.fog, h.originalFog)
     assert.equal(h.scene.background, h.originalBackground)
