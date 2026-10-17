@@ -142,6 +142,7 @@ const LEVEL_TRACKS = {
   Boarding: { file: '../assets/audio/music/level1-constance.mp3', loop: true },
   MovingHeist: { file: '../assets/audio/music/level2-mistake-the-getaway.mp3', loop: true },
   Timewreck: { file: '../assets/audio/music/level3-final-count.mp3', loop: true },
+  Ending: null, // Silent epilogue; stop both the sampled track and gameplay drone.
   Complete: { file: '../assets/audio/music/victory-theme.mp3', loop: false }
 }
 
@@ -321,6 +322,7 @@ const levelManager = createLevelManager({
     // are reapplied before the loading overlay hands control back to the player.
     modelEditor?.sceneChanged?.()
     if (state === 'Complete') showCompleteCredits()
+    else if (state === 'Ending') hud.setVisible(false)
     else timeSystem.warmGhost(renderer, camera)
     // Start the next module after presentation, never alongside boot FBXs.
     // Prefetch failure is optional; enter() will retry under the loading screen.
@@ -336,6 +338,8 @@ const levelManager = createLevelManager({
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
+    { state: 'Ending', load: () => import('./levels/ending.js')
+      .then(({ createEndingLevel }) => ctx => createEndingLevel({ ...ctx, renderCamera: camera })) },
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })
@@ -686,6 +690,7 @@ function devStartOptions() {
   if (!target) return null
   if (target === 'level2') return { state: 'MovingHeist' }
   if (target === 'level3') return { state: 'Timewreck' }
+  if (target === 'ending') return { state: 'Ending' }
   if (['level3-convergence', 'level3-mechanical', 'level3-passenger'].includes(target)) return { state: 'Timewreck', levelOptions: { startCarriage: target.slice(7) } }
   if (target === 'level3-security') return { state: 'Timewreck', levelOptions: { startCarriage: 'security' } }
   if (target === 'level3-relay') return { state: 'Timewreck', levelOptions: { startCarriage: 'relay' } }
@@ -824,7 +829,7 @@ loop.add((delta) => {
     return
   }
 
-  const heistComplete = levelManager.getState() === 'Complete'
+  const heistComplete = levelManager.getState() === 'Complete' || levelManager.getState() === 'Ending'
   if (!heistComplete) elapsed += delta
 
   hud.updateRunTimer({

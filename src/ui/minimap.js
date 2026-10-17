@@ -134,6 +134,7 @@ export function createMinimap({
   // clearing the rest of the canvas; viewport is reset for the next frame
   // at the start of the loop tick.
   function render(renderer) {
+    if (getLevelState?.() === 'Ending') return
     follow()
     const { x, y, width, height, size } = viewportRect(renderer)
 
@@ -151,7 +152,7 @@ export function createMinimap({
   }
 
   function setVisible(visible) {
-    frame.style.display = visible ? 'block' : 'none'
+    frame.style.display = visible && getLevelState?.() !== 'Ending' ? 'block' : 'none'
   }
 
   function dispose() {
