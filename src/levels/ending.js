@@ -1,12 +1,12 @@
 import * as THREE from 'three'
 import { createEndingGorge } from '../environment/ending-gorge.js'
 import { createEndingTrain, TRAIN_SPEED, STOP_CENTER_Z, STOP_NOSE_Z } from '../environment/ending-train.js'
-import { TUNNEL_PORTAL_Z, TUNNEL_START_INSET } from '../environment/ending-landmarks.js'
+import { TRAIN_START_NOSE_Z } from '../environment/ending-landmarks.js'
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
 
 export const ENDING_FADE_IN = 1.0
 export const BRAKE = 4.5
-export const APPROACH = (TUNNEL_PORTAL_Z + TUNNEL_START_INSET - STOP_NOSE_Z - TRAIN_SPEED * BRAKE / 2) / TRAIN_SPEED
+export const APPROACH = (TRAIN_START_NOSE_Z - STOP_NOSE_Z - TRAIN_SPEED * BRAKE / 2) / TRAIN_SPEED
 export const SETTLE = 1.6
 export const HOLD = 2.0
 export const FADE_OUT = 1.2
@@ -15,13 +15,15 @@ const TITLE_FADE = 0.6
 const BRAKING_DISTANCE = TRAIN_SPEED * BRAKE / 2
 const APPROACH_DISTANCE = TRAIN_SPEED * APPROACH
 export const START_CENTER_Z = STOP_CENTER_Z + APPROACH_DISTANCE + BRAKING_DISTANCE
-export const ENDING_CAMERA_POSITION = new THREE.Vector3(95, 40, -20)
-export const ENDING_CAMERA_TARGET = new THREE.Vector3(0, -2, 25)
+export const ENDING_CAMERA_POSITION = new THREE.Vector3(47.1, 19.43, -3.01)
+export const ENDING_CAMERA_TARGET = new THREE.Vector3(1.09, -1.13, 9.74)
 export const ENDING_CAMERA_FOV = 45
 const PHASES = ['fadeIn', 'approach', 'braking', 'settle', 'hold', 'fadeOut', 'title', 'done']
 const DURATIONS = [ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT, TITLE_FADE + TITLE_HOLD]
 
-export function createEndingLevel({ scene, player, camera, renderCamera, hud, beginCinematic, advance, renderer }) {
+export function createEndingLevel({ scene, player, camera, renderCamera, hud, beginCinematic, advance, renderer, post = null }) {
+  // Timewreck and direct starts use the postprocessor's default grade; mirror Level 2's ownership.
+  post?.setGrade({ warmth: 0 })
   let phaseIndex = 0
   let phaseTime = 0
   let initialized = false
@@ -178,6 +180,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     dispose() {
       if (disposed) return
       disposed = true
+      post?.resetGrade()
       if (renderCamera && previousFov !== undefined) {
         renderCamera.fov = previousFov; renderCamera.updateProjectionMatrix()
       }

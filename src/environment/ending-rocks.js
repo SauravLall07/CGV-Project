@@ -10,7 +10,7 @@ export function createEndingRocks(placements, seed = 1934) {
   const root = new THREE.Group()
   root.name = 'ending-faceted-rocks'
   const random = endingRandom(seed), pose = new THREE.Object3D(), color = new THREE.Color()
-  const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true })
+  const material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, flatShading: true })
   for (let variant = 0; variant < 4; variant++) {
     const source = new THREE.IcosahedronGeometry(1, 1)
     const geometry = source.index ? source.toNonIndexed() : source
@@ -24,6 +24,14 @@ export function createEndingRocks(placements, seed = 1934) {
       position.setXYZ(i, x * scale, y * scale, z * scale)
     }
     geometry.computeVertexNormals()
+    const colors = new Float32Array(position.count * 3)
+    const normals = geometry.attributes.normal
+    for (let i = 0; i < position.count; i += 3) {
+      color.set(normals.getY(i) > 0.6 ? 0x3e4f2c : 0x4b5361)
+        .multiplyScalar(0.9 + random() * 0.2)
+      for (let j = 0; j < 3; j++) color.toArray(colors, (i + j) * 3)
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     const sites = placements.filter((_, i) => i % 4 === variant)
     const mesh = new THREE.InstancedMesh(geometry, material, sites.length)
     mesh.name = `ending-rock-variant-${variant}`
@@ -32,7 +40,7 @@ export function createEndingRocks(placements, seed = 1934) {
       pose.rotation.set(random() * 0.5, random() * Math.PI * 2, random() * 0.5)
       pose.scale.set(site.size, site.size * (0.6 + random() * 0.8), site.size * (0.7 + random() * 0.6))
       pose.updateMatrix(); mesh.setMatrixAt(i, pose.matrix)
-      color.set(random() < 0.12 ? 0x2c3a2c : 0x2b303a).multiplyScalar(0.92 + random() * 0.16)
+      color.setScalar(0.92 + random() * 0.16)
       mesh.setColorAt(i, color)
     })
     mesh.computeBoundingBox(); mesh.computeBoundingSphere()
@@ -57,7 +65,7 @@ export function createEndingPines(placements, seed = 1935) {
   add(trunk, 0x302b24)
   for (let tier = 0; tier < 3; tier++) {
     const cone = new THREE.ConeGeometry(0.23 - tier * 0.055, 0.5 - tier * 0.05, 7)
-    cone.translate(0, 0.4 + tier * 0.2, 0); add(cone, 0x1b3326)
+    cone.translate(0, 0.4 + tier * 0.2, 0); add(cone, tier === 2 ? 0x294733 : tier === 1 ? 0x203b2b : 0x1b3326)
   }
   const geometry = mergeGeometries(parts); parts.forEach(part => part.dispose())
   const mesh = new THREE.InstancedMesh(geometry,

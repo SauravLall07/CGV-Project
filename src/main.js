@@ -339,7 +339,7 @@ const levelManager = createLevelManager({
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
     { state: 'Ending', load: () => import('./levels/ending.js')
-      .then(({ createEndingLevel }) => ctx => createEndingLevel({ ...ctx, renderCamera: camera })) },
+      .then(({ createEndingLevel }) => ctx => createEndingLevel({ ...ctx, renderCamera: camera, post })) },
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })

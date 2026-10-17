@@ -94,8 +94,8 @@ export function createEndingLocomotive(paint) {
   const cone = new THREE.Mesh(beamGeometry, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true,
     opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }))
   cone.name = 'ending-headlight-cone'; cone.position.set(0, 3.55, 8.63); root.add(cone)
-  const plume = createSteam({ count: 28, height: 7, spread: 0.65, period: 9, size: 1.3,
-    opacity: 0.12, wind: new THREE.Vector3(0, 0.4, -0.6) })
+  const plume = createSteam({ count: 30, height: 9, spread: 0.8, period: 9, size: 2.8,
+    color: 0xc8ccd4, opacity: 0.5, wind: new THREE.Vector3(0, 0.4, -0.6) })
   plume.points.name = 'ending-chimney-steam'
   plume.points.position.set(0, 5.15, 3.8)
   root.add(plume.points)

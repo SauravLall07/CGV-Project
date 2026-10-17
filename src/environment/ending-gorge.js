@@ -4,19 +4,19 @@ import { createMoonlitValley } from './moonlit-valley.js'
 import { createSkyDome } from './sky-dome.js'
 import { RAIL_OFFSET } from '../entities/train.js'
 import { disposeObject } from '../core/dispose.js'
-import { createEndingLandmarks, TUNNEL_PORTAL_Z } from './ending-landmarks.js'
+import { createEndingLandmarks, HILLSIDE_START_Z } from './ending-landmarks.js'
+import { createEndingRiverMaterial } from '../shaders/ending-river.js'
 
-export const GORGE_DROP = 45
-export const BRIDGE_END = TUNNEL_PORTAL_Z
+export const GORGE_DROP = 82.5
+export const BRIDGE_END = HILLSIDE_START_Z
 export const GAP_START = 0
-export const GAP_END = -9
-export const STUB_END = -40
-const BENT_SPACING = 7
-const BRACE_HEIGHT = 8
+export const GAP_END = -12
+export const STUB_END = -20
+const BENT_SPACING = 6
+const BRACE_HEIGHT = 12
 const SLEEPER_SPACING = 0.6
 const MOON_DISTANCE = 400
 const MOON_SIZE = 28
-const ROOF_MOON_DIRECTION = new THREE.Vector3(-0.75, 0.6, -0.28).normalize()
 
 export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 40, -20),
   cameraTarget = new THREE.Vector3(0, -2, 25), fov = 45) {
@@ -25,13 +25,26 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
   const sky = createSkyDome('moving-heist')
   const shotRotation = new THREE.Quaternion().setFromRotationMatrix(
     new THREE.Matrix4().lookAt(cameraPosition, cameraTarget, new THREE.Vector3(0, 1, 0)))
-  // A direction through NDC (+.74,+.81), at the reference 16:9 aspect.
-  sky.uniforms.uMoonDirection.value.set(0.74 * (16 / 9) * Math.tan(THREE.MathUtils.degToRad(fov / 2)),
-    0.81 * Math.tan(THREE.MathUtils.degToRad(fov / 2)), -1).normalize().applyQuaternion(shotRotation)
+  // A direction through the key frame's moon centre, at the reference 16:9 aspect.
+  sky.uniforms.uMoonDirection.value.set(0.78 * (16 / 9) * Math.tan(THREE.MathUtils.degToRad(fov / 2)),
+    0.88 * Math.tan(THREE.MathUtils.degToRad(fov / 2)), -1).normalize().applyQuaternion(shotRotation)
   const valley = createMoonlitValley({ static: true, speed: 0, rails: false, poles: false,
     centerZ: 45, offsetY: -GORGE_DROP, valleySide: -1, omitHillSide: false,
     fogColor: sky.horizonColor })
   root.add(valley.group)
+  // The camera is above the canyon. Place the owned distant ridges below its horizon.
+  const ring = valley.group.getObjectByName('moonlit-mountain-ring')
+  ring.children.forEach((mesh, i) => {
+    mesh.position.y -= i === 0 ? 330 : 520
+    const position = mesh.geometry.attributes.position, colors = mesh.geometry.attributes.color
+    const snow = new THREE.Color(0x9aacc8), tint = new THREE.Color()
+    for (let vertex = 0; vertex < position.count; vertex++) {
+      const amount = THREE.MathUtils.smoothstep(position.getY(vertex), i === 0 ? 180 : 290, i === 0 ? 280 : 400)
+      tint.fromBufferAttribute(colors, vertex).lerp(snow, amount * 0.45)
+      colors.setXYZ(vertex, tint.r, tint.g, tint.b)
+    }
+    colors.needsUpdate = true
+  })
   // Every material and instance buffer belongs to this valley factory invocation.
   const darkened = new Set()
   const treeMatrix = new THREE.Matrix4(), treePosition = new THREE.Vector3()
@@ -40,26 +53,9 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
   valley.group.traverse(node => {
     if (node.material && !darkened.has(node.material)) {
       darkened.add(node.material)
-      node.material.color?.multiplyScalar(node.name.startsWith('mountain-ring') ? 0.4 : 0.2)
+      node.material.color?.multiplyScalar(node.name.startsWith('mountain-ring') ? 1 : 0.8)
       if (node.material.alphaTest) node.material.alphaTest = 0.65
     }
-    const trees = node.name.startsWith('pine-forest')
-    if (!node.isInstancedMesh || (!trees && node.name !== 'moonlit-valley-bushes')) return
-    for (let i = 0; i < node.count; i++) {
-      node.getMatrixAt(i, treeMatrix)
-      treePosition.setFromMatrixPosition(treeMatrix).applyMatrix4(node.matrixWorld)
-      const inFrontOfCliff = (treePosition.z > TUNNEL_PORTAL_Z - 30 && treePosition.z < TUNNEL_PORTAL_Z + 5)
-        || (treePosition.z > -40 && treePosition.z < -8)
-      const hash = Math.abs(Math.sin(i * 127.1 + node.parent.position.z * 0.13))
-      if (Math.abs(treePosition.x) < 35 || inFrontOfCliff || treePosition.distanceTo(cameraPosition) > 450
-        || (Math.abs(treePosition.x) < 140 && hash < 0.55)) {
-        treeMatrix.makeScale(0, 0, 0)
-        removed[trees ? 'trees' : 'bushes']++
-      } else treeMatrix.scale(new THREE.Vector3(1, 0.65 + hash * 0.45, 1))
-      node.setMatrixAt(i, treeMatrix)
-    }
-    node.instanceMatrix.needsUpdate = true
-    node.computeBoundingBox(); node.computeBoundingSphere()
   })
   root.userData.removedInstances = removed
   const hiddenGround = []
@@ -70,17 +66,6 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
       hiddenGround.push(chunk.ground.parent.name)
     }
   }
-  valley.group.traverse(node => {
-    if (!node.isInstancedMesh || node.name.startsWith('mountain-ring')) return
-    for (let i = 0; i < node.count; i++) {
-      node.getMatrixAt(i, treeMatrix)
-      treePosition.setFromMatrixPosition(treeMatrix).applyMatrix4(node.matrixWorld)
-      if (treePosition.x > -220 && treePosition.x < 240 && treePosition.z > -180 && treePosition.z < 225) {
-        treeMatrix.makeScale(0, 0, 0); node.setMatrixAt(i, treeMatrix)
-      }
-    }
-    node.instanceMatrix.needsUpdate = true; node.computeBoundingBox(); node.computeBoundingSphere()
-  })
   root.userData.hiddenGroundChunks = hiddenGround
   sky.uniforms.uCloudAmount.value = 0
   sky.uniforms.uStarDensity.value = 0.008
@@ -131,12 +116,37 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
     sampleClearance()
   }
   root.userData.clearance = clearance
-  const landmarks = createEndingLandmarks(terrainHeightAt)
+  const landmarks = createEndingLandmarks(terrainHeightAt, cameraPosition)
   root.add(landmarks.root)
   const heightAt = landmarks.heightAt
   root.userData.heightAt = heightAt
+  const retained = { trees: 0, bushes: 0 }
+  valley.group.traverse(node => {
+    const trees = node.name.startsWith('pine-forest'), bushes = node.name === 'moonlit-valley-bushes'
+    if (!node.isInstancedMesh || (!trees && !bushes)) return
+    for (let i = 0; i < node.count; i++) {
+      node.getMatrixAt(i, treeMatrix)
+      treePosition.setFromMatrixPosition(treeMatrix).applyMatrix4(node.matrixWorld)
+      const distance = treePosition.distanceTo(cameraPosition)
+      const track = Math.abs(treePosition.x) < 8 && treePosition.z > -25 && treePosition.z < 260
+      if (distance < 120 || distance > 850 || track) {
+        treeMatrix.makeScale(0, 0, 0); removed[trees ? 'trees' : 'bushes']++
+      } else {
+        if (treePosition.x >= -280 && treePosition.x <= 90 && treePosition.z >= -110 && treePosition.z <= 260) {
+          treeMatrix.elements[13] += heightAt(treePosition.x, treePosition.z) - treePosition.y
+        }
+        retained[trees ? 'trees' : 'bushes']++
+      }
+      node.setMatrixAt(i, treeMatrix)
+    }
+    node.instanceMatrix.needsUpdate = true; node.computeBoundingBox(); node.computeBoundingSphere()
+  })
+  root.userData.retainedValleyFoliage = retained
+  landmarks.river.material.dispose()
+  landmarks.river.material = createEndingRiverMaterial()
+  const riverUniforms = landmarks.river.material.uniforms
 
-  const wood = new THREE.MeshStandardMaterial({ color: 0x5a4330, roughness: 0.85 })
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 0.9 })
   const steel = new THREE.MeshStandardMaterial({ color: 0x252c36, roughness: 0.6, metalness: 0.65 })
   const timberParts = []
   const railParts = []
@@ -148,12 +158,12 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
     pose.position.set(x, y, z); pose.rotation.set(rx, 0, rz); pose.scale.set(sx, sy, sz)
     pose.updateMatrix(); timberParts.push(pose.matrix.clone())
   }
-  function beam(ax, ay, az, bx, by, bz, width = 0.3) {
+  function beam(ax, ay, az, bx, by, bz, width = 0.35, depth = width) {
     a.set(ax, ay, az); b.set(bx, by, bz)
     direction.subVectors(b, a)
     pose.position.copy(a).add(b).multiplyScalar(0.5)
     pose.quaternion.setFromUnitVectors(up, direction.normalize())
-    pose.scale.set(width, a.distanceTo(b), width)
+    pose.scale.set(width, a.distanceTo(b), depth)
     pose.updateMatrix(); timberParts.push(pose.matrix.clone())
   }
   function section(start, end, brokenStart, brokenEnd) {
@@ -167,14 +177,18 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
     let lastZ = null
     for (let z = start + BENT_SPACING / 2; z < end - 1; z += BENT_SPACING) {
       const floor = heightAt(0, z)
-      for (const side of [-1, 1]) beam(side * 1.25, -0.85, z, side * 2.1, heightAt(side * 2.1, z), z, 0.42)
+      if (start < 0) continue
+      for (const side of [-1, 1]) beam(side * 1.25, -0.85, z, side * 2.1, heightAt(side * 2.1, z), z, 0.6)
       timber(0, -0.94, z, 3.6, 0.5, 0.6)
       for (let y = -2; y > floor + 0.5; y -= BRACE_HEIGHT) {
         const low = Math.max(floor + 0.2, y - BRACE_HEIGHT)
-        timber(0, low, z, 4.2, 0.25, 0.3)
+        timber(0, low, z, 4.2, 0.3, 0.35)
         if (lastZ !== null) for (const side of [-1, 1]) {
-          beam(side * 1.65, y, lastZ, side * 1.65, low, z, 0.24)
-          beam(side * 1.65, low, lastZ, side * 1.65, y, z, 0.24)
+          const mid = (y + low) / 2
+          for (const range of [[y, mid], [mid, low]]) {
+            beam(side * 1.65, range[0], lastZ, side * 1.65, range[1], z, 0.35, 0.25)
+            beam(side * 1.65, range[1], lastZ, side * 1.65, range[0], z, 0.35, 0.25)
+          }
         }
       }
       lastZ = z
@@ -183,13 +197,13 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
       const geometry = new THREE.BoxGeometry(0.1, 0.16, end - start)
       geometry.translate(x, -0.08, (start + end) / 2); railParts.push(geometry)
     }
-    for (let z = start + 0.3; z < end; z += 0.6) timber(2.15, -0.12, z, 0.9, 0.14, 0.55)
+    for (const side of [-1, 1]) timber(side * 1.75, 0.05, (start + end) / 2, 0.22, 0.3, end - start)
+    if (start >= 0) return
     for (let z = start + 1.2; z < end; z += 2.4) {
-      timber(2.15, -0.5, z, 1.7, 0.2, 0.2)
-      timber(2.7, 0.55, z, 0.12, 1.1, 0.12)
-      guardPosts.push({ x: 2.7, z })
+      timber(1.75, 0.55, z, 0.18, 1.1, 0.18)
+      guardPosts.push({ x: 1.75, z })
     }
-    timber(2.7, 1.1, (start + end) / 2, 0.1, 0.1, end - start)
+    timber(1.75, 1.1, (start + end) / 2, 0.16, 0.16, end - start)
   }
   section(0, BRIDGE_END, true, false)
   section(STUB_END, GAP_END, false, true)
@@ -218,7 +232,7 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
     }
   }
   brokenEnd(0, -1, 5.5, 4)
-  brokenEnd(-9, 1, 3, 2)
+  brokenEnd(-12, 1, 3, 1)
   beam(-1.25, -1, 1.8, -4, -7, 4.6, 0.42)
   beam(1.25, -1, 1.8, 2.7, -4.1, 3.2, 0.42)
   timber(-0.3, -1.3, 1.8, 3.6, 0.45, 0.6, 0, THREE.MathUtils.degToRad(25))
@@ -227,6 +241,7 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
   rails.name = 'ending-steel-rails'
   root.add(rails)
   root.userData.guardPosts = guardPosts
+  root.userData.bentCount = Math.ceil((BRIDGE_END - BENT_SPACING / 2) / BENT_SPACING)
   const timberMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), wood, timberParts.length)
   timberMesh.name = 'ending-all-timber'
   timberParts.forEach((matrix, i) => timberMesh.setMatrixAt(i, matrix))
@@ -259,18 +274,20 @@ export function createEndingGorge(scene, cameraPosition = new THREE.Vector3(95, 
     moon.updateMatrixWorld(true)
   }
   root.add(sky.mesh, moon)
-  const fill = new THREE.HemisphereLight(0x3d5a8a, 0x141a24, 1.1)
-  const moonlight = new THREE.DirectionalLight(0xa9bfe6, 2)
+  const fill = new THREE.HemisphereLight(0x34467a, 0x0e1118, 1)
+  const moonlight = new THREE.DirectionalLight(0xc4d2ff, 1.8)
   moonlight.target.position.set(0, 0, 22)
-  moonlight.position.copy(moonlight.target.position).addScaledVector(ROOF_MOON_DIRECTION, 50)
+  moonlight.position.copy(moonlight.target.position).addScaledVector(moonDirection, 50)
   root.add(fill, moonlight, moonlight.target)
   scene.add(root)
   scene.background = new THREE.Color(0x1a1a2e)
-  scene.fog = new THREE.Fog(sky.horizonColor, 60, 650)
-  scene.fog.color = sky.horizonColor
+  scene.fog = new THREE.Fog(0x1b2340, 90, 900)
   scene.environment = null
   let disposed = false
-  return { root, valley, clearance, heightAt, timberCount: timberParts.length, update: delta => sky.update(delta),
+  return { root, valley, clearance, heightAt, timberCount: timberParts.length, update(delta) {
+    sky.update(delta)
+    riverUniforms.uTime.value += Math.max(0, delta) * riverUniforms.uFlowScale.value
+  },
     dispose() {
       if (disposed) return
       disposed = true
