@@ -1,11 +1,12 @@
 import * as THREE from 'three'
 import { createEndingGorge } from '../environment/ending-gorge.js'
-import { createEndingTrain, TRAIN_SPEED, STOP_CENTER_Z } from '../environment/ending-train.js'
+import { createEndingTrain, TRAIN_SPEED, STOP_CENTER_Z, STOP_NOSE_Z } from '../environment/ending-train.js'
+import { TUNNEL_PORTAL_Z, TUNNEL_START_INSET } from '../environment/ending-landmarks.js'
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
 
 export const ENDING_FADE_IN = 1.0
-export const APPROACH = 2.5
 export const BRAKE = 4.5
+export const APPROACH = (TUNNEL_PORTAL_Z + TUNNEL_START_INSET - STOP_NOSE_Z - TRAIN_SPEED * BRAKE / 2) / TRAIN_SPEED
 export const SETTLE = 1.6
 export const HOLD = 2.0
 export const FADE_OUT = 1.2
@@ -14,9 +15,8 @@ const TITLE_FADE = 0.6
 const BRAKING_DISTANCE = TRAIN_SPEED * BRAKE / 2
 const APPROACH_DISTANCE = TRAIN_SPEED * APPROACH
 export const START_CENTER_Z = STOP_CENTER_Z + APPROACH_DISTANCE + BRAKING_DISTANCE
-export const ENDING_CAMERA_POSITION = new THREE.Vector3(13, 3.5, -14)
-// Aim nearer than z=22 so both broken edges fit at the default 60-degree FOV.
-export const ENDING_CAMERA_TARGET = new THREE.Vector3(-1, 1.5, 12)
+export const ENDING_CAMERA_POSITION = new THREE.Vector3(2.6, 1.9, -24)
+export const ENDING_CAMERA_TARGET = new THREE.Vector3(-0.6, 2.2, 20)
 const PHASES = ['fadeIn', 'approach', 'braking', 'settle', 'hold', 'fadeOut', 'title', 'done']
 const DURATIONS = [ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT, TITLE_FADE + TITLE_HOLD]
 
@@ -113,7 +113,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     enterPhase(PHASES.indexOf('fadeOut'))
   }
 
-  function present() {
+  function present(delta) {
     const phase = PHASES[phaseIndex]
     overlay.style.opacity = String(phase === 'fadeIn' ? 1 - phaseTime / ENDING_FADE_IN
       : phase === 'fadeOut' ? phaseTime / FADE_OUT : phaseIndex >= 6 ? 1 : 0)
@@ -129,7 +129,8 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       distance = APPROACH_DISTANCE + BRAKING_DISTANCE
       settleTime = phase === 'settle' ? phaseTime : SETTLE + (phase === 'hold' ? phaseTime : HOLD)
     }
-    train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime)
+    const speed = phase === 'approach' ? TRAIN_SPEED : phase === 'braking' ? TRAIN_SPEED * (1 - phaseTime / BRAKE) : 0
+    train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime, delta, speed)
   }
 
   return {
@@ -159,7 +160,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         remaining -= step
         if (phaseTime >= DURATIONS[phaseIndex] - 1e-9) enterPhase(phaseIndex + 1)
       }
-      present()
+      present(Math.max(0, delta))
       if (import.meta.env?.DEV && !budgetLogged && timeline >= ENDING_FADE_IN + APPROACH + BRAKE + 1) {
         budgetLogged = true
         console.info('[ending render budget, previous rendered frame]', {

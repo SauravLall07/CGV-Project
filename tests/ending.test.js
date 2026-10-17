@@ -6,6 +6,7 @@ import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_
 import { STOP_CENTER_Z, STOP_NOSE_Z } from '../src/environment/ending-train.js'
 import { createTrain } from '../src/entities/train.js'
 import { getKitMaterials } from '../src/environment/level1-kit/kit-materials.js'
+import { TUNNEL_PORTAL_Z, TUNNEL_START_INSET } from '../src/environment/ending-landmarks.js'
 
 const TITLE_FADE = 0.6
 const TOTAL = ENDING_FADE_IN + APPROACH + BRAKE + SETTLE + HOLD + FADE_OUT + TITLE_FADE + TITLE_HOLD
@@ -79,6 +80,8 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
         return nose.min.z
       }
       assert.ok(measureLocomotive() >= STOP_NOSE_Z + 50, 'initial physical nose is at least 50 m behind its stop')
+      assert.ok(Math.abs(measureLocomotive() - TUNNEL_PORTAL_Z - TUNNEL_START_INSET) < 0.01, 'nose starts 8 m inside the tunnel')
+      assert.ok(APPROACH >= 2.2 && APPROACH <= 3.2)
       assert.equal(train.position.x, 0)
       const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 1800)
       camera.position.copy(ENDING_CAMERA_POSITION); camera.lookAt(ENDING_CAMERA_TARGET)
@@ -92,24 +95,44 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
         gapProjection.minY = Math.min(gapProjection.minY, edge.y)
         gapProjection.maxY = Math.max(gapProjection.maxY, edge.y)
       }
-      const distantNose = new THREE.Vector3(0, 2.8, STOP_NOSE_Z + 104.5).project(camera)
+      const distantNose = new THREE.Vector3(0, 2.8, TUNNEL_PORTAL_Z + TUNNEL_START_INSET).project(camera)
       assert.ok(Math.abs(distantNose.x) < 0.8 && Math.abs(distantNose.y) < 0.8, 'approach starts inside the frame')
       const clearance = h.scene.getObjectByName('ending-gorge').userData.clearance
+      const gorge = h.scene.getObjectByName('ending-gorge')
+      const portalProjection = new THREE.Vector3(0, 3.4, TUNNEL_PORTAL_Z).project(camera)
+      assert.ok(Math.abs(portalProjection.x) < 1 && Math.abs(portalProjection.y) < 1, 'portal is in frame')
+      let nearestPost = Infinity
+      for (const post of gorge.userData.guardPosts) {
+        const box = new THREE.Box3(new THREE.Vector3(post.x - 0.06, 0, post.z - 0.06),
+          new THREE.Vector3(post.x + 0.06, 1.1, post.z + 0.06))
+        nearestPost = Math.min(nearestPost, box.distanceToPoint(ENDING_CAMERA_POSITION))
+      }
+      assert.ok(nearestPost >= 0.6, 'camera clears every guard post')
       assert.ok(clearance.maxHeight <= -6)
       assert.ok(clearance.maxPropHeight <= -6)
       assert.ok(clearance.nearestPropDistance >= 8)
       assert.ok(ENDING_CAMERA_POSITION.y - clearance.cameraTerrainMax >= 8)
       if (fps === 60) t.diagnostic(`Valley clearance: ${JSON.stringify(clearance)}`)
-      let calls = 0, triangles = 0
+      let calls = 0, triangles = 0, heroCalls = 0, heroTriangles = 0, puffs = 0
       h.scene.traverse(node => {
-        if (!node.isMesh) return
+        if (!node.isMesh && !node.isPoints) return
         assert.equal(node.castShadow, false)
         for (let parent = node; parent; parent = parent.parent) if (!parent.visible) return
         calls++
+        if (node.isPoints) { puffs += node.geometry.attributes.position.count; return }
         triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3 * (node.isInstancedMesh ? node.count : 1)
+        for (let parent = node; parent; parent = parent.parent) if (parent.name === 'ending-hero-locomotive') {
+          heroCalls += node.material.side === THREE.DoubleSide && node.material.transparent ? 2 : 1
+          heroTriangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3 * (node.isInstancedMesh ? node.count : 1)
+        }
       })
-      assert.ok(calls <= 250, `allocated mesh draws: ${calls}`)
-      assert.ok(triangles <= 400000, `allocated triangles: ${triangles}`)
+      assert.ok(calls <= 300, `allocated draws: ${calls}`)
+      assert.ok(triangles <= 500000, `allocated triangles: ${triangles}`)
+      assert.ok(heroCalls <= 12, `new locomotive draws: ${heroCalls}`)
+      assert.ok(heroTriangles <= 25000, `new locomotive triangles: ${heroTriangles}`)
+      assert.ok(puffs <= 40)
+      if (fps === 60) t.diagnostic(`Layout/budget: ${JSON.stringify({ portalProjection, nearestPost,
+        removedInstances: gorge.userData.removedInstances, heroCalls, heroTriangles, puffs, APPROACH })}`)
       if (fps === 60) t.diagnostic(`Ending allocated geometry: ${calls} mesh draws, ${triangles} triangles (before culling/postprocessing)`)
       let elapsedTime = 0
       let approachChecked = false
@@ -130,13 +153,22 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
         }
         if (elapsedTime >= ENDING_FADE_IN + APPROACH + BRAKE + SETTLE) {
           assert.ok(Math.abs(noseZ - STOP_NOSE_Z) <= 0.1, `settled physical nose Z: ${noseZ}`)
+          const tail = h.scene.getObjectByName('ending-carriage-4')
+          const tailBounds = new THREE.Box3().setFromObject(tail)
+          const tailToPortal = TUNNEL_PORTAL_Z - tailBounds.max.z
+          assert.ok(tailToPortal >= 15 && tailToPortal <= 20, `tail-to-portal distance: ${tailToPortal}`)
+          const door = h.scene.getObjectByName('boarding-door')
+          const doorPosition = door.getWorldPosition(new THREE.Vector3())
+          const doorTerrain = gorge.userData.heightAt(doorPosition.x, doorPosition.z)
+          assert.ok(doorTerrain <= -25, `terrain below boarding door: ${doorTerrain}`)
           if (fps === 60 && !stopReported) {
             stopReported = true
             const corner = new THREE.Vector3()
-            let minX = Infinity, maxX = -Infinity
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
             for (const x of [nose.min.x, nose.max.x]) for (const y of [nose.min.y, nose.max.y]) for (const z of [nose.min.z, nose.max.z]) {
               corner.set(x, y, z).project(camera)
               minX = Math.min(minX, corner.x); maxX = Math.max(maxX, corner.x)
+              minY = Math.min(minY, corner.y); maxY = Math.max(maxY, corner.y)
             }
             // Exact point-to-triangle distance over visible scene geometry, including instances.
             const triangle = new THREE.Triangle(), closest = new THREE.Vector3()
@@ -163,6 +195,7 @@ test('Ending: full timeline advances once, actor stays hidden, camera/stop and g
               }
             })
             t.diagnostic(`Composition: ${JSON.stringify({ noseZ, locomotiveFrameWidth: (maxX - minX) / 2,
+              locomotiveFrameHeight: (maxY - minY) / 2, tailToPortal, doorPosition, doorTerrain,
               gapProjection, nearestMesh, nearestDistance })}`)
           }
         }

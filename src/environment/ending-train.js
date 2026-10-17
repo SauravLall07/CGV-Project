@@ -2,8 +2,9 @@ import * as THREE from 'three'
 import { createTrain, RAIL_OFFSET } from '../entities/train.js'
 import { getKitMaterials } from './level1-kit/kit-materials.js'
 import { disposeObject } from '../core/dispose.js'
+import { createEndingLocomotive } from './ending-locomotive.js'
 
-export const TRAIN_SPEED = 22
+export const TRAIN_SPEED = 26
 export const STOP_NOSE_Z = 0.6
 export const STOP_CENTER_Z = 7.6
 export const SETTLE_PITCH = THREE.MathUtils.degToRad(1.5)
@@ -77,7 +78,7 @@ export function createEndingTrain() {
     bounds.union(mesh.geometry.boundingBox)
   }
   const engineCenter = (bounds.min.z + bounds.max.z) / 2
-  const noseOffset = bounds.max.z - engineCenter
+  let noseOffset = bounds.max.z - engineCenter
   const locomotive = makePivot('ending-locomotive', [...engine.children], engineCenter)
   const carriages = []
   const carCenters = []
@@ -100,37 +101,52 @@ export function createEndingTrain() {
   const vehicles = new Set([locomotive, ...carriages])
   for (const child of source.train.children) if (!vehicles.has(child)) child.visible = false
   root.add(source.train, source.stationSteam)
-  const glow = new THREE.MeshStandardMaterial({ color: 0x492108, emissive: 0xff650b, emissiveIntensity: 0 })
-  function glowStrips(pivot, length) {
-    for (const side of [-1, 1]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, length), glow)
-      strip.position.set(side * RAIL_OFFSET, 0.09, 0)
-      pivot.add(strip)
+  // Retain only complete tender triangles in our fresh, already-owned factory geometries.
+  const tender = new THREE.Group(); tender.name = 'ending-tender'
+  for (const mesh of [...locomotive.children]) {
+    const geometry = mesh.geometry, position = geometry.attributes.position, keep = []
+    for (let i = 0; i < position.count; i += 3) {
+      if ([0, 1, 2].every(j => position.getZ(i + j) < -3.6)) keep.push(i, i + 1, i + 2)
     }
+    mesh.removeFromParent()
+    if (keep.length) {
+      const retained = new THREE.BufferGeometry()
+      for (const [name, attribute] of Object.entries(geometry.attributes)) {
+        const values = []
+        for (const vertex of keep) for (let component = 0; component < attribute.itemSize; component++) values.push(attribute.array[vertex * attribute.itemSize + component])
+        retained.setAttribute(name, new THREE.Float32BufferAttribute(values, attribute.itemSize))
+      }
+      mesh.geometry = retained; tender.add(mesh)
+    }
+    geometry.dispose()
   }
-  glowStrips(locomotive, 10)
-  glowStrips(carriages[0], 17)
-  const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.28, 24),
-    new THREE.MeshStandardMaterial({ color: 0xffebba, emissive: 0xffdc8c, emissiveIntensity: 3 }))
-  lamp.position.set(0, 2.8, noseOffset - 0.25)
-  locomotive.add(lamp)
-  const coneGeometry = new THREE.ConeGeometry(1.05, 6, 24, 4, true)
-  const positions = coneGeometry.attributes.position
-  const colors = new Float32Array(positions.count * 4)
-  for (let i = 0; i < positions.count; i++) {
-    const along = (positions.getY(i) + 3) / 6
-    colors.set([1, 0.75, 0.4, along * along * 0.16], i * 4)
+  locomotive.add(tender)
+  const hero = createEndingLocomotive(ownMaterial(getKitMaterials().carriageGreen))
+  locomotive.add(hero.root)
+  noseOffset = 0
+  hero.root.traverse(node => {
+    if (!node.isMesh || node.isInstancedMesh || node.name === 'ending-headlight-cone') return
+    node.geometry.computeBoundingBox()
+    noseOffset = Math.max(noseOffset, node.geometry.boundingBox.max.z)
+  })
+  const glow = new THREE.MeshStandardMaterial({ color: 0x291207, emissive: 0xff650b, emissiveIntensity: 0 })
+  const contactGeometry = new THREE.SphereGeometry(1, 8, 6)
+  const contactPose = new THREE.Object3D()
+  function contactGlows(pivot, sites) {
+    const mesh = new THREE.InstancedMesh(contactGeometry, glow, sites.length * 2)
+    mesh.name = 'ending-wheel-contact-glow'
+    let index = 0
+    for (const side of [-1, 1]) for (const z of sites) {
+      contactPose.position.set(side * RAIL_OFFSET, 0.035, z)
+      contactPose.scale.set(0.13, 0.025, 0.32); contactPose.updateMatrix()
+      mesh.setMatrixAt(index++, contactPose.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); pivot.add(mesh)
   }
-  coneGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 4))
-  coneGeometry.rotateX(-Math.PI / 2) // Tip at local -Z; widens towards world -Z after pi yaw.
-  const cone = new THREE.Mesh(coneGeometry, new THREE.MeshBasicMaterial({ color: 0xffdc9a,
-    vertexColors: true, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending,
-    depthWrite: false, side: THREE.DoubleSide }))
-  cone.name = 'ending-headlight-cone'
-  cone.position.set(0, 2.8, noseOffset + 2.75)
-  locomotive.add(cone)
+  contactGlows(locomotive, [-0.8, 1, 2.8, 4.4, 5.25])
+  contactGlows(carriages[0], [-8.25, -5.75, 5.75, 8.25])
   let disposed = false
-  function update(centerZ, _distance, brakingProgress, settleTime = -1) {
+  function update(centerZ, distance, brakingProgress, settleTime = -1, delta = 0, speed = 0) {
     const stopCenter = STOP_NOSE_Z + noseOffset
     root.position.z = Math.max(stopCenter, centerZ + stopCenter - STOP_CENTER_Z)
     locomotive.rotation.x = settleTime >= 0
@@ -140,9 +156,8 @@ export function createEndingTrain() {
       carriages[i].position.z = carCenters[i] + (settleTime >= 0 && t > 0
         ? COUPLING_BUMP * Math.exp(-SPRING_DAMPING * t) * Math.sin(SPRING_FREQUENCY * t) : 0)
     }
-    glow.emissiveIntensity = brakingProgress >= 0 ? GLOW_PEAK * Math.sin(Math.PI * (0.15 + brakingProgress * 0.7))
-      : settleTime >= 0 ? GLOW_PEAK * 0.45 * Math.exp(-3 * settleTime) : 0
-    // Factory update animates steam/cues, disabled here. Its wheels are baked into batches.
+    glow.emissiveIntensity = brakingProgress >= 0 ? GLOW_PEAK * Math.sin(Math.PI * brakingProgress) : 0
+    hero.update(distance, delta, speed, settleTime)
   }
   return { root, locomotive, carriages, noseOffset, update,
     dispose() {
