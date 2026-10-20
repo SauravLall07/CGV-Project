@@ -1,4 +1,4 @@
-import { getContext, getMasterGain } from '../core/audio.js'
+import { getContext, getMusicGain } from '../core/audio.js'
 
 // Sampled level music, separate from the procedural drone in music-system.js.
 // Tracks live under src/assets/audio/music/ and are resolved with
@@ -119,7 +119,7 @@ export class LevelMusicPlayer {
     this.stop()
 
     const ctx = getContext()
-    const master = getMasterGain()
+    const master = getMusicGain()
 
     this.gain = ctx.createGain()
     this.gain.gain.value = volume

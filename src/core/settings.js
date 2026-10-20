@@ -154,6 +154,28 @@ export const OPTION_DEFS = [
     format: (v) => `${Math.round(v * 100)}%`
   },
   {
+    id: 'musicVolume',
+    label: 'Music Volume',
+    hint: 'Adjust the soundtrack independently of gameplay effects.',
+    group: 'Audio',
+    type: 'slider',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    format: (v) => `${Math.round(v * 100)}%`
+  },
+  {
+    id: 'sfxVolume',
+    label: 'SFX Volume',
+    hint: 'Adjust footsteps, doors, abilities and environmental sound effects.',
+    group: 'Audio',
+    type: 'slider',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    format: (v) => `${Math.round(v * 100)}%`
+  },
+  {
     id: 'mute',
     label: 'Mute',
     hint: 'Silence everything without changing the volume slider.',
@@ -183,6 +205,8 @@ export const DEFAULT_OPTIONS = {
   crouchMode: 'toggle',
   cameraDistance: 4.8,
   masterVolume: 0.5,
+  musicVolume: 1,
+  sfxVolume: 1,
   mute: false
 }
 

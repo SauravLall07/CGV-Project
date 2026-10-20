@@ -1,9 +1,9 @@
-import { getContext, getMasterGain } from '../core/audio.js'
+import { getContext, getSfxGain } from '../core/audio.js'
 
 // L3-owned procedural machinery. No samples/attribution or wall-clock timers.
 // The mechanical bed hushes in stasis; warnings bypass that bed gain. All
 // voices still pass through the existing mute/master-volume graph.
-export function createWreckAudio({ context = getContext, output = getMasterGain } = {}) {
+export function createWreckAudio({ context = getContext, output = getSfxGain } = {}) {
   let bus = null
   let bed = null
   let brakeVoice = null

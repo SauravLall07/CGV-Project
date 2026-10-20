@@ -960,7 +960,17 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     mixer.uncacheRoot(idleFbx)
   }
 
-  return { root: info.wrapper, mixer, actions, setLocomotion, playCast, playThrow, cancelThrow,
+  // Sample the locomotion clip itself so the footstep rhythm cannot drift
+  // away from the visible running/crouch-walking animation.
+  function getFootstepCycle() {
+    if (currentName !== 'run' && currentName !== 'crouchWalk') return null
+    const action = actions[currentName]
+    const duration = action?.getClip()?.duration
+    if (!duration || !action.isRunning()) return null
+    return { mode: currentName, phase: (action.time % duration) / duration }
+  }
+
+  return { root: info.wrapper, mixer, actions, setLocomotion, getFootstepCycle, playCast, playThrow, cancelThrow,
     playPress, playPickup, stopPress, startPull, returnPull, resetInteractionAnimation,
     setScriptedWalking, setScriptedWalkSpeed, noteJumpAirtime, update, dispose }
 }

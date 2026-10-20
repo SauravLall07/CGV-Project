@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { playDistractorImpactSfx, preloadPlayerInteractionSfx } from './player-interaction-sfx.js'
 
 // Reusable throwable-noise distraction system. The throw direction follows the
 // same authoritative yaw exposed by player-view, so first/third person throws
@@ -14,8 +15,10 @@ export function createDistractionSystem({
   isEnabled = () => true,
   hearingRadius = 10,
   inventory = { count: 0, max: 3 },
-  onImpact = null
+  onImpact = playDistractorImpactSfx
 } = {}) {
+  // Preload for every Level 1 throw zone, including the guard and bridge passages.
+  void preloadPlayerInteractionSfx()
   if (!Number.isFinite(inventory.count)) inventory.count = 0
   if (!Number.isFinite(inventory.max) || inventory.max < 1) inventory.max = 3
 
@@ -49,6 +52,12 @@ export function createDistractionSystem({
   const projectileRadius = 0.11
   const wallRestitution = 0.42
   const impactDrag = 0.78
+  const floorRestitution = 0.36
+  const minAudibleImpactSpeed = 0.85
+  const impactSoundCooldown = 0.025
+  let impactSoundTimer = 0
+  let firstImpactHandled = false
+  let projectileAge = 0
 
   function removeProjectile() {
     if (!projectile) return
@@ -91,6 +100,9 @@ export function createDistractionSystem({
     if (animation.releasePosition) projectile.position.copy(animation.releasePosition)
     projectile.rotation.y = yaw
 
+    firstImpactHandled = false
+    projectileAge = 0
+    impactSoundTimer = 0
     velocity = forward.multiplyScalar(8.8)
     velocity.y = crouched ? 3.6 : 4.15
 
@@ -106,10 +118,18 @@ export function createDistractionSystem({
     }
   }
 
-  function land(position) {
-    onImpact?.()
+  // Each physical collision plays a sound; only the first substantial impact
+  // produces the guard distraction pulse. Later bounces stay audible.
+  function registerImpact(position, speed) {
+    if (speed < minAudibleImpactSpeed) return
+    if (impactSoundTimer <= 0) {
+      // Existing callbacks without parameters remain compatible.
+      onImpact?.(Math.min(1, speed / 8))
+      impactSoundTimer = impactSoundCooldown
+    }
+    if (firstImpactHandled) return
+    firstImpactHandled = true
     const impact = position.clone()
-    removeProjectile()
     removePulse()
 
     noiseMaterial.opacity = 0.72
@@ -197,6 +217,7 @@ export function createDistractionSystem({
       projectile.position.z += hit.nz * 0.002
       const vn = velocity.x * hit.nx + velocity.z * hit.nz
       if (vn < 0) {
+        registerImpact(projectile.position, -vn)
         velocity.x -= (1 + wallRestitution) * vn * hit.nx
         velocity.z -= (1 + wallRestitution) * vn * hit.nz
         velocity.x *= impactDrag
@@ -219,29 +240,42 @@ export function createDistractionSystem({
     }
 
     if (projectile && velocity) {
-      velocity.y -= 12.5 * Math.min(delta, 1 / 60)
-      // Substep so gravity and landing checks stay stable during long frames.
-      const steps = Math.max(1, Math.ceil(delta / (1 / 60)))
+      projectileAge += delta
+      // Advance all collision and gravity calculations with the same substep.
+      const steps = Math.max(1, Math.ceil(delta / (1 / 120)))
       const stepDelta = delta / steps
       for (let i = 0; i < steps && projectile; i++) {
-        if (i > 0) velocity.y -= 12.5 * stepDelta
+        impactSoundTimer = Math.max(0, impactSoundTimer - stepDelta)
+        // Use a short physics step so wall/floor audio follows contact closely.
+        velocity.y -= 12.5 * stepDelta
         moveProjectile(stepDelta)
         const fallbackGround = player?.mesh?.position?.y ?? -4
         const groundY = typeof groundHeightAt === 'function'
           ? groundHeightAt(projectile.position.x, projectile.position.z, fallbackGround)
           : fallbackGround
-        if (projectile.position.y <= groundY + 0.08 && velocity.y <= 0) {
-          projectile.position.y = groundY + 0.08
-          land(projectile.position)
+        const floorY = groundY + 0.08
+        if (projectile.position.y <= floorY && velocity.y < 0) {
+          // Snap to the contact surface before notifying audio and stealth.
+          projectile.position.y = floorY
+          const hitSpeed = -velocity.y
+          registerImpact(projectile.position, hitSpeed)
+          // Make floor contacts real rebounds so each audible bounce corresponds
+          // to the projectile's movement, rather than only its final landing.
+          velocity.y = hitSpeed * floorRestitution
+          velocity.x *= impactDrag
+          velocity.z *= impactDrag
+          if (velocity.y < 0.55) {
+            removeProjectile()
+            break
+          }
         }
       }
-      // Landing removes the projectile. Do not animate a disposed projectile.
+      // Prevent a projectile from persisting indefinitely if it gets trapped.
+      if (projectile && projectileAge > 5) removeProjectile()
       if (projectile) {
         projectile.rotation.x += delta * 8
         projectile.rotation.z += delta * 4.5
       }
-
-
     }
 
     if (noisePulse) {

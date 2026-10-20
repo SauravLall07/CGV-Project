@@ -1,4 +1,4 @@
-import { getContext, getMasterGain } from '../core/audio.js'
+import { getContext, getSfxGain } from '../core/audio.js'
 
 // Sampled chrono ability cues, separate from MusicSystem's ambient whoosh.
 // Files live under src/assets/audio/sfx/ and are resolved with
@@ -29,7 +29,7 @@ let preloadPromise = null
 
 function getBus() {
   const ctx = getContext()
-  const master = getMasterGain()
+  const master = getSfxGain()
   if (!ctx || !master) return null
   if (!bus) {
     bus = ctx.createGain()
