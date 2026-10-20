@@ -8,7 +8,9 @@ const urls = {
   plate: new URL('../assets/audio/sfx/security/pressure-switch.mp3', import.meta.url),
   tile: new URL('../assets/audio/sfx/security/tile-turn.mp3', import.meta.url),
   slide: new URL('../assets/audio/sfx/security/door-slide.mp3', import.meta.url),
-  whoosh: new URL('../assets/audio/sfx/security/door-whoosh.mp3', import.meta.url)
+  whoosh: new URL('../assets/audio/sfx/security/door-whoosh.mp3', import.meta.url),
+  cameraAlarm: new URL('../assets/audio/sfx/security/camera-alarm.mp3', import.meta.url),
+  wrongAnswer: new URL('../assets/audio/sfx/security/wrong-answer.mp3', import.meta.url)
 }
 const buffers = new Map()
 const pending = new Map()
@@ -46,6 +48,43 @@ function play(name, volume = 0.2, offset = 0, duration = undefined) {
   source.connect(gain).connect(bus)
   source.onended = () => { source.disconnect(); gain.disconnect() }
   source.start(0, offset, duration)
+}
+// Camera capture alarm only. Stop it when the player respawns or the scene is cleaned up.
+let cameraAlarmPlayback = null
+let alarmGeneration = 0
+export function stopCameraAlarmSfx() {
+  alarmGeneration++
+  const active = cameraAlarmPlayback
+  cameraAlarmPlayback = null
+  if (!active) return
+  try { active.source.stop() } catch { /* source may have already ended */ }
+}
+export function playCameraCaptureAlarmSfx() {
+  const ctx = getContext()
+  if (!ctx || ctx.state !== 'running') return
+  stopCameraAlarmSfx()
+  const generation = alarmGeneration
+  const start = (buffer) => {
+    if (!buffer || generation !== alarmGeneration || !getSfxGain()) return
+    const source = ctx.createBufferSource(), gain = ctx.createGain()
+    source.buffer = buffer
+    // Shortest useful excerpt; normal respawn stops it even sooner.
+    gain.gain.value = 0.18
+    source.connect(gain).connect(getSfxGain())
+    cameraAlarmPlayback = { source, gain }
+    source.onended = () => {
+      if (cameraAlarmPlayback?.source === source) cameraAlarmPlayback = null
+      source.disconnect(); gain.disconnect()
+    }
+    source.start(0, 0, Math.min(buffer.duration, 3.5))
+  }
+  const cached = buffers.get('cameraAlarm')
+  if (cached) start(cached)
+  else void load('cameraAlarm').then(start)
+}
+export function playPuzzleWrongAnswerSfx() {
+  if (buffers.has('wrongAnswer')) play('wrongAnswer', 0.21)
+  else void load('wrongAnswer') // Loaded for subsequent attempts; no stale replay.
 }
 export const playDialSfx = () => play('dial', 0.28)
 export const playPressurePlateSfx = () => play('plate', 0.32)

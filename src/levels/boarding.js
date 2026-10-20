@@ -1,3 +1,4 @@
+import { preloadGuardTrainSfx, playStationAnnouncement, playTrainDoorSfx, playTrainDepartureSfx, updateStationAmbience, disposeGuardTrainSfx } from '../systems/level-one-guard-train-sfx.js'
 import * as THREE from 'three'
 import {
   createStationBlockout,
@@ -85,6 +86,7 @@ export function createBoardingLevel({
   // East of the rails, outside the walkable bounds. Not a child of `station`,
   // so it is not an interaction blocker and guards do not treat it as cover.
   const movementSounds = createLevelOneMovementSfx(player)
+  preloadGuardTrainSfx()
   const landing = createLandingScene()
   landing.town.visible = false
   const landingPointLights = []
@@ -1131,6 +1133,7 @@ export function createBoardingLevel({
   function arriveInside() {
     movementSounds.reset()
     enteredStation = true
+    playStationAnnouncement()
     player.setPose(passage1CheckpointPos, Math.PI / 2)
     camera?.setYaw?.(Math.PI / 2)
     camera?.setPitch?.(0.25)
@@ -1246,6 +1249,7 @@ export function createBoardingLevel({
 
     update(delta) {
       movementSounds.update(delta)
+      updateStationAmbience(player.mesh.position, enteredStation && !isBoardingCinematic)
       updateDoorFade(delta)
       applyForecourtFill(player.mesh.position)
       sky.update(delta, timeSystem)
@@ -1306,6 +1310,7 @@ export function createBoardingLevel({
             restore: () => stealth.reset()
           })
           if (hud) hud.showToast('Checkpoint reached — station concourse infiltrated', 2400)
+          playStationAnnouncement()
         }
       }
       const p = player.mesh.position
@@ -1332,6 +1337,7 @@ export function createBoardingLevel({
         if (boardingPhase === 'returning' && (!boardingReturn || boardingReturn.finished || cinematicTimer >= BOARDING_RETURN_TIMEOUT)) {
           player.resetInteractionAnimation?.()
           openDoor()
+          playTrainDoorSfx()
           beginBoardingPhase('opening')
         } else if (boardingPhase === 'opening' && cinematicTimer >= BOARDING_OPEN_SECONDS && getDoorOpenFraction() >= 0.8) {
           startBoardingWalk()
@@ -1348,6 +1354,7 @@ export function createBoardingLevel({
           beginBoardingPhase('pause')
         } else if (boardingPhase === 'pause' && cinematicTimer >= BOARDING_PAUSE_SECONDS) {
           beginBoardingPhase('departing')
+          playTrainDepartureSfx()
         } else if (boardingPhase === 'departing') {
           const t = Math.min(cinematicTimer, BOARDING_DEPART_SECONDS)
           train.position.z = departureStartZ - 0.5 * BOARDING_ACCELERATION * t * t
@@ -1387,6 +1394,7 @@ export function createBoardingLevel({
       bridgePassage.dispose()
       stationPickupUnregisters.forEach((unregister) => unregister())
       movementSounds.dispose()
+      disposeGuardTrainSfx()
       stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()

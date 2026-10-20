@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { playPressurePlateSfx, playRoutingIconSfx, preloadSecuritySfx, setSecurityListenerPosition } from '../../systems/level-one-security-sfx.js'
+import { playPressurePlateSfx, playPuzzleWrongAnswerSfx, playRoutingIconSfx, preloadSecuritySfx, setSecurityListenerPosition } from '../../systems/level-one-security-sfx.js'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
 import { dressWalls } from '../level1-kit/wall-dressing.js'
@@ -294,6 +294,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   function resetProgress(showMessage = true) {
     progress = 0
     plates.forEach((entry) => setPlateLit(entry, false))
+    if (showMessage) playPuzzleWrongAnswerSfx()
     if (showMessage) hud?.showToast?.('Wrong pressure plate — routing sequence reset. Replay the wall relay and try again.', 2100)
   }
 

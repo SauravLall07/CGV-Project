@@ -1,3 +1,5 @@
+import { playCameraCaptureAlarmSfx, stopCameraAlarmSfx } from './level-one-security-sfx.js'
+import { playGuardAlertSfx, playGuardCaughtSfx, playGuardBumpSfx, playGuardInvestigationSfx, updateGuardInvestigationSfx } from './level-one-guard-train-sfx.js'
 import * as THREE from 'three'
 import { createLaserAudio, playLaserContactSfx, preloadSecuritySfx, setSecurityListenerPosition } from './level-one-security-sfx.js'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
@@ -68,6 +70,8 @@ const DISTRACTION_STOP_DISTANCE = 1.5
 // player (the route is not progressing).
 const CHRONO_SCALE = { NORMAL: 1, SLOW: 0.2, FREEZE: 0, REWIND: 0 }
 
+function getAudioGuardTime() { return performance.now() / 1000 }
+
 export function createStealthSystem({
   scene,
   player,
@@ -94,6 +98,8 @@ export function createStealthSystem({
   let laserTouchingLastFrame = false
   const guardCircles = []
   let bumpedGuardThisFrame = false
+  let lastGuardBumpVoice = -100
+  let lastGuardCaughtVoice = -100
 
   const raycaster = new THREE.Raycaster()
   const rayCandidates = []
@@ -345,6 +351,11 @@ export function createStealthSystem({
         guard.state = 'ALERT'
         suspicion = maxSuspicion
         bumpedGuardThisFrame = true
+        const now = getAudioGuardTime()
+        if (now - lastGuardBumpVoice > 2) {
+          lastGuardBumpVoice = now
+          playGuardBumpSfx(guard.group.position, player?.mesh?.position)
+        }
         if (hud) hud.showToast('Bumped into a guard!', 1200)
       }
     })
@@ -371,6 +382,7 @@ export function createStealthSystem({
       const dy = Math.abs((position.y ?? guard.group.position.y) - guard.group.position.y)
       if (dy > 2.25 || dx * dx + dz * dz > radius * radius) return
 
+      playGuardInvestigationSfx(guard.group.position, player?.mesh?.position)
       guard.state = 'INVESTIGATE'
       guard.investigateTarget = guard.investigateBuffer.set(position.x, guard.group.position.y, position.z)
       guard.investigateTimer = duration
@@ -949,6 +961,7 @@ export function createStealthSystem({
   }
 
   function update(delta) {
+    updateGuardInvestigationSfx()
     bumpedGuardThisFrame = false
     const playerPos = player?.mesh?.position
     let isDetectedThisFrame = false
@@ -988,6 +1001,8 @@ export function createStealthSystem({
       // Any sighting feeds suspicion, near or far — but only genuine close
       // proximity breaks the routine below.
       if (isSeeingPlayer || isLockedRange) reportDetection('guard-sight', gd)
+      if (isLockedRange && !guard.audioWasLocked) playGuardAlertSfx(guard.group.position, playerPos)
+      guard.audioWasLocked = isLockedRange
 
       const lured =
         distraction.timer > 0 &&
@@ -1016,6 +1031,7 @@ export function createStealthSystem({
           guard.lookAroundTimer = 0
         }
       } else if (lured && guard.state !== 'INVESTIGATE') {
+        playGuardInvestigationSfx(guard.group.position, playerPos)
         guard.state = 'INVESTIGATE'
         guard.investigateTarget = guard.investigateBuffer.copy(distraction.position)
         guard.investigateTimer = 3.2
@@ -1359,7 +1375,15 @@ export function createStealthSystem({
         g.investigateGiveUpTimer = 0
         g.investigateArrived = false
       })
-      if (respawn) respawn.fail(detectionReason ?? 'caught')
+      if (detectionReason === 'guard-sight' && getAudioGuardTime() - lastGuardCaughtVoice > 2) {
+        lastGuardCaughtVoice = getAudioGuardTime()
+        const closest = guards.reduce((best, g) => !best || g.group.position.distanceTo(playerPos) < best.group.position.distanceTo(playerPos) ? g : best, null)
+        if (closest) playGuardCaughtSfx(closest.group.position, playerPos)
+      }
+      if (respawn) {
+        const caught = respawn.fail(detectionReason ?? 'caught')
+        if (caught && detectionReason === 'camera') playCameraCaptureAlarmSfx()
+      }
     }
 
     // Sync with HUD
@@ -1371,6 +1395,7 @@ export function createStealthSystem({
   // Clear only the suspicion meter. This is used by checkpoint respawns so
   // puzzle/interaction state and guard placement are left untouched.
   function clearSuspicion() {
+    stopCameraAlarmSfx()
     suspicion = 0
     distraction.timer = 0
     if (hud && hud.setSuspicion) hud.setSuspicion(0)
@@ -1412,6 +1437,7 @@ export function createStealthSystem({
     })
     guards.length = 0
     cameras.length = 0
+    stopCameraAlarmSfx()
     laserGrids.length = 0
     if (hud && hud.setSuspicion) hud.setSuspicion(0)
   }
