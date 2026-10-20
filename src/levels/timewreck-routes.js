@@ -1,4 +1,3 @@
-import { createAudioTransitions } from '../systems/sound-effects.js'
 import * as THREE from 'three'
 import { switchingRecessGeometry } from '../environment/mechanical-reference.js'
 import { signMaterial } from '../environment/textures.js'
@@ -6,7 +5,6 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // One-shot failures keep their intact baseline while the player observes.
 export function createMaintenanceShutter({ root, timeSystem, unregisters, obstacles, player, z, minX, maxX, name }) {
-  const audio = createAudioTransitions()
   const group = new THREE.Group()
   group.name = name
   root.add(group)
@@ -36,7 +34,6 @@ export function createMaintenanceShutter({ root, timeSystem, unregisters, obstac
       panel.position.y = Math.max(panel.position.y, p.y + (player.isCrouching() ? 1.15 : 1.85) + 1.27)
       box.enabled = false
     }
-    audio.motion(name, panel.position.y, Math.abs(p.z - z))
   }
   unregisters.push(timeSystem.register(group, {
     recordWhen: () => clock >= 0 && clock < 0.8,
@@ -48,7 +45,7 @@ export function createMaintenanceShutter({ root, timeSystem, unregisters, obstac
     getSnapshot: () => ({ clock }),
     restoreSnapshot(s) { clock = s.clock; apply() }
   }))
-  return { z, apply, reset() { audio.reset(); clock = -1; apply() } }
+  return { z, apply, reset() { clock = -1; apply() } }
 }
 
 export function createWreckRoutes({ root, spans, player, timeSystem, unregisters, obstacles }) {
@@ -111,7 +108,6 @@ export function createWreckRoutes({ root, spans, player, timeSystem, unregisters
 }
 
 export function createPassengerRack({ root, span, player, timeSystem, unregisters, obstacles, warn }) {
-  const audio = createAudioTransitions()
   const group = new THREE.Group(); group.name = 'passenger-falling-rack'; root.add(group)
   const z = span.center + 5.8
   const wood = new THREE.MeshStandardMaterial({ color: 0x634329, roughness: 0.7 })
@@ -144,9 +140,6 @@ export function createPassengerRack({ root, span, player, timeSystem, unregister
   function apply() {
     const fall = THREE.MathUtils.clamp((clock - 0.9) / 0.65, 0, 1)
     rack.position.y = 2.65 - fall * 2.5
-    const distance = Math.abs(player.mesh.position.z - z)
-    audio.motion('rack', fall, distance, { opening: 'machinery', closing: 'machinery' })
-    audio.edge('rack-impact', fall >= 1, fall >= 1 && distance < 12 ? 'debris-impact' : null)
     rack.rotation.z = 0
     block.enabled = fall > 0.32
   }
@@ -159,5 +152,5 @@ export function createPassengerRack({ root, span, player, timeSystem, unregister
     if (clock < 0 && player.mesh.position.z < z + 3.3 && player.mesh.position.z > z) {
       clock = 0; warn()
     }
-  }, reset() { audio.reset(); clock = -1; apply() } }
+  }, reset() { clock = -1; apply() } }
 }

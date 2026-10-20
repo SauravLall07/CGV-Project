@@ -2,7 +2,6 @@ import * as THREE from 'three'
 import { createHumanoid, PLAYER_PALETTE } from './humanoid.js'
 import { loadDetectiveVisual } from './detective-visual.js'
 import { resolveBoxCollision } from '../core/collision.js'
-import { createMovementAudio } from '../systems/movement-audio.js'
 import { settings } from '../core/settings.js'
 
 // -----------------------------------------------------------------------------
@@ -351,10 +350,7 @@ export function createPlayer() {
     facing += difference * (1 - Math.exp(-8 * delta))
     group.rotation.y = facing
     visual?.setScriptedWalkSpeed(Math.hypot(group.position.x - oldX, group.position.z - oldZ) / Math.max(delta, 1e-6))
-    movementAudio.update({ delta, dx: group.position.x - oldX, dz: group.position.z - oldZ,
-      airborne: false, wasAirborne: false, surface: group.position.y > 1.45 ? 'wood' : 'stone' })
     if (walk.elapsed >= walk.duration) {
-      movementAudio.reset()
       scriptedWalk = null
       visual?.setScriptedWalking(false)
       walk.onDone?.()
@@ -459,10 +455,7 @@ export function createPlayer() {
   }
 
   // Used by respawn and level transitions.
-  const movementAudio = createMovementAudio()
-
   function setPose(position, yaw = 0) {
-    movementAudio.reset()
     poseResetCallback?.()
     resetInteractionAnimation()
     cancelScriptedWalk()
@@ -543,20 +536,16 @@ export function createPlayer() {
       obstacles,
       groundHeightAt,
       supports,
-      voids,
-      audioSurfaceAt = () => 'stone'
+      voids
     }
   ) {
     if (interactionPlanted) {
-      movementAudio.reset()
       moving = false
       running = false
       crouching = false
       visual?.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false })
       return
     }
-    const audioX = group.position.x, audioZ = group.position.z, audioAirborne = airborne
-    let audioImpact = 0
     const sin = Math.sin(cameraYaw)
     const cos = Math.cos(cameraYaw)
 
@@ -660,7 +649,6 @@ export function createPlayer() {
       groundY = sampleGroundHeight(groundY)
 
       verticalVelocity -= GRAVITY * delta
-      audioImpact = Math.max(0, -verticalVelocity)
       group.position.y += verticalVelocity * delta
 
       if (Math.hypot(airVelocityX, airVelocityZ) > 0.001) {
@@ -840,9 +828,6 @@ export function createPlayer() {
       group.position.x = THREE.MathUtils.clamp(group.position.x, bounds.minX, bounds.maxX)
       group.position.z = THREE.MathUtils.clamp(group.position.z, bounds.minZ, bounds.maxZ)
     }
-    movementAudio.update({ delta, dx: group.position.x - audioX, dz: group.position.z - audioZ,
-      airborne, wasAirborne: audioAirborne, jumpStarted, impact: audioImpact, crouching, running,
-      surface: audioSurfaceAt(group.position) })
   }
 
   return {

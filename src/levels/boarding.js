@@ -1,4 +1,3 @@
-import { playSfx } from '../systems/sound-effects.js'
 import * as THREE from 'three'
 import {
   createStationBlockout,
@@ -26,6 +25,7 @@ import { createGuardPassage } from '../environment/passageways/passage-guards.js
 import { createBridgePassage } from '../environment/passageways/passage-bridge.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { createDistractionSystem } from '../systems/distraction.js'
+import { createLevelOneMovementSfx, playStationEntranceSfx, playDistractorImpactSfx } from '../systems/player-interaction-sfx.js'
 import { disposeObject } from '../core/dispose.js'
 import { createLightPool, POINT_LIGHT_POOL_SIZE, TORCH_SPOT_POOL_SIZE } from '../core/light-pool.js'
 import { createLandingScene } from '../environment/landing/index.js'
@@ -84,6 +84,7 @@ export function createBoardingLevel({
   const { group: station, wallColliders, hallDressing, platform, track, coverCores } = createStationBlockout({ includePlaceholders: false })
   // East of the rails, outside the walkable bounds. Not a child of `station`,
   // so it is not an interaction blocker and guards do not treat it as cover.
+  const movementSounds = createLevelOneMovementSfx(player)
   const landing = createLandingScene()
   landing.town.visible = false
   const landingPointLights = []
@@ -460,7 +461,8 @@ export function createBoardingLevel({
       bridgePassage.isComplete() &&
       player?.mesh?.position?.y > -0.55 &&
       !bridgePassage.isInsidePassage()
-    )
+    ),
+    onImpact: playDistractorImpactSfx
   })
 
   const stationPickupUnregisters = []
@@ -496,12 +498,10 @@ export function createBoardingLevel({
       onInteract: () => {
         if (collected) return
         if (distractionInventory.count >= distractionInventory.max) {
-          playSfx('error', { volume: 0.35 })
           hud?.showToast?.(`Distractor pouch full — ${distractionInventory.count}/${distractionInventory.max}`, 1300)
           return
         }
 
-        playSfx('pickup', { volume: 0.5 })
         collected = true
         distractionInventory.count += 1
         pickup.visible = false
@@ -618,8 +618,6 @@ export function createBoardingLevel({
       onInteract: () => {
         if (isApproachGridDisabled) return
 
-        playSfx('switch')
-        playSfx('objective', { volume: 0.4 })
         isApproachGridDisabled = true
 
         approachLaserGrid.setActive(false)
@@ -973,7 +971,6 @@ export function createBoardingLevel({
     },
     onHoldComplete: () => {
       if (isBoardingCinematic || respawn.isFailing()) return
-      playSfx('switch', { volume: 0.55 })
       isBoardingCinematic = true
       boardingStartedAt = performance.now()
       if (import.meta.env.DEV) watchBoardingOverlays()
@@ -1132,6 +1129,7 @@ export function createBoardingLevel({
   const FADE_SECONDS = 0.6
 
   function arriveInside() {
+    movementSounds.reset()
     enteredStation = true
     player.setPose(passage1CheckpointPos, Math.PI / 2)
     camera?.setYaw?.(Math.PI / 2)
@@ -1168,7 +1166,7 @@ export function createBoardingLevel({
     range: 2.7,
     onInteract() {
       if (enteredStation || enterFade) return
-      playSfx('door-open')
+      playStationEntranceSfx()
       enteringStation = true
       enterFade = { t: 0, phase: 'out' }
       beginCinematic?.()
@@ -1197,7 +1195,6 @@ export function createBoardingLevel({
     },
     bounds: levelBounds,
     obstacles: wallColliders,
-    audioSurfaceAt: () => player.mesh.userData.tightCrouchCamera ? 'metal' : 'stone',
     groundHeightAt(x, z, fallback = 0) {
       if (
         x >= PLAZA.minX - 0.4 && x <= FACADE_X + 0.4 &&
@@ -1248,6 +1245,7 @@ export function createBoardingLevel({
     },
 
     update(delta) {
+      movementSounds.update(delta)
       updateDoorFade(delta)
       applyForecourtFill(player.mesh.position)
       sky.update(delta, timeSystem)
@@ -1349,8 +1347,6 @@ export function createBoardingLevel({
           boardingView.allowPress = false
           beginBoardingPhase('pause')
         } else if (boardingPhase === 'pause' && cinematicTimer >= BOARDING_PAUSE_SECONDS) {
-          playSfx('steam', { volume: 0.6 })
-          playSfx('machinery', { volume: 0.6 })
           beginBoardingPhase('departing')
         } else if (boardingPhase === 'departing') {
           const t = Math.min(cinematicTimer, BOARDING_DEPART_SECONDS)
@@ -1390,6 +1386,7 @@ export function createBoardingLevel({
       guardPassage.dispose()
       bridgePassage.dispose()
       stationPickupUnregisters.forEach((unregister) => unregister())
+      movementSounds.dispose()
       stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()

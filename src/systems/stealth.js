@@ -1,4 +1,3 @@
-import { playSfx } from './sound-effects.js'
 import * as THREE from 'three'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import {
@@ -1337,9 +1336,6 @@ export function createStealthSystem({
       suspicion = Math.max(0, suspicion - suspicionDecayRate * delta)
     }
 
-    if (suspicion >= 35 && !audioAlerted) { audioAlerted = true; playSfx('warning', { cooldown: 1 }) }
-    if (suspicion < 15) audioAlerted = false
-
     // 5. Check Fail State
     if (suspicion >= maxSuspicion) {
       suspicion = 0
@@ -1362,9 +1358,7 @@ export function createStealthSystem({
 
   // Clear only the suspicion meter. This is used by checkpoint respawns so
   // puzzle/interaction state and guard placement are left untouched.
-  let audioAlerted = false
   function clearSuspicion() {
-    audioAlerted = false
     suspicion = 0
     distraction.timer = 0
     if (hud && hud.setSuspicion) hud.setSuspicion(0)

@@ -1,4 +1,3 @@
-import { playSfx } from '../../systems/sound-effects.js'
 import * as THREE from 'three'
 import {
   marbleFloorMaterial,
@@ -380,7 +379,6 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
     solved = current.every((value, index) => value === target[index])
     if (!solved) return
 
-    playSfx('objective', { priority: 2 })
     solvedLampMat.color.setHex(0x10b981)
     solvedLampMat.emissive.setHex(0x047857)
     door.unlock()
@@ -394,7 +392,6 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
       range: 2.4,
       onInteract: () => {
         if (solved) return
-        playSfx('dial', { cooldown: 0.07 })
         current[i] = (current[i] + 1) % symbols.length
         syncDial(i)
         interaction?.flashPrompt?.(`Dial ${numerals[i]}: ${symbols[current[i]]}`)

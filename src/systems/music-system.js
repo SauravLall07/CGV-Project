@@ -1,4 +1,4 @@
-import { getContext, getMasterGain, getAudioBus } from '../core/audio.js'
+import { getContext, getMasterGain } from '../core/audio.js'
 
 // Procedural time-distortion texture (Phase 8): looping pink noise through
 // a slowly-modulated bandpass — a whoosh, not a chord. Idle output sits
@@ -90,7 +90,7 @@ export class MusicSystem {
     )
 
     const ctx = getContext()
-    const master = getAudioBus('ambience')
+    const master = getMasterGain()
     console.log('Master gain value: ' + master.gain.value)
 
     this.output = ctx.createGain()

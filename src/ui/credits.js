@@ -1,4 +1,3 @@
-import { playSfx } from '../systems/sound-effects.js'
 import { THEME, createOverlayRoot } from './ui-theme.js'
 
 // Rolling credits overlay. Two entry points share this panel: the title
@@ -118,10 +117,6 @@ function buildRollContent() {
 
   addBlock(roll, [
     label('Sound Effects'),
-    line('Original gameplay, interface and ambience effects created for Chrono Express'),
-    line('37 synthesized effects — CC0 1.0 Universal (Public Domain)', { dim: true }),
-    line('creativecommons.org/publicdomain/zero/1.0/', { dim: true, size: '13px' }),
-    spacer(8),
     line('"Freeze Sound Effect FX" by antonsoederberg (Freesound.org) — CC0'),
     line('"Quick Zoom Slow Down" by bevibeldesign (Freesound.org) — CC0'),
     line('"Vinyl Rewind" by tasmanianpower (Freesound.org) — CC0'),
@@ -238,7 +233,6 @@ export function createCredits({ onDismiss } = {}) {
     if (isOpen) return
     source = nextSource
     isOpen = true
-    playSfx('ui-open')
     ignoreUntil = performance.now() + DISMISS_GRACE_MS
     if (source === 'complete' && completionTime != null && Number.isFinite(completionTime)) {
       heistCompleteBlock.style.display = 'flex'
@@ -257,7 +251,6 @@ export function createCredits({ onDismiss } = {}) {
   function close() {
     if (!isOpen) return
     isOpen = false
-    playSfx('ui-close')
     roll.style.animation = 'none'
     root.style.opacity = '0'
     root.style.pointerEvents = 'none'

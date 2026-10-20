@@ -1,4 +1,3 @@
-import { playSfx } from './sound-effects.js'
 import * as THREE from 'three'
 
 // Reusable throwable-noise distraction system. The throw direction follows the
@@ -14,7 +13,8 @@ export function createDistractionSystem({
   obstacles = [],
   isEnabled = () => true,
   hearingRadius = 10,
-  inventory = { count: 0, max: 3 }
+  inventory = { count: 0, max: 3 },
+  onImpact = null
 } = {}) {
   if (!Number.isFinite(inventory.count)) inventory.count = 0
   if (!Number.isFinite(inventory.max) || inventory.max < 1) inventory.max = 3
@@ -67,7 +67,6 @@ export function createDistractionSystem({
   function throwDistraction() {
     if (!isEnabled()) return false
     if (inventory.count <= 0) {
-      playSfx('error')
       hud?.showToast?.('You have nothing to throw', 1700)
       return false
     }
@@ -95,7 +94,6 @@ export function createDistractionSystem({
     velocity = forward.multiplyScalar(8.8)
     velocity.y = crouched ? 3.6 : 4.15
 
-    playSfx('throw', { volume: 0.5 })
     scene.add(projectile)
     inventory.count = Math.max(0, inventory.count - 1)
     cooldown = 0.65
@@ -109,7 +107,7 @@ export function createDistractionSystem({
   }
 
   function land(position) {
-    playSfx('metal-impact', { volume: 0.7, priority: 2, cooldown: 0.2 })
+    onImpact?.()
     const impact = position.clone()
     removeProjectile()
     removePulse()
@@ -199,7 +197,6 @@ export function createDistractionSystem({
       projectile.position.z += hit.nz * 0.002
       const vn = velocity.x * hit.nx + velocity.z * hit.nz
       if (vn < 0) {
-        if (vn < -2) playSfx('metal-impact', { volume: Math.min(0.6, -vn * 0.06), cooldown: 0.15 })
         velocity.x -= (1 + wallRestitution) * vn * hit.nx
         velocity.z -= (1 + wallRestitution) * vn * hit.nz
         velocity.x *= impactDrag

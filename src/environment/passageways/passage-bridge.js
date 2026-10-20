@@ -1,4 +1,3 @@
-import { playSfx } from '../../systems/sound-effects.js'
 import * as THREE from 'three'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
@@ -790,7 +789,6 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
           },
           onInteract: () => {
             if (solved) return
-            playSfx('dial', { cooldown: 0.07 })
             tile.rotation = (tile.rotation + 1) % 4
             tile.group.rotation.y = -tile.rotation * Math.PI / 2
             evaluate()
@@ -911,7 +909,6 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
     drawScreen(fusesPowered, doorPowered)
 
     if (solved || fusesPowered !== 3 || !doorPowered) return
-    playSfx('objective', { priority: 2 })
     solved = true
     door.unlock()
     hud?.showToast?.('ROUTE COMPLETE — all three chrono fuses powered; stairwell unlocked.', 3300)
@@ -992,11 +989,9 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
       onInteract: () => {
         if (collected) return
         if (sharedInventory.count >= sharedInventory.max) {
-          playSfx('error', { volume: 0.35 })
           hud?.showToast?.(`Distractor pouch full — ${sharedInventory.count}/${sharedInventory.max}`, 1300)
           return
         }
-        playSfx('pickup', { volume: 0.5 })
         collected = true
         sharedInventory.count += 1
         pickup.visible = false

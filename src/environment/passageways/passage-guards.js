@@ -1,4 +1,3 @@
-import { playSfx } from '../../systems/sound-effects.js'
 import * as THREE from 'three'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
@@ -257,12 +256,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   const playbackLoopPause = 0.9
   const playbackCycle = playbackLeadIn + target.length * playbackStepDuration + playbackLoopPause
 
-  let audibleMarker = -1
   function setPanelStep(activeMarker = -1) {
-    if (activeMarker !== audibleMarker && activeMarker >= 0 && player?.mesh && player.mesh.position.distanceTo(panel.position) < 10) {
-      playSfx('dial', { rate: 0.8 + activeMarker * 0.14, cooldown: 0.12, volume: 0.3 })
-    }
-    audibleMarker = activeMarker
     panelMarkers.forEach((mesh, index) => {
       mesh.material.emissive.setHex(index === activeMarker ? signalGlow : 0xffffff)
       mesh.material.emissiveIntensity = index === activeMarker ? 1.8 : 0.12
@@ -284,7 +278,6 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
     prompt: 'Replay routing sequence',
     range: 2.7,
     onInteract: () => {
-      playSfx('switch', { volume: 0.4 })
       replay({ resetInput: true })
       interaction?.flashPrompt?.('Sequence replaying')
     }
@@ -302,7 +295,6 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
     const expected = target[progress]
 
     if (index !== expected) {
-      playSfx('error', { volume: 0.4 })
       resetProgress(true)
       replay()
       return
@@ -322,7 +314,6 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
 
     if (progress < target.length) return
 
-    playSfx('objective', { priority: 2 })
     solved = true
     playbackActive = false
     setPanelStep(-1)
@@ -388,7 +379,6 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
     })
 
     if (!solved && inside !== -1 && occupiedPlate !== inside) activatePlate(inside)
-    if (occupiedPlate !== inside) playSfx(inside < 0 ? 'switch-release' : 'switch', { key: 'routing-pressure', volume: 0.4 })
     occupiedPlate = inside
   }
 
@@ -467,12 +457,10 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
       onInteract: () => {
         if (collected) return
         if (sharedInventory.count >= sharedInventory.max) {
-          playSfx('error', { volume: 0.35 })
           hud?.showToast?.(`Distractor pouch full — ${sharedInventory.count}/${sharedInventory.max}`, 1300)
           return
         }
 
-        playSfx('pickup', { volume: 0.5 })
         collected = true
         sharedInventory.count += 1
         pickup.visible = false
