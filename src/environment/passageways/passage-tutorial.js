@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { preloadSecuritySfx, setSecurityListenerPosition, playDialSfx } from '../../systems/level-one-security-sfx.js'
 import {
   marbleFloorMaterial,
   metalMaterial,
@@ -392,6 +393,7 @@ function createSymbolPuzzle({ group, interaction, hud, door }) {
       range: 2.4,
       onInteract: () => {
         if (solved) return
+        playDialSfx()
         current[i] = (current[i] + 1) % symbols.length
         syncDial(i)
         interaction?.flashPrompt?.(`Dial ${numerals[i]}: ${symbols[current[i]]}`)
@@ -980,6 +982,8 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   }
 
   function update(delta) {
+    preloadSecuritySfx()
+    setSecurityListenerPosition(player?.mesh?.position)
     sweepingLaser.update(delta, player?.mesh?.position)
     puzzleDoor.update(delta)
     stealthObjects.timedController?.update(delta)
@@ -988,6 +992,7 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
 
   function dispose() {
     symbolPuzzle.dispose()
+    sweepingLaser.dispose()
     hints.dispose()
   }
 

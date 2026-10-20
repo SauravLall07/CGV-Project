@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { addLaserGlow, createSecurityLaserMaterial } from '../../shaders/security-laser.js'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { at, createKitBuilder, kbox, laserEmitter } from '../level1-kit/kit-props.js'
-import { playDoorOpen } from '../../systems/door-sfx.js'
+import { createLaserAudio, playLaserContactSfx, playPuzzleDoorSfx } from '../../systems/level-one-security-sfx.js'
 
 function scaleU(geometry, factor) {
   const uv = geometry.attributes.uv
@@ -442,7 +442,7 @@ export function createPuzzleDoor({
     collider.enabled = false
     stripMat.color.setHex(0x063a24)
     stripMat.emissive.setHex(0x22e08a)
-    playDoorOpen()
+    playPuzzleDoorSfx()
     dust.start()
   }
 
@@ -497,9 +497,11 @@ export function createSweepingLaser({
 
   let elapsed = 0
   let hitCooldown = 0
+  const laserAudio = createLaserAudio(group)
 
   function update(delta, playerPosition) {
     elapsed += delta
+    laserAudio.update()
     hitCooldown = Math.max(0, hitCooldown - delta)
     if (laserMat.customUniforms) laserMat.customUniforms.uTime.value += delta
 
@@ -521,11 +523,12 @@ export function createSweepingLaser({
 
     if (closeAcrossBeam && closeToSweep && feetTooLow && hitCooldown <= 0) {
       hitCooldown = 0.75
+      playLaserContactSfx()
       onHit()
     }
   }
 
-  return { group, update, material: laserMat }
+  return { group, update, material: laserMat, dispose: () => laserAudio.dispose() }
 }
 
 export function createTimedLaserController(laserGrid, {
@@ -637,9 +640,11 @@ export function createLaserFloor({
 
   let active = true
   let hitCooldown = 0
+  const laserAudio = createLaserAudio(group, { volume: 0.12 })
 
   function update(delta, playerPosition) {
     hitCooldown = Math.max(0, hitCooldown - delta)
+    laserAudio.update()
     if (laserMat.customUniforms) {
       laserMat.customUniforms.uTime.value += delta
       laserMat.customUniforms.uState.value = active ? 0 : 1
@@ -658,15 +663,18 @@ export function createLaserFloor({
 
     if (touching) {
       hitCooldown = 0.9
+      playLaserContactSfx()
       onHit()
     }
   }
 
   function setActive(value) {
     active = Boolean(value)
+    laserAudio.setActive(active)
   }
 
   function dispose() {
+    laserAudio.dispose()
     laserMat.dispose()
     padMat.dispose()
   }

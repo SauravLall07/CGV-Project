@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { playPressurePlateSfx, playRoutingIconSfx, preloadSecuritySfx, setSecurityListenerPosition } from '../../systems/level-one-security-sfx.js'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
 import { dressWalls } from '../level1-kit/wall-dressing.js'
@@ -256,7 +257,13 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   const playbackLoopPause = 0.9
   const playbackCycle = playbackLeadIn + target.length * playbackStepDuration + playbackLoopPause
 
+  let lastPanelCue = -1
   function setPanelStep(activeMarker = -1) {
+    // Sound only at the instant a new symbol lights, not on every update frame.
+    if (activeMarker !== lastPanelCue) {
+      if (activeMarker >= 0 && playbackActive && !solved) playRoutingIconSfx(activeMarker, panel.getWorldPosition(new THREE.Vector3()), player?.mesh?.position)
+      lastPanelCue = activeMarker
+    }
     panelMarkers.forEach((mesh, index) => {
       mesh.material.emissive.setHex(index === activeMarker ? signalGlow : 0xffffff)
       mesh.material.emissiveIntensity = index === activeMarker ? 1.8 : 0.12
@@ -292,6 +299,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
 
   function activatePlate(index) {
     if (solved) return
+    playPressurePlateSfx()
     const expected = target[progress]
 
     if (index !== expected) {
@@ -328,6 +336,7 @@ function createSignalStepPuzzle({ group, interaction, hud, player, door, floorY 
   }
 
   function update(delta) {
+    preloadSecuritySfx()
     replayCooldown = Math.max(0, replayCooldown - delta)
 
     if (playbackActive && !solved) {
@@ -823,6 +832,8 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
   }
 
   function update(delta) {
+    preloadSecuritySfx()
+    setSecurityListenerPosition(player?.mesh?.position)
     movingLaser.update(delta, player?.mesh?.position)
     timedController?.update(delta)
     distraction?.update(delta)
@@ -843,6 +854,7 @@ export function createGuardPassage({ scene, interaction, hud, player, respawn, c
 
   function dispose() {
     signalPuzzle.dispose()
+    movingLaser.dispose()
     pickupUnregisters.forEach((unregister) => unregister())
     distraction?.dispose()
     distraction = null

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { createLaserAudio, playLaserContactSfx, preloadSecuritySfx, setSecurityListenerPosition } from './level-one-security-sfx.js'
 import { createHumanoid, GUARD_PALETTE } from '../entities/humanoid.js'
 import {
   preloadPoliceVisual,
@@ -90,6 +91,7 @@ export function createStealthSystem({
   const guards = []
   const cameras = []
   const laserGrids = []
+  let laserTouchingLastFrame = false
   const guardCircles = []
   let bumpedGuardThisFrame = false
 
@@ -625,15 +627,18 @@ export function createStealthSystem({
           maxY: position.y + height
         }
 
+    const laserAudio = createLaserAudio(gridGroup)
     const grid = {
       gridGroup,
       beams,
       laserMat,
       active: true,
       bounds,
+      laserAudio,
 
       setActive(isActive) {
         grid.active = isActive
+        laserAudio.setActive(isActive)
 
         if (laserMat.customUniforms) {
           laserMat.customUniforms.uState.value = isActive ? 0 : 1
@@ -1308,8 +1313,11 @@ export function createStealthSystem({
       }
     })
 
+    preloadSecuritySfx()
+    setSecurityListenerPosition(playerPos)
     // 3. Laser Grid Update & Collision
     laserGrids.forEach((grid) => {
+      grid.laserAudio.update()
       if (grid.laserMat?.customUniforms) {
         grid.laserMat.customUniforms.uTime.value += delta
         if (grid.active) {
@@ -1321,9 +1329,13 @@ export function createStealthSystem({
     })
 
     if (checkLaserCollision(playerPos)) {
+      if (!laserTouchingLastFrame) playLaserContactSfx()
+      laserTouchingLastFrame = true
       suspicion = 100
       reportDetection('laser')
       if (hud) hud.showToast('Laser grid tripped! Security alerted!', 1500)
+    } else {
+      laserTouchingLastFrame = false
     }
 
     // 4. Update Suspicion Meter
@@ -1394,6 +1406,7 @@ export function createStealthSystem({
       disposeObject(c.camGroup)
     })
     laserGrids.forEach((l) => {
+      l.laserAudio.dispose()
       scene.remove(l.gridGroup)
       disposeObject(l.gridGroup)
     })

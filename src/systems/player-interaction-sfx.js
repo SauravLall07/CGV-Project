@@ -109,7 +109,7 @@ export function createLevelOneMovementSfx(player) {
       const contacts = gait.mode === 'procedural' ? [0.25, 0.75] : [0.10, 0.60]
       if (!contacts.some(crosses)) return
       // One consistent, soft recording for all gait types; only loudness changes.
-      play('step', crouching ? 0.90 : running ? 1.6 : 1.3)
+      play('step', crouching ? 0.7 : running ? 1.6 : 1.3)
       stepCooldown = 0.13
     },
     reset() {
