@@ -5,7 +5,6 @@ import { disposeObject } from '../core/dispose.js'
 import { createEndingLocomotive } from './ending-locomotive.js'
 import { CARRIAGE_HOLES, createDamageUniforms, patchTimeDamage } from '../shaders/ending-time-damage.js'
 import { createEndingDebris } from './ending-debris.js'
-import { createEndingOutline } from '../shaders/ending-outline.js'
 import { createEndingSparks } from './ending-sparks.js'
 
 export const TRAIN_SPEED = 26
@@ -20,6 +19,28 @@ const SPRING_FREQUENCY = 9
 const SPRING_DAMPING = 3.8
 const SPRING_GAIN = 1.8
 const GLOW_PEAK = 5
+
+// The factory roof has no lengthwise subdivisions. Subdivide only its fresh
+// ending-owned batch so the sag shader has vertices near the middle tears.
+function subdivideRoof(mesh) {
+  let geometry = mesh.geometry
+  for (let pass=0;pass<2;pass++) {
+    const next = new THREE.BufferGeometry()
+    for (const [name,attribute] of Object.entries(geometry.attributes)) {
+      const size=attribute.itemSize, values=new Float32Array(attribute.count*4*size)
+      let write=0
+      for (let vertex=0;vertex<attribute.count;vertex+=3) {
+        const a=vertex*size,b=(vertex+1)*size,c=(vertex+2)*size
+        for (const pair of [[a,a],[a,b],[a,c],[a,b],[b,b],[b,c],[a,c],[b,c],[c,c],[a,b],[b,c],[a,c]])
+          for (let k=0;k<size;k++) values[write++]=(attribute.array[pair[0]+k]+attribute.array[pair[1]+k])*0.5
+      }
+      next.setAttribute(name,new THREE.BufferAttribute(values,size))
+    }
+    geometry.dispose(); geometry=next
+  }
+  geometry.normalizeNormals()
+  mesh.geometry=geometry
+}
 
 export function createEndingTrain() {
   const kit = getKitMaterials()
@@ -110,7 +131,10 @@ export function createEndingTrain() {
     }
     const center = (bounds.min.z + bounds.max.z) / 2
     const pivot = makePivot(`ending-carriage-${i + 1}`, batches, center)
+    for (const mesh of batches) if (mesh.material.color?.getHex() === 0x2a2e33) subdivideRoof(mesh)
     const uniforms = createDamageUniforms(CARRIAGE_HOLES[i])
+    uniforms.uSag.value = 0.25
+    if (i === 0) uniforms.uProtectedFront.value = 6
     damageUniforms.push(uniforms)
     pivot.userData.holes = CARRIAGE_HOLES[i]
     const patches = new Map()
@@ -185,7 +209,6 @@ export function createEndingTrain() {
   contactGlows(carriages[0], [-8.25, -5.75, 5.75, 8.25])
   const debris = createEndingDebris(root, carriages, hero.root)
   damageUniforms.push(...debris.uniforms)
-  const outline = createEndingOutline([locomotive, ...carriages])
   const sparks = createEndingSparks(source.train, [locomotive, carriages[0], carriages[1]], RAIL_OFFSET)
   // Per-carriage copies share only ending-owned texture wrappers. Release unused base material objects.
   const usedMaterials = new Set()
@@ -214,7 +237,7 @@ export function createEndingTrain() {
     sparks.update(delta, brakingProgress)
     for (const uniforms of damageUniforms) uniforms.uTime.value += Math.max(0, delta)
   }
-  return { root, locomotive, carriages, noseOffset, damageUniforms, debris, outline, sparks, update, setTimeState,
+  return { root, locomotive, carriages, noseOffset, damageUniforms, debris, sparks, update, setTimeState,
     dispose() {
       if (disposed) return
       disposed = true

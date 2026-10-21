@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { CARRIAGE_HOLES, createDamageUniforms, patchTimeDamage } from '../shaders/ending-time-damage.js'
+import { woodMaterial, carpetMaterial } from './textures.js'
+import { CARRIAGE_HOLES, createDamageUniforms, patchEndingLamp, LAMP_FLICKER_GLSL } from '../shaders/ending-time-damage.js'
 
-function coloredBox(parts, color, w, h, d, x, y, z, bevel = false) {
-  const indexed = bevel ? new RoundedBoxGeometry(w, h, d, 1, 0.045) : new THREE.BoxGeometry(w, h, d)
+function coloredBox(parts, color, w, h, d, x, y, z) {
+  const indexed = new THREE.BoxGeometry(w, h, d)
   const geometry = indexed.index ? indexed.toNonIndexed() : indexed
   if (geometry !== indexed) indexed.dispose()
   geometry.translate(x, y, z)
@@ -13,61 +13,188 @@ function coloredBox(parts, color, w, h, d, x, y, z, bevel = false) {
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)); parts.push(geometry)
 }
 
+// Static ripped sheet metal. Extrusion sidewalls are rust, outside is paint,
+// inside is dark steel; each flap stays hinged to its carriage.
+export function createTornFlaps(pivot, holes, paint = 0x2c4a36, boiler = false) {
+  const shape = new THREE.Shape()
+  shape.moveTo(-0.55, 0); shape.lineTo(0.55, 0)
+  for (const [x, y] of [[0.48,0.55],[0.28,0.43],[0.2,0.92],[-0.08,0.65],[-0.3,0.82],[-0.5,0.47]]) shape.lineTo(x,y)
+  shape.closePath()
+  const template = new THREE.ExtrudeGeometry(shape, { depth: 0.035, bevelEnabled: false })
+  const colors = new Float32Array(template.attributes.position.count * 3)
+  for (let n = 0; n < template.attributes.position.count; n++) {
+    const normal = template.attributes.normal.getZ(n)
+    const color = new THREE.Color(normal > 0.5 ? paint : normal < -0.5 ? 0x252a30 : 0x8a4b22)
+    colors.set([color.r, color.g, color.b], n * 3)
+  }
+  template.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  const pieces = [], descriptions = [], pose = new THREE.Object3D()
+  for (const hole of holes) {
+    for (let n = 0; n < 6; n++) {
+      const roof = n >= 3, z = hole.center.z + (n % 3 - 1) * hole.halfSize.z * 0.72
+      pose.position.set(roof ? 0.24 : -1.48, roof ? 4.22 : 1.28, z)
+      if (boiler) pose.position.set(-0.76, hole.center.y + (roof ? 0.5 : -0.5), z)
+      pose.rotation.set(0, -Math.PI / 2, roof ? -0.9 : 0)
+      pose.rotateX(THREE.MathUtils.degToRad(roof ? 35 + n * 5 : 25 + n * 15))
+      pose.scale.set(1.05, roof ? 0.8 : 0.7, 1)
+      if (boiler) pose.scale.set(0.65,0.5,1)
+      pose.updateMatrix()
+      const geometry = template.clone().applyMatrix4(pose.matrix)
+      geometry.computeBoundingBox()
+      descriptions.push({ bounds: geometry.boundingBox.clone(), angle: roof ? 35 + n * 5 : 25 + n * 15 })
+      pieces.push(geometry)
+    }
+  }
+  template.dispose()
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85,
+    metalness: 0.15, side: THREE.DoubleSide, emissive: 0x17130e, emissiveIntensity: 0.12 })
+  const mesh = new THREE.Mesh(mergeGeometries(pieces), material)
+  pieces.forEach(piece => piece.dispose())
+  mesh.name = 'ending-peeled-metal'; mesh.userData.flaps = descriptions
+  pivot.add(mesh)
+  return mesh
+}
+
+function addBrokenFrame(pivot, holes) {
+  const parts = []
+  let ribs = 0
+  for (const hole of holes) {
+    for (let z = hole.center.z - hole.halfSize.z + 0.65; z < hole.center.z + hole.halfSize.z; z += 1.2) {
+      const snapped = ribs % 3 === 1
+      coloredBox(parts, 0x302c24, 0.08, snapped ? 1.1 : 2.35, 0.1, -1.38, snapped ? 1.85 : 2.47, z)
+      if (snapped) {
+        const start = parts.length
+        coloredBox(parts, 0x302c24, 0.08, 0.75, 0.1, 0, 0.375, 0)
+        parts[start].rotateZ(-0.55); parts[start].translate(-1.38, 2.4, z)
+      }
+      ribs++
+    }
+    for (const sign of [-1, 1]) {
+      const z = hole.center.z + sign * hole.halfSize.z
+      coloredBox(parts, 0x71572b, 0.1, 0.08, 0.8, -1.5, 3.15, z)
+      coloredBox(parts, 0x71572b, 0.1, 0.65, 0.07, -1.5, 2.85, z + sign * 0.35)
+    }
+  }
+  const mesh = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.9, emissive: 0x21180e, emissiveIntensity: 0.15
+  }))
+  parts.forEach(part => part.dispose())
+  mesh.name = 'ending-broken-frame'; mesh.userData.ribCount = ribs; pivot.add(mesh)
+  return mesh
+}
+
 // Ending-owned interior geometry only; nothing detaches from the train.
 export function createEndingDebris(root, carriages) {
-  const shells = [], glowParts = [], uniforms = []
-  const glowMaterial = new THREE.ShaderMaterial({
-    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-    side: THREE.DoubleSide, forceSinglePass: true, toneMapped: false,
-    vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-    fragmentShader: 'varying vec2 vUv; void main(){float a=pow(max(0.0,1.0-length(vUv-0.5)*2.0),3.0);gl_FragColor=vec4(1.0,0.61,0.23,a*0.55);}'
-  })
-  root.updateWorldMatrix(true, true)
-  const inverse = root.matrixWorld.clone().invert()
-  for (let i = 0; i < carriages.length; i++) {
-    const pivot = carriages[i]
-    const damage = createDamageUniforms(CARRIAGE_HOLES[i]); uniforms.push(damage)
-    const shellMaterial = patchTimeDamage(new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: 0.9, emissive: 0xffffff, emissiveIntensity: 0.32
-    }), damage)
-    const compileDamage = shellMaterial.onBeforeCompile
-    shellMaterial.onBeforeCompile = shader => {
-      compileDamage(shader)
-      shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>',
-        '#include <emissivemap_fragment>\n#ifdef USE_COLOR\ntotalEmissiveRadiance *= vColor;\n#endif')
-    }
-    const parts = []
-    coloredBox(parts, 0x5a3a22, 2.6, 0.08, 19.4, 0, 1.57, 0)
-    coloredBox(parts, 0x6b4529, 0.06, 2.15, 19.4, 1.28, 2.65, 0)
-    coloredBox(parts, 0x3a2a1f, 2.6, 0.08, 19.4, 0, 3.76, 0)
-    for (const z of [-9.65, 9.65]) coloredBox(parts, 0x6b4529, 2.6, 2.15, 0.06, 0, 2.65, z)
-    for (let z = -9; z <= 9; z += 0.6) coloredBox(parts, 0x352619, 0.02, 2.08, 0.026, 1.24, 2.65, z)
-    for (let x = -1; x <= 1; x += 0.25) coloredBox(parts, 0x362319, 0.018, 0.014, 19.3, x, 1.62, 0)
-    const center = CARRIAGE_HOLES[i][0].center.z
-    for (const z of [center - 2.4, center - 0.8, center + 0.8, center + 2.4]) {
-      coloredBox(parts, 0x8a1f24, 0.86, 0.23, 0.78, 0.2, 1.96, z, true)
-      coloredBox(parts, 0x8a1f24, 0.86, 0.91, 0.18, 0.2, 2.36, z - 0.36, true)
-      for (const x of [-0.28, 0.68]) coloredBox(parts, 0x8a1f24, 0.15, 0.34, 0.82, x, 2.18, z, true)
-      for (const x of [-0.1, 0.5]) coloredBox(parts, 0x302016, 0.08, 0.24, 0.55, x, 1.75, z)
-    }
-    for (const z of [center - 1.8, center, center + 1.8]) {
-      const lamp = new THREE.CircleGeometry(0.14, 12)
-      lamp.rotateY(-Math.PI / 2); lamp.translate(1.19, 3.13, z)
-      const rgb = new THREE.Color(0xffcf80), colors = new Float32Array(lamp.attributes.position.count * 3)
-      for (let n = 0; n < colors.length; n += 3) colors.set([rgb.r * 4, rgb.g * 4, rgb.b * 4], n)
-      lamp.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-      const ready = lamp.toNonIndexed(); lamp.dispose(); parts.push(ready)
-      const glow = new THREE.PlaneGeometry(0.85, 0.85)
-      glow.rotateY(-Math.PI / 2); glow.translate(1.16, 3.13, z)
-      glow.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inverse, pivot.matrixWorld))
-      glowParts.push(glow)
-    }
-    const shell = new THREE.Mesh(mergeGeometries(parts), shellMaterial)
-    parts.forEach(part => part.dispose())
-    shell.name = 'ending-damage-interior'; pivot.add(shell); shells.push(shell)
+  const shells = [], uniforms = [], glows = []
+  const wood = woodMaterial({ repeat: [1, 4], light: 0x8a5c33, dark: 0x452a16 })
+  const tableWood = woodMaterial({ light: 0x5a3418, dark: 0x2a160a })
+  const carpet = carpetMaterial({ repeat: [1, 8], base: 0x5a1620, accent: 0xa07a3a })
+  const velvet = new THREE.MeshStandardMaterial({ color: 0x7a1e24, roughness: 0.9 })
+  const velvetDark = new THREE.MeshStandardMaterial({ color: 0x5a1419, roughness: 0.92 })
+  const brass = new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.9 })
+  const steel = new THREE.MeshStandardMaterial({ color: 0x23262c, roughness: 0.65, metalness: 0.6 })
+  const glass = new THREE.MeshStandardMaterial({ color: 0x8aa6a8, roughness: 0.2, metalness: 0.25 })
+  for (const material of [wood, tableWood, carpet, velvet, velvetDark, brass, steel, glass]) {
+    material.emissive.copy(material.color); material.emissiveIntensity = 0.22
+    if (material.map) material.emissiveMap = material.map
   }
-  const glows = new THREE.Mesh(mergeGeometries(glowParts), glowMaterial)
-  glowParts.forEach(part => part.dispose())
-  glows.name = 'ending-interior-lamp-glows'; root.add(glows)
+  for (let i = 0; i < carriages.length; i++) {
+    const pivot = carriages[i], hole = CARRIAGE_HOLES[i][0], center = hole.center.z
+    createTornFlaps(pivot, CARRIAGE_HOLES[i]); addBrokenFrame(pivot, CARRIAGE_HOLES[i])
+    const effects = createDamageUniforms(CARRIAGE_HOLES[i]); uniforms.push(effects)
+    const lamp = new THREE.MeshStandardMaterial({ color: 0xfff0d6, emissive: 0xffd49a, emissiveIntensity: 1.6, roughness: 0.6 })
+    patchEndingLamp(lamp, effects)
+    const batches = new Map(), pose = new THREE.Object3D()
+    function add(material, geometry, x, y, z, rx = 0, ry = 0, rz = 0, matrix = null) {
+      geometry.rotateX(rx); geometry.rotateY(ry); geometry.rotateZ(rz); geometry.translate(x, y, z)
+      if (matrix) geometry.applyMatrix4(matrix)
+      const ready = geometry.index ? geometry.toNonIndexed() : geometry
+      if (ready !== geometry) geometry.dispose()
+      if (!batches.has(material)) batches.set(material, [])
+      batches.get(material).push(ready)
+    }
+    function box(material, w, h, d, x, y, z, matrix = null) {
+      add(material, new THREE.BoxGeometry(w,h,d), x,y,z,0,0,0,matrix)
+    }
+    box(wood, 2.65, 0.1, 19.4, 0,1.25,0)
+    box(wood, 0.09, 2.7, 19.4, 1.29,2.64,0)
+    for (const z of [-9.7,9.7]) box(wood, 2.65,2.7,0.08,0,2.64,z)
+    // Solid far wall and far ceiling prevent sky showing through the destroyed side.
+    box(wood, 1.0,0.08,19.4,0.82,3.98,0)
+    const from = Math.max(-9.7, center-hole.halfSize.z-0.4), to = Math.min(9.7, center+hole.halfSize.z+0.4)
+    if (from > -9.7) box(wood,2.65,0.08,from+9.7,0,3.98,(-9.7+from)/2)
+    if (to < 9.7) box(wood,2.65,0.08,9.7-to,0,3.98,(to+9.7)/2)
+    box(carpet,1.8,0.018,19.1,0,1.31,0)
+    for (const x of [-0.92,0.92]) box(brass,0.04,0.012,19.1,x,1.325,0)
+    for (const y of [2.24,3.85]) box(tableWood,0.055,0.06,19.2,1.22,y,0)
+    for (let z=-9.3;z<9.4;z+=0.7) box(tableWood,0.025,2.5,0.035,1.23,2.64,z)
+    // Faithful Level 2 bench construction, narrowed to the platform train shell.
+    for (const booth of [center-1.6,center+1.6]) for (const dir of [-1,1]) {
+      const knocked = dir === -1 && booth > center
+      pose.position.set(0.25,1.31,booth+dir*0.9)
+      pose.rotation.set(knocked ? 0.35 : 0, dir > 0 ? 0 : Math.PI, knocked ? -0.18 : 0)
+      pose.updateMatrix()
+      const matrix = pose.matrix
+      box(steel,1.05,0.3,0.45,0,0.15,0,matrix)
+      box(velvet,1.05,0.16,0.55,0,0.38,0,matrix)
+      box(velvet,1.05,1.05,0.14,0,0.525,0.345,matrix)
+      for (const y of [0.7,0.9]) box(velvetDark,0.95,0.03,0.15,0,y,0.345,matrix)
+      for (const x of [-0.3,0,0.3]) box(velvetDark,0.025,0.6,0.025,x,0.7,0.26,matrix)
+      box(brass,1.05,0.05,0.18,0,1.1,0.345,matrix)
+      for (const x of [-0.49,0.49]) {
+        box(brass,0.06,1.23,0.06,x,0.615,0.345,matrix)
+        box(brass,0.07,0.07,0.51,x,0.62,0,matrix)
+      }
+    }
+    const glowParts = []
+    function glow(x,y,z,wall = false) {
+      const geometry = new THREE.PlaneGeometry(0.65,0.65)
+      geometry.rotateY(wall ? -Math.PI/2 : 0)
+      geometry.translate(x,y,z); glowParts.push(geometry)
+    }
+    for (const z of [center-1.6,center+1.6]) {
+      box(tableWood,0.84,0.05,0.68,0.35,2.05,z)
+      box(brass,0.86,0.02,0.7,0.35,2.025,z)
+      add(steel,new THREE.CylinderGeometry(0.05,0.14,0.7,10),0.35,1.66,z)
+      add(brass,new THREE.CylinderGeometry(0.06,0.08,0.04,12),0.53,2.095,z)
+      add(brass,new THREE.CylinderGeometry(0.012,0.012,0.3,6),0.53,2.24,z)
+      add(lamp,new THREE.CylinderGeometry(0.08,0.15,0.16,14,1,true),0.53,2.41,z)
+      glow(0.53,2.41,z+0.02)
+    }
+    for (const z of [center-2.8,center,center+2.8]) {
+      box(brass,0.03,0.22,0.12,1.2,3.26,z)
+      add(lamp,new THREE.CylinderGeometry(0.06,0.09,0.16,8),1.05,3.36,z)
+      glow(1.02,3.36,z,true)
+    }
+    // Brass luggage rack rails and brackets copied from Level 2.
+    for (const x of [0.64,1.12]) add(brass,new THREE.CylinderGeometry(0.02,0.02,7.2,8),x,3.67,center,Math.PI/2)
+    for (let z=center-3.2;z<center+3.3;z+=1.6) box(brass,0.62,0.03,0.04,0.88,3.65,z)
+    for (const z of [center-2.4,center+2.4]) box(tableWood,0.46,0.26,0.7,0.88,3.82,z)
+    const debrisBounds = []
+    for (let n=0;n<8;n++) {
+      const z=center+(n-3.5)*0.55, x=-0.7+(n%3)*0.36
+      const geometry = n%3 === 0 ? new THREE.CircleGeometry(0.13,3) : new THREE.BoxGeometry(0.07,0.04,0.55)
+      if (n%3 === 0) geometry.rotateX(-Math.PI/2)
+      geometry.rotateY(n*0.7); geometry.translate(x,1.35,z)
+      geometry.computeBoundingBox(); debrisBounds.push(geometry.boundingBox.clone())
+      add(n%3===0 ? glass : tableWood,geometry,0,0,0)
+    }
+    for (const [material,parts] of batches) {
+      const mesh = new THREE.Mesh(mergeGeometries(parts),material)
+      parts.forEach(part=>part.dispose())
+      mesh.name = 'ending-damage-interior'; mesh.userData.debrisBounds = debrisBounds
+      pivot.add(mesh); shells.push(mesh)
+    }
+    const glowMaterial = new THREE.ShaderMaterial({
+      uniforms: { uTime: effects.uTime, uRift: effects.uRift },
+      transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,
+      side:THREE.DoubleSide,forceSinglePass:true,toneMapped:false,
+      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader:LAMP_FLICKER_GLSL+'varying vec2 vUv;uniform float uTime;uniform float uRift;void main(){float a=pow(max(0.0,1.0-length(vUv-0.5)*2.0),3.0);float flicker=mix(1.0,endingLampFlicker(uTime,2.1),uRift);gl_FragColor=vec4(1.0,0.61,0.23,a*0.5*flicker);}'
+    })
+    const mesh = new THREE.Mesh(mergeGeometries(glowParts),glowMaterial)
+    glowParts.forEach(part=>part.dispose())
+    mesh.name='ending-interior-lamp-glows';pivot.add(mesh);glows.push(mesh)
+  }
   return { shells, glows, uniforms }
 }

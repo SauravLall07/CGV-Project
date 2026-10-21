@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { createSteam } from './landing/steam.js'
-import { BOILER_HOLE, CAB_HOLE, createDamageUniforms, patchTimeDamage } from '../shaders/ending-time-damage.js'
+import { BOILER_HOLE, CAB_HOLE, createDamageUniforms, patchTimeDamage, patchEndingLamp } from '../shaders/ending-time-damage.js'
+import { createTornFlaps } from './ending-debris.js'
 
 export const HEADLIGHT_GLOW_SIZE = 2.2
 
@@ -17,6 +18,7 @@ export function createEndingLocomotive(paint) {
   const glass = new THREE.MeshStandardMaterial({ color: 0x6a3d16, emissive: 0xffa84a, emissiveIntensity: 0.75, roughness: 0.4 })
   const lens = new THREE.MeshStandardMaterial({ color: 0xffdb98, emissive: 0xffd68a, emissiveIntensity: 1.8 })
   const damage = createDamageUniforms([BOILER_HOLE, CAB_HOLE])
+  const cabLamp = patchEndingLamp(lens.clone(), damage)
   for (const material of [paint, metal, brass, red, glass]) patchTimeDamage(material, damage)
   root.userData.holes = [BOILER_HOLE, CAB_HOLE]
   const parts = new Map()
@@ -63,7 +65,7 @@ export function createEndingLocomotive(paint) {
   box(cabSeat, 0.8, 0.25, 0.7, 0, 1.8, -2.3)
   box(cabSeat, 0.8, 0.9, 0.16, 0, 2.2, -2.6)
   for (const x of [-0.45, 0.45]) box(cabSeat, 0.15, 0.3, 0.75, x, 2.02, -2.3)
-  add(lens, new THREE.CircleGeometry(0.16, 12), 1.16, 3.1, -2.2, 0, -Math.PI / 2)
+  add(cabLamp, new THREE.CircleGeometry(0.16, 12), 1.16, 3.1, -2.2, 0, -Math.PI / 2)
   box(metal, 2.9, 0.16, 3.3, 0, 3.93, -2.2)
   for (const side of [-1, 1]) {
     box(brass, 0.05, 1.05, 1.3, side * 1.32, 3, -1.8)
@@ -81,24 +83,33 @@ export function createEndingLocomotive(paint) {
   box(metal, 0.25, 0.45, 0.35, 0, 3.23, 5.05)
   add(metal, new THREE.CylinderGeometry(0.32, 0.32, 0.55, 24), 0, 3.55, 5.35, Math.PI / 2)
   add(lens, new THREE.CircleGeometry(0.265, 24), 0, 3.55, 5.63)
+  const pipeMaterial = new THREE.MeshStandardMaterial({ color: 0x875136, roughness: 0.46, metalness: 0.65 })
+  for (const y of [2.34,2.8]) rod(pipeMaterial,new THREE.Vector3(-0.64,y,0.2),new THREE.Vector3(-0.64,y,3.1),0.035)
+  rod(pipeMaterial,new THREE.Vector3(-0.64,2.34,0.4),new THREE.Vector3(-0.64,2.8,0.4),0.035)
   for (const [mat, geometries] of parts) {
     const geometry = mergeGeometries(geometries)
     geometries.forEach(part => part.dispose())
     root.add(new THREE.Mesh(geometry, mat))
   }
-  const copper = new THREE.MeshStandardMaterial({ color: 0x6b3f2a, emissive: 0x6b3f2a,
-    emissiveIntensity: 0.2, roughness: 0.68, metalness: 0.25 })
+  const iron = new THREE.MeshStandardMaterial({ color: 0x303438, emissive: 0x101316,
+    emissiveIntensity: 0.08, roughness: 0.55, metalness: 0.65 })
   const coreGeometry = new THREE.CylinderGeometry(0.64, 0.64, 3.1, 24)
   coreGeometry.rotateX(Math.PI / 2); coreGeometry.translate(0, 2.6, 1.65)
-  const core = new THREE.Mesh(coreGeometry, copper); core.name = 'ending-boiler-interior'; root.add(core)
+  const core = new THREE.Mesh(coreGeometry, iron); core.name = 'ending-boiler-interior'; root.add(core)
   const bands = []
   for (const z of [0.65, 1.65, 2.65]) {
     const band = new THREE.TorusGeometry(0.645, 0.018, 4, 24)
     band.translate(0, 2.6, z); bands.push(band)
+    for (let n=0;n<12;n++) {
+      const angle=n*Math.PI/6, rivet=new THREE.SphereGeometry(0.028,6,4)
+      rivet.translate(Math.cos(angle)*0.67,2.6+Math.sin(angle)*0.67,z)
+      bands.push(rivet)
+    }
   }
-  const bandMaterial = new THREE.MeshStandardMaterial({ color: 0x35251c, roughness: 0.8 })
+  const bandMaterial = new THREE.MeshStandardMaterial({ color: 0x555456, roughness: 0.6, metalness: 0.6 })
   const bandMesh = new THREE.Mesh(mergeGeometries(bands), bandMaterial)
   bands.forEach(band => band.dispose()); bandMesh.name = 'ending-boiler-bands'; root.add(bandMesh)
+  createTornFlaps(root, [BOILER_HOLE], 0x252a30, true)
   const wheelParts = []
   const disc = new THREE.CylinderGeometry(0.72, 0.72, 0.12, 24); disc.rotateZ(Math.PI / 2)
   // Open spokes over a small hub; avoid an opaque disc hiding the spokes.

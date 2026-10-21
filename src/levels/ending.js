@@ -211,6 +211,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     const previousScissorTest = renderer.getScissorTest()
     const savedCulling = []
     const savedRifts = new Map()
+    const savedTimes = new Map()
     const sparkIntensity = train.sparks.material.uniforms.uIntensity
     const previousSparkIntensity = sparkIntensity.value
     gorge.root.traverse(node => { if (node.isMesh || node.isPoints) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
@@ -218,8 +219,11 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     train.root.traverse(node => {
       if (!node.material) return
       for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
-        const uniform = material.userData.endingTimeDamage?.uRift ?? material.uniforms?.uRift
+        const effects = material.userData.endingTimeDamage ?? material.userData.endingLamp ?? material.uniforms
+        const uniform = effects?.uRift
         if (uniform && !savedRifts.has(uniform)) savedRifts.set(uniform, uniform.value)
+        const time = effects?.uTime
+        if (time && !savedTimes.has(time)) savedTimes.set(time,time.value)
       }
     })
     if (gorge.plate.ready) renderer.initTexture?.(gorge.plate.texture)
@@ -229,6 +233,9 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       renderer.compile(scene, warmCamera)
       renderer.setRenderTarget(target)
       renderer.setScissorTest(false)
+      for (const uniform of savedTimes.keys()) uniform.value = 4.23
+      renderer.render(scene, warmCamera)
+      for (const uniform of savedTimes.keys()) uniform.value = 0.19
       renderer.render(scene, warmCamera)
       // Frozen and released use the same compiled programs; exercise both uniform states under black.
       for (const uniform of savedRifts.keys()) uniform.value = 0
@@ -236,6 +243,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     } finally {
       sparkIntensity.value = previousSparkIntensity
       for (const [uniform, value] of savedRifts) uniform.value = value
+      for (const [uniform, value] of savedTimes) uniform.value = value
       for (const [node, culling] of savedCulling) node.frustumCulled = culling
       renderer.setRenderTarget(previousTarget)
       renderer.setViewport(savedViewport)

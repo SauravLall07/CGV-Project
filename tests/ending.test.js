@@ -7,7 +7,9 @@ import { createEndingTrain, STOP_CENTER_Z, STOP_NOSE_Z, TRAIN_SPEED } from '../s
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../src/shaders/ending-plate.js'
 import { createTrain } from '../src/entities/train.js'
 import { getKitMaterials } from '../src/environment/level1-kit/kit-materials.js'
-import { CARRIAGE_HOLES, BOILER_HOLE, TORN_TOOTH_REACH } from '../src/shaders/ending-time-damage.js'
+import { CARRIAGE_HOLES, BOILER_HOLE, TORN_TOOTH_REACH, AGING_REACH, EDGE_WIDTH, HALO_WIDTH } from '../src/shaders/ending-time-damage.js'
+import { createCarriageEnvironment } from '../src/environment/carriages.js'
+import { disposeObject } from '../src/core/dispose.js'
 import { createEndingAudio } from '../src/systems/ending-audio.js'
 import { SPARK_COUNT } from '../src/environment/ending-sparks.js'
 
@@ -148,7 +150,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         if (node.isMesh) triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3 * (node.isInstancedMesh ? node.count : 1)
         else if (node.isSprite) triangles += 2
       })
-      assert.ok(calls <= 140, `draws: ${calls}`); assert.ok(triangles <= 150000, `triangles: ${triangles}`)
+      assert.ok(calls <= 150, `draws: ${calls}`); assert.ok(triangles <= 180000, `triangles: ${triangles}`)
       if (fps === 60) {
         t.diagnostic(`Train-only scene estimate: ${calls} drawable objects, ${triangles} triangles`)
         t.diagnostic(`Moonlight: ${JSON.stringify({ direction: moonDirection, elevation, intensity: moonlight.intensity,
@@ -211,7 +213,7 @@ test('Ending: damage uniforms use pivot-local holes, protect the first carriage 
     h.level.update(0); h.scene.updateMatrixWorld(true)
     for (const material of Object.values(kit).flat().filter(value => value?.isMaterial)) {
       assert.equal(material.userData.endingTimeDamage, undefined)
-      assert.notEqual(material.customProgramCacheKey(), 'ending-time-damage-v2')
+      assert.notEqual(material.customProgramCacheKey(), 'ending-time-aging-v3')
     }
     let patched = 0
     for (let i = 0; i < 4; i++) {
@@ -236,8 +238,8 @@ test('Ending: damage uniforms use pivot-local holes, protect the first carriage 
     assert.ok(patched > 12)
     for (const hole of CARRIAGE_HOLES[0]) {
       assert.equal(hole.roof, 2)
-      assert.ok(hole.center.z + hole.halfSize.z + TORN_TOOTH_REACH + 0.27 < 6,
-        'the opening, teeth and halo stay behind the reserved front 4 m')
+      assert.ok(hole.center.z + hole.halfSize.z + TORN_TOOTH_REACH + AGING_REACH < 6,
+        'the opening, teeth and full aging reach stay behind the reserved front 4 m')
     }
     assert.equal(BOILER_HOLE.halfSize.z * 2 + 2 * TORN_TOOTH_REACH, 2.5)
     assert.ok(h.scene.getObjectByName('ending-boiler-interior'))
@@ -411,7 +413,7 @@ test('Ending: teardown leaves cached kit materials/maps valid for a fresh platfo
   }
 })
 
-test('Ending: outlines follow rift release and GPU sparks exist only during braking', () => {
+test('Ending: GPU sparks exist only during braking', () => {
   const h = harness()
   try {
     h.level.update(0)
@@ -419,24 +421,161 @@ test('Ending: outlines follow rift release and GPU sparks exist only during brak
     assert.equal(sparks.count, SPARK_COUNT)
     assert.equal(sparks.material.uniforms.uIntensity.value, 0)
     assert.ok(sparks.geometry.getAttribute('aSeed').isInstancedBufferAttribute)
-    const outlines = []
-    h.scene.traverse(node => { if (node.name === 'ending-blue-outline') outlines.push(node) })
-    assert.ok(outlines.length >= 6)
-    for (const node of outlines) {
-      assert.equal(node.material.uniforms.uRift.value, 1)
-      assert.equal(node.material.side, THREE.BackSide)
-      assert.equal(node.material.depthWrite, false)
-      assert.equal(node.material.depthTest, true)
+    const seeds = sparks.geometry.getAttribute('aSeed'), contacts = sparks.geometry.getAttribute('aContact')
+    const emitters = new Set()
+    for (let i=0;i<seeds.count;i++) {
+      assert.ok(seeds.getZ(i)>=0.2-1e-6 && seeds.getZ(i)<=0.5+1e-6)
+      emitters.add([seeds.getY(i),contacts.getX(i),contacts.getZ(i)].join(','))
     }
+    assert.equal(emitters.size,26,'both sides of every braked wheel have an emitter')
+    assert.equal(h.scene.getObjectByName('ending-blue-outline'),undefined)
     for (const name of ['ending-torn-panel', 'ending-time-threads', 'ending-damage-splinters'])
       assert.equal(h.scene.getObjectByName(name), undefined)
     h.level.update(ENDING_FADE_IN + APPROACH + BRAKE / 2)
     assert.ok(sparks.material.uniforms.uIntensity.value > 0.99)
     h.level.update(BRAKE / 2)
     assert.equal(sparks.material.uniforms.uIntensity.value, 0)
-    h.level.release(); h.level.update(0.61)
-    for (const node of outlines) assert.equal(node.material.uniforms.uRift.value, 0)
   } finally { h.restore() }
+})
+
+// Mirror the pivot-local GLSL hole test; weight each cell by its projected
+// quadrilateral area, including perspective, camera and crooked carriage pose.
+function openingAt(y,z,holes) {
+  const fract = value => value-Math.floor(value)
+  const hash = (x,y) => fract(Math.sin(x*127.1+y*311.7)*43758.5453)
+  const teeth = (p,seed) => {
+    const i=Math.floor(p),f=fract(p)
+    return ((1-f)*hash(i,seed)+f*hash(i+1,seed))*2-1
+  }
+  return holes.some(hole => {
+    const qx=z-hole.center.z,qy=y-hole.center.y
+    return Math.max(Math.abs(qx)-hole.halfSize.z+0.3*teeth(qy*2.3,hole.seed),
+      Math.abs(qy)-hole.halfSize.y+0.3*teeth(qx*2.1,hole.seed+7))<0
+  })
+}
+
+test('Ending: projected openings exceed 35% and the first carriage front is protected', t => {
+  const h=harness()
+  try {
+    h.level.update(0);h.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE)
+    h.scene.updateMatrixWorld(true)
+    const vertices=Array.from({length:4},()=>new THREE.Vector3())
+    function cellArea(pivot,y,z,dy,dz) {
+      const points=[[y,z],[y+dy,z],[y+dy,z+dz],[y,z+dz]]
+      for(let k=0;k<4;k++) vertices[k].set(-1.45,...points[k]).applyMatrix4(pivot.matrixWorld).project(h.renderCamera)
+      let area=0
+      for(let k=0;k<4;k++) area+=vertices[k].x*vertices[(k+1)%4].y-vertices[(k+1)%4].x*vertices[k].y
+      return Math.abs(area)*0.5
+    }
+    for(let i=0;i<4;i++) {
+      const pivot=h.scene.getObjectByName('ending-carriage-'+(i+1))
+      let total=0,open=0
+      for(let iz=0;iz<200;iz++) for(let iy=0;iy<40;iy++) {
+        const z=-10+iz*0.1,y=1.25+iy*0.0625,area=cellArea(pivot,y,z,0.0625,0.1)
+        total+=area
+        if(openingAt(y+0.03125,z+0.05,CARRIAGE_HOLES[i])) open+=area
+      }
+      const ratio=open/total
+      t.diagnostic('Carriage '+(i+1)+' projected side opening: '+(ratio*100).toFixed(2)+'%')
+      assert.ok(ratio>=0.35,'carriage '+(i+1)+' opening fraction '+ratio)
+      const flaps=pivot.getObjectByName('ending-peeled-metal')
+      assert.equal(flaps.userData.flaps.length,CARRIAGE_HOLES[i].length*6)
+      if(i===0) {
+        for(const flap of flaps.userData.flaps) assert.ok(flap.bounds.max.z<6)
+        const frame=pivot.getObjectByName('ending-broken-frame')
+        frame.geometry.computeBoundingBox();assert.ok(frame.geometry.boundingBox.max.z<6)
+        for(const mesh of pivot.children.filter(node=>node.name==='ending-damage-interior'))
+          for(const bounds of mesh.userData.debrisBounds) assert.ok(bounds.max.z<6)
+        for(const mesh of pivot.children.filter(node=>node.material?.userData.endingTimeDamage))
+          assert.equal(mesh.material.userData.endingTimeDamage.uProtectedFront.value,6)
+        for(let z=6;z<=10;z+=0.1) for(let y=1.25;y<=3.75;y+=0.1)
+          assert.equal(openingAt(y,z,CARRIAGE_HOLES[0]),false)
+      }
+      t.diagnostic('Carriage '+(i+1)+': '+flaps.userData.flaps.length+' flaps; '+pivot.getObjectByName('ending-broken-frame').userData.ribCount+' ribs')
+    }
+  } finally {h.restore()}
+})
+
+test('Ending: thin blue tear emission and warm lamp stutter turn off on release', () => {
+  const h=harness()
+  try {
+    h.level.update(0)
+    assert.equal(EDGE_WIDTH,0.025);assert.ok(HALO_WIDTH<=0.06)
+    const effects=new Set(), lamps=[]
+    h.scene.traverse(node=>{
+      for(const material of node.material ? Array.isArray(node.material)?node.material:[node.material] : []) {
+        const damage=material.userData.endingTimeDamage,lamp=material.userData.endingLamp
+        if(damage) {
+          effects.add(damage)
+          const shader={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <emissivemap_fragment>'}
+          material.onBeforeCompile(shader)
+          assert.match(shader.fragmentShader,/totalEmissiveRadiance\+=uRift/)
+          assert.doesNotMatch(shader.fragmentShader,/fresnel|damageCells/)
+          assert.match(shader.fragmentShader,/ageAmount=0\.0/)
+          if(material.name==='ending-amber-windows') assert.equal(material.defines.ENDING_LAMP,1)
+        }
+        if(lamp) {
+          effects.add(lamp);lamps.push(material)
+          const shader={uniforms:{},vertexShader:'',fragmentShader:'#include <emissivemap_fragment>'}
+          material.onBeforeCompile(shader)
+          assert.equal(shader.uniforms.uRift,lamp.uRift)
+          assert.match(shader.fragmentShader,/mix\(1\.0,endingLampFlicker\(uTime,2\.1\),uRift\)/)
+        }
+      }
+    })
+    assert.ok(lamps.length>=5)
+    for(const uniforms of effects) assert.equal(uniforms.uRift.value,1)
+    h.level.release();h.level.update(0.61)
+    for(const uniforms of effects) assert.equal(uniforms.uRift.value,0)
+  } finally {h.restore()}
+})
+
+test('Ending: creating and disposing preserves live Level 1 and Level 2 geometry/materials', () => {
+  const platform=createTrain(), interior=createCarriageEnvironment()
+  const roots=[platform.train,platform.stationSteam,interior.root], geometries=new Set(),materials=new Set(),resources=new Set()
+  for(const root of roots) root.traverse(node=>{
+    if(node.geometry) {geometries.add(node.geometry);resources.add(node.geometry)}
+    for(const material of node.material ? Array.isArray(node.material)?node.material:[node.material] : []) {
+      materials.add(material);resources.add(material)
+      for(const value of Object.values(material)) if(value?.isTexture) resources.add(value)
+    }
+  })
+  function snapshot() {
+    return {
+      geometries:[...geometries].map(geometry=>({
+        attributes:Object.fromEntries(Object.entries(geometry.attributes).map(([key,value])=>[key,value.array.slice()])),
+        index:geometry.index?.array.slice(),groups:geometry.groups.map(group=>({...group}))
+      })),
+      materials:[...materials].map(material=>({
+        color:material.color?.getHex(),emissive:material.emissive?.getHex(),intensity:material.emissiveIntensity,
+        roughness:material.roughness,metalness:material.metalness,side:material.side,version:material.version,
+        compile:material.onBeforeCompile,userData:JSON.stringify(material.userData),
+        textures:Object.values(material).filter(value=>value?.isTexture).map(texture=>({
+          texture,source:texture.source,version:texture.version,colorSpace:texture.colorSpace,
+          repeat:texture.repeat.toArray(),offset:texture.offset.toArray(),wrapS:texture.wrapS,wrapT:texture.wrapT
+        }))
+      }))
+    }
+  }
+  const before=snapshot()
+  let disposals=0
+  const onDispose=()=>disposals++
+  for(const resource of resources) resource.addEventListener('dispose',onDispose)
+  const h=harness()
+  try {
+    assert.deepEqual(snapshot(),before)
+    h.scene.traverse(node=>{
+      if(node.geometry) assert.equal(geometries.has(node.geometry),false)
+      for(const material of node.material ? Array.isArray(node.material)?node.material:[node.material] : [])
+        assert.equal(materials.has(material),false)
+    })
+    h.level.update(TOTAL+1);h.level.dispose()
+    assert.deepEqual(snapshot(),before);assert.equal(disposals,0)
+  } finally {
+    h.restore()
+    for(const resource of resources) resource.removeEventListener('dispose',onDispose)
+    disposeObject(roots)
+  }
 })
 
 function fakeEndingAudioContext() {
