@@ -312,7 +312,7 @@ export function createTimewreckLevel({
   const vaultGlowMat = new THREE.MeshBasicMaterial({
     color: 0xff2a2a,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.14,
     blending: THREE.AdditiveBlending,
     depthWrite: false
   })
@@ -322,7 +322,7 @@ export function createTimewreckLevel({
     const group = new THREE.Group()
     group.name = 'vault-security-gate'
     group.position.set(0, 0, z)
-    const laserMat = createSecurityLaserMaterial({ beamCount: 1 })
+    const laserMat = createSecurityLaserMaterial({ beamCount: 1, boost: 1.45 })
     if (laserMat.customUniforms) laserMat.customUniforms.uScanSpeed.value = 5.2
     for (const side of [-1, 1]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.4, 0.2), vaultPostMat)
@@ -361,7 +361,7 @@ export function createTimewreckLevel({
       })
       return { mesh, glow, baseY, emitters }
     })
-    const wash = new THREE.PointLight(0xff3344, 1.2, 5.5, 2)
+    const wash = new THREE.PointLight(0xff3344, 0.42, 5.5, 2)
     wash.position.set(0, 1.3, 0)
     group.add(wash)
     group.traverse((node) => { node.userData.noCameraCollision = true })
