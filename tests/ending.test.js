@@ -1,8 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
-import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT,
+import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, BEAT, DOOR_OPEN, STEP_OUT, HOLD_CORE,
+  THROW, THROW_RELEASE, FALL, EMPTY_HOLD, FADE_OUT, PHASES, DURATIONS, TRAIN_START_NOSE_Z,
   TITLE_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS } from '../src/levels/ending.js'
+import { createPlayer } from '../src/entities/player.js'
+import { FLASH_SECONDS, SCREEN_FLASH_PEAK, RIVER_TARGET_NDC, GORGE_FLOOR_Y } from '../src/environment/ending-core.js'
+import { ENDING_DOOR_HOLE } from '../src/shaders/ending-time-damage.js'
+import fs from 'node:fs'
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
 import { createEndingTrain, STOP_CENTER_Z, STOP_NOSE_Z, TRAIN_SPEED } from '../src/environment/ending-train.js'
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../src/shaders/ending-plate.js'
 import { createTrain } from '../src/entities/train.js'
@@ -14,9 +20,14 @@ import { createEndingAudio } from '../src/systems/ending-audio.js'
 import { SPARK_COUNT } from '../src/environment/ending-sparks.js'
 
 const TITLE_FADE = 0.6
-const TOTAL = ENDING_FADE_IN + APPROACH + BRAKE + SETTLE + HOLD + FADE_OUT + TITLE_FADE + TITLE_HOLD
+const TOTAL = DURATIONS.reduce((sum,value)=>sum+value,0)
 
-function harness({ delayPlate = false, audioFactory } = {}) {
+function assertQuaternionClose(actual,expected) {
+  for(const component of ['x','y','z','w'])
+    assert.ok(Math.abs(actual[component]-expected[component])<=1e-9,component+' quaternion component changed')
+}
+
+function harness({ delayPlate = false, audioFactory, playerOverride } = {}) {
   const previousDocument = globalThis.document, previousWindow = globalThis.window, previousLocation = globalThis.location
   let listenerAdds = 0, releasePlate = null
   globalThis.window = { addEventListener() { listenerAdds++ }, removeEventListener() {} }
@@ -45,7 +56,9 @@ function harness({ delayPlate = false, audioFactory } = {}) {
   const originalFog = scene.fog, originalBackground = scene.background
   let cinematicView = null, callback = null, begins = 0
   const manager = { state: 'Ending', advances: 0, advance() { this.advances++; this.state = 'Complete' } }
-  const player = { mesh: new THREE.Group(), setCinematicView(value) { cinematicView = value }, cancelScriptedWalk() {} }
+  const player = playerOverride ?? createPlayer()
+  const setView=player.setCinematicView
+  player.setCinematicView=value=>{cinematicView=value;setView(value)}
   const hud = { root: doc.createElement('div'), setVisible(value) { this.root.style.display = value ? 'block' : 'none' },
     showCinematicSkip(value) { callback = value }, hideCinematicSkip() { callback = null } }
   hud.root.style.display = 'block'
@@ -150,7 +163,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         if (node.isMesh) triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3 * (node.isInstancedMesh ? node.count : 1)
         else if (node.isSprite) triangles += 2
       })
-      assert.ok(calls <= 150, `draws: ${calls}`); assert.ok(triangles <= 180000, `triangles: ${triangles}`)
+      assert.ok(calls <= 170, `draws: ${calls}`); assert.ok(triangles <= 220000, `triangles: ${triangles}`)
       if (fps === 60) {
         t.diagnostic(`Train-only scene estimate: ${calls} drawable objects, ${triangles} triangles`)
         t.diagnostic(`Moonlight: ${JSON.stringify({ direction: moonDirection, elevation, intensity: moonlight.intensity,
@@ -188,12 +201,14 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         const nose = noseZ(); minimumNose = Math.min(minimumNose, nose)
         assert.ok(nose > 0, `physical nose never crosses the edge: ${nose}`)
         if (elapsed >= ENDING_FADE_IN + APPROACH + BRAKE + SETTLE) assert.ok(Math.abs(nose - STOP_NOSE_Z) <= 0.1)
-        assert.equal(h.player.mesh.visible, false)
+        const visible=['stepOut','holdCore','throw','fall'].includes(h.level.phase) ||
+          (h.level.phase==='flash' && h.level.phaseTime<SCREEN_FLASH_PEAK)
+        assert.equal(h.player.mesh.visible, visible)
       }
       if (fps === 60) t.diagnostic(`Physical nose: settled ${noseZ()}, minimum ${minimumNose}`)
       const stopped = createEndingTrain()
       try {
-        stopped.update(STOP_CENTER_Z, TRAIN_SPEED * (APPROACH + BRAKE / 2), -1, SETTLE + HOLD)
+        stopped.update(STOP_CENTER_Z, TRAIN_SPEED * (APPROACH + BRAKE / 2), -1, SETTLE)
         stopped.root.updateMatrix()
         const alignedStop = new THREE.Matrix4().multiplyMatrices(world.matrixWorld, stopped.root.matrix)
         train.updateMatrixWorld(true)
@@ -247,43 +262,7 @@ test('Ending: damage uniforms use pivot-local holes, protect the first carriage 
   } finally { h.restore() }
 })
 
-test('Ending: freeze steam/river and release the glow once', () => {
-  const h = harness()
-  try {
-    h.level.update(0)
-    const uniforms = new Set()
-    h.scene.traverse(node => {
-      for (const material of node.material ? Array.isArray(node.material) ? node.material : [node.material] : []) {
-        if (material.userData.endingTimeDamage) uniforms.add(material.userData.endingTimeDamage)
-      }
-    })
-    const staleSkip = h.skip
-    h.level.update(ENDING_FADE_IN + APPROACH)
-    h.level.update(BRAKE + SETTLE)
-    assert.equal(h.level.timeState.frozen, true)
-    const steam = h.scene.getObjectByName('ending-chimney-steam').material.uniforms.uTime
-    const plateUniforms = h.scene.getObjectByName('ending-plate-sphere').material.uniforms
-    const steamTime = steam.value
-    h.level.update(0.6)
-    assert.equal(steam.value, steamTime); assert.equal(plateUniforms.uFlow.value, 0)
-    const riverTime = plateUniforms.uTime.value
-    h.level.update(0.1)
-    assert.equal(plateUniforms.uTime.value, riverTime)
-    for (const uniform of uniforms) assert.equal(uniform.uRift.value, 1)
-    const vignette = h.doc.body.children.find(node => node.id === 'ending-time-vignette')
-    assert.equal(Number(vignette.style.opacity), 0.35)
-    h.level.update(HOLD - 0.7)
-    assert.equal(h.level.timeState.releaseCount, 1)
-    assert.equal(h.level.release(), false); staleSkip(); staleSkip()
-    assert.equal(h.level.timeState.releaseCount, 1)
-    h.level.update(0.61)
-    for (const uniform of uniforms) assert.equal(uniform.uRift.value, 0)
-    assert.equal(Number(vignette.style.opacity), 0)
-    assert.equal(plateUniforms.uFlow.value, 1); assert.ok(steam.value > steamTime)
-  } finally { h.restore() }
-})
-
-test('Ending: damage resources dispose once, vignette detaches and restart resets the anomaly', () => {
+test('Ending: damage resources dispose once and restart restores running effects', () => {
   const h = harness(), resources = new Map()
   h.scene.traverse(node => {
     if (node.geometry) resources.set(node.geometry, 0)
@@ -291,17 +270,15 @@ test('Ending: damage resources dispose once, vignette detaches and restart reset
   })
   for (const resource of resources.keys()) resource.addEventListener('dispose', () => resources.set(resource, resources.get(resource) + 1))
   try {
-    h.level.update(0); assert.equal(h.level.release(), true); assert.equal(h.level.release(), false)
+    h.level.update(0)
     h.level.dispose(); h.level.dispose()
     for (const count of resources.values()) assert.equal(count, 1)
     assert.equal(h.doc.body.children.length, 0); assert.equal(h.scene.children.length, 0)
-    assert.equal(h.level.release(), false)
   } finally { h.restore() }
   const restarted = harness()
   try {
     restarted.level.update(0)
-    assert.equal(restarted.level.timeState.rift, 1); assert.equal(restarted.level.timeState.releaseCount, 0)
-    assert.equal(restarted.level.timeState.frozen, false); assert.equal(restarted.level.timeState.released, false)
+    assert.equal(restarted.scene.getObjectByName('ending-plate-sphere').material.uniforms.uFlow.value, 1)
   } finally { restarted.restore() }
 })
 
@@ -438,6 +415,190 @@ test('Ending: GPU sparks exist only during braking', () => {
   } finally { h.restore() }
 })
 
+test('Ending: approach starts beyond the upper-left frame and enters only after fade-in', t => {
+  const h=harness()
+  try {
+    h.level.update(0)
+    assert.ok(TRAIN_SPEED>=22 && TRAIN_SPEED<=26);assert.equal(BRAKE,4.5)
+    assert.ok(APPROACH>=2.2 && APPROACH<=3.2)
+    assert.ok(Math.abs(TRAIN_START_NOSE_Z-STOP_NOSE_Z-TRAIN_SPEED*(APPROACH+BRAKE/2))<1e-9)
+    const train=h.scene.getObjectByName('ending-train'),world=train.parent,nose=new THREE.Vector3()
+    const startCenter=train.position.z
+    const noseOffset=startCenter-(TRAIN_START_NOSE_Z-STOP_NOSE_Z)-STOP_NOSE_Z
+    const projectNose=()=>{world.updateMatrixWorld(true);return nose.set(0,0.25,train.position.z-noseOffset).applyMatrix4(world.matrixWorld).project(h.renderCamera)}
+    assert.ok(projectNose().x<-1 && nose.y>0,'nose starts outside upper-left edge')
+    h.level.update(ENDING_FADE_IN)
+    assert.ok(projectNose().x<-1,'nose stays outside throughout stationary fade-in')
+    let elapsed=ENDING_FADE_IN,entry=null
+    for(let i=0;i<Math.ceil(APPROACH*120);i++) {
+      h.level.update(1/120);elapsed+=1/120;projectNose()
+      if(entry===null && Math.abs(nose.x)<1 && Math.abs(nose.y)<1)entry=elapsed
+    }
+    assert.ok(entry>ENDING_FADE_IN && entry<ENDING_FADE_IN+APPROACH,'nose enters during approach after fade')
+    h.level.update(BRAKE+SETTLE)
+    assert.ok(Math.abs(train.position.z-(startCenter-TRAIN_START_NOSE_Z+STOP_NOSE_Z))<1e-9,'stopped pose is unchanged')
+    t.diagnostic(`Approach ${APPROACH} s, start nose ${TRAIN_START_NOSE_Z} m, V0 ${TRAIN_SPEED} m/s, deceleration ${TRAIN_SPEED/BRAKE} m/s²; entry ${entry} s after start`)
+  } finally {h.restore()}
+})
+
+test('Ending: peak budget reserves twelve detective draws with every ending effect active', t => {
+  const h=harness()
+  try {
+    h.level.update(0)
+    h.level.door.setOpen(1)
+    const core=h.level.core
+    core.update(0,-1,0.25)
+    core.payload.visible=true;core.trail.visible=true;core.flash.visible=true;core.light.intensity=1.5
+    assert.equal(h.level.door.openness,1)
+    assert.ok(core.payload.visible && core.trail.visible && core.flash.visible && core.light.intensity>0)
+    let calls=0,triangles=0
+    h.scene.traverse(node=>{
+      if(!node.isMesh && !node.isSprite && !node.isPoints && !node.isLine)return
+      for(let parent=node;parent;parent=parent.parent)if(!parent.visible)return
+      const materials=Array.isArray(node.material)?node.material:[node.material]
+      calls+=materials.reduce((sum,material)=>sum+(material.transparent && material.side===THREE.DoubleSide && !material.forceSinglePass?2:1),0)
+      if(node.isMesh)triangles+=(node.geometry.index?.count??node.geometry.attributes.position.count)/3*(node.isInstancedMesh?node.count:1)
+      else if(node.isSprite)triangles+=2
+    })
+    assert.ok(calls<=158,`peak draws: ${calls}`);assert.ok(triangles<=200000,`peak triangles: ${triangles}`)
+    t.diagnostic(`Conservative peak without detective, with open doors and all core effects together: ${calls} draw calls, ${triangles} triangles (before culling); twelve detective draws reserved`)
+  } finally {h.restore()}
+})
+
+test('Ending: full story keeps the camera and light count fixed while river, steam and rifts run', t => {
+  const h=harness()
+  try {
+    h.level.update(0)
+    const position=h.renderCamera.position.clone(),rotation=h.renderCamera.quaternion.clone(),fov=h.renderCamera.fov
+    const countLights=()=>{let count=0;h.scene.traverse(node=>{if(node.isLight)count++});return count}
+    const lights=countLights(),phases=[h.level.phase]
+    const steam=h.scene.getObjectByName('ending-chimney-steam').material.uniforms.uTime
+    const river=h.scene.getObjectByName('ending-plate-sphere').material.uniforms
+    let previousSteam=steam.value,previousRiver=river.uTime.value
+    let elapsed=0
+    while(elapsed<TOTAL-0.001) {
+      const dt=Math.min(1/30,TOTAL-0.001-elapsed)
+      h.level.update(dt);elapsed+=dt
+      if(phases.at(-1)!==h.level.phase)phases.push(h.level.phase)
+      assert.deepEqual(h.renderCamera.position,position);assertQuaternionClose(h.renderCamera.quaternion,rotation)
+      assert.equal(h.renderCamera.fov,fov);assert.equal(countLights(),lights)
+      assert.ok(steam.value>previousSteam);assert.ok(river.uTime.value>previousRiver)
+      previousSteam=steam.value;previousRiver=river.uTime.value
+      assert.equal(river.uFlow.value,1)
+      assert.equal(h.doc.body.children.some(node=>node.id==='ending-time-vignette'),false)
+      h.scene.traverse(node=>{
+        for(const material of node.material?Array.isArray(node.material)?node.material:[node.material]:[]) {
+          const uniforms=material.userData.endingTimeDamage??material.userData.endingLamp
+          if(uniforms)assert.equal(uniforms.uRift.value,1)
+        }
+      })
+      if(PHASES.indexOf(h.level.phase)<PHASES.indexOf('doorOpen'))assert.equal(h.level.door.openness,0)
+      if(PHASES.indexOf(h.level.phase)>PHASES.indexOf('doorOpen'))assert.equal(h.level.door.openness,1)
+    }
+    assert.deepEqual(phases,PHASES.slice(0,-1));assert.equal(h.manager.advances,0)
+    h.level.update(0.01);h.level.update(100);assert.equal(h.manager.advances,1)
+    t.diagnostic('Impact world '+JSON.stringify(h.level.core.impact)+'; NDC '+JSON.stringify(h.level.core.impact.clone().project(h.level.core.camera)))
+  } finally {h.restore()}
+})
+
+test('Ending: skip from every phase produces one complete transition and an empty open doorway', () => {
+  for(let phase=0;phase<PHASES.length-1;phase++) {
+    const h=harness()
+    try {
+      h.level.update(0);const skip=h.skip
+      const elapsed=DURATIONS.slice(0,phase).reduce((sum,value)=>sum+value,0)+0.00001
+      h.level.update(elapsed);assert.equal(h.level.phase,PHASES[phase])
+      skip();skip()
+      assert.equal(h.player.mesh.visible,false);assert.equal(h.level.door.openness,1)
+      assert.equal(h.level.core.payload.visible,false);assert.equal(h.level.core.trail.visible,false)
+      assert.equal(h.level.core.flash.visible,false);assert.equal(Number(h.level.core.screen.style.opacity),0)
+      h.level.update(TOTAL+1);skip();h.level.update(100)
+      assert.equal(h.manager.advances,1)
+    } finally {h.restore()}
+  }
+})
+
+test('Ending: clean doorway bypasses damage and sag inside the protected front zone', () => {
+  const h=harness()
+  try {
+    const hole=ENDING_DOOR_HOLE
+    assert.equal(hole.clean,1);assert.equal(hole.roof,0)
+    assert.ok(hole.center.z-hole.halfSize.z>=6)
+    assert.equal(hole.halfSize.z*2,1.3);assert.equal(hole.halfSize.y*2,2.1)
+    const batch=h.scene.getObjectByName('ending-carriage-1').children.find(node=>node.material?.userData.endingTimeDamage)
+    assert.ok(batch.material.userData.endingTimeDamage.uHoles.value.includes(hole))
+    const shader={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <emissivemap_fragment>'}
+    batch.material.onBeforeCompile(shader)
+    assert.match(shader.vertexShader,/if\(uHoles\[h\]\.clean>0\.5\) continue/)
+    assert.match(shader.fragmentShader,/if\(uHoles\[h\]\.clean>0\.5\) \{\s*if\(field.y<0\.0 && edge<0\.0\) discard;\s*continue;/)
+    h.level.update(0);assert.equal(h.level.door.openness,0)
+  } finally {h.restore()}
+})
+
+test('Ending: real Throw skeleton holds and releases the core, completes its visible arc and restores the player', async t => {
+  const player=createPlayer()
+  function parseThrow() {
+    const bytes=fs.readFileSync(new URL('../src/assets/models/detective/Throw.fbx',import.meta.url))
+    return new FBXLoader().parse(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'')
+  }
+  const visual=await player.loadVisual({async loadFbx(url) {
+    if(url.endsWith('/Throw.fbx'))return parseThrow()
+    if(url.endsWith('/Idle.fbx')) {
+      const model=parseThrow(),bounds=new THREE.Mesh(new THREE.BoxGeometry(1,180,1),new THREE.MeshStandardMaterial())
+      bounds.position.y=90;model.add(bounds);model.animations=[new THREE.AnimationClip('idle',1,[])];return model
+    }
+    const model=new THREE.Group();model.animations=[new THREE.AnimationClip('locomotion',1,[])];return model
+  }})
+  const oldPosition=player.mesh.position.clone(),oldRotation=player.mesh.quaternion.clone(),oldVisible=player.mesh.visible
+  const h=harness({playerOverride:player})
+  await Promise.resolve()
+  try {
+    h.level.update(0)
+    h.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE+BEAT+DOOR_OPEN)
+    assert.equal(h.level.phase,'stepOut');assert.equal(player.mesh.visible,true)
+    assert.equal(h.level.core.payload.parent.name,'mixamorigRightHand')
+    assert.ok(h.level.core.payload.getWorldScale(new THREE.Vector3()).distanceTo(new THREE.Vector3(1,1,1))<1e-6)
+    player.updateVisual(STEP_OUT);h.level.update(STEP_OUT)
+    player.updateVisual(HOLD_CORE);h.level.update(HOLD_CORE)
+    assert.equal(h.level.phase,'throw')
+    assert.equal(visual.actions.throw.loop,THREE.LoopOnce);assert.equal(visual.actions.throw.clampWhenFinished,true)
+    assert.ok(Math.abs(visual.actions.throw.getClip().duration-THROW)<1e-5)
+    player.updateVisual(THROW_RELEASE-0.01);h.level.update(THROW_RELEASE-0.01)
+    assert.equal(h.level.core.payload.parent.name,'mixamorigRightHand')
+    player.updateVisual(0.011);h.level.update(0.011)
+    assert.equal(h.level.core.payload.parent,h.level.core.root)
+    const core=h.level.core,projected=new THREE.Vector3()
+    for(let i=0;i<=100;i++) {
+      core.pointAt(core.flightDuration*i/100,projected).project(core.camera)
+      assert.ok(Math.abs(projected.x)<1 && Math.abs(projected.y)<1 && projected.z>-1 && projected.z<1,
+        'trajectory remains in frame: '+JSON.stringify(projected))
+    }
+    core.pointAt(core.flightDuration,projected);assert.ok(projected.distanceTo(core.impact)<0.5)
+    assert.ok(Math.abs(core.impact.y-GORGE_FLOOR_Y)<=1e-6)
+    projected.copy(core.impact).project(core.camera)
+    assert.ok(Math.abs(projected.x-RIVER_TARGET_NDC.x)<0.03 && Math.abs(projected.y-RIVER_TARGET_NDC.y)<0.03)
+    t.diagnostic('Launch '+JSON.stringify(core.start)+'; velocity '+JSON.stringify(core.velocity)+'; flight '+core.flightDuration+' s')
+    t.diagnostic('Impact world '+JSON.stringify(core.impact)+'; NDC '+JSON.stringify(projected)+'; all 101 arc samples inside frame')
+    // FBX duration is 2.200000047683716, slightly beyond the nominal THROW constant.
+    const throughImpact=visual.actions.throw.getClip().duration-THROW_RELEASE-0.001+FALL+1/60
+    player.updateVisual(throughImpact)
+    h.level.update(throughImpact)
+    assert.equal(h.level.phase,'flash');assert.equal(core.light.intensity,0)
+    assert.ok(core.payload.position.distanceTo(core.impact)<0.5)
+    assert.equal(player.mesh.visible,true)
+    h.level.update(SCREEN_FLASH_PEAK);assert.equal(player.mesh.visible,false)
+    assert.ok(Number(core.screen.style.opacity)>=0.84)
+    h.level.update(FLASH_SECONDS-SCREEN_FLASH_PEAK+EMPTY_HOLD)
+    assert.equal(h.level.phase,'fadeOut');assert.equal(player.mesh.visible,false)
+    h.level.dispose()
+    assert.equal(player.mesh.visible,oldVisible)
+    assert.deepEqual(player.mesh.position,oldPosition);assertQuaternionClose(player.mesh.quaternion,oldRotation)
+    assert.equal(player.getCinematicView(),null)
+    assert.equal(player.mesh.getObjectByName('ending-chrono-core'),undefined)
+    assert.equal(h.doc.body.children.length,0)
+  } finally {h.restore();visual.dispose();disposeObject(player.mesh)}
+})
+
 // Mirror the pivot-local GLSL hole test; weight each cell by its projected
 // quadrilateral area, including perspective, camera and crooked carriage pose.
 function openingAt(y,z,holes) {
@@ -496,22 +657,34 @@ test('Ending: projected openings exceed 35% and the first carriage front is prot
   } finally {h.restore()}
 })
 
-test('Ending: thin blue tear emission and warm lamp stutter turn off on release', () => {
+test('Ending: thin blue tear emission and warm lamp stutter stay active', t => {
   const h=harness()
   try {
     h.level.update(0)
     assert.equal(EDGE_WIDTH,0.025);assert.ok(HALO_WIDTH<=0.06)
     const effects=new Set(), lamps=[]
+    const unpatchedCarriages=new Set()
+    let patchedCarriageMaterials=0
     h.scene.traverse(node=>{
       for(const material of node.material ? Array.isArray(node.material)?node.material:[node.material] : []) {
         const damage=material.userData.endingTimeDamage,lamp=material.userData.endingLamp
-        if(damage) {
+        const carriageNamed=/^carriage-\d+-/.test(node.name)
+        if(carriageNamed && !damage)unpatchedCarriages.add(node.name)
+        const carriageBatch=carriageNamed && !node.userData.interactionCollider
+        if(carriageNamed && node.userData.interactionCollider) {
+          assert.match(node.name,/^carriage-[0-3]-collider$/);assert.equal(node.visible,false)
+        }
+        if(carriageBatch)assert.ok(damage,'carriage batch retains its damage shader')
+        if(damage && (carriageBatch || material.customProgramCacheKey()==='ending-time-aging-v3')) {
+          if(carriageBatch)patchedCarriageMaterials++
           effects.add(damage)
           const shader={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <emissivemap_fragment>'}
           material.onBeforeCompile(shader)
           assert.match(shader.fragmentShader,/totalEmissiveRadiance\+=uRift/)
           assert.doesNotMatch(shader.fragmentShader,/fresnel|damageCells/)
           assert.match(shader.fragmentShader,/ageAmount=0\.0/)
+          assert.equal(shader.uniforms.uRift,damage.uRift)
+          assert.match(shader.fragmentShader,/endingLampFlicker\(uTime,vDamageLocal.z\),uRift\*ageAmount/)
           if(material.name==='ending-amber-windows') assert.equal(material.defines.ENDING_LAMP,1)
         }
         if(lamp) {
@@ -523,10 +696,12 @@ test('Ending: thin blue tear emission and warm lamp stutter turn off on release'
         }
       }
     })
-    assert.ok(lamps.length>=5)
+    assert.ok(patchedCarriageMaterials>12);assert.ok(lamps.length>=5)
+    assert.deepEqual([...unpatchedCarriages].sort(),[0,1,2,3].map(i=>`carriage-${i}-collider`))
+    t.diagnostic('Unpatched carriage meshes (hidden interaction boxes only): '+[...unpatchedCarriages].sort().join(', '))
     for(const uniforms of effects) assert.equal(uniforms.uRift.value,1)
-    h.level.release();h.level.update(0.61)
-    for(const uniforms of effects) assert.equal(uniforms.uRift.value,0)
+    h.level.update(TOTAL-0.1)
+    for(const uniforms of effects) assert.equal(uniforms.uRift.value,1)
   } finally {h.restore()}
 })
 
@@ -586,10 +761,10 @@ function fakeEndingAudioContext() {
   })
   const node = (source = false) => {
     const value = { gain: parameter(), frequency: parameter(), detune: parameter(), Q: parameter(),
-      connected: false, stopped: false,
-      connect() { this.connected = true; return arguments[0] },
+      connected: false, stopped: false, started: false, destinations: [],
+      connect(destination) { this.connected = true; this.destinations.push(destination); return destination },
       disconnect() { this.connected = false },
-      start() {}, stop() { this.stopped = true } }
+      start() { this.started = true }, stop() { this.stopped = true } }
     nodes.push(value)
     if (source) sources.push(value)
     return value
@@ -632,4 +807,35 @@ test('Ending: screech requires a running shared context and stops on skip, dispo
   restarted.update(-1, 0, 0.2); assert.equal(restarted.active, true)
   restarted.update(-1, 0, 0.2); assert.equal(restarted.active, false)
   restarted.dispose()
+})
+
+test('Ending: story sounds share the master bus and skip/dispose stop every source', () => {
+  const silent=createEndingAudio({context:()=>null,output:()=>null})
+  assert.doesNotThrow(()=>{silent.door();silent.throw();silent.impact();silent.fadeOut();silent.dispose()})
+  for(const action of ['skip','dispose']) {
+    const mock=fakeEndingAudioContext()
+    let audio
+    const h=harness({audioFactory:()=>audio=createEndingAudio({context:()=>mock.context,output:()=>mock.master})})
+    try {
+      h.level.update(0)
+      h.level.update(ENDING_FADE_IN+APPROACH+0.1)
+      assert.equal(mock.sources.length,5,'braking sources start in game')
+      h.level.update(BRAKE-0.1+SETTLE+BEAT+0.000001)
+      assert.equal(h.level.phase,'doorOpen');assert.equal(mock.sources.length,7,'latch and slide start at door opening')
+      h.level.update(DOOR_OPEN+STEP_OUT+HOLD_CORE)
+      assert.equal(h.level.phase,'throw');assert.equal(mock.sources.length,8,'whoosh starts at throw')
+      h.level.update(THROW+FALL)
+      assert.equal(h.level.phase,'flash');assert.equal(mock.sources.length,12,'impact layers and ambient start at impact')
+      assert.ok(mock.sources.every(source=>source.started),'every created sound is started')
+      const reachesMaster=(node,seen=new Set())=>node===mock.master || (!seen.has(node) && (seen.add(node),node.destinations.some(next=>reachesMaster(next,seen))))
+      assert.ok(mock.sources.slice(5).every(source=>reachesMaster(source)),'every story source reaches the shared master')
+      h.level.update(0.1)
+      assert.ok(audio.voiceCount>=2,'boom tail and ambient remain active')
+      if(action==='skip')h.skip()
+      else h.level.dispose()
+      assert.equal(audio.voiceCount,0)
+      assert.ok(mock.sources.every(source=>source.stopped))
+      assert.ok(mock.nodes.filter(node=>node!==mock.master).every(node=>!node.connected))
+    } finally {h.restore()}
+  }
 })

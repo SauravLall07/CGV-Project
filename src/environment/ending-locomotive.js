@@ -168,12 +168,11 @@ export function createEndingLocomotive(paint) {
   const up = new THREE.Vector3(0, 1, 0)
   const sides = [-1, 1], driverSites = [-0.8, 1, 2.8], leadingSites = [4.4, 5.25]
   let wheelAngle = 0
-  let steamFrozen = false
   function update(distance, delta = 0, speed = 0, settleTime = -1) {
-    plume.update(steamFrozen ? 0 : delta * (0.2 + 0.8 * speed / 26))
+    plume.update(delta * (0.2 + 0.8 * speed / 26))
     plume.points.material.uniforms.uWind.value.z = -5 - speed * 0.18
     for (const hiss of hisses) {
-      hiss.update(steamFrozen ? 0 : delta)
+      hiss.update(delta)
       hiss.points.material.uniforms.uOpacity.value = settleTime >= 0 && settleTime < 0.6
         ? 0.12 * (1 - settleTime / 0.6) : 0
     }
@@ -204,5 +203,5 @@ export function createEndingLocomotive(paint) {
   // Known animated envelopes avoid per-frame bounds rebuilding.
   for (const mesh of [drivers, leading, rods]) { mesh.frustumCulled = false }
   update(0)
-  return { root, update, damage, setSteamFrozen(value) { steamFrozen = value }, chimney: new THREE.Vector3(0, 5.15, 3.8) }
+  return { root, update, damage, chimney: new THREE.Vector3(0, 5.15, 3.8) }
 }

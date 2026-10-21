@@ -4,8 +4,9 @@ import { getContext, getMasterGain } from '../core/audio.js'
 // No AudioContext is created here, including in Node tests.
 export function createEndingAudio({ context = getContext, output = getMasterGain } = {}) {
   let graph = null, disposed = false, stopped = false, tail = -1
-  function stop() {
-    stopped = true
+  const voices=new Set()
+  let noiseBuffer=null,ambient=null
+  function clearBrake() {
     if (!graph) return
     graph.bus.gain.cancelScheduledValues(graph.ctx.currentTime)
     graph.bus.gain.value = 0
@@ -15,6 +16,52 @@ export function createEndingAudio({ context = getContext, output = getMasterGain
     }
     for (const node of graph.nodes) node.disconnect()
     graph = null; tail = -1
+  }
+  function stop() {
+    stopped=true;clearBrake()
+    for(const voice of voices) {
+      for(const source of voice.sources) {try{source.stop()}catch{/* Already ended. */}source.disconnect()}
+      for(const node of voice.nodes) node.disconnect()
+    }
+    voices.clear();ambient=null
+  }
+  function cue(kind) {
+    const ctx=context(),master=output()
+    if(disposed||stopped||!ctx||!master||ctx.state!=='running')return
+    if(kind==='ambient'&&ambient)return
+    const sources=[],nodes=[],duration=kind==='impact'?1.2:kind==='ambient'?Infinity:kind==='door'?0.65:0.35
+    const bus=ctx.createGain();bus.gain.value=1;bus.connect(master);nodes.push(bus)
+    function tone(frequency,end,volume,type='sine',seconds=duration) {
+      const source=ctx.createOscillator(),gain=ctx.createGain()
+      source.type=type;source.frequency.setValueAtTime(frequency,ctx.currentTime)
+      source.frequency.setTargetAtTime(end,ctx.currentTime,seconds/4)
+      gain.gain.setValueAtTime(volume,ctx.currentTime);gain.gain.setTargetAtTime(0,ctx.currentTime,seconds/4)
+      source.connect(gain).connect(bus);source.start();source.stop(ctx.currentTime+seconds)
+      sources.push(source);nodes.push(gain)
+    }
+    if(kind==='impact') {
+      tone(90,35,0.32)
+      tone(2100,430,0.035,'triangle',0.4)
+      tone(3170,790,0.02,'sine',0.3)
+    } else {
+      if(!noiseBuffer) {
+        noiseBuffer=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate)
+        const data=noiseBuffer.getChannelData(0)
+        let seed=771
+        for(let i=0;i<data.length;i++){seed=(Math.imul(seed,1664525)+1013904223)>>>0;data[i]=seed/2147483648-1}
+      }
+      if(kind==='door')tone(950,230,0.035,'triangle',0.07)
+      const source=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain()
+      source.buffer=noiseBuffer;source.loop=true;filter.type=kind==='ambient'?'lowpass':'bandpass'
+      filter.frequency.value=kind==='ambient'?650:kind==='door'?800:1800
+      filter.Q.value=0.7;gain.gain.value=kind==='ambient'?0:0.025
+      gain.gain.setTargetAtTime(kind==='ambient'?0.012:0,ctx.currentTime,kind==='ambient'?0.8:duration/3)
+      source.connect(filter).connect(gain).connect(bus);source.start()
+      if(Number.isFinite(duration))source.stop(ctx.currentTime+duration)
+      sources.push(source);nodes.push(filter,gain)
+    }
+    const voice={sources,nodes,bus,remaining:duration}
+    voices.add(voice);if(kind==='ambient')ambient=voice
   }
   function start() {
     const ctx = context(), master = output()
@@ -50,8 +97,20 @@ export function createEndingAudio({ context = getContext, output = getMasterGain
   }
   return {
     get active() { return graph !== null },
+    get voiceCount(){return voices.size+(graph?1:0)},
+    door:()=>cue('door'),throw:()=>cue('throw'),
+    impact(){cue('impact');cue('ambient')},
+    fadeOut(){if(ambient)ambient.bus.gain.setTargetAtTime(0,context().currentTime,0.3)},
     update(progress, intensity, delta = 0) {
       if (disposed || stopped) return
+      for(const voice of voices) {
+        voice.remaining-=Math.max(0,delta)
+        if(voice.remaining<=0) {
+          for(const source of voice.sources)source.disconnect()
+          for(const node of voice.nodes)node.disconnect()
+          voices.delete(voice)
+        }
+      }
       if (progress >= 0 && progress < 1) {
         start()
         if (!graph) return
@@ -66,7 +125,7 @@ export function createEndingAudio({ context = getContext, output = getMasterGain
           graph.bus.gain.setTargetAtTime(0, graph.ctx.currentTime, 0.1)
         }
         tail += Math.max(0, delta)
-        if (tail >= 0.4) stop()
+        if (tail >= 0.4) clearBrake()
       }
     },
     stop,

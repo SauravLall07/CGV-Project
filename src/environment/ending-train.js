@@ -3,7 +3,8 @@ import { createTrain, RAIL_OFFSET } from '../entities/train.js'
 import { getKitMaterials } from './level1-kit/kit-materials.js'
 import { disposeObject } from '../core/dispose.js'
 import { createEndingLocomotive } from './ending-locomotive.js'
-import { CARRIAGE_HOLES, createDamageUniforms, patchTimeDamage } from '../shaders/ending-time-damage.js'
+import { CARRIAGE_HOLES, ENDING_DOOR_HOLE, createDamageUniforms, patchTimeDamage } from '../shaders/ending-time-damage.js'
+import { createEndingDoor } from './ending-door.js'
 import { createEndingDebris } from './ending-debris.js'
 import { createEndingSparks } from './ending-sparks.js'
 
@@ -132,7 +133,7 @@ export function createEndingTrain() {
     const center = (bounds.min.z + bounds.max.z) / 2
     const pivot = makePivot(`ending-carriage-${i + 1}`, batches, center)
     for (const mesh of batches) if (mesh.material.color?.getHex() === 0x2a2e33) subdivideRoof(mesh)
-    const uniforms = createDamageUniforms(CARRIAGE_HOLES[i])
+    const uniforms = createDamageUniforms(i === 0 ? [...CARRIAGE_HOLES[i],ENDING_DOOR_HOLE] : CARRIAGE_HOLES[i])
     uniforms.uSag.value = 0.25
     if (i === 0) uniforms.uProtectedFront.value = 6
     damageUniforms.push(uniforms)
@@ -208,6 +209,8 @@ export function createEndingTrain() {
   contactGlows(locomotive, [-0.8, 1, 2.8, 4.4, 5.25])
   contactGlows(carriages[0], [-8.25, -5.75, 5.75, 8.25])
   const debris = createEndingDebris(root, carriages, hero.root)
+  const door = createEndingDoor(carriages[0], {paint:ownMaterial(kit.carriageGreen),
+    wood:ownMaterial(kit.wainscot),brass:ownMaterial(kit.brass),carpet:ownMaterial(kit.runner)})
   damageUniforms.push(...debris.uniforms)
   const sparks = createEndingSparks(source.train, [locomotive, carriages[0], carriages[1]], RAIL_OFFSET)
   // Per-carriage copies share only ending-owned texture wrappers. Release unused base material objects.
@@ -217,11 +220,6 @@ export function createEndingTrain() {
   })
   for (const material of materialClones.values()) if (!usedMaterials.has(material)) material.dispose()
   let disposed = false
-  function setTimeState(value, steamFrozen) {
-    hero.setSteamFrozen(steamFrozen)
-    for (const uniforms of damageUniforms) uniforms.uRift.value = value
-    hero.damage.uRift.value = value
-  }
   function update(centerZ, distance, brakingProgress, settleTime = -1, delta = 0, speed = 0) {
     const stopCenter = STOP_NOSE_Z + noseOffset
     root.position.z = Math.max(stopCenter, centerZ + stopCenter - STOP_CENTER_Z)
@@ -237,7 +235,7 @@ export function createEndingTrain() {
     sparks.update(delta, brakingProgress)
     for (const uniforms of damageUniforms) uniforms.uTime.value += Math.max(0, delta)
   }
-  return { root, locomotive, carriages, noseOffset, damageUniforms, debris, sparks, update, setTimeState,
+  return { root, locomotive, carriages, noseOffset, damageUniforms, debris, sparks, door, update,
     dispose() {
       if (disposed) return
       disposed = true

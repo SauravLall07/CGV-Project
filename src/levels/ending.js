@@ -5,14 +5,23 @@ import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAM
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
 import { createEndingAudio } from '../systems/ending-audio.js'
 import { brakeIntensity } from '../environment/ending-sparks.js'
+import { createEndingCore, CORE_FALL_SECONDS, FLASH_SECONDS, SCREEN_FLASH_PEAK } from '../environment/ending-core.js'
+import { DOOR_MOTION_SECONDS } from '../environment/ending-door.js'
 
 export const ENDING_FADE_IN = 1.0
-export const TRAIN_START_NOSE_Z = 125
+export const TRAIN_START_NOSE_Z = 140
 export const BRAKE = 4.5
 export const APPROACH = (TRAIN_START_NOSE_Z - STOP_NOSE_Z - TRAIN_SPEED * BRAKE / 2) / TRAIN_SPEED
 export const SETTLE = 1.6
-export const HOLD = 2.0
-export const FADE_OUT = 1.2
+export const BEAT = 0.8
+export const DOOR_OPEN = 0.8
+export const STEP_OUT = 1.0
+export const HOLD_CORE = 0.6
+export const THROW = 2.2 // Actual loaded Throw clip duration replaces this fallback.
+export const THROW_RELEASE = 24 / 30
+export const FALL = CORE_FALL_SECONDS
+export const EMPTY_HOLD = 3.0
+export const FADE_OUT = 1.5
 export const TITLE_HOLD = 2.5
 const TITLE_FADE = 0.6
 const BRAKING_DISTANCE = TRAIN_SPEED * BRAKE / 2
@@ -22,8 +31,8 @@ export const ENDING_CAMERA_POSITION = PLATE_CAMERA_POSITION
 export const ENDING_CAMERA_TARGET = PLATE_CAMERA_TARGET
 export const ENDING_CAMERA_FOV = PLATE_CAMERA_FOV
 export const WORLD_ALIGN_DEFAULTS = Object.freeze({ x: -0.75, y: -3.25, z: -0.75, yaw: -20.25, pitch: -2.75, roll: 0, scale: 1 })
-const PHASES = ['fadeIn', 'approach', 'braking', 'settle', 'hold', 'fadeOut', 'title', 'done']
-const DURATIONS = [ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT, TITLE_FADE + TITLE_HOLD]
+export const PHASES = Object.freeze(['fadeIn','approach','braking','settle','beat','doorOpen','stepOut','holdCore','throw','fall','flash','emptyHold','fadeOut','title','done'])
+export const DURATIONS = Object.freeze([ENDING_FADE_IN,APPROACH,BRAKE,SETTLE,BEAT,DOOR_OPEN,STEP_OUT,HOLD_CORE,THROW,FALL,FLASH_SECONDS,EMPTY_HOLD,FADE_OUT,TITLE_FADE+TITLE_HOLD])
 
 export function createEndingLevel({ scene, player, camera, renderCamera, hud, beginCinematic, advance, renderer, post = null,
   audioFactory = createEndingAudio }) {
@@ -34,9 +43,11 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   let phaseIndex = 0
   let phaseTime = 0
   let initialized = false
+  let warmed = false
   let disposed = false
   let advanced = false
   let timeline = 0
+  const durations=[...DURATIONS]
   const startedAt = typeof performance === 'undefined' ? 0 : performance.now()
   const previousHudDisplay = hud.root?.style.display
   const previousFog = scene.fog
@@ -45,9 +56,33 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const previousEnvironmentIntensity = scene.environmentIntensity
   const previousFov = renderCamera?.fov
   const previousAspect = renderCamera?.aspect
+  const previousPlayer = {visible:player.mesh.visible,position:player.mesh.position.clone(),
+    quaternion:player.mesh.quaternion.clone(),scale:player.mesh.scale.clone(),view:player.getCinematicView?.() ?? null}
+  let visual=null,visualReady=true,actionStates=[],throwHandle=null,throwDuration=2.2
+  if (player.loadVisual && player.mesh.getObjectByName('detective')) {
+    visualReady=false
+    player.loadVisual().then(value=>{
+      if(disposed)return
+      visual=value
+      actionStates=Object.values(visual?.actions ?? {}).map(action=>({action,time:action.time,
+        weight:action.getEffectiveWeight(),speed:action.getEffectiveTimeScale(),paused:action.paused,
+        enabled:action.enabled,running:action.isRunning()}))
+      throwDuration=visual?.actions.throw?.getClip().duration ?? 2.2
+      durations[PHASES.indexOf('throw')]=throwDuration
+      visualReady=true
+    })
+  }
   const gorge = createEndingGorge(scene, renderer)
   const train = createEndingTrain()
   const audio = audioFactory()
+  const core = createEndingCore(scene)
+  const handFallback=new THREE.Group();handFallback.name='ending-core-hand-anchor'
+  handFallback.position.set(0.3,1.2,0.2)
+  const hand=player.mesh.getObjectByName('mixamorigRightHand') ?? handFallback
+  if(hand===handFallback) player.mesh.add(handFallback)
+  const inside=new THREE.Vector3(),threshold=new THREE.Vector3(),outward=new THREE.Vector3(),releasePosition=new THREE.Vector3()
+  const walkPath=[inside,threshold]
+  let outwardYaw=0,launched=false
   const worldAlign = new THREE.Group()
   worldAlign.name = 'WORLD_ALIGN'
   worldAlign.position.set(WORLD_ALIGN_DEFAULTS.x, WORLD_ALIGN_DEFAULTS.y, WORLD_ALIGN_DEFAULTS.z)
@@ -61,6 +96,28 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const view = { mode: 'fixed', position: ENDING_CAMERA_POSITION.clone(), target: ENDING_CAMERA_TARGET.clone(),
     initialPosition: ENDING_CAMERA_POSITION.clone(), initialRotation: viewRotation.clone(),
     targetRotation: viewRotation, moveSeconds: 1, moveElapsed: 0, allowPress: false }
+  function placeDetective() {
+    train.carriages[0].updateWorldMatrix(true,false)
+    inside.copy(train.door.inside).applyMatrix4(train.carriages[0].matrixWorld)
+    threshold.copy(train.door.threshold).applyMatrix4(train.carriages[0].matrixWorld)
+    outward.set(-1,0,0).transformDirection(train.carriages[0].matrixWorld)
+    outwardYaw=Math.atan2(outward.x,outward.z)
+    player.setPose?.(inside,outwardYaw)
+    player.mesh.position.copy(inside)
+    player.setCinematicView(view)
+    player.startScriptedWalk?.(walkPath,STEP_OUT)
+    core.hold(hand);player.mesh.visible=true
+  }
+  function updateDetective(phase,time,delta) {
+    if(phase==='stepOut') player.updateScriptedWalk?.(delta)
+    if(phase==='holdCore') player.updateScriptedTurn?.(delta)
+    if(phase==='throw' && !launched && time>=Math.min(THROW_RELEASE,throwDuration)-1e-9) {
+      player.mesh.updateWorldMatrix(true,true)
+      hand.getWorldPosition(releasePosition)
+      core.launch(throwHandle?.releasePosition ?? releasePosition,throwDuration-Math.min(THROW_RELEASE,throwDuration)+FALL);launched=true
+    }
+    if(phase==='flash' && time>=SCREEN_FLASH_PEAK) player.mesh.visible=false
+  }
   const overlay = document.createElement('div')
   overlay.id = 'ending-overlay'
   Object.assign(overlay.style, { position: 'fixed', inset: '0', zIndex: '60', background: '#000',
@@ -75,50 +132,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   title.appendChild(subtitle)
   overlay.appendChild(title)
   document.body.appendChild(overlay)
-  const vignette = document.createElement('div')
-  vignette.id = 'ending-time-vignette'
-  Object.assign(vignette.style, { position: 'fixed', inset: '0', zIndex: '59', pointerEvents: 'none', opacity: '0',
-    background: 'radial-gradient(ellipse at center, transparent 42%, rgba(61,125,255,0.9) 100%)' })
-  document.body.appendChild(vignette)
-  const timeState = { frozen: false, released: false, releaseCount: 0, rift: 1, freezeTime: 0, releaseTime: 0 }
-  let releaseVignette = 0
-  function freeze() {
-    if (timeState.frozen || timeState.released) return
-    timeState.frozen = true
-    train.setTimeState(1, true)
-    if (import.meta.env?.DEV) console.info('[ending] freeze')
-  }
-  function release() {
-    if (disposed || timeState.released) return false
-    releaseVignette = Number(vignette.style.opacity)
-    timeState.released = true; timeState.frozen = false; timeState.releaseCount++
-    train.setTimeState(1, false)
-    gorge.plate.mesh.material.uniforms.uFlow.value = 1
-    if (import.meta.env?.DEV) console.info('[ending] release')
-    return true
-  }
-  function updateTimeEffects(delta) {
-    const flow = gorge.plate.mesh.material.uniforms.uFlow
-    if (timeState.released) {
-      timeState.releaseTime += delta
-      timeState.rift = Math.max(0, 1 - timeState.releaseTime / 0.6)
-      flow.value = 1
-      vignette.style.opacity = String(releaseVignette * timeState.rift)
-    } else if (timeState.frozen) {
-      timeState.freezeTime += delta
-      flow.value = Math.max(0, 1 - timeState.freezeTime / 0.4)
-      vignette.style.opacity = String(0.35 * Math.min(1, timeState.freezeTime / 0.5))
-    }
-    train.setTimeState(timeState.rift, timeState.frozen)
-    const finalFlow = flow.value
-    // Integrate the short linear flow ramp without moving the river while fully frozen.
-    if (timeState.frozen && delta > 0) {
-      const a = Math.min(0.4, Math.max(0, timeState.freezeTime - delta)), b = Math.min(0.4, timeState.freezeTime)
-      flow.value = (b - a - (b * b - a * a) / 0.8) / delta
-    }
-    gorge.update(delta)
-    flow.value = finalFlow
-  }
   player.mesh.visible = false
   // HUD is hidden, so mount the same native skip control in its own UI layer.
   const skipRoot = document.createElement('div')
@@ -144,9 +157,12 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   let alignMode = false, removeAlignment = null
   if (import.meta.env?.DEV) {
     const parameters = new URLSearchParams(globalThis.location?.search ?? '')
+    if(parameters.get('start')==='ending' && parameters.get('from')==='stop') {
+      phaseIndex=PHASES.indexOf('beat');timeline=ENDING_FADE_IN+APPROACH+BRAKE+SETTLE
+    }
     if (parameters.get('start') === 'ending' && parameters.has('align')) {
       alignMode = true
-      phaseIndex = PHASES.indexOf('hold'); phaseTime = 0
+      phaseIndex = PHASES.indexOf('beat'); phaseTime = 0
       timeline = ENDING_FADE_IN + APPROACH + BRAKE + SETTLE + 1
       const values = { ...WORLD_ALIGN_DEFAULTS, fov: shotFov }
       let atApproachStart = false
@@ -189,7 +205,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         } else if (event.code === 'KeyG') {
           if (!event.repeat) {
             atApproachStart = !atApproachStart
-            phaseIndex = PHASES.indexOf(atApproachStart ? 'approach' : 'hold'); phaseTime = 0
+            phaseIndex = PHASES.indexOf(atApproachStart ? 'approach' : 'beat'); phaseTime = 0
             present(0)
           }
         } else if (event.code === 'KeyP') console.info(`WORLD_ALIGN = ${JSON.stringify(values)}`)
@@ -210,18 +226,26 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     renderer.getScissor(savedScissor)
     const previousScissorTest = renderer.getScissorTest()
     const savedCulling = []
-    const savedRifts = new Map()
     const savedTimes = new Map()
     const sparkIntensity = train.sparks.material.uniforms.uIntensity
     const previousSparkIntensity = sparkIntensity.value
+    const savedDoor=train.door.openness,savedPlayerPosition=player.mesh.position.clone(),
+      savedPlayerQuaternion=player.mesh.quaternion.clone(),savedPlayerVisible=player.mesh.visible
+    const savedTrainZ=train.root.position.z,savedPitch=train.locomotive.rotation.x
+    train.update(STOP_CENTER_Z,0,-1,SETTLE)
+    train.carriages[0].updateWorldMatrix(true,false)
+    threshold.copy(train.door.threshold).applyMatrix4(train.carriages[0].matrixWorld)
+    player.mesh.position.copy(threshold);player.mesh.visible=true
+    core.hold(hand);core.update(0)
     gorge.root.traverse(node => { if (node.isMesh || node.isPoints) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
     train.root.traverse(node => { if (node.isMesh || node.isPoints || node.isSprite) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
+    for(const root of [core.root,player.mesh]) root.traverse(node=>{
+      if(node.isMesh||node.isSprite||node.isPoints){savedCulling.push([node,node.frustumCulled]);node.frustumCulled=false}
+    })
     train.root.traverse(node => {
       if (!node.material) return
       for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
         const effects = material.userData.endingTimeDamage ?? material.userData.endingLamp ?? material.uniforms
-        const uniform = effects?.uRift
-        if (uniform && !savedRifts.has(uniform)) savedRifts.set(uniform, uniform.value)
         const time = effects?.uTime
         if (time && !savedTimes.has(time)) savedTimes.set(time,time.value)
       }
@@ -233,16 +257,21 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       renderer.compile(scene, warmCamera)
       renderer.setRenderTarget(target)
       renderer.setScissorTest(false)
+      train.door.setOpen(0)
       for (const uniform of savedTimes.keys()) uniform.value = 4.23
       renderer.render(scene, warmCamera)
+      train.door.setOpen(1)
       for (const uniform of savedTimes.keys()) uniform.value = 0.19
       renderer.render(scene, warmCamera)
-      // Frozen and released use the same compiled programs; exercise both uniform states under black.
-      for (const uniform of savedRifts.keys()) uniform.value = 0
-      renderer.render(scene, warmCamera)
+      core.launch(threshold,THROW-THROW_RELEASE+FALL);core.update(0,0.3)
+      renderer.render(scene,warmCamera)
+      core.update(0,-1,0.25);renderer.render(scene,warmCamera)
     } finally {
       sparkIntensity.value = previousSparkIntensity
-      for (const [uniform, value] of savedRifts) uniform.value = value
+      core.reset();train.door.setOpen(savedDoor)
+      train.root.position.z=savedTrainZ;train.locomotive.rotation.x=savedPitch
+      player.mesh.position.copy(savedPlayerPosition);player.mesh.quaternion.copy(savedPlayerQuaternion)
+      player.mesh.visible=savedPlayerVisible
       for (const [uniform, value] of savedTimes) uniform.value = value
       for (const [node, culling] of savedCulling) node.frustumCulled = culling
       renderer.setRenderTarget(previousTarget)
@@ -257,10 +286,20 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     phaseIndex = index
     phaseTime = 0
     if (import.meta.env?.DEV) console.info(`[ending +${timeline.toFixed(3)}s @${(performance.now() - startedAt).toFixed(0)}ms] ${PHASES[index]}`)
-    if (PHASES[index] === 'hold') freeze()
-    if (PHASES[index] === 'fadeOut') { release(); hud.hideCinematicSkip?.(); skipControl.hide() }
+    const phase=PHASES[index]
+    if(phase==='doorOpen') audio.door?.()
+    if(phase==='stepOut') placeDetective()
+    if(phase==='holdCore') {
+      player.cancelScriptedWalk?.();player.mesh.position.copy(threshold)
+      player.startScriptedTurn?.(outwardYaw,HOLD_CORE)
+    }
+    if(phase==='throw') {throwHandle=player.playThrow?.();audio.throw?.()}
+    if(phase==='flash') {core.update(0,-1,0);audio.impact?.()}
+    if(phase==='emptyHold') {player.mesh.visible=false;core.reset()}
+    if (PHASES[index] === 'fadeOut') { audio.fadeOut?.();hud.hideCinematicSkip?.(); skipControl.hide() }
     if (PHASES[index] === 'done' && !advanced) {
       advanced = true
+      audio.stop()
       hud.hideCinematicSkip?.()
       skipControl.hide()
       advance()
@@ -270,14 +309,17 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   function skip() {
     if (disposed || advanced || phaseIndex >= PHASES.indexOf('fadeOut')) return
     audio.stop()
+    player.cancelScriptedWalk?.();player.resetInteractionAnimation?.()
+    if(throwHandle) throwHandle.cancelled=true
+    player.mesh.visible=false;core.reset();train.door.setOpen(1)
     enterPhase(PHASES.indexOf('fadeOut'))
   }
 
   function present(delta) {
     const phase = PHASES[phaseIndex]
     overlay.style.opacity = String(phase === 'fadeIn' ? 1 - phaseTime / ENDING_FADE_IN
-      : phase === 'fadeOut' ? phaseTime / FADE_OUT : phaseIndex >= 6 ? 1 : 0)
-    title.style.opacity = phaseIndex >= 6 ? String(Math.min(1, phaseTime / TITLE_FADE)) : '0'
+      : phase === 'fadeOut' ? phaseTime / FADE_OUT : phaseIndex >= PHASES.indexOf('title') ? 1 : 0)
+    title.style.opacity = phaseIndex >= PHASES.indexOf('title') ? String(Math.min(1, phaseTime / TITLE_FADE)) : '0'
     let distance = 0
     let brakingProgress = -1
     let settleTime = -1
@@ -287,17 +329,24 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       brakingProgress = phaseTime / BRAKE
     } else if (phaseIndex >= 3) {
       distance = APPROACH_DISTANCE + BRAKING_DISTANCE
-      settleTime = phase === 'settle' ? phaseTime : SETTLE + (phase === 'hold' ? phaseTime : HOLD)
+      settleTime = phase === 'settle' ? phaseTime : SETTLE
     }
     const speed = phase === 'approach' ? TRAIN_SPEED : phase === 'braking' ? TRAIN_SPEED * (1 - phaseTime / BRAKE) : 0
     train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime, delta, speed)
     audio.update(brakingProgress, brakeIntensity(brakingProgress), delta)
+    if(phase==='doorOpen') train.door.setOpen(Math.min(1,phaseTime/DOOR_MOTION_SECONDS))
+    if(phaseIndex>PHASES.indexOf('doorOpen')) train.door.setOpen(1)
+    updateDetective(phase,phaseTime,delta)
+    const flightTime=phase==='throw' && launched ? Math.max(0,phaseTime-Math.min(THROW_RELEASE,throwDuration))
+      : phase==='fall' ? throwDuration-Math.min(THROW_RELEASE,throwDuration)+phaseTime : -1
+    core.update(delta,flightTime,phase==='flash'?phaseTime:-1)
   }
 
   return {
     objective: '', checkpoint: { position: new THREE.Vector3(0, 0, STOP_CENTER_Z), yaw: 0 },
     isCinematic: true,
-    setShotFov, release, timeState,
+    setShotFov, core, door:train.door,
+    get phase(){return PHASES[phaseIndex]},get phaseTime(){return phaseTime},
     update(delta) {
       if (disposed || advanced) return
       if (!initialized) {
@@ -313,25 +362,28 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         hud.setVisible(false)
         beginCinematic?.()
         if (!alignMode) { hud.showCinematicSkip?.(skip); skipControl.show(skip) }
-        warmScene()
         if (import.meta.env?.DEV) console.info('[ending] fadeIn')
       }
-      player.mesh.visible = false
+      if(!warmed&&visualReady){warmScene();warmed=true}
       // Settings subscribers may run while paused; keep this shot's lens static.
       if (renderCamera && (renderCamera.fov !== shotFov || renderCamera.aspect !== PLATE_CAMERA_ASPECT)) {
         setShotFov(shotFov)
       }
-      let remaining = gorge.plate.ready && !alignMode ? Math.max(0, delta) : 0
+      let remaining = gorge.plate.ready && visualReady && !alignMode ? Math.max(0, delta) : 0
       while (remaining > 0 && !advanced) {
-        const step = Math.min(remaining, DURATIONS[phaseIndex] - phaseTime)
+        let boundary=durations[phaseIndex]
+        if(PHASES[phaseIndex]==='throw' && phaseTime<Math.min(THROW_RELEASE,throwDuration)-1e-9)
+          boundary=Math.min(boundary,Math.min(THROW_RELEASE,throwDuration))
+        if(PHASES[phaseIndex]==='flash' && phaseTime<SCREEN_FLASH_PEAK-1e-9) boundary=SCREEN_FLASH_PEAK
+        const step = Math.min(remaining, boundary - phaseTime)
         phaseTime += step
         timeline += step
         remaining -= step
-        updateTimeEffects(step)
+        gorge.update(step)
         present(step)
-        if (phaseTime >= DURATIONS[phaseIndex] - 1e-9) enterPhase(phaseIndex + 1)
+        if (phaseTime >= durations[phaseIndex] - 1e-9) enterPhase(phaseIndex + 1)
       }
-      if (alignMode) { updateTimeEffects(Math.max(0, delta)); present(Math.max(0, delta)) }
+      if (alignMode) { gorge.update(Math.max(0, delta)); present(Math.max(0, delta)) }
       else present(0)
       if (import.meta.env?.DEV && !budgetLogged && timeline >= ENDING_FADE_IN + APPROACH + BRAKE + 1) {
         budgetLogged = true
@@ -352,14 +404,24 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       }
       hud.hideCinematicSkip?.()
       overlay.remove()
-      vignette.remove()
       skipControl.dispose()
       skipRoot.remove()
-      player.setCinematicView(null)
+      if(throwHandle) throwHandle.cancelled=true
       player.cancelScriptedWalk?.()
-      player.mesh.visible = true
+      player.resetInteractionAnimation?.()
+      player.setPose?.(previousPlayer.position,new THREE.Euler().setFromQuaternion(previousPlayer.quaternion).y)
+      player.mesh.position.copy(previousPlayer.position);player.mesh.quaternion.copy(previousPlayer.quaternion)
+      player.mesh.scale.copy(previousPlayer.scale);player.mesh.visible=previousPlayer.visible
+      player.setCinematicView(previousPlayer.view)
+      for(const state of actionStates) {
+        state.action.stop();state.action.enabled=state.enabled;state.action.paused=state.paused
+        state.action.time=state.time;state.action.setEffectiveWeight(state.weight);state.action.setEffectiveTimeScale(state.speed)
+        if(state.running) state.action.play()
+      }
+      handFallback.removeFromParent()
       gorge.dispose()
       train.dispose()
+      core.dispose()
       worldAlign.removeFromParent()
       scene.fog = previousFog
       scene.background = previousBackground
