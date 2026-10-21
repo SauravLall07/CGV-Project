@@ -20,6 +20,21 @@ function box(w, h, d, x, y, z) {
   return g
 }
 
+function ellipsoid(rx, ry, rz, x, y, z, ws = 12, hs = 8) {
+  const g = new THREE.SphereGeometry(1, ws, hs)
+  g.scale(rx, ry, rz)
+  g.translate(x, y, z)
+  return g
+}
+
+function capsule(radius, length, x, y, z, axis = 'y') {
+  const g = new THREE.CapsuleGeometry(radius, Math.max(0.02, length), 3, 7)
+  if (axis === 'x') g.rotateZ(Math.PI / 2)
+  else if (axis === 'z') g.rotateX(Math.PI / 2)
+  g.translate(x, y, z)
+  return g
+}
+
 function merge(list) {
   const usable = list.filter(Boolean)
   if (!usable.length) return null
@@ -73,112 +88,100 @@ function buildKit() {
     emissiveIntensity: 0.04
   })
 
+  const armX = SEAT_WIDTH * 0.4
+  const leg = (x, z) => box(0.055, 0.1, 0.055, x, 0.05, z)
+
   // --- Intact seat (merged per material) ---------------------------------
   const woodIntact = merge([
-    // Base plinth
-    box(SEAT_WIDTH * 0.92, 0.1, 0.36, 0, 0.11, 0.22),
-    // Back wood shell
-    box(SEAT_WIDTH * 0.96, BACK_H, 0.07, 0, 0.12 + BACK_H * 0.5, 0.035),
-    // Side wings / armrest wood
-    box(0.07, 0.28, 0.38, -SEAT_WIDTH * 0.42, 0.34, 0.22),
-    box(0.07, 0.28, 0.38, SEAT_WIDTH * 0.42, 0.34, 0.22),
-    // Front apron
-    box(SEAT_WIDTH * 0.88, 0.08, 0.04, 0, 0.18, 0.42),
-    // Short legs
-    box(0.06, 0.1, 0.06, -SEAT_WIDTH * 0.34, 0.05, 0.12),
-    box(0.06, 0.1, 0.06, SEAT_WIDTH * 0.34, 0.05, 0.12),
-    box(0.06, 0.1, 0.06, -SEAT_WIDTH * 0.34, 0.05, 0.36),
-    box(0.06, 0.1, 0.06, SEAT_WIDTH * 0.34, 0.05, 0.36)
+    box(SEAT_WIDTH * 0.9, 0.08, 0.32, 0, 0.1, 0.2),
+    ellipsoid(0.33, 0.32, 0.038, 0, 0.52, 0.045, 14, 10),
+    capsule(0.026, 0.2, -armX, 0.32, 0.22, 'z'),
+    capsule(0.026, 0.2, armX, 0.32, 0.22, 'z'),
+    ellipsoid(0.3, 0.032, 0.028, 0, 0.16, 0.38),
+    leg(-SEAT_WIDTH * 0.32, 0.1),
+    leg(SEAT_WIDTH * 0.32, 0.1),
+    leg(-SEAT_WIDTH * 0.32, 0.32),
+    leg(SEAT_WIDTH * 0.32, 0.32)
   ])
 
   const velvetIntact = merge([
-    // Seat cushion (slightly proud of the frame)
-    box(SEAT_WIDTH * 0.82, 0.11, 0.34, 0, 0.22, 0.24),
-    // Rounded front lip (second, thinner slab)
-    box(SEAT_WIDTH * 0.78, 0.05, 0.08, 0, 0.2, 0.4),
-    // Back cushion pad
-    box(SEAT_WIDTH * 0.84, BACK_H * 0.78, 0.09, 0, 0.2 + BACK_H * 0.42, 0.09),
-    // Soft crown on the backrest
-    box(SEAT_WIDTH * 0.72, 0.08, 0.1, 0, 0.12 + BACK_H - 0.02, 0.08)
+    ellipsoid(0.29, 0.07, 0.145, 0, 0.25, 0.23, 14, 10),
+    ellipsoid(0.26, 0.042, 0.05, 0, 0.23, 0.36, 12, 8),
+    ellipsoid(0.28, 0.26, 0.07, 0, 0.54, 0.09, 14, 10),
+    ellipsoid(0.2, 0.05, 0.048, 0, 0.8, 0.08, 10, 8),
+    capsule(0.034, 0.16, -armX, 0.45, 0.22, 'z'),
+    capsule(0.034, 0.16, armX, 0.45, 0.22, 'z')
   ])
 
-  // Tufting / seams — dark velvet strips + button nubs (no texture maps).
   const tuftParts = []
-  for (const y of [0.42, 0.58, 0.74]) {
-    tuftParts.push(box(SEAT_WIDTH * 0.7, 0.012, 0.02, 0, y, 0.145))
+  for (const y of [0.42, 0.56, 0.7]) {
+    tuftParts.push(capsule(0.006, 0.42, 0, y, 0.15, 'x'))
   }
-  for (const x of [-0.16, 0.16]) {
-    tuftParts.push(box(0.012, BACK_H * 0.55, 0.02, x, 0.48, 0.145))
+  for (const x of [-0.14, 0.14]) {
+    tuftParts.push(capsule(0.006, 0.32, x, 0.54, 0.15, 'y'))
   }
-  for (const [x, y] of [[-0.16, 0.42], [0.16, 0.42], [-0.16, 0.58], [0.16, 0.58], [-0.16, 0.74], [0.16, 0.74], [0, 0.5], [0, 0.66]]) {
-    tuftParts.push(box(0.035, 0.035, 0.03, x, y, 0.155))
+  for (const [x, y] of [[-0.14, 0.42], [0.14, 0.42], [-0.14, 0.56], [0.14, 0.56], [-0.14, 0.7], [0.14, 0.7], [0, 0.49], [0, 0.63]]) {
+    tuftParts.push(ellipsoid(0.016, 0.016, 0.012, x, y, 0.158, 6, 5))
   }
-  // Cushion piping
-  tuftParts.push(box(SEAT_WIDTH * 0.8, 0.015, 0.015, 0, 0.275, 0.4))
-  tuftParts.push(box(0.015, 0.015, 0.32, -SEAT_WIDTH * 0.4, 0.275, 0.24))
-  tuftParts.push(box(0.015, 0.015, 0.32, SEAT_WIDTH * 0.4, 0.275, 0.24))
+  tuftParts.push(capsule(0.008, 0.5, 0, 0.3, 0.37, 'x'))
   const tuftIntact = merge(tuftParts)
 
   const brassIntact = merge([
-    // Top rail behind the crown
-    box(SEAT_WIDTH * 0.9, 0.03, 0.04, 0, 0.12 + BACK_H + 0.01, 0.04),
-    // Armrest brass caps
-    box(0.08, 0.04, 0.28, -SEAT_WIDTH * 0.42, 0.48, 0.2),
-    box(0.08, 0.04, 0.28, SEAT_WIDTH * 0.42, 0.48, 0.2),
-    // Front corner studs
-    box(0.04, 0.04, 0.04, -SEAT_WIDTH * 0.4, 0.2, 0.42),
-    box(0.04, 0.04, 0.04, SEAT_WIDTH * 0.4, 0.2, 0.42)
+    capsule(0.012, SEAT_WIDTH * 0.72, 0, 0.86, 0.03, 'x'),
+    capsule(0.014, 0.16, -armX, 0.49, 0.22, 'z'),
+    capsule(0.014, 0.16, armX, 0.49, 0.22, 'z'),
+    ellipsoid(0.018, 0.018, 0.018, -0.28, 0.2, 0.4, 6, 5),
+    ellipsoid(0.018, 0.018, 0.018, 0.28, 0.2, 0.4, 6, 5)
   ])
 
   // --- Damaged seat: torn cushion, stuffing, missing arm ----------------
   const woodDamaged = merge([
-    box(SEAT_WIDTH * 0.92, 0.1, 0.36, 0, 0.11, 0.22),
-    box(SEAT_WIDTH * 0.96, BACK_H, 0.07, 0, 0.12 + BACK_H * 0.5, 0.035),
-    box(0.07, 0.28, 0.38, -SEAT_WIDTH * 0.42, 0.34, 0.22),
-    box(SEAT_WIDTH * 0.88, 0.08, 0.04, 0, 0.18, 0.42),
-    box(0.06, 0.1, 0.06, -SEAT_WIDTH * 0.34, 0.05, 0.12),
-    box(0.06, 0.1, 0.06, SEAT_WIDTH * 0.34, 0.05, 0.12),
-    box(0.06, 0.1, 0.06, -SEAT_WIDTH * 0.34, 0.05, 0.36),
-    box(0.06, 0.1, 0.06, SEAT_WIDTH * 0.34, 0.05, 0.36)
+    box(SEAT_WIDTH * 0.9, 0.08, 0.32, 0, 0.1, 0.2),
+    ellipsoid(0.33, 0.32, 0.038, 0, 0.52, 0.045, 14, 10),
+    capsule(0.026, 0.2, -armX, 0.32, 0.22, 'z'),
+    ellipsoid(0.3, 0.032, 0.028, 0, 0.16, 0.38),
+    leg(-SEAT_WIDTH * 0.32, 0.1),
+    leg(SEAT_WIDTH * 0.32, 0.1),
+    leg(-SEAT_WIDTH * 0.32, 0.32),
+    leg(SEAT_WIDTH * 0.32, 0.32)
   ])
 
   const velvetDamaged = merge([
-    // Partial seat cushion (torn / shifted)
-    box(SEAT_WIDTH * 0.55, 0.09, 0.28, -0.08, 0.21, 0.22),
-    // Ripped back remnant
-    box(SEAT_WIDTH * 0.5, BACK_H * 0.45, 0.08, 0.12, 0.35, 0.09)
+    ellipsoid(0.18, 0.055, 0.11, -0.08, 0.23, 0.22, 12, 8),
+    ellipsoid(0.16, 0.16, 0.05, 0.1, 0.48, 0.09, 12, 8),
+    capsule(0.03, 0.12, -armX, 0.44, 0.2, 'z')
   ])
 
   const stuffingGeo = merge([
-    box(0.22, 0.14, 0.18, 0.12, 0.24, 0.3),
-    box(0.16, 0.2, 0.12, -0.05, 0.55, 0.12),
-    box(0.1, 0.08, 0.14, 0.18, 0.28, 0.18)
+    ellipsoid(0.1, 0.07, 0.08, 0.12, 0.25, 0.28, 8, 6),
+    ellipsoid(0.07, 0.1, 0.06, -0.04, 0.55, 0.12, 8, 6),
+    ellipsoid(0.05, 0.04, 0.06, 0.16, 0.3, 0.18, 6, 5)
   ])
 
   const brassDamaged = merge([
-    box(SEAT_WIDTH * 0.9, 0.03, 0.04, 0, 0.12 + BACK_H + 0.01, 0.04),
-    box(0.08, 0.04, 0.28, -SEAT_WIDTH * 0.42, 0.48, 0.2),
-    box(0.04, 0.04, 0.04, -SEAT_WIDTH * 0.4, 0.2, 0.42)
+    capsule(0.012, SEAT_WIDTH * 0.72, 0, 0.86, 0.03, 'x'),
+    capsule(0.014, 0.16, -armX, 0.49, 0.22, 'z'),
+    ellipsoid(0.018, 0.018, 0.018, -0.28, 0.2, 0.4, 6, 5)
   ])
 
   // --- Bare frame (cushion missing) ------------------------------------
   const woodBare = merge([
-    box(SEAT_WIDTH * 0.92, 0.1, 0.36, 0, 0.11, 0.22),
-    box(SEAT_WIDTH * 0.96, BACK_H, 0.07, 0, 0.12 + BACK_H * 0.5, 0.035),
-    box(0.07, 0.28, 0.38, -SEAT_WIDTH * 0.42, 0.34, 0.22),
-    box(0.07, 0.28, 0.38, SEAT_WIDTH * 0.42, 0.34, 0.22),
-    box(SEAT_WIDTH * 0.88, 0.08, 0.04, 0, 0.18, 0.42),
-    box(SEAT_WIDTH * 0.8, 0.03, 0.3, 0, 0.17, 0.24),
-    box(0.06, 0.1, 0.06, -SEAT_WIDTH * 0.34, 0.05, 0.12),
-    box(0.06, 0.1, 0.06, SEAT_WIDTH * 0.34, 0.05, 0.12),
-    box(0.06, 0.1, 0.06, -SEAT_WIDTH * 0.34, 0.05, 0.36),
-    box(0.06, 0.1, 0.06, SEAT_WIDTH * 0.34, 0.05, 0.36)
+    box(SEAT_WIDTH * 0.9, 0.08, 0.32, 0, 0.1, 0.2),
+    ellipsoid(0.33, 0.32, 0.038, 0, 0.52, 0.045, 14, 10),
+    capsule(0.026, 0.2, -armX, 0.32, 0.22, 'z'),
+    capsule(0.026, 0.2, armX, 0.32, 0.22, 'z'),
+    ellipsoid(0.3, 0.032, 0.028, 0, 0.16, 0.38),
+    capsule(0.012, 0.48, 0, 0.16, 0.22, 'x'),
+    leg(-SEAT_WIDTH * 0.32, 0.1),
+    leg(SEAT_WIDTH * 0.32, 0.1),
+    leg(-SEAT_WIDTH * 0.32, 0.32),
+    leg(SEAT_WIDTH * 0.32, 0.32)
   ])
 
   const brassBare = merge([
-    box(SEAT_WIDTH * 0.9, 0.03, 0.04, 0, 0.12 + BACK_H + 0.01, 0.04),
-    box(0.08, 0.04, 0.28, -SEAT_WIDTH * 0.42, 0.48, 0.2),
-    box(0.08, 0.04, 0.28, SEAT_WIDTH * 0.42, 0.48, 0.2)
+    capsule(0.012, SEAT_WIDTH * 0.72, 0, 0.86, 0.03, 'x'),
+    capsule(0.014, 0.16, -armX, 0.49, 0.22, 'z'),
+    capsule(0.014, 0.16, armX, 0.49, 0.22, 'z')
   ])
 
   return {
