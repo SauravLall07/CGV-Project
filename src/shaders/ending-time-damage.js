@@ -1,18 +1,26 @@
 import * as THREE from 'three'
 
-export const CRACK_REACH = 2.4
 export const RIM_COLOR = 0x5ab8ff
 export const FRESNEL_COLOR = 0x3d7dff
+export const TORN_TOOTH_REACH = 0.3
+export const EDGE_WIDTH = 0.05
+export const HALO_WIDTH = 0.22
+export const METAL_WIDTH = 0.05
 const hole = (x, y, z, hx, hy, hz, seed, roof = 0) => Object.freeze({
   center: new THREE.Vector3(x, y, z), halfSize: new THREE.Vector3(hx, hy, hz), seed, roof })
-// +Z is the front; the first side opening and its entire crack field stay behind z=6.
+// roof=2 unfolds the roof and camera-facing wall into ONE continuous tear field.
+// Widths include the large teeth. +Z is the front, ending at approximately z=10.
+export const REAR_OPENING = hole(-1.45, 3.55, -4.2, 0.4, 1.65, 1.45, 11, 2)
+export const LARGE_OPENING = hole(-1.45, 3.55, -1, 0.4, 1.65, 2.45, 23, 2)
+export const THIRD_OPENING = hole(-1.45, 3.55, 1.5, 0.4, 1.65, 1.95, 37, 2)
+export const SMALL_OPENING = hole(-1.45, 2.7, -5, 0.4, 0.55, 0.65, 41)
+export const REAR_CARRIAGE_OPENING = hole(-1.45, 3.55, -2, 0.4, 1.65, 1.65, 53, 2)
 export const CARRIAGE_HOLES = Object.freeze([
-  Object.freeze([hole(-1.45, 2.55, -3.5, 0.35, 1.05, 1.8, 11)]),
-  Object.freeze([hole(-1.45, 2.55, -1, 0.35, 1.15, 2.1, 23), hole(0, 4.1, 1, 1.15, 0.5, 1.9, 29, 1)]),
-  Object.freeze([hole(-1.45, 2.55, 1.5, 0.35, 1.1, 1.9, 37), hole(0, 4.1, -1, 1.2, 0.5, 1.75, 41, 1)]),
-  Object.freeze([hole(0, 4.1, -2, 0.9, 0.5, 1.25, 53, 1)])
+  Object.freeze([REAR_OPENING]), Object.freeze([LARGE_OPENING]),
+  Object.freeze([THIRD_OPENING, SMALL_OPENING]), Object.freeze([REAR_CARRIAGE_OPENING])
 ])
-export const BOILER_HOLE = hole(-0.65, 2.6, 1.65, 0.55, 0.7, 1.1, 67)
+export const BOILER_HOLE = hole(-0.65, 2.6, 1.65, 0.6, 0.55, 0.95, 67)
+export const CAB_HOLE = hole(-1.3, 3.25, -2.2, 0.4, 1.25, 0.8, 79, 2)
 
 export function createDamageUniforms(holes = []) {
   const padded = [...holes]
@@ -20,35 +28,41 @@ export function createDamageUniforms(holes = []) {
   return { uHoles: { value: padded }, uTime: { value: 0 }, uRift: { value: 1 } }
 }
 
-const declarations = /* glsl */ `
+// Shared by surface and silhouette shaders so the hull cannot fill a torn opening.
+export const DAMAGE_DECLARATIONS = /* glsl */ `
   struct EndingHole { vec3 center; vec3 halfSize; float seed; float roof; };
   uniform EndingHole uHoles[4];
   uniform float uTime;
   uniform float uRift;
   varying vec3 vDamageLocal;
-  float damageHash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
-  vec2 damageSite(vec2 p) { return vec2(damageHash(p), damageHash(p + 17.4)); }
-  float damageNoise(vec2 p) {
-    vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-    return mix(mix(damageHash(i),damageHash(i+vec2(1,0)),f.x),
-      mix(damageHash(i+vec2(0,1)),damageHash(i+1.0),f.x),f.y);
+  float damageHash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  float damageTeeth(float p, float seed) {
+    float i=floor(p); float f=fract(p);
+    return mix(damageHash(vec2(i,seed)),damageHash(vec2(i+1.0,seed)),f)*2.0-1.0;
   }
-  float damageCells(vec2 p) {
-    vec2 cell = floor(p), f = fract(p); float first = 10.0, second = 10.0;
-    for (int y=-1;y<=1;y++) for (int x=-1;x<=1;x++) {
-      vec2 g=vec2(float(x),float(y)); vec2 d=g+damageSite(cell+g)-f;
-      float distanceToSite=dot(d,d);
-      if(distanceToSite<first) { second=first; first=distanceToSite; }
-      else second=min(second,distanceToSite);
+  vec2 damageEdge(vec3 position, EndingHole hole) {
+    vec3 offset=position-hole.center;
+    vec2 q=offset.zy, extent=hole.halfSize.zy;
+    float slab=abs(offset.x)-hole.halfSize.x;
+    if(hole.roof>1.5) {
+      // A shared unfolded coordinate crosses from the wall onto the roof.
+      q.y+=max(0.0,position.x-hole.center.x);
+      slab=max(position.x-0.25,min(abs(offset.x)-hole.halfSize.x,3.45-position.y));
+    } else if(hole.roof>0.5) {
+      q=offset.xz; extent=hole.halfSize.xz;
+      slab=abs(offset.y)-hole.halfSize.y;
     }
-    return sqrt(second)-sqrt(first);
+    float toothX=0.30*damageTeeth(q.y*2.3,hole.seed);
+    float toothY=0.30*damageTeeth(q.x*2.1,hole.seed+7.0);
+    float edge=max(abs(q.x)-extent.x+toothX,abs(q.y)-extent.y+toothY);
+    return vec2(edge,slab);
   }
 `
 
 export function patchTimeDamage(material, uniforms) {
   material.side = THREE.DoubleSide
   material.userData.endingTimeDamage = uniforms
-  material.customProgramCacheKey = () => 'ending-time-damage-v1'
+  material.customProgramCacheKey = () => 'ending-time-damage-v2'
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms)
     shader.vertexShader = 'varying vec3 vDamageLocal;\n' + shader.vertexShader
@@ -59,32 +73,23 @@ export function patchTimeDamage(material, uniforms) {
         vDamageLocal = (instanceMatrix * vec4(transformed,1.0)).xyz;
       #endif
     `)
-    shader.fragmentShader = declarations + shader.fragmentShader
+    shader.fragmentShader = DAMAGE_DECLARATIONS + shader.fragmentShader
     shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `
       #include <emissivemap_fragment>
-      float damageRim=0.0, damageHalo=0.0, damageCracks=0.0;
+      float damageRim=0.0, damageHalo=0.0, damageMetal=0.0;
       for(int h=0;h<4;h++) {
-        EndingHole hole=uHoles[h]; vec3 offset=vDamageLocal-hole.center;
-        vec2 q=hole.roof>0.5 ? offset.xz : offset.zy;
-        vec2 extent=hole.roof>0.5 ? hole.halfSize.xz : hole.halfSize.zy;
-        float slab=hole.roof>0.5 ? abs(offset.y)-hole.halfSize.y : abs(offset.x)-hole.halfSize.x;
-        float tear=(damageNoise(q*7.0+hole.seed)-0.5)*0.28
-          +(damageNoise(q*19.0-hole.seed)-0.5)*0.1;
-        float edge=max(abs(q.x)-extent.x,abs(q.y)-extent.y)+tear;
-        if(slab<0.0 && edge<0.0) discard;
-        float nearSurface=1.0-smoothstep(0.0,0.2,slab);
-        damageRim=max(damageRim,(1.0-smoothstep(0.015,0.06,abs(edge)))*nearSurface);
-        damageHalo=max(damageHalo,exp(-max(edge,0.0)*9.0)*nearSurface*step(0.0,edge));
-        float spread=(1.0-smoothstep(0.25,${CRACK_REACH.toFixed(1)},edge))*step(0.0,edge)*nearSurface;
-        float cells=damageCells(q*2.4+hole.seed);
-        damageCracks=max(damageCracks,(1.0-smoothstep(0.012,0.045,cells))*spread);
+        vec2 field=damageEdge(vDamageLocal,uHoles[h]);
+        float edge=field.x;
+        if(field.y<0.0 && edge<0.0) discard;
+        float nearSurface=1.0-smoothstep(0.0,0.05,field.y);
+        damageRim=max(damageRim,(1.0-smoothstep(0.04,0.05,edge))*nearSurface);
+        damageHalo=max(damageHalo,(1.0-smoothstep(0.05,0.27,edge))*nearSurface);
+        damageMetal=max(damageMetal,(1.0-smoothstep(0.10,0.11,edge))*nearSurface);
       }
-      float pulse=0.87+0.09*sin(uTime*2.1)+0.04*sin(uTime*13.7);
-      vec3 riftBlue=vec3(0.10224,0.47932,1.0);
-      float fresnel=pow(1.0-abs(dot(normal,normalize(vViewPosition))),3.0);
-      totalEmissiveRadiance += uRift*(riftBlue*(damageRim*3.5+damageHalo*0.45+damageCracks*1.9)*pulse
-        +vec3(0.04667,0.20508,1.0)*fresnel*0.15);
-      if(!gl_FrontFacing) { diffuseColor.rgb*=0.12; totalEmissiveRadiance*=0.18; }
+      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.254,0.275,0.305),damageMetal);
+      float pulse=0.94+0.06*sin(uTime*1.7);
+      totalEmissiveRadiance+=uRift*vec3(0.10224,0.47932,1.0)*(damageRim*3.5+damageHalo*0.7)*pulse;
+      if(!gl_FrontFacing) { diffuseColor.rgb*=0.12; totalEmissiveRadiance*=0.12; }
     `)
   }
   material.needsUpdate = true

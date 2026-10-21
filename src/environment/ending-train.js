@@ -5,6 +5,8 @@ import { disposeObject } from '../core/dispose.js'
 import { createEndingLocomotive } from './ending-locomotive.js'
 import { CARRIAGE_HOLES, createDamageUniforms, patchTimeDamage } from '../shaders/ending-time-damage.js'
 import { createEndingDebris } from './ending-debris.js'
+import { createEndingOutline } from '../shaders/ending-outline.js'
+import { createEndingSparks } from './ending-sparks.js'
 
 export const TRAIN_SPEED = 26
 export const STOP_NOSE_Z = 0.6
@@ -182,6 +184,9 @@ export function createEndingTrain() {
   contactGlows(locomotive, [-0.8, 1, 2.8, 4.4, 5.25])
   contactGlows(carriages[0], [-8.25, -5.75, 5.75, 8.25])
   const debris = createEndingDebris(root, carriages, hero.root)
+  damageUniforms.push(...debris.uniforms)
+  const outline = createEndingOutline([locomotive, ...carriages])
+  const sparks = createEndingSparks(source.train, [locomotive, carriages[0], carriages[1]], RAIL_OFFSET)
   // Per-carriage copies share only ending-owned texture wrappers. Release unused base material objects.
   const usedMaterials = new Set()
   root.traverse(node => {
@@ -189,15 +194,12 @@ export function createEndingTrain() {
   })
   for (const material of materialClones.values()) if (!usedMaterials.has(material)) material.dispose()
   let disposed = false
-  let rift = 1, releaseTime = -1
-  function setTimeState(value, fallTime, steamFrozen) {
-    rift = value; releaseTime = fallTime
+  function setTimeState(value, steamFrozen) {
     hero.setSteamFrozen(steamFrozen)
     for (const uniforms of damageUniforms) uniforms.uRift.value = value
     hero.damage.uRift.value = value
   }
-  function update(centerZ, distance, brakingProgress, settleTime = -1, delta = 0, speed = 0,
-    brakeTime = -1, brakeDuration = 4.5, settleDuration = 1.6) {
+  function update(centerZ, distance, brakingProgress, settleTime = -1, delta = 0, speed = 0) {
     const stopCenter = STOP_NOSE_Z + noseOffset
     root.position.z = Math.max(stopCenter, centerZ + stopCenter - STOP_CENTER_Z)
     locomotive.rotation.x = settleTime >= 0
@@ -209,11 +211,10 @@ export function createEndingTrain() {
     }
     glow.emissiveIntensity = brakingProgress >= 0 ? GLOW_PEAK * Math.sin(Math.PI * brakingProgress) : 0
     hero.update(distance, delta, speed, settleTime)
+    sparks.update(delta, brakingProgress)
     for (const uniforms of damageUniforms) uniforms.uTime.value += Math.max(0, delta)
-    debris.update(brakeTime, brakeDuration, settleDuration, releaseTime, rift)
   }
-  return { root, locomotive, carriages, noseOffset, damageUniforms, debris, update, setTimeState,
-    release: () => debris.release(),
+  return { root, locomotive, carriages, noseOffset, damageUniforms, debris, outline, sparks, update, setTimeState,
     dispose() {
       if (disposed) return
       disposed = true

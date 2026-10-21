@@ -7,12 +7,14 @@ import { createEndingTrain, STOP_CENTER_Z, STOP_NOSE_Z, TRAIN_SPEED } from '../s
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../src/shaders/ending-plate.js'
 import { createTrain } from '../src/entities/train.js'
 import { getKitMaterials } from '../src/environment/level1-kit/kit-materials.js'
-import { CARRIAGE_HOLES, BOILER_HOLE, CRACK_REACH } from '../src/shaders/ending-time-damage.js'
+import { CARRIAGE_HOLES, BOILER_HOLE, TORN_TOOTH_REACH } from '../src/shaders/ending-time-damage.js'
+import { createEndingAudio } from '../src/systems/ending-audio.js'
+import { SPARK_COUNT } from '../src/environment/ending-sparks.js'
 
 const TITLE_FADE = 0.6
 const TOTAL = ENDING_FADE_IN + APPROACH + BRAKE + SETTLE + HOLD + FADE_OUT + TITLE_FADE + TITLE_HOLD
 
-function harness({ delayPlate = false } = {}) {
+function harness({ delayPlate = false, audioFactory } = {}) {
   const previousDocument = globalThis.document, previousWindow = globalThis.window, previousLocation = globalThis.location
   let listenerAdds = 0, releasePlate = null
   globalThis.window = { addEventListener() { listenerAdds++ }, removeEventListener() {} }
@@ -52,7 +54,7 @@ function harness({ delayPlate = false } = {}) {
   const post = { setGrade(value) { grade = { ...defaultGrade, ...value } }, resetGrade() { grade = { ...defaultGrade } },
     isEnabled: () => postEnabled, setEnabled(value) { postEnabled = value } }
   const level = createEndingLevel({ scene, player, hud, renderCamera, post, camera: { setMode() {} },
-    beginCinematic() { begins++ }, advance: () => manager.advance() })
+    beginCinematic() { begins++ }, advance: () => manager.advance(), audioFactory })
   player.setCinematicView(null)
   const overlay = doc.body.children.find(child => child.id === 'ending-overlay')
   return { doc, scene, player, hud, manager, level, overlay, originalFog, originalBackground,
@@ -146,7 +148,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         if (node.isMesh) triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3 * (node.isInstancedMesh ? node.count : 1)
         else if (node.isSprite) triangles += 2
       })
-      assert.ok(calls <= 110, `draws: ${calls}`); assert.ok(triangles <= 120000, `triangles: ${triangles}`)
+      assert.ok(calls <= 140, `draws: ${calls}`); assert.ok(triangles <= 150000, `triangles: ${triangles}`)
       if (fps === 60) {
         t.diagnostic(`Train-only scene estimate: ${calls} drawable objects, ${triangles} triangles`)
         t.diagnostic(`Moonlight: ${JSON.stringify({ direction: moonDirection, elevation, intensity: moonlight.intensity,
@@ -209,7 +211,7 @@ test('Ending: damage uniforms use pivot-local holes, protect the first carriage 
     h.level.update(0); h.scene.updateMatrixWorld(true)
     for (const material of Object.values(kit).flat().filter(value => value?.isMaterial)) {
       assert.equal(material.userData.endingTimeDamage, undefined)
-      assert.notEqual(material.customProgramCacheKey(), 'ending-time-damage-v1')
+      assert.notEqual(material.customProgramCacheKey(), 'ending-time-damage-v2')
     }
     let patched = 0
     for (let i = 0; i < 4; i++) {
@@ -226,48 +228,37 @@ test('Ending: damage uniforms use pivot-local holes, protect the first carriage 
         node.material.onBeforeCompile(shader)
         for (const key of ['uHoles', 'uTime', 'uRift']) assert.equal(shader.uniforms[key], uniforms[key])
         assert.match(shader.vertexShader, /vDamageLocal = transformed/)
-        assert.match(shader.fragmentShader, /discard/); assert.match(shader.fragmentShader, /damageCells/)
+        assert.match(shader.fragmentShader, /discard/); assert.doesNotMatch(shader.fragmentShader, /damageCells/)
         assert.match(shader.fragmentShader, /if\(!gl_FrontFacing\)/)
         patched++
       }
     }
     assert.ok(patched > 12)
     for (const hole of CARRIAGE_HOLES[0]) {
-      assert.equal(hole.roof, 0)
-      assert.ok(hole.center.z + hole.halfSize.z + 0.19 + CRACK_REACH < 6,
-        'including torn-edge noise and the entire crack reach, damage stays behind the reserved front 4 m')
+      assert.equal(hole.roof, 2)
+      assert.ok(hole.center.z + hole.halfSize.z + TORN_TOOTH_REACH + 0.27 < 6,
+        'the opening, teeth and halo stay behind the reserved front 4 m')
     }
-    const firstPanels = h.scene.getObjectByName('ending-carriage-1').children.filter(node => node.name === 'ending-torn-panel')
-    assert.equal(firstPanels.length, 1)
-    assert.ok(firstPanels[0].position.z + CARRIAGE_HOLES[0][0].halfSize.z < 6)
-    assert.equal(BOILER_HOLE.halfSize.z * 2, 2.2)
-    assert.ok(h.scene.getObjectByName('ending-boiler-ribs'))
+    assert.equal(BOILER_HOLE.halfSize.z * 2 + 2 * TORN_TOOTH_REACH, 2.5)
+    assert.ok(h.scene.getObjectByName('ending-boiler-interior'))
+    assert.equal(h.scene.getObjectByName('ending-boiler-ribs'), undefined)
   } finally { h.restore() }
 })
 
-test('Ending: panels lift, freeze steam/river, release once and fall below the shot', () => {
+test('Ending: freeze steam/river and release the glow once', () => {
   const h = harness()
   try {
     h.level.update(0)
-    const panels = [], uniforms = new Set()
+    const uniforms = new Set()
     h.scene.traverse(node => {
-      if (node.name === 'ending-torn-panel') panels.push(node)
       for (const material of node.material ? Array.isArray(node.material) ? node.material : [node.material] : []) {
         if (material.userData.endingTimeDamage) uniforms.add(material.userData.endingTimeDamage)
       }
     })
-    assert.equal(panels.length, 7)
-    for (const panel of panels) assert.deepEqual(panel.position, panel.userData.hole.center)
     const staleSkip = h.skip
     h.level.update(ENDING_FADE_IN + APPROACH)
-    for (const panel of panels) assert.deepEqual(panel.position, panel.userData.hole.center)
     h.level.update(BRAKE + SETTLE)
     assert.equal(h.level.timeState.frozen, true)
-    for (const panel of panels) {
-      const lift = panel.position.y - panel.userData.hole.center.y
-      assert.ok(lift >= 2.5 && lift <= 4)
-    }
-    const frozenPoses = panels.map(panel => panel.matrix.clone())
     const steam = h.scene.getObjectByName('ending-chimney-steam').material.uniforms.uTime
     const plateUniforms = h.scene.getObjectByName('ending-plate-sphere').material.uniforms
     const steamTime = steam.value
@@ -276,7 +267,6 @@ test('Ending: panels lift, freeze steam/river, release once and fall below the s
     const riverTime = plateUniforms.uTime.value
     h.level.update(0.1)
     assert.equal(plateUniforms.uTime.value, riverTime)
-    for (let i = 0; i < panels.length; i++) assert.deepEqual(panels[i].matrix.elements, frozenPoses[i].elements)
     for (const uniform of uniforms) assert.equal(uniform.uRift.value, 1)
     const vignette = h.doc.body.children.find(node => node.id === 'ending-time-vignette')
     assert.equal(Number(vignette.style.opacity), 0.35)
@@ -284,17 +274,10 @@ test('Ending: panels lift, freeze steam/river, release once and fall below the s
     assert.equal(h.level.timeState.releaseCount, 1)
     assert.equal(h.level.release(), false); staleSkip(); staleSkip()
     assert.equal(h.level.timeState.releaseCount, 1)
-    assert.equal(h.scene.getObjectByName('ending-time-threads').visible, false)
     h.level.update(0.61)
     for (const uniform of uniforms) assert.equal(uniform.uRift.value, 0)
     assert.equal(Number(vignette.style.opacity), 0)
     assert.equal(plateUniforms.uFlow.value, 1); assert.ok(steam.value > steamTime)
-    h.level.update(3.67)
-    h.scene.updateMatrixWorld(true)
-    for (const panel of panels) {
-      const projected = panel.getWorldPosition(new THREE.Vector3()).project(h.renderCamera)
-      assert.ok(projected.y < -1, `released panel below frame: ${projected.y}`)
-    }
   } finally { h.restore() }
 })
 
@@ -364,6 +347,17 @@ test('Ending: completed disposal releases the plate once and restores FOV, grade
 
 test('Ending: teardown leaves cached kit materials/maps valid for a fresh platform train', () => {
   const kit = getKitMaterials(), cachedMaterials = new Set(Object.values(kit).flat().filter(value => value?.isMaterial))
+  const sharedState = () => [...cachedMaterials].map(material => ({
+    color: material.color?.getHex(), emissive: material.emissive?.getHex(),
+    intensity: material.emissiveIntensity, roughness: material.roughness, metalness: material.metalness,
+    side: material.side, transparent: material.transparent, opacity: material.opacity, version: material.version,
+    compile: material.onBeforeCompile, cache: material.customProgramCacheKey(),
+    userData: JSON.stringify(material.userData),
+    textures: Object.values(material).filter(value => value?.isTexture).map(texture => ({
+      texture, version: texture.version, colorSpace: texture.colorSpace, source: texture.source
+    }))
+  }))
+  const originalSharedState = sharedState()
   const windowState = () => ({ color: kit.carriageWindow.color.getHex(), emissive: kit.carriageWindow.emissive.getHex(),
     intensity: kit.carriageWindow.emissiveIntensity, map: kit.carriageWindow.map, emissiveMap: kit.carriageWindow.emissiveMap,
     colorSpace: kit.carriageWindow.map.colorSpace, version: kit.carriageWindow.map.version,
@@ -383,6 +377,7 @@ test('Ending: teardown leaves cached kit materials/maps valid for a fresh platfo
     assert.equal(windowClone.map, null); assert.equal(windowClone.emissiveMap, null)
     assert.equal(windowClone.emissive.getHex(), 0xffb35c); assert.equal(windowClone.emissiveIntensity, 0.85)
     assert.deepEqual(windowState(), originalWindow, 'creating the ending leaves the shared station window unchanged')
+    assert.deepEqual(sharedState(), originalSharedState)
     h.scene.getObjectByName('ending-real-train').traverse(node => {
       if (!node.material) return
       for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
@@ -392,6 +387,7 @@ test('Ending: teardown leaves cached kit materials/maps valid for a fresh platfo
     })
     h.level.update(TOTAL + 1); h.level.dispose(); assert.equal(sharedDisposals, 0)
     assert.deepEqual(windowState(), originalWindow, 'disposing the ending leaves the shared station window unchanged')
+    assert.deepEqual(sharedState(), originalSharedState)
     fresh = createTrain(); assert.equal(getKitMaterials(), kit)
     let sharedMeshes = 0
     fresh.train.traverse(node => {
@@ -413,4 +409,88 @@ test('Ending: teardown leaves cached kit materials/maps valid for a fresh platfo
     h.restore()
     for (const resource of watched) resource.removeEventListener('dispose', onDispose)
   }
+})
+
+test('Ending: outlines follow rift release and GPU sparks exist only during braking', () => {
+  const h = harness()
+  try {
+    h.level.update(0)
+    const sparks = h.scene.getObjectByName('ending-brake-sparks')
+    assert.equal(sparks.count, SPARK_COUNT)
+    assert.equal(sparks.material.uniforms.uIntensity.value, 0)
+    assert.ok(sparks.geometry.getAttribute('aSeed').isInstancedBufferAttribute)
+    const outlines = []
+    h.scene.traverse(node => { if (node.name === 'ending-blue-outline') outlines.push(node) })
+    assert.ok(outlines.length >= 6)
+    for (const node of outlines) {
+      assert.equal(node.material.uniforms.uRift.value, 1)
+      assert.equal(node.material.side, THREE.BackSide)
+      assert.equal(node.material.depthWrite, false)
+      assert.equal(node.material.depthTest, true)
+    }
+    for (const name of ['ending-torn-panel', 'ending-time-threads', 'ending-damage-splinters'])
+      assert.equal(h.scene.getObjectByName(name), undefined)
+    h.level.update(ENDING_FADE_IN + APPROACH + BRAKE / 2)
+    assert.ok(sparks.material.uniforms.uIntensity.value > 0.99)
+    h.level.update(BRAKE / 2)
+    assert.equal(sparks.material.uniforms.uIntensity.value, 0)
+    h.level.release(); h.level.update(0.61)
+    for (const node of outlines) assert.equal(node.material.uniforms.uRift.value, 0)
+  } finally { h.restore() }
+})
+
+function fakeEndingAudioContext() {
+  const sources = [], nodes = []
+  const parameter = () => ({
+    value: 0, setValueAtTime(value) { this.value = value }, setTargetAtTime(value) { this.value = value },
+    cancelScheduledValues() {}
+  })
+  const node = (source = false) => {
+    const value = { gain: parameter(), frequency: parameter(), detune: parameter(), Q: parameter(),
+      connected: false, stopped: false,
+      connect() { this.connected = true; return arguments[0] },
+      disconnect() { this.connected = false },
+      start() {}, stop() { this.stopped = true } }
+    nodes.push(value)
+    if (source) sources.push(value)
+    return value
+  }
+  const context = { state: 'running', currentTime: 0, sampleRate: 100,
+    createGain: () => node(), createOscillator: () => node(true),
+    createBiquadFilter: () => node(), createBufferSource: () => node(true),
+    createBuffer: () => ({ getChannelData: () => new Float32Array(100) }) }
+  const master = node()
+  return { context, master, sources, nodes }
+}
+
+test('Ending: screech requires a running shared context and stops on skip, dispose and restart', () => {
+  const silent = createEndingAudio({ context: () => null, output: () => null })
+  silent.update(0.5, 1); assert.equal(silent.active, false); silent.dispose()
+  const suspended = fakeEndingAudioContext()
+  suspended.context.state = 'suspended'
+  const waiting = createEndingAudio({ context: () => suspended.context, output: () => suspended.master })
+  waiting.update(0.5, 1); assert.equal(suspended.sources.length, 0); waiting.dispose()
+  for (const action of ['skip', 'dispose']) {
+    const mock = fakeEndingAudioContext()
+    let audio
+    const h = harness({ audioFactory: () => (audio = createEndingAudio({
+      context: () => mock.context, output: () => mock.master
+    })) })
+    try {
+      h.level.update(0); assert.equal(mock.sources.length, 0)
+      h.level.update(ENDING_FADE_IN + APPROACH + 0.3)
+      assert.equal(audio.active, true); assert.equal(mock.sources.length, 5)
+      if (action === 'skip') h.skip()
+      else h.level.dispose()
+      assert.equal(audio.active, false)
+      assert.ok(mock.sources.every(source => source.stopped))
+      assert.ok(mock.nodes.filter(node => node !== mock.master).every(node => !node.connected))
+    } finally { h.restore() }
+  }
+  const mock = fakeEndingAudioContext()
+  const restarted = createEndingAudio({ context: () => mock.context, output: () => mock.master })
+  restarted.update(0.5, 1); assert.equal(restarted.active, true)
+  restarted.update(-1, 0, 0.2); assert.equal(restarted.active, true)
+  restarted.update(-1, 0, 0.2); assert.equal(restarted.active, false)
+  restarted.dispose()
 })

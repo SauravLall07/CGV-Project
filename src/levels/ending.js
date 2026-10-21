@@ -3,6 +3,8 @@ import { createEndingGorge } from '../environment/ending-gorge.js'
 import { createEndingTrain, TRAIN_SPEED, STOP_CENTER_Z, STOP_NOSE_Z } from '../environment/ending-train.js'
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../shaders/ending-plate.js'
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
+import { createEndingAudio } from '../systems/ending-audio.js'
+import { brakeIntensity } from '../environment/ending-sparks.js'
 
 export const ENDING_FADE_IN = 1.0
 export const TRAIN_START_NOSE_Z = 125
@@ -23,7 +25,8 @@ export const WORLD_ALIGN_DEFAULTS = Object.freeze({ x: -0.75, y: -3.25, z: -0.75
 const PHASES = ['fadeIn', 'approach', 'braking', 'settle', 'hold', 'fadeOut', 'title', 'done']
 const DURATIONS = [ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, HOLD, FADE_OUT, TITLE_FADE + TITLE_HOLD]
 
-export function createEndingLevel({ scene, player, camera, renderCamera, hud, beginCinematic, advance, renderer, post = null }) {
+export function createEndingLevel({ scene, player, camera, renderCamera, hud, beginCinematic, advance, renderer, post = null,
+  audioFactory = createEndingAudio }) {
   // Timewreck and direct starts use the postprocessor's default grade; mirror Level 2's ownership.
   post?.setGrade({ warmth: 0 })
   const previousPostEnabled = post?.isEnabled?.()
@@ -44,6 +47,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const previousAspect = renderCamera?.aspect
   const gorge = createEndingGorge(scene, renderer)
   const train = createEndingTrain()
+  const audio = audioFactory()
   const worldAlign = new THREE.Group()
   worldAlign.name = 'WORLD_ALIGN'
   worldAlign.position.set(WORLD_ALIGN_DEFAULTS.x, WORLD_ALIGN_DEFAULTS.y, WORLD_ALIGN_DEFAULTS.z)
@@ -81,14 +85,14 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   function freeze() {
     if (timeState.frozen || timeState.released) return
     timeState.frozen = true
-    train.setTimeState(1, -1, true)
+    train.setTimeState(1, true)
     if (import.meta.env?.DEV) console.info('[ending] freeze')
   }
   function release() {
     if (disposed || timeState.released) return false
     releaseVignette = Number(vignette.style.opacity)
     timeState.released = true; timeState.frozen = false; timeState.releaseCount++
-    train.release(); train.setTimeState(1, 0, false)
+    train.setTimeState(1, false)
     gorge.plate.mesh.material.uniforms.uFlow.value = 1
     if (import.meta.env?.DEV) console.info('[ending] release')
     return true
@@ -105,7 +109,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       flow.value = Math.max(0, 1 - timeState.freezeTime / 0.4)
       vignette.style.opacity = String(0.35 * Math.min(1, timeState.freezeTime / 0.5))
     }
-    train.setTimeState(timeState.rift, timeState.released ? timeState.releaseTime : -1, timeState.frozen)
+    train.setTimeState(timeState.rift, timeState.frozen)
     const finalFlow = flow.value
     // Integrate the short linear flow ramp without moving the river while fully frozen.
     if (timeState.frozen && delta > 0) {
@@ -207,17 +211,20 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     const previousScissorTest = renderer.getScissorTest()
     const savedCulling = []
     const savedRifts = new Map()
+    const sparkIntensity = train.sparks.material.uniforms.uIntensity
+    const previousSparkIntensity = sparkIntensity.value
     gorge.root.traverse(node => { if (node.isMesh || node.isPoints) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
     train.root.traverse(node => { if (node.isMesh || node.isPoints || node.isSprite) { savedCulling.push([node, node.frustumCulled]); node.frustumCulled = false } })
     train.root.traverse(node => {
       if (!node.material) return
       for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
-        const uniform = material.userData.endingTimeDamage?.uRift
+        const uniform = material.userData.endingTimeDamage?.uRift ?? material.uniforms?.uRift
         if (uniform && !savedRifts.has(uniform)) savedRifts.set(uniform, uniform.value)
       }
     })
     if (gorge.plate.ready) renderer.initTexture?.(gorge.plate.texture)
     try {
+      sparkIntensity.value = 1
       scene.updateMatrixWorld(true)
       renderer.compile(scene, warmCamera)
       renderer.setRenderTarget(target)
@@ -227,6 +234,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       for (const uniform of savedRifts.keys()) uniform.value = 0
       renderer.render(scene, warmCamera)
     } finally {
+      sparkIntensity.value = previousSparkIntensity
       for (const [uniform, value] of savedRifts) uniform.value = value
       for (const [node, culling] of savedCulling) node.frustumCulled = culling
       renderer.setRenderTarget(previousTarget)
@@ -253,6 +261,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
 
   function skip() {
     if (disposed || advanced || phaseIndex >= PHASES.indexOf('fadeOut')) return
+    audio.stop()
     enterPhase(PHASES.indexOf('fadeOut'))
   }
 
@@ -273,8 +282,8 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       settleTime = phase === 'settle' ? phaseTime : SETTLE + (phase === 'hold' ? phaseTime : HOLD)
     }
     const speed = phase === 'approach' ? TRAIN_SPEED : phase === 'braking' ? TRAIN_SPEED * (1 - phaseTime / BRAKE) : 0
-    const brakeTime = phase === 'braking' ? phaseTime : phaseIndex >= 3 ? BRAKE + (phase === 'settle' ? phaseTime : SETTLE) : -1
-    train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime, delta, speed, brakeTime, BRAKE, SETTLE)
+    train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime, delta, speed)
+    audio.update(brakingProgress, brakeIntensity(brakingProgress), delta)
   }
 
   return {
@@ -326,6 +335,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     dispose() {
       if (disposed) return
       disposed = true
+      audio.dispose()
       removeAlignment?.()
       post?.resetGrade()
       if (previousPostEnabled !== undefined) post.setEnabled(previousPostEnabled)
