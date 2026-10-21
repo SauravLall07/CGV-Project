@@ -88,6 +88,7 @@ export function playPuzzleWrongAnswerSfx() {
 }
 export const playDialSfx = () => play('dial', 0.28)
 export const playPressurePlateSfx = () => play('plate', 0.32)
+export const playLaserGateButtonSfx = () => play('plate', 0.24, 0, 0.45)
 // Short synthesized relay cue for each icon in Puzzle 2's memory sequence.
 // No new asset needed: the oscillator starts immediately and follows SFX/Master volume.
 export function playRoutingIconSfx(iconIndex = 0, emitterPosition, listenerPosition) {

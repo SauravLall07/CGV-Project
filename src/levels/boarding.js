@@ -1,5 +1,6 @@
-import { preloadGuardTrainSfx, playStationAnnouncement, playTrainDoorSfx, playTrainDepartureSfx, updateStationAmbience, disposeGuardTrainSfx } from '../systems/level-one-guard-train-sfx.js'
+import { preloadGuardTrainSfx, playStationAnnouncement, playTrainDoorSfx, playTrainDepartureSfx, startTrainDoorEffortSfx, stopTrainDoorEffortSfx, updateStationAmbience, disposeGuardTrainSfx } from '../systems/level-one-guard-train-sfx.js'
 import * as THREE from 'three'
+import { playLaserGateButtonSfx } from '../systems/level-one-security-sfx.js'
 import {
   createStationBlockout,
   createStationLighting,
@@ -620,6 +621,7 @@ export function createBoardingLevel({
       onInteract: () => {
         if (isApproachGridDisabled) return
 
+        playLaserGateButtonSfx()
         isApproachGridDisabled = true
 
         approachLaserGrid.setActive(false)
@@ -641,6 +643,61 @@ export function createBoardingLevel({
       }
     }
   )
+
+  // Another bypass in the room EAST of the original West Wing grid.
+  // The first grid, button and all of the tutorial passage are left unchanged.
+  // The existing east doorway is at APPROACH_GATE_X[2] (-18).
+  const eastWingLaserGrid = stealth.addLaserGrid({
+    position: new THREE.Vector3(APPROACH_GATE_X[2], 0, -25.725),
+    width: 2.15,
+    height: 2.2,
+    beamCount: 4,
+    rotationY: Math.PI / 2
+  })
+
+  // Place the second control in the room between the two grids, before the
+  // east doorway. Match the existing terminal's proportions and light cues.
+  const eastWingTerminal = new THREE.Group()
+  eastWingTerminal.name = 'east-wing-security-terminal'
+  // Mount on the exposed south wall alongside the security-hall guard patrol.
+  // Its route runs from (-27, -26) to (-20, -23), bringing the guard within
+  // roughly 1.5 m of the terminal at the eastern end of its patrol.
+  // The player must approach the button in the open instead of from luggage cover.
+  eastWingTerminal.position.set(-21.8, 1.35, -22.03)
+  eastWingTerminal.rotation.y = Math.PI / 2
+
+  const eastWingTermBox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.35, 0.55, 0.22),
+    approachTermBox.material
+  )
+  eastWingTerminal.add(eastWingTermBox)
+  const eastWingScreenMat = approachTermScreenMat.clone()
+  const eastWingScreen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.04, 0.28, 0.16),
+    eastWingScreenMat
+  )
+  eastWingScreen.position.set(0.18, 0.05, 0)
+  eastWingTerminal.add(eastWingScreen)
+  const eastWingLight = new THREE.PointLight(0xef4444, 3, 3)
+  eastWingLight.position.set(0.3, 0.05, 0)
+  eastWingTerminal.add(eastWingLight)
+  station.add(eastWingTerminal)
+
+  let isEastWingGridDisabled = false
+  const unregisterEastWingTerminal = interaction.register(eastWingTerminal, {
+    prompt: 'Deactivate East Wing Laser Grid',
+    onInteract: () => {
+      if (isEastWingGridDisabled) return
+      playLaserGateButtonSfx()
+      isEastWingGridDisabled = true
+      eastWingLaserGrid.setActive(false)
+      eastWingScreenMat.color.setHex(0x10b981)
+      eastWingScreenMat.emissive.setHex(0x059669)
+      eastWingLight.color.setHex(0x10b981)
+      interaction.flashPrompt('East Wing Security Grid Deactivated!')
+      hud?.showToast?.('East Wing laser grid offline — passage clear', 2200)
+    }
+  })
 
   // Wing Zone C — Security Hall (medium-hard)
   stealth.addGuard({
@@ -966,12 +1023,17 @@ export function createBoardingLevel({
         !player.isAirborne() && Math.abs(p.y) < 0.15 &&
         p.x >= 3.8 && Math.abs(p.z - boardingTarget.z) <= 0.6
     },
-    onHoldStart: () => player.startInteractionPull?.(boardingDoor),
+    onHoldStart: () => {
+      startTrainDoorEffortSfx()
+      player.startInteractionPull?.(boardingDoor)
+    },
     onHoldCancel: ({ reset }) => {
+      stopTrainDoorEffortSfx()
       if (reset) player.resetInteractionAnimation?.()
       else player.returnInteractionPull?.()
     },
     onHoldComplete: () => {
+      stopTrainDoorEffortSfx()
       if (isBoardingCinematic || respawn.isFailing()) return
       isBoardingCinematic = true
       boardingStartedAt = performance.now()
@@ -1386,6 +1448,7 @@ export function createBoardingLevel({
       unregisterStationBlocker()
       unregisterTrainBlocker()
       unregisterApproachTerminal()
+    unregisterEastWingTerminal()
       unregisterBoarding()
       unregisterDoor()
       veil.remove()

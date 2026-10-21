@@ -15,6 +15,7 @@ const urls = {
   announcement: new URL('../assets/audio/sfx/level1-voices/station-announcement.ogg', import.meta.url),
   station: new URL('../assets/audio/sfx/level1-voices/station-ambience.ogg', import.meta.url),
   door: new URL('../assets/audio/sfx/level1-voices/train-door.ogg', import.meta.url),
+  effort: new URL('../assets/audio/sfx/level1-voices/train-door-force.ogg', import.meta.url),
   depart: new URL('../assets/audio/sfx/level1-voices/train-depart.ogg', import.meta.url)
 }
 const buffers = new Map()
@@ -187,6 +188,7 @@ export function updateStationAmbience(playerPosition, enabled = true) {
   stationLoop.gain.gain.setTargetAtTime(gain, ctx.currentTime, 0.35)
 }
 export function disposeGuardTrainSfx() {
+  stopTrainDoorEffortSfx()
   if (stationLoop) {
     try { stationLoop.source.stop() } catch { /* already stopped */ }
     stationLoop = null
@@ -201,4 +203,43 @@ export function disposeGuardTrainSfx() {
   priorityVoiceUntil = -100
   pendingInvestigation = null
   collisionToken++
+}
+
+// The recorded metal strain is heard only during the E-hold interaction.
+// Each new hold invalidates any pending audio decode from a cancelled hold.
+let forcingDoor = null
+let forcingDoorToken = 0
+export function stopTrainDoorEffortSfx() {
+  forcingDoorToken++
+  if (!forcingDoor) return
+  const current = forcingDoor
+  forcingDoor = null
+  try { current.source.stop() } catch { /* already stopped */ }
+}
+export function startTrainDoorEffortSfx() {
+  stopTrainDoorEffortSfx()
+  const token = forcingDoorToken
+  const ctx = getContext()
+  if (!ctx || ctx.state !== 'running') return
+  // Preloading normally makes this immediate; delayed decoding is still safe
+  // because cancelling the hold invalidates its token.
+  void load('effort').then(buffer => {
+    if (!buffer || token !== forcingDoorToken || ctx.state !== 'running') return
+    const bus = getSfxGain()
+    if (!bus) return
+    const source = ctx.createBufferSource()
+    const gain = ctx.createGain()
+    source.buffer = buffer
+    source.loop = true
+    // Kept audible but restrained, and controlled by SFX/master volume.
+    gain.gain.value = 0.18
+    source.connect(gain).connect(bus)
+    forcingDoor = { source, gain }
+    source.onended = () => {
+      if (forcingDoor?.source === source) forcingDoor = null
+      source.disconnect()
+      gain.disconnect()
+    }
+    source.start()
+  })
 }
