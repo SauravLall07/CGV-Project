@@ -205,7 +205,7 @@ export const DEFAULT_OPTIONS = {
   crouchMode: 'toggle',
   cameraDistance: 4.8,
   masterVolume: 0.5,
-  musicVolume: 1,
+  musicVolume: 0.7,
   sfxVolume: 1,
   mute: false
 }

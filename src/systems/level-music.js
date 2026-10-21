@@ -122,7 +122,10 @@ export class LevelMusicPlayer {
     const master = getMusicGain()
 
     this.gain = ctx.createGain()
-    this.gain.gain.value = volume
+    // Level 1's soundtrack is intentionally 10% of its original loudness.
+    // The Music Volume slider still controls 0–100% of this reduced ceiling.
+    const levelOneTrack = String(this.url).includes('level1-constance')
+    this.gain.gain.value = volume * (levelOneTrack ? 0.1 : 1)
     this.gain.connect(master)
 
     this.source = ctx.createBufferSource()
