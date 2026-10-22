@@ -1,4 +1,4 @@
-// Imported only behind import.meta.env.DEV in main.js. No production hook/UI.
+// Imported only behind import.meta.env?.DEV in main.js. No production hook/UI.
 import { summarizeFrames, summarizeGpu } from './frame-metrics.js'
 
 export function createBenchmark({ camera, overlay, quality, ready, prepare }) {

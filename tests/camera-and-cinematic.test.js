@@ -66,9 +66,13 @@ test('Camera math: first/third crouch clearance, jumping and exterior-reveal rec
         for(let i=0;i<fps;i++) view.update(1/fps,player.mesh,scene,{crouching:true})
         assert.ok(camera.position.y<1.34, `${mode}/${fps}: camera stays below roof`)
         assert.ok(camera.position.y>0.5)
-        assert.equal(player.mesh.visible,mode==='third')
+        // Tight third-person clearance hides the avatar to prevent model clipping.
+        assert.equal(player.mesh.visible,false)
       }
       player.mesh.userData.tightCrouchCamera=false
+      view.setPitch(0); view.snap()
+      for(let i=0;i<fps;i++) view.update(1/fps,player.mesh,null,{crouching:false})
+      assert.equal(player.mesh.visible,true,'third-person avatar returns in open space')
       view.setMode('first',{announce:false}); view.snap()
       player.mesh.position.y=1.4
       view.update(1/fps,player.mesh,null,{crouching:false})
