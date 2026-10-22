@@ -166,7 +166,7 @@ function disposeGameplayDrone() {
 
 function playMusicForState(state) {
   const spec = LEVEL_TRACKS[state]
-  console.log(
+  if (import.meta.env?.DEV) console.log(
     `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] playMusicForState("${state}") drone=${musicSystem ? '#' + musicSystem.id : 'none'} spec=${spec ? spec.file : 'none'}`
   )
   if (!spec) {
@@ -181,40 +181,40 @@ function playMusicForState(state) {
 }
 
 async function playMenuMusic() {
-  console.log('playMenuMusic called')
+  if (import.meta.env?.DEV) console.log('playMenuMusic called')
   await startLevelMusic(loadTrack('../assets/audio/music/menu-theme.mp3'), { loop: true })
-  console.log('playMenuMusic: startLevelMusic() resolved')
+  if (import.meta.env?.DEV) console.log('playMenuMusic: startLevelMusic() resolved')
 }
 
-function unlockAudio() {
-  console.log('unlockAudio() called')
+function unlockAudio({ menuMusic = true } = {}) {
+  if (import.meta.env?.DEV) console.log('unlockAudio() called')
   initAudio()
   const preloading = preloadAbilitySfx()
   if (preloading && typeof preloading.then === 'function') {
     preloading.then(() => {
-      console.log('[ability-sfx] unlockAudio preload settled before/during menu')
+      if (import.meta.env?.DEV) console.log('[ability-sfx] unlockAudio preload settled before/during menu')
     })
   }
   const ctx = getContext()
-  console.log('unlockAudio context before resume: ' + (ctx ? ctx.state : 'none'))
+  if (import.meta.env?.DEV) console.log('unlockAudio context before resume: ' + (ctx ? ctx.state : 'none'))
   const unlocking = resumeAudio()
-  console.log('unlockAudio resumeAudio() returned:', unlocking)
+  if (import.meta.env?.DEV) console.log('unlockAudio resumeAudio() returned:', unlocking)
 
   const startMenu = async () => {
-    console.log('startMenu called, gameStarted: ' + gameStarted)
-    if (gameStarted) return
+    if (import.meta.env?.DEV) console.log('startMenu called, gameStarted: ' + gameStarted)
+    if (gameStarted || !menuMusic) return
     await playMenuMusic()
   }
 
   const runStartMenu = () => {
-    console.log('unlockAudio: calling startMenu()')
+    if (import.meta.env?.DEV) console.log('unlockAudio: calling startMenu()')
     const started = startMenu()
     if (started && typeof started.then === 'function') {
       return started.then(() => {
-        console.log('unlockAudio: startMenu() finished')
+        if (import.meta.env?.DEV) console.log('unlockAudio: startMenu() finished')
       })
     }
-    console.log('unlockAudio: startMenu() finished')
+    if (import.meta.env?.DEV) console.log('unlockAudio: startMenu() finished')
   }
 
   if (unlocking && typeof unlocking.then === 'function') unlocking.then(runStartMenu)
@@ -236,10 +236,10 @@ for (const type of FIRST_GESTURES) {
 }
 
 canvas.addEventListener('click', () => {
-  console.log('Canvas clicked, attempting audio resume')
+  if (import.meta.env?.DEV) console.log('Canvas clicked, attempting audio resume')
   unlockAudio()
 })
-console.log('Audio click listener attached to: ' + canvas.tagName)
+if (import.meta.env?.DEV) console.log('Audio click listener attached to: ' + canvas.tagName)
 
 const interaction = createInteractionSystem({ camera, input: keyboard,
   onTap: ({ gesture }) => {
@@ -326,7 +326,7 @@ const levelManager = createLevelManager({
     else timeSystem.warmGhost(renderer, camera)
     // Start the next module after presentation, never alongside boot FBXs.
     // Prefetch failure is optional; enter() will retry under the loading screen.
-    const next = state === 'Boarding' ? 'MovingHeist' : state === 'MovingHeist' ? 'Timewreck' : null
+    const next = state === 'Boarding' ? 'MovingHeist' : state === 'MovingHeist' ? 'Timewreck' : state === 'Timewreck' ? 'Ending' : null
     if (next) requestAnimationFrame(() => requestAnimationFrame(() => {
       if (levelManager.getState() === state) levelManager.prefetch(next)
     }))
@@ -339,7 +339,13 @@ const levelManager = createLevelManager({
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
     { state: 'Ending', load: () => import('./levels/ending.js')
-      .then(({ createEndingLevel }) => ctx => createEndingLevel({ ...ctx, renderCamera: camera, post })) },
+      .then(({ createEndingLevel, prefetchEndingPaintings }) => {
+        // Paintings prefetch during Timewreck, but cannot hold the transition hostage.
+        prefetchEndingPaintings().catch(error => {
+          if (import.meta.env?.DEV) console.warn('Ending painting prefetch failed; using bounded in-level loading', error)
+        })
+        return ctx => createEndingLevel({ ...ctx, renderCamera: camera, post })
+      }) },
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })
@@ -716,9 +722,8 @@ async function quitToTitle() {
   elapsed = 0
   resetCount = 0
 
-  levelManager.unload()
   syncInputState()
-  keyboardLock.release()
+  keyboardLock.release({ exitFullscreen: false })
 
   // Quitting mid-run from first person left the player figure hidden; the
   // title screen's cinematic shot needs it back.
@@ -728,16 +733,29 @@ async function quitToTitle() {
   hud.setObjective('')
   hud.resetRunTimer()
 
-  disposeGameplayDrone()
-  // Reveal the menu and resume audio inside the dismissal gesture, without
-  // waiting for station assets or construction. First-launch unlock is unchanged.
-  menu.show()
-  unlockAudio()
-  titleReturnPromise = buildTitleBackdrop().then(backdrop => {
-    titleBackdrop = backdrop
-    // The builder parks the player at its checkpoint; reapply the title pose.
+  // Keep audio unlock in the dismissal gesture, before the asynchronous fade.
+  unlockAudio({ menuMusic: false })
+  const veil = document.createElement('div')
+  Object.assign(veil.style, { position: 'fixed', inset: '0', zIndex: '10000',
+    background: '#000', opacity: '0', transition: 'opacity 200ms linear', pointerEvents: 'auto' })
+  document.body.appendChild(veil)
+  titleReturnPromise = (async () => {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    veil.style.opacity = '1'
+    await new Promise(resolve => setTimeout(resolve, 200))
+    // Let the opaque veil paint before synchronous scene disposal/construction.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    levelManager.unload()
+    disposeGameplayDrone()
+    // unload stops the outgoing track; request title music afterwards.
+    playMenuMusic()
+    titleBackdrop = await buildTitleBackdrop()
     menu.show()
-  }).finally(() => { titleReturnPromise = null })
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    veil.style.transition = 'opacity 400ms linear'
+    veil.style.opacity = '0'
+    await new Promise(resolve => setTimeout(resolve, 400))
+  })().finally(() => { veil.remove(); titleReturnPromise = null })
   return titleReturnPromise
 }
 

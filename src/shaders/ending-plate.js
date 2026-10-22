@@ -11,6 +11,19 @@ export const DOOR_PLATE_WIDTH = 1322
 export const DOOR_PLATE_HEIGHT = 1190
 export const DOOR_PLATE_FOV = 74
 
+const paintingUrls = [plateUrl, doorUrl, gorgeUrl]
+let prefetchedImages = null, prefetchPromise = null
+export function prefetchEndingPaintings() {
+  if (!prefetchPromise) {
+    const images = [null, null, null]
+    prefetchedImages = images
+    prefetchPromise = Promise.all(paintingUrls.map((url, index) =>
+      new THREE.ImageLoader().loadAsync(url).then(image => { images[index] = image })))
+      .catch(error => { prefetchPromise = null; throw error })
+  }
+  return prefetchPromise
+}
+
 export function createEndingPlate(onReady) {
   const camera = new THREE.PerspectiveCamera(PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT, 0.1, 1800)
   camera.position.copy(PLATE_CAMERA_POSITION); camera.lookAt(PLATE_CAMERA_TARGET); camera.updateMatrixWorld(true)
@@ -27,17 +40,26 @@ export function createEndingPlate(onReady) {
   }
   let ready = false, disposed = false
   let loadedCount = 0
-  const textures = [plateUrl, doorUrl, gorgeUrl].map(url => new THREE.TextureLoader().load(url, loaded => {
+  const images = prefetchedImages
+  prefetchedImages = null; prefetchPromise = null
+  const loaded = texture => {
     if (disposed) return
     ready = ++loadedCount === 3
-    onReady?.(loaded)
-  }))
+    onReady?.(texture)
+  }
+  const textures = paintingUrls.map((url, index) => {
+    if (!images?.[index]) return new THREE.TextureLoader().load(url, loaded)
+    const texture = new THREE.Texture(images[index]); texture.needsUpdate = true
+    return texture
+  })
   const texture = textures[0]
-  for (const item of textures) {
+  for (let index = 0; index < textures.length; index++) {
+    const item = textures[index]
     item.colorSpace = THREE.SRGBColorSpace
     item.minFilter = THREE.LinearFilter
     item.magFilter = THREE.LinearFilter
     item.generateMipmaps = false
+    if (images?.[index]) loaded(item)
   }
   const material = new THREE.ShaderMaterial({
     name: 'ending-projected-plate',

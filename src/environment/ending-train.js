@@ -224,10 +224,16 @@ export function createEndingTrain() {
   const sparks = createEndingSparks(source.train, [locomotive, carriages[0], carriages[1]], RAIL_OFFSET)
   // Per-carriage copies share only ending-owned texture wrappers. Release unused base material objects.
   const usedMaterials = new Set()
+  const usedTextures = new Set()
   root.traverse(node => {
-    if (node.material) for (const material of Array.isArray(node.material) ? node.material : [node.material]) usedMaterials.add(material)
+    if (node.material) for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+      usedMaterials.add(material)
+      for (const value of Object.values(material)) if (value?.isTexture) usedTextures.add(value)
+      for (const uniform of Object.values(material.uniforms ?? {})) if (uniform.value?.isTexture) usedTextures.add(uniform.value)
+    }
   })
   for (const material of materialClones.values()) if (!usedMaterials.has(material)) material.dispose()
+  for (const texture of textureClones.values()) if (!usedTextures.has(texture)) texture.dispose()
   let disposed = false
   function update(centerZ, distance, brakingProgress, settleTime = -1, delta = 0, speed = 0) {
     const stopCenter = STOP_NOSE_Z + noseOffset

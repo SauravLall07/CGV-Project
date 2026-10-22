@@ -129,6 +129,6 @@ export function createEndingAudio({ context = getContext, output = getMasterGain
       }
     },
     stop,
-    dispose() { stop(); disposed = true }
+    dispose() { stop(); noiseBuffer = null; disposed = true }
   }
 }

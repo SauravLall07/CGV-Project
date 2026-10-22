@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, BEAT, DOOR_OPEN, HOLD_CORE,
   THROW, THROW_RELEASE, FALL, PHASES, DURATIONS, TRAIN_START_NOSE_Z,
-  SKY_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS } from '../src/levels/ending.js'
-import { DOOR_HOLD, RELEASE_TO_CUT, IMPACT_HOLD, TURN, RUN, EMPTY_BEAT, TILT_UP, TILT_DEGREES, CRANE_HEIGHT, DOOR_EYE_HEIGHT, measureEndingFrame, measureEndingRoofAngle } from '../src/levels/ending.js'
+  SKY_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS, PAINTING_WAIT_SECONDS } from '../src/levels/ending.js'
+import { DOOR_HOLD, RELEASE_TO_CUT, IMPACT_HOLD, TURN, RUN, EMPTY_BEAT, TILT_UP, TILT_DEGREES, CRANE_HEIGHT, DOOR_EYE_HEIGHT } from '../src/levels/ending.js'
 import { RUN_IN, RUN_RADIUS, RUN_CORRIDOR, DOOR_OPEN_ANGLE } from '../src/environment/ending-door.js'
 import { createPlayer } from '../src/entities/player.js'
 import { RIVER_TARGET_NDC, GORGE_FLOOR_Y } from '../src/environment/ending-core.js'
@@ -25,30 +25,71 @@ import { SPARK_COUNT } from '../src/environment/ending-sparks.js'
 
 const TOTAL = DURATIONS.reduce((sum,value)=>sum+value,0)
 
+function measureEndingRoofAngle(carriage,shot) {
+  const left=new THREE.Vector3(-1.48,4,6.5).applyMatrix4(carriage.matrixWorld).project(shot)
+  const right=new THREE.Vector3(-1.48,4,8.5).applyMatrix4(carriage.matrixWorld).project(shot)
+  return THREE.MathUtils.radToDeg(Math.atan2(right.y-left.y,(right.x-left.x)*shot.aspect))
+}
+
+function measureEndingFrame(trainRoot,shot,projector) {
+  trainRoot.updateWorldMatrix(true,true);shot.updateMatrixWorld(true);projector.updateMatrixWorld(true)
+  const frustum=new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(shot.projectionMatrix,shot.matrixWorldInverse))
+  const box=new THREE.Box3(),point=new THREE.Vector3()
+  let visibleBounds=0,overlap=0,maxPlateNdc=0
+  trainRoot.traverseVisible(node=>{
+    if(!node.isMesh && !node.isPoints && !node.isSprite)return
+    box.setFromObject(node)
+    if(!frustum.intersectsBox(box))return
+    visibleBounds++
+    let minX=1,minY=1,maxX=-1,maxY=-1
+    for(let corner=0;corner<8;corner++) {
+      point.set(corner&1?box.max.x:box.min.x,corner&2?box.max.y:box.min.y,corner&4?box.max.z:box.min.z).project(shot)
+      minX=Math.min(minX,point.x);maxX=Math.max(maxX,point.x);minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y)
+    }
+    overlap+=Math.max(0,Math.min(1,maxX)-Math.max(-1,minX))*Math.max(0,Math.min(1,maxY)-Math.max(-1,minY))*25
+  })
+  for(const x of [-1,1])for(const y of [-1,1]) {
+    point.set(x,y,0.5).unproject(shot).sub(shot.position).normalize().multiplyScalar(1500).add(shot.position).project(projector)
+    maxPlateNdc=Math.max(maxPlateNdc,Math.abs(point.x),Math.abs(point.y))
+  }
+  return {visibleTrainBounds:visibleBounds,trainOverlapPercent:Math.min(100,overlap),maxPlateNdc}
+}
+
 function assertQuaternionClose(actual,expected) {
   for(const component of ['x','y','z','w'])
     assert.ok(Math.abs(actual[component]-expected[component])<=1e-9,component+' quaternion component changed')
 }
 
-function harness({ delayPlate = false, audioFactory, playerOverride } = {}) {
+function harness({ delayPlate = false, failPlate = false, audioFactory, playerOverride, renderer } = {}) {
   const previousDocument = globalThis.document, previousWindow = globalThis.window, previousLocation = globalThis.location
-  let listenerAdds = 0
+  let listenerAdds = 0, liveListeners = 0
   const pendingPlates = []
   globalThis.window = { addEventListener() { listenerAdds++ }, removeEventListener() {} }
   globalThis.location = { search: '?start=ending' }
   const doc = { activeElement: null }
   class Element extends EventTarget {
-    constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.style = {}; this.children = [] }
+    constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.style = {}; this.children = []; this.listeners = new Map() }
+    addEventListener(type,callback,options) {
+      if(!this.listeners.has(type))this.listeners.set(type,new Set())
+      const set=this.listeners.get(type)
+      if(!set.has(callback)){set.add(callback);liveListeners++}
+      super.addEventListener(type,callback,options)
+    }
+    removeEventListener(type,callback,options) {
+      if(this.listeners.get(type)?.delete(callback))liveListeners--
+      super.removeEventListener(type,callback,options)
+    }
     appendChild(child) { this.children.push(child); child.parent = this; return child }
     remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this) }
     focus() { doc.activeElement = this }
     blur() { if (doc.activeElement === this) doc.activeElement = null }
+    animate() { return this.animation={currentTime:0,cancelled:false,pause(){},cancel(){this.cancelled=true}} }
   }
   doc.createElement = tag => tag === 'canvas' ? previousDocument.createElement('canvas') : new Element(tag)
   doc.createElementNS = (_namespace, tag) => {
     const image = new Element(tag); image.width = 1671; image.height = 941; image.complete = true
     Object.defineProperty(image, 'src', { set(url) {
-      const loaded = () => image.dispatchEvent(new Event('load'))
+      const loaded = () => image.dispatchEvent(new Event(failPlate ? 'error' : 'load'))
       if (delayPlate && String(url).includes('ending-plate')) pendingPlates.push(loaded)
       else loaded()
     } })
@@ -73,18 +114,39 @@ function harness({ delayPlate = false, audioFactory, playerOverride } = {}) {
   const post = { setGrade(value) { grade = { ...defaultGrade, ...value } }, resetGrade() { grade = { ...defaultGrade } },
     isEnabled: () => postEnabled, setEnabled(value) { postEnabled = value } }
   const level = createEndingLevel({ scene, player, hud, renderCamera, post, camera: { setMode() {} },
-    beginCinematic() { begins++ }, advance: () => manager.advance(), audioFactory })
+    beginCinematic() { begins++ }, advance: () => manager.advance(), audioFactory, renderer })
   player.setCinematicView(null)
   const overlay = doc.body.children.find(child => child.id === 'ending-overlay')
   return { doc, scene, player, hud, manager, level, overlay, originalFog, originalBackground,
     renderCamera, originalFov, originalAspect, defaultGrade,
     get view() { return cinematicView }, get skip() { return callback }, get begins() { return begins },
-    get grade() { return grade }, get postEnabled() { return postEnabled }, get listenerAdds() { return listenerAdds },
+    get grade() { return grade }, get postEnabled() { return postEnabled }, get listenerAdds() { return listenerAdds }, get liveListeners(){return liveListeners},
     releasePlate() { pendingPlates.splice(0).forEach(loaded=>loaded()) },
     restore() {
       level.dispose(); globalThis.document = previousDocument; globalThis.window = previousWindow; globalThis.location = previousLocation
     } }
 }
+
+test('Ending: failed or stalled paintings reveal after the bounded wait and late completion cannot restart the fade', () => {
+  for(const failPlate of [false,true]) {
+    const h=harness({delayPlate:!failPlate,failPlate})
+    try {
+      assert.equal(h.level.plate.ready,false)
+      h.level.update(PAINTING_WAIT_SECONDS-0.01)
+      assert.equal(h.level.phase,'fadeIn');assert.equal(h.level.phaseTime,0)
+      assert.equal(h.overlay.style.opacity,'1');assert.equal(h.overlay.animation.currentTime,0)
+      h.level.update(0.02)
+      assert.ok(h.level.phaseTime>0,'fallback advances even without painting readiness')
+      h.level.update(ENDING_FADE_IN)
+      assert.equal(h.level.phase,'approach')
+      assert.equal(h.overlay.style.opacity,'0');assert.equal(h.overlay.animation.cancelled,true)
+      h.releasePlate();h.level.update(0.1)
+      assert.equal(h.overlay.style.opacity,'0')
+      assert.equal(h.level.phase,'approach')
+      h.skip();assert.equal(h.manager.advances,1)
+    } finally {h.restore()}
+  }
+})
 
 test('Ending: plate camera, passive alignment, geometry budget, physical stop and full timeline hold', t => {
   for (const fps of [30, 60, 144]) {
@@ -1144,6 +1206,108 @@ function fakeEndingAudioContext() {
   return { context, master, sources, nodes }
 }
 
+test('Ending: three complete ownership cycles release GPU resources, warm targets, audio, DOM and listeners', t => {
+  const totals=[]
+  for(let cycle=0;cycle<3;cycle++) {
+    const resources=new Map(),types={geometry:0,material:0,texture:0,target:0,instances:0,light:0}
+    function watch(resource,type) {
+      if(!resource||resources.has(resource))return
+      resources.set(resource,0);types[type]++
+      resource.addEventListener('dispose',()=>resources.set(resource,resources.get(resource)+1))
+    }
+    let target=null,audio
+    const renderer={getRenderTarget:()=>target,getViewport:v=>v.set(0,0,1280,720),
+      getScissor:v=>v.set(0,0,1280,720),getScissorTest:()=>false,
+      setRenderTarget(value){target=value;if(value)watch(value,'target')},
+      setViewport(){},setScissor(){},setScissorTest(){},compile(){},render(){},
+      initTexture(texture){watch(texture,'texture')}}
+    const mock=fakeEndingAudioContext()
+    const h=harness({renderer,audioFactory:()=>audio=createEndingAudio({context:()=>mock.context,output:()=>mock.master})})
+    try {
+      h.scene.traverse(node=>{
+        if(node.geometry)watch(node.geometry,'geometry')
+        if(node.isInstancedMesh)watch(node,'instances')
+        if(node.isLight)watch(node,'light')
+        for(const material of node.material?Array.isArray(node.material)?node.material:[node.material]:[]) {
+          watch(material,'material')
+          for(const value of Object.values(material))if(value?.isTexture)watch(value,'texture')
+          for(const uniform of Object.values(material.uniforms??{}))if(uniform.value?.isTexture)watch(uniform.value,'texture')
+        }
+      })
+      h.level.update(0)
+      assert.equal(types.target,1,'the shader warm-up target is exercised')
+      h.level.update(TOTAL+1)
+      assert.equal(h.manager.advances,1)
+      h.level.dispose();h.level.dispose()
+      for(const [resource,count] of resources)assert.equal(count,1,resource.type??resource.constructor.name)
+      assert.equal(audio.voiceCount,0)
+      assert.ok(mock.nodes.filter(node=>node!==mock.master).every(node=>!node.connected))
+      assert.ok(mock.sources.every(source=>source.stopped))
+      assert.equal(h.doc.body.children.length,0)
+      assert.equal(h.liveListeners,0)
+      assert.equal(h.listenerAdds,0)
+      assert.equal(h.scene.children.length,0)
+      assert.equal(h.player.mesh.getObjectByName('ending-core-hand-anchor'),undefined)
+      totals.push(types)
+    } finally {h.restore()}
+  }
+  assert.deepEqual(totals[1],totals[0]);assert.deepEqual(totals[2],totals[0])
+  t.diagnostic('Each of 3 cycles returns all tracked owned counts to zero: '+JSON.stringify(totals[0]))
+})
+
+test('Ending: per-shot submission estimates and owned texture bytes', t => {
+  const h=harness()
+  try {
+    const sample=(label,seconds)=>{
+      h.level.update(seconds);h.scene.updateMatrixWorld(true);h.renderCamera.updateMatrixWorld(true)
+      const frustum=new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(h.renderCamera.projectionMatrix,h.renderCamera.matrixWorldInverse))
+      let calls=0,triangles=0
+      h.scene.traverseVisible(node=>{
+        if(!node.geometry||(!node.isMesh&&!node.isSprite&&!node.isPoints))return
+        if(node.frustumCulled&&!frustum.intersectsObject(node))return
+        const materials=Array.isArray(node.material)?node.material:[node.material]
+        calls+=materials.filter(material=>material.visible).length
+        if(node.isMesh)triangles+=(node.geometry.index?.count??node.geometry.attributes.position.count)/3*(node.isInstancedMesh?node.count:1)
+        else if(node.isSprite)triangles+=2
+      })
+      assert.ok(calls>0&&calls<=180)
+      t.diagnostic(`${label}: ${calls} draw submissions, ${triangles} triangles; CPU frustum estimate, excludes detective and GPU passes`)
+    }
+    sample('A braking',ENDING_FADE_IN+APPROACH+BRAKE/2)
+    sample('B open doorway',BRAKE/2+SETTLE+BEAT+DOOR_HOLD+DOOR_OPEN+HOLD_CORE/2)
+    sample('C falling core',HOLD_CORE/2+THROW_RELEASE+RELEASE_TO_CUT+FALL/2)
+    sample('C explosion',FALL/2+EXPLOSION_GROW)
+    const textures=new Set(h.level.plate.textures)
+    for(const root of [h.scene,h.player.mesh])root.traverse(node=>{
+      for(const material of node.material?Array.isArray(node.material)?node.material:[node.material]:[]) {
+        for(const value of Object.values(material))if(value?.isTexture)textures.add(value)
+        for(const uniform of Object.values(material.uniforms??{}))if(uniform.value?.isTexture)textures.add(uniform.value)
+      }
+    })
+    // Read actual JPEG dimensions; the headless image shim has placeholder sizes.
+    function jpegSize(name) {
+      const data=fs.readFileSync(new URL('../src/assets/textures/backdrop/'+name,import.meta.url))
+      for(let offset=2;offset<data.length;) {
+        assert.equal(data[offset++],255)
+        const marker=data[offset++],length=data.readUInt16BE(offset)
+        if([192,193,194].includes(marker))return [data.readUInt16BE(offset+5),data.readUInt16BE(offset+3)]
+        offset+=length
+      }
+      throw new Error('JPEG frame size missing: '+name)
+    }
+    let bytes=0,paintingBytes=0
+    const names=['ending-plate.jpg','ending-plate-door.jpg','ending-plate-gorge.jpg']
+    for(const texture of textures) {
+      const plate=h.level.plate.textures.indexOf(texture)
+      const [width,height]=plate>=0?jpegSize(names[plate]):[texture.image?.width??512,texture.image?.height??512]
+      const size=width*height*4*(texture.generateMipmaps?4/3:1)
+      bytes+=size;if(plate>=0)paintingBytes+=size
+    }
+    assert.ok(paintingBytes>0)
+    t.diagnostic(`RGBA8 estimate: ${textures.size} owned texture wrappers, ${(bytes/1048576).toFixed(2)} MiB total, ${(paintingBytes/1048576).toFixed(2)} MiB paintings; mipmaps included; 512-square fallback for canvas shim`)
+  } finally {h.restore()}
+})
+
 test('Ending: screech requires a running shared context and stops on skip, dispose and restart', () => {
   const silent = createEndingAudio({ context: () => null, output: () => null })
   silent.update(0.5, 1); assert.equal(silent.active, false); silent.dispose()
@@ -1177,8 +1341,7 @@ test('Ending: screech requires a running shared context and stops on skip, dispo
 })
 
 test('Ending: hard cuts switch camera, projection and painting atomically; blue explosion covers and clears the screen', t => {
-  const h=harness(),originalInfo=console.info,logs=[]
-  console.info=(...args)=>{if(String(args[0]).startsWith('[ending-check]'))logs.push(args)}
+  const h=harness()
   try {
     const beforeCut=DURATIONS.slice(0,PHASES.indexOf('throw')).reduce((sum,value)=>sum+value,0)+THROW_RELEASE+RELEASE_TO_CUT
     h.level.update(beforeCut-0.001)
@@ -1220,9 +1383,8 @@ test('Ending: hard cuts switch camera, projection and painting atomically; blue 
     h.level.update(0.001)
     assert.equal(h.level.phase,'salute');assert.equal(h.level.activeShot,1)
     assert.equal(plate.material.uniforms.uPlate.value,plate.textures[1]);assert.equal(h.overlay.style.opacity,'0')
-    assert.deepEqual(logs,[],'no DEV logs without import.meta.env.DEV')
     t.diagnostic('Cuts have no intermediate pose; explosion peak guarantees 100% screen coverage at opacity 1 for landscape, square and portrait')
-  } finally {console.info=originalInfo;h.restore()}
+  } finally {h.restore()}
 })
 
 function titleReturnHarness() {
@@ -1230,13 +1392,16 @@ function titleReturnHarness() {
   const extract=(signature,next)=>{
     const start=source.indexOf(signature),end=source.indexOf(next,start)
     assert.ok(start>=0&&end>start,'main.js test boundary '+signature)
-    return source.slice(start,end)
+    return source.slice(start,end).replaceAll('import.meta.env?.DEV','false')
   }
   const calls=[],pending=[],menu={visible:false,show(){this.visible=true;calls.push('menu.show')}}
+  const veils=[],delays=[],releases=[]
+  const document={body:{appendChild(node){veils.push(node)}},createElement(){return {style:{},remove(){veils.splice(veils.indexOf(this),1)}}}}
   const levelManager={unload(){calls.push('unload')},adopt(state){calls.push('adopt:'+state)},enter(state){calls.push('enter:'+state)}}
   const hud={setVisible(){},setSuspicion(){},setObjective(){},resetRunTimer(){}}
   const deps={menu,levelManager,hud,respawn:{reset(){},resetLives(){}},timeSystem:{resetForRun(){},resetRun(){}},
-    playerView:{reset(){}},keyboardLock:{release(){},engage(){}},syncInputState(){},disposeGameplayDrone(){},
+    document,requestAnimationFrame:callback=>queueMicrotask(callback),setTimeout(callback,ms){delays.push(ms);queueMicrotask(callback)},
+    playerView:{reset(){}},keyboardLock:{release(options){releases.push(options)},engage(){}},syncInputState(){},disposeGameplayDrone(){},
     devStartOptions:()=>null,beginForecourtArrival(){calls.push('arrival')},
     buildTitleBackdrop(){calls.push('backdrop');return new Promise(resolve=>pending.push(resolve))},
     initAudio(){calls.push('initAudio')},preloadAbilitySfx:()=>null,getContext:()=>({state:'running'}),
@@ -1246,16 +1411,18 @@ function titleReturnHarness() {
   // importing main.js would construct WebGL and start its application loop.
   const factory=new Function('deps',`
     const {menu,levelManager,hud,respawn,timeSystem,playerView,keyboardLock,syncInputState,disposeGameplayDrone,
-      devStartOptions,beginForecourtArrival,buildTitleBackdrop,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic}=deps;
+      devStartOptions,beginForecourtArrival,buildTitleBackdrop,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic,
+      document,requestAnimationFrame,setTimeout}=deps;
     const console={log(){}};
     let gameStarted=true,paused=true,elapsed=12,resetCount=2,titleBackdrop=null,titleReturnPromise=null;
-    ${extract('async function playMenuMusic() {','function unlockAudio() {')}
-    ${extract('function unlockAudio() {','// Earliest possible unlock:')}
+    ${extract('async function playMenuMusic() {','function unlockAudio(')}
+    ${extract('function unlockAudio(','// Earliest possible unlock:')}
     ${extract('function startGame() {','// Dev builds only:')}
     ${extract('async function quitToTitle() {','// Defer by two animation frames')}
     return {quitToTitle,startGame,unlockAudio,beginRun(){gameStarted=true;menu.visible=false},
       get state(){return {gameStarted,paused,elapsed,resetCount,pending:!!titleReturnPromise}}};`)
-  return Object.assign(factory(deps),{calls,menu,pending})
+  return Object.assign(factory(deps),{calls,menu,pending,veils,delays,releases,
+    async flush(){for(let i=0;i<30;i++)await Promise.resolve()}})
 }
 
 test('Credits: completion Main Menu uses the existing dismissal once; menu credits and Escape keep their behaviour', async () => {
@@ -1284,21 +1451,26 @@ test('Credits: completion Main Menu uses the existing dismissal once; menu credi
     assert.equal(button.type,'button');assert.equal(doc.activeElement,button)
     button.dispatchEvent(new Event('click',{cancelable:true}));button.dispatchEvent(new Event('click',{cancelable:true}))
     key('Enter');assert.equal(titleCalls,1);assert.equal(credits.isOpen,false)
-    assert.equal(title.menu.visible,true,'main menu visible before the backdrop promise resolves')
+    assert.equal(title.menu.visible,false,'backdrop construction stays behind the veil')
+    await title.flush()
+    assert.equal(title.veils[0].style.opacity,'1')
     assert.equal(title.calls.filter(call=>call==='unload').length,1)
     assert.ok(title.calls.indexOf('resumeAudio')<title.calls.indexOf('backdrop'),'resume remains in the button gesture')
+    assert.ok(title.calls.indexOf('unload')<title.calls.findIndex(call=>call.startsWith('music:')),'teardown cannot stop the new menu track')
     await Promise.resolve();await Promise.resolve()
     assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,1,'menu music requested without another click')
     title.pending.shift()({});await returns.at(-1)
     title.beginRun()
     credits.open({source:'complete'});key('Enter');key('Enter');assert.equal(titleCalls,2)
-    assert.equal(title.menu.visible,true,'second ending also reveals the menu immediately')
+    assert.equal(title.menu.visible,false,'second ending also waits behind its veil')
+    await title.flush()
     await Promise.resolve();await Promise.resolve()
     assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,2)
     title.pending.shift()({});await returns.at(-1)
     title.beginRun()
     credits.open({source:'complete'});key('Escape');assert.equal(credits.isOpen,true,'Escape retains dismissal grace')
     clock+=600;key('Escape');assert.equal(titleCalls,3)
+    await title.flush()
     title.pending.shift()({});await returns.at(-1)
     credits.open({source:'menu'});assert.equal(button.hidden,true);assert.equal(button.style.display,'none')
     clock+=600;key('Escape');assert.equal(credits.isOpen,false);assert.equal(titleCalls,3)
@@ -1312,19 +1484,25 @@ test('Credits: completion Main Menu uses the existing dismissal once; menu credi
   }
 })
 
-test('Title return: pause quit shares the immediate menu path, pending returns coalesce and New Game waits for backdrop ownership', async () => {
+test('Title return: pause quit preserves fullscreen, veils construction, coalesces returns and defers New Game', async () => {
   const title=titleReturnHarness()
   title.unlockAudio();await Promise.resolve();await Promise.resolve()
   assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,0,'audio unlock during play does not start menu music')
   const first=title.quitToTitle(),duplicate=title.quitToTitle()
-  assert.equal(title.menu.visible,true)
+  assert.equal(title.menu.visible,false)
   assert.deepEqual(title.state,{gameStarted:false,paused:false,elapsed:0,resetCount:0,pending:true})
+  assert.equal(title.calls.filter(call=>call==='unload').length,0,'scene remains until black has painted')
+  assert.deepEqual(title.releases,[{exitFullscreen:false}])
+  await title.flush()
   assert.equal(title.calls.filter(call=>call==='unload').length,1)
+  assert.equal(title.veils[0].style.opacity,'1')
   title.startGame()
   assert.equal(title.calls.some(call=>call.startsWith('adopt:')||call.startsWith('enter:')),false)
   await Promise.resolve();await Promise.resolve()
   assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,1)
   title.pending.shift()({});await first;await duplicate;await Promise.resolve()
+  assert.deepEqual(title.delays,[200,400])
+  assert.equal(title.veils.length,0)
   assert.equal(title.state.gameStarted,true,'queued New Game starts after the rebuilt backdrop is owned')
   assert.equal(title.calls.filter(call=>call==='adopt:Boarding').length,1)
   const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')

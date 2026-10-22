@@ -4,12 +4,10 @@ import { disposeObject } from '../core/dispose.js'
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../shaders/ending-plate.js'
 import { createEndingExplosion } from '../shaders/ending-explosion.js'
 
-export const CORE_SIZE = 0.18
 export const CORE_LIGHT_INTENSITY = 1.5
 export const CORE_LIGHT_RANGE = 4
 export const RIVER_TARGET_NDC = Object.freeze({x:0.20,y:-0.62})
 export const GORGE_FLOOR_Y = -81.25 // 78 m below the aligned rail datum (-3.25).
-export const CORE_FALL_SECONDS = 2.4
 export const CORE_GRAVITY = -9.8
 // Solved against the real Throw hand at release and C's unchanged river ray:
 // T = sqrt(2 * (horizontalRange * tan(50 degrees) - heightDifference) / 9.8).
@@ -74,7 +72,7 @@ export function createEndingCore(scene) {
   })
   const trail=new THREE.InstancedMesh(trailGeometry,trailMaterial,8)
   trail.name='ending-core-trail';trail.frustumCulled=false;root.add(trail)
-  let flight=-1,clock=0,disposed=false,flightDuration=CORE_FALL_SECONDS
+  let flight=-1,clock=0,disposed=false,flightDuration=CORE_FLIGHT_SECONDS
   function pointAt(t,target) {return target.copy(start).addScaledVector(velocity,t).addScaledVector(gravity,t*t/2)}
   function reset() {
     root.attach(payload);payload.visible=false;trail.visible=false;explosion.update(-1)
@@ -87,7 +85,7 @@ export function createEndingCore(scene) {
     payload.scale.set(1/payload.scale.x,1/payload.scale.y,1/payload.scale.z)
     payload.visible=true;flight=-1
   }
-  function launch(position,duration=CORE_FALL_SECONDS) {
+  function launch(position,duration=CORE_FLIGHT_SECONDS) {
     flightDuration=duration
     start.copy(position);root.attach(payload)
     velocity.copy(impact).sub(start).addScaledVector(gravity,-duration*duration/2).divideScalar(duration)

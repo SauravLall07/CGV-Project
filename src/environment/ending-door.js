@@ -9,7 +9,6 @@ export const DOOR_FLOOR_Y = 1.55
 export const DOOR_Z = 7.5
 export const DOOR_OPEN_ANGLE = THREE.MathUtils.degToRad(172)
 export const DOOR_MOTION_SECONDS = 0.6
-export const CORRIDOR_DEPTH = 3.5
 export const RUN_IN = 1
 export const RUN_RADIUS = 0.4
 export const RUN_CORRIDOR = 3.4
@@ -103,7 +102,7 @@ export function createEndingDoor(pivot, source) {
     })
     return count
   }
-  function sampleRun(distance,position=new THREE.Vector3(),tangent=new THREE.Vector3()) {
+  function sampleRunInto(distance,position,tangent) {
     const d=THREE.MathUtils.clamp(distance,0,RUN_DISTANCE),arc=Math.PI*RUN_RADIUS/2
     if(d<=RUN_IN) {position.set(-1.25+d,DOOR_FLOOR_Y,DOOR_Z);tangent.set(1,0,0)}
     else if(d<=RUN_IN+arc) {
@@ -111,19 +110,27 @@ export function createEndingDoor(pivot, source) {
       position.set(-0.25+RUN_RADIUS*Math.sin(angle),DOOR_FLOOR_Y,DOOR_Z+RUN_RADIUS*(Math.cos(angle)-1))
       tangent.set(Math.cos(angle),0,-Math.sin(angle))
     } else {position.set(0.15,DOOR_FLOOR_Y,DOOR_Z-RUN_RADIUS-(d-RUN_IN-arc));tangent.set(0,0,-1)}
+  }
+  function sampleRun(distance,position=new THREE.Vector3(),tangent=new THREE.Vector3()) {
+    sampleRunInto(distance,position,tangent)
     return {position,tangent}
   }
+  const occlusionInverse=new THREE.Matrix4(),origin=new THREE.Vector3(),centre=new THREE.Vector3()
+  const ray=new THREE.Ray(),point=new THREE.Vector3(),hit=new THREE.Vector3(),direction=new THREE.Vector3()
+  const walls=[],heights=[0.08,1,1.95]
+  for(const node of root.children)for(const solid of node.userData.endingSolids??[])if(solid.role==='occluder')walls.push(solid.bounds)
   function fullyOccluded(cameraPosition,actorPosition) {
     root.updateWorldMatrix(true,true)
-    const inverse=root.matrixWorld.clone().invert(),origin=cameraPosition.clone().applyMatrix4(inverse)
-    const centre=actorPosition.clone().applyMatrix4(inverse),ray=new THREE.Ray(),point=new THREE.Vector3(),hit=new THREE.Vector3()
-    const walls=[]
-    for(const node of root.children)for(const solid of node.userData.endingSolids??[])if(solid.role==='occluder')walls.push(solid.bounds)
+    occlusionInverse.copy(root.matrixWorld).invert()
+    origin.copy(cameraPosition).applyMatrix4(occlusionInverse)
+    centre.copy(actorPosition).applyMatrix4(occlusionInverse)
     // Conservative running-body envelope, including arms, checked at 12 corners.
-    for(const x of [-0.45,0.45])for(const y of [0.08,1,1.95])for(const z of [-0.45,0.45]) {
-      point.set(centre.x+x,DOOR_FLOOR_Y+y,centre.z+z)
-      const distance=origin.distanceTo(point);ray.set(origin,point.clone().sub(origin).normalize())
-      if(!walls.some(wall=>ray.intersectBox(wall,hit)&&origin.distanceTo(hit)<distance-0.02))return false
+    for(let x=-1;x<=1;x+=2)for(let y=0;y<heights.length;y++)for(let z=-1;z<=1;z+=2) {
+      point.set(centre.x+x*0.45,DOOR_FLOOR_Y+heights[y],centre.z+z*0.45)
+      const distance=origin.distanceTo(point);ray.set(origin,direction.subVectors(point,origin).normalize())
+      let blocked=false
+      for(let wall=0;wall<walls.length;wall++)if(ray.intersectBox(walls[wall],hit)&&origin.distanceTo(hit)<distance-0.02){blocked=true;break}
+      if(!blocked)return false
     }
     return true
   }
@@ -166,9 +173,7 @@ export function createEndingDoor(pivot, source) {
     return clearanceCache
   }
   return {root,hinges,hole:ENDING_DOOR_HOLE,setOpen,get openness(){return openness},
-    standingVolume,standingIntersections,sampleRun,fullyOccluded,clearanceCounts,runDistance:RUN_DISTANCE,
-    inside:new THREE.Vector3(-0.25,DOOR_FLOOR_Y,DOOR_Z),
-    corridorDepth:CORRIDOR_DEPTH,
+    standingVolume,standingIntersections,sampleRun,sampleRunInto,fullyOccluded,clearanceCounts,runDistance:RUN_DISTANCE,
     runEnd:sampleRun(RUN_DISTANCE).position,
     threshold:new THREE.Vector3(-1.25,DOOR_FLOOR_Y,DOOR_Z)}
 }

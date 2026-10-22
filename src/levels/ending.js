@@ -9,12 +9,11 @@ import { brakeIntensity } from '../environment/ending-sparks.js'
 import { createEndingCore, CORE_FLIGHT_SECONDS } from '../environment/ending-core.js'
 import { EXPLOSION_GROW, EXPLOSION_SECONDS } from '../shaders/ending-explosion.js'
 import { DOOR_MOTION_SECONDS } from '../environment/ending-door.js'
+export { prefetchEndingPaintings } from '../shaders/ending-plate.js'
 
 export const DOOR_CAMERA_DISTANCE = 6.6
 export const DOOR_CAMERA_FOV = 32
 export const DOOR_EYE_HEIGHT = 1.65
-export const GORGE_CAMERA_DISTANCE = 15
-export const GORGE_CAMERA_PITCH = 55
 export const NEW_PLATE_ASPECT = 1672 / 941
 
 export function createEndingShots(carriage, door) {
@@ -36,6 +35,7 @@ export function createEndingShots(carriage, door) {
 }
 
 export const ENDING_FADE_IN = 1.0
+export const PAINTING_WAIT_SECONDS = 2.5
 export const TRAIN_START_NOSE_Z = 140
 export const BRAKE = 4.5
 export const APPROACH = (TRAIN_START_NOSE_Z - STOP_NOSE_Z - TRAIN_SPEED * BRAKE / 2) / TRAIN_SPEED
@@ -67,37 +67,6 @@ export const WORLD_ALIGN_DEFAULTS = Object.freeze({ x: -0.75, y: -3.25, z: -0.75
 export const PHASES = Object.freeze(['fadeIn','approach','braking','settle','beat','cutB','doorHold','doorOpen','holdCore','throw','cutC','fallC','explosion','impactHold','salute','turn','run','emptyBeat','tiltUp','skyHold','done'])
 export const DURATIONS = Object.freeze([ENDING_FADE_IN,APPROACH,BRAKE,SETTLE,BEAT,0,DOOR_HOLD,DOOR_OPEN,HOLD_CORE,THROW_RELEASE+RELEASE_TO_CUT,0,FALL,EXPLOSION_SECONDS,IMPACT_HOLD,SALUTE,TURN,RUN,EMPTY_BEAT,TILT_UP,SKY_HOLD])
 
-export function measureEndingRoofAngle(carriage,shot) {
-  const left=new THREE.Vector3(-1.48,4,6.5).applyMatrix4(carriage.matrixWorld).project(shot)
-  const right=new THREE.Vector3(-1.48,4,8.5).applyMatrix4(carriage.matrixWorld).project(shot)
-  return THREE.MathUtils.radToDeg(Math.atan2(right.y-left.y,(right.x-left.x)*shot.aspect))
-}
-
-// Bounds are evaluated on the painted sphere, not near the craned camera.
-export function measureEndingFrame(trainRoot,shot,projector) {
-  trainRoot.updateWorldMatrix(true,true);shot.updateMatrixWorld(true);projector.updateMatrixWorld(true)
-  const frustum=new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(shot.projectionMatrix,shot.matrixWorldInverse))
-  const box=new THREE.Box3(),point=new THREE.Vector3()
-  let visibleBounds=0,overlap=0,maxPlateNdc=0
-  trainRoot.traverseVisible(node=>{
-    if(!node.isMesh && !node.isPoints && !node.isSprite)return
-    box.setFromObject(node)
-    if(!frustum.intersectsBox(box))return
-    visibleBounds++
-    let minX=1,minY=1,maxX=-1,maxY=-1
-    for(let corner=0;corner<8;corner++) {
-      point.set(corner&1?box.max.x:box.min.x,corner&2?box.max.y:box.min.y,corner&4?box.max.z:box.min.z).project(shot)
-      minX=Math.min(minX,point.x);maxX=Math.max(maxX,point.x);minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y)
-    }
-    overlap+=Math.max(0,Math.min(1,maxX)-Math.max(-1,minX))*Math.max(0,Math.min(1,maxY)-Math.max(-1,minY))*25
-  })
-  for(const x of [-1,1])for(const y of [-1,1]) {
-    point.set(x,y,0.5).unproject(shot).sub(shot.position).normalize().multiplyScalar(1500).add(shot.position).project(projector)
-    maxPlateNdc=Math.max(maxPlateNdc,Math.abs(point.x),Math.abs(point.y))
-  }
-  return {visibleTrainBounds:visibleBounds,trainOverlapPercent:Math.min(100,overlap),maxPlateNdc}
-}
-
 export function createEndingLevel({ scene, player, camera, renderCamera, hud, beginCinematic, advance, renderer, post = null,
   audioFactory = createEndingAudio }) {
   // Timewreck and direct starts use the postprocessor's default grade; mirror Level 2's ownership.
@@ -108,11 +77,10 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   let phaseTime = 0
   let initialized = false
   let warmed = false
+  let paintingWait = 0, paintingFallback = false, fadeFinished = false
   let disposed = false
   let advanced = false
-  let timeline = 0
   const durations=[...DURATIONS]
-  const startedAt = typeof performance === 'undefined' ? 0 : performance.now()
   const previousHudDisplay = hud.root?.style.display
   const previousFog = scene.fog
   const previousBackground = scene.background
@@ -121,7 +89,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const previousRenderCamera=renderCamera?.clone(false)
   const previousPlayer = {visible:player.mesh.visible,position:player.mesh.position.clone(),
     quaternion:player.mesh.quaternion.clone(),scale:player.mesh.scale.clone(),view:player.getCinematicView?.() ?? null}
-  let visual=null,visualReady=true,actionStates=[],throwHandle=null,throwDuration=2.2
+  let visual=null,visualReady=true,actionStates=[],throwDuration=THROW
   let endingAction=null,runClipSpeed=2.7
   let animationReleased=false
   const footBones=[],footPoint=new THREE.Vector3(),floorInverse=new THREE.Matrix4()
@@ -129,17 +97,16 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const actorMetrics={footErrorCm:0,headMarginCm:0,lowestFootY:0,floorY:0,headY:0}
   const visualShadowStates=[]
   const floorNormal=new THREE.Vector3(),carriageRotation=new THREE.Quaternion(),localFacing=new THREE.Quaternion()
-  const runEnd=new THREE.Vector3(),localUp=new THREE.Vector3(0,1,0)
+  const localUp=new THREE.Vector3(0,1,0)
   const runPosition=new THREE.Vector3(),runTangent=new THREE.Vector3()
   const runMetrics={distance:0,position:new THREE.Vector3(),fullyOccluded:false,hidden:false}
-  let wasRunOccluded=false,lastRunCheck=-Infinity
   if (player.loadVisual && player.mesh.getObjectByName('detective')) {
     visualReady=false
     player.loadVisual().then(value=>{
       if(disposed||advanced)return
       visual=value
       actionStates=Object.values(visual?.actions ?? {}).map(action=>({action,speed:action.timeScale}))
-      throwDuration=visual?.actions.throw?.getClip().duration ?? 2.2
+      throwDuration=visual?.actions.throw?.getClip().duration ?? THROW
       durations[PHASES.indexOf('salute')]=visual?.actions.salute?.getClip().duration ?? SALUTE
       visual?.root.traverse(node=>{if(node.isMesh){visualShadowStates.push([node,node.castShadow,node.receiveShadow]);node.castShadow=false;node.receiveShadow=false}})
       for(const name of ['mixamorigLeftFoot','mixamorigRightFoot','mixamorigLeftToeBase','mixamorigRightToeBase']) {
@@ -160,7 +127,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   handFallback.position.set(0.3,1.2,0.2)
   const hand=player.mesh.getObjectByName('mixamorigRightHand') ?? handFallback
   if(hand===handFallback) player.mesh.add(handFallback)
-  const inside=new THREE.Vector3(),threshold=new THREE.Vector3(),outward=new THREE.Vector3(),releasePosition=new THREE.Vector3()
+  const threshold=new THREE.Vector3(),outward=new THREE.Vector3(),releasePosition=new THREE.Vector3()
   let outwardYaw=0,launched=false
   const worldAlign = new THREE.Group()
   worldAlign.name = 'WORLD_ALIGN'
@@ -185,7 +152,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     initialPosition: ENDING_CAMERA_POSITION.clone(), initialRotation: viewRotation.clone(),
     targetRotation: viewRotation, moveSeconds: 1, moveElapsed: 0, allowPress: false }
   function selectShot(index) {
-    const before=activeShot
     activeShot = index
     track.root.visible = index === 1
     const shot = shots[index]
@@ -200,7 +166,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       renderCamera.view = shot.view ? { ...shot.view } : null
       renderCamera.updateProjectionMatrix(); renderCamera.updateMatrixWorld(true)
     }
-    if(import.meta.env?.DEV && warmed && before!==index)console.info('[ending-check] cut',{before:'ABC'[before],after:'ABC'[index],instantaneous:true,smear:false,dip:false})
   }
   function tiltDoor(progress) {
     const t=THREE.MathUtils.clamp(progress,0,1),ease=t*t*(3-2*t)
@@ -218,9 +183,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   }
   function placeDetective() {
     train.carriages[0].updateWorldMatrix(true,false)
-    inside.copy(train.door.inside).applyMatrix4(train.carriages[0].matrixWorld)
     threshold.copy(train.door.threshold).applyMatrix4(train.carriages[0].matrixWorld)
-    runEnd.copy(train.door.runEnd).applyMatrix4(train.carriages[0].matrixWorld)
     outward.set(-1,0,0).transformDirection(train.carriages[0].matrixWorld)
     outwardYaw=Math.atan2(outward.x,outward.z)
     player.setPose?.(threshold,outwardYaw)
@@ -245,7 +208,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   function releaseAnimation() {
     if(!visual||animationReleased)return
     animationReleased=true
-    if(throwHandle)throwHandle.cancelled=true
     player.cancelScriptedWalk?.();player.resetInteractionAnimation?.()
     // Return the normal controller's cached current action to idle too. Its
     // idle→idle fast path alone cannot undo actions sampled by the cinematic.
@@ -320,7 +282,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       player.mesh.position.copy(threshold)
       if(phase==='run') {
         runMetrics.distance=train.door.runDistance*Math.min(1,time/RUN)
-        train.door.sampleRun(runMetrics.distance,runPosition,runTangent)
+        train.door.sampleRunInto(runMetrics.distance,runPosition,runTangent)
         runMetrics.position.copy(runPosition)
         player.mesh.position.copy(runPosition).applyMatrix4(train.carriages[0].matrixWorld)
         localFacing.setFromAxisAngle(localUp,Math.atan2(runTangent.x,runTangent.z))
@@ -336,16 +298,11 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if(phase==='throw' && !launched && time>=Math.min(THROW_RELEASE,throwDuration)-1e-9) {
       player.mesh.updateWorldMatrix(true,true)
       hand.getWorldPosition(releasePosition)
-      core.launch(throwHandle?.releasePosition ?? releasePosition,CORE_FLIGHT_SECONDS);launched=true
+      core.launch(releasePosition,CORE_FLIGHT_SECONDS);launched=true
     }
     if(phase==='run') {
       runMetrics.fullyOccluded=train.door.fullyOccluded(shots[1].position,player.mesh.position)
       if(time>=RUN-1e-9 && runMetrics.fullyOccluded){player.mesh.visible=false;runMetrics.hidden=true}
-      if(import.meta.env?.DEV && (time-lastRunCheck>=0.25 || runMetrics.fullyOccluded!==wasRunOccluded || runMetrics.hidden)) {
-        lastRunCheck=time
-        console.info('[ending-check] run',{distance:runMetrics.distance,position:runMetrics.position.toArray(),fullyOccluded:runMetrics.fullyOccluded,hidden:runMetrics.hidden})
-      }
-      wasRunOccluded=runMetrics.fullyOccluded
     }
   }
   const overlay = document.createElement('div')
@@ -353,6 +310,10 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   Object.assign(overlay.style, { position: 'fixed', inset: '0', zIndex: '60', background: '#000',
     opacity: '1', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' })
   document.body.appendChild(overlay)
+  const fadeAnimation = overlay.animate([{ opacity: 1 }, { opacity: 0 }],
+    { duration: ENDING_FADE_IN * 1000, fill: 'both' })
+  fadeAnimation.pause()
+  let fadeElapsed = -1
   player.mesh.visible = false
   // HUD is hidden, so mount the same native skip control in its own UI layer.
   const skipRoot = document.createElement('div')
@@ -375,84 +336,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   }
   const savedViewport = new THREE.Vector4()
   const savedScissor = new THREE.Vector4()
-  let budgetLogged = false
-  let lastActorCheck=-Infinity,shaderCheckLogged=false
-  let alignMode = false, removeAlignment = null, holdMode = null
-  if (import.meta.env?.DEV) {
-    let nearWindows=0,passengerBatches=0
-    train.carriages[0].traverse(node=>{
-      if(node.name==='ending-damage-interior')passengerBatches++
-      if(node.userData.endingWindowBatch) {
-        const positions=node.geometry.attributes.position
-        for(let i=0;i<positions.count;i+=3)if((positions.getX(i)+positions.getX(i+1)+positions.getX(i+2))/3<0)nearWindows++
-      }
-    })
-    console.info('[ending-check] steam-room',{cameraSideWindowTriangles:nearWindows,passengerInteriorBatches:passengerBatches})
-    const parameters = new URLSearchParams(globalThis.location?.search ?? '')
-    if(parameters.get('start')==='ending' && ['door','gorge','salute'].includes(parameters.get('hold'))) {
-      holdMode=parameters.get('hold');phaseIndex=PHASES.indexOf('beat')
-      timeline=ENDING_FADE_IN+APPROACH+BRAKE+SETTLE
-    }
-    if(parameters.get('start')==='ending' && parameters.get('from')==='stop') {
-      phaseIndex=PHASES.indexOf('beat');timeline=ENDING_FADE_IN+APPROACH+BRAKE+SETTLE
-    }
-    if (parameters.get('start') === 'ending' && parameters.has('align')) {
-      alignMode = true
-      phaseIndex = PHASES.indexOf('beat'); phaseTime = 0
-      timeline = ENDING_FADE_IN + APPROACH + BRAKE + SETTLE + 1
-      const values = { ...WORLD_ALIGN_DEFAULTS, fov: shotFov }
-      let atApproachStart = false
-      const materials = new Map()
-      let translucent = false
-      const apply = () => {
-        worldAlign.position.set(values.x, values.y, values.z)
-        worldAlign.rotation.set(THREE.MathUtils.degToRad(values.pitch), THREE.MathUtils.degToRad(values.yaw), THREE.MathUtils.degToRad(values.roll))
-        worldAlign.scale.setScalar(values.scale)
-        values.fov = setShotFov(values.fov)
-      }
-      const toggle = () => {
-        if (!materials.size) worldAlign.traverse(node => {
-          if (!node.material) return
-          for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
-            if (!materials.has(material)) materials.set(material, { opacity: material.opacity,
-              transparent: material.transparent, depthWrite: material.depthWrite, steam: material.uniforms?.uOpacity?.value })
-          }
-        })
-        translucent = !translucent
-        for (const [material, original] of materials) {
-          material.opacity = original.opacity * (translucent ? 0.5 : 1)
-          material.transparent = translucent || original.transparent
-          material.depthWrite = translucent ? false : original.depthWrite
-          if (original.steam !== undefined) material.uniforms.uOpacity.value = original.steam * (translucent ? 0.5 : 1)
-          material.needsUpdate = true
-        }
-      }
-      const key = event => {
-        const tag = event.target?.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable || event.ctrlKey || event.metaKey) return
-        const fine = event.altKey ? 0.1 : 1
-        const movement = { KeyJ: ['x', 'yaw', -1], KeyL: ['x', 'yaw', 1],
-          KeyI: ['z', 'pitch', -1], KeyK: ['z', 'pitch', 1], KeyU: ['y', 'roll', -1], KeyO: ['y', 'roll', 1] }[event.code]
-        if (movement) values[movement[event.shiftKey ? 1 : 0]] += movement[2] * 0.25 * fine
-        else if (event.code === 'BracketLeft' || event.code === 'BracketRight') {
-          values.scale = Math.max(0.005, values.scale + (event.code === 'BracketRight' ? 1 : -1) * 0.005 * fine)
-        } else if (event.code === 'KeyN' || event.code === 'KeyM') {
-          values.fov += (event.code === 'KeyM' ? 1 : -1) * 0.5 * fine
-        } else if (event.code === 'KeyG') {
-          if (!event.repeat) {
-            atApproachStart = !atApproachStart
-            phaseIndex = PHASES.indexOf(atApproachStart ? 'approach' : 'beat'); phaseTime = 0
-            present(0)
-          }
-        } else if (event.code === 'KeyP') console.info(`WORLD_ALIGN = ${JSON.stringify(values)}`)
-        else if (event.code === 'KeyT') { if (!event.repeat) toggle() }
-        else return
-        event.preventDefault(); event.stopPropagation(); apply()
-      }
-      window.addEventListener('keydown', key, true)
-      removeAlignment = () => { window.removeEventListener('keydown', key, true); materials.clear() }
-    }
-  }
 
   function warmScene() {
     if (!renderer) return
@@ -486,7 +369,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         if (time && !savedTimes.has(time)) savedTimes.set(time,time.value)
       }
     })
-    for(const texture of gorge.plate.textures) renderer.initTexture?.(texture)
+    for(const texture of gorge.plate.textures) if(texture.image) renderer.initTexture?.(texture)
     const savedShot=activeShot
     try {
       sparkIntensity.value = 1
@@ -533,7 +416,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   function enterPhase(index) {
     phaseIndex = index
     phaseTime = 0
-    if (import.meta.env?.DEV) console.info(`[ending +${timeline.toFixed(3)}s @${(performance.now() - startedAt).toFixed(0)}ms] ${PHASES[index]}`)
     const phase=PHASES[index]
     if(phase==='cutB') selectShot(1)
     if(phase==='cutC') {selectShot(2);worldAlign.visible=true;core.root.visible=true;player.mesh.visible=true}
@@ -541,21 +423,17 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if(phase==='doorOpen') {placeDetective();audio.door?.()}
     if(phase==='holdCore') {
       player.cancelScriptedWalk?.();player.mesh.position.copy(threshold)
-      if(import.meta.env?.DEV)console.info('[ending-check] clearance',train.door.clearanceCounts())
     }
     if(phase==='throw') audio.throw?.()
     if(phase==='explosion') {core.update(0,-1,0);audio.impact?.()}
     if(phase==='impactHold') {
       core.explosion.update(EXPLOSION_SECONDS)
-      if(import.meta.env?.DEV)console.info('[ending-check] explosion-dissipated',core.explosion.coverage())
     }
     if(phase==='emptyBeat') {if(runMetrics.fullyOccluded)player.mesh.visible=false;core.reset()}
     if(phase==='skyHold') {
       selectShot(1);tiltDoor(1);audio.fadeOut?.();hud.hideCinematicSkip?.();skipControl.hide()
-      if(import.meta.env?.DEV)console.info('[ending-check] crane-end',measureEndingFrame(train.root,shots[1],gorge.plate.doorCamera))
     }
     updateDetective(phase,0,0)
-    if(import.meta.env?.DEV)console.info('[ending-check] phase',{phase,animation:player.mesh.visible?endingAction?.getClip().name??'none':'none',shot:'ABC'[activeShot]})
     if (PHASES[index] === 'done' && !advanced) {
       advanced = true
       releaseAnimation()
@@ -570,7 +448,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if (disposed || advanced) return
     audio.stop()
     player.cancelScriptedWalk?.();player.resetInteractionAnimation?.()
-    if(throwHandle) throwHandle.cancelled=true
     player.mesh.visible=false;core.reset();train.door.setOpen(1)
     worldAlign.visible=true;core.root.visible=true
     selectShot(1);tiltDoor(1)
@@ -580,7 +457,14 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
 
   function present(delta) {
     const phase = PHASES[phaseIndex]
-    overlay.style.opacity = String(phase === 'fadeIn' ? 1 - phaseTime / ENDING_FADE_IN : 0)
+    if (phase === 'fadeIn' && phaseTime !== fadeElapsed) {
+      fadeElapsed = phaseTime
+      fadeAnimation.currentTime = phaseTime * 1000
+    } else if (phase !== 'fadeIn' && !fadeFinished) {
+      fadeFinished = true
+      overlay.style.opacity = '0'
+      fadeAnimation.cancel()
+    }
     let distance = 0
     let brakingProgress = -1
     let settleTime = -1
@@ -625,69 +509,50 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         player.setCinematicView(view)
         hud.setVisible(false)
         beginCinematic?.()
-        if (!alignMode) { hud.showCinematicSkip?.(skip); skipControl.show(skip) }
-        if (import.meta.env?.DEV) console.info('[ending] fadeIn')
+        hud.showCinematicSkip?.(skip); skipControl.show(skip)
       }
-      if(!warmed&&visualReady&&gorge.plate.ready){warmScene();warmed=true}
-      if(import.meta.env?.DEV && warmed && !shaderCheckLogged) {
-        shaderCheckLogged=true
-        console.info('[ending-check] shaders',{failedPrograms:renderer?.info.programs?.filter(program=>program.diagnostics?.runnable===false).length??0})
+      let frameDelta = Math.max(0, delta)
+      if ((!gorge.plate.ready || !visualReady) && !paintingFallback) {
+        const wait = Math.min(frameDelta, Math.max(0, PAINTING_WAIT_SECONDS - paintingWait))
+        paintingWait += wait
+        frameDelta -= wait
+        if (paintingWait >= PAINTING_WAIT_SECONDS) {
+          paintingFallback = true
+          if (import.meta.env?.DEV) console.warn('Ending assets not ready after 2.5s; revealing available scenery')
+        }
       }
+      if(!warmed&&((visualReady&&gorge.plate.ready)||paintingFallback)){warmScene();warmed=true}
       // Settings subscribers may run while paused; keep this shot's lens static.
       if (renderCamera && (renderCamera.fov !== shotFov || renderCamera.aspect !== shots[activeShot].aspect)) {
         setShotFov(shotFov)
       }
-      let remaining = gorge.plate.ready && visualReady && !alignMode ? Math.max(0, delta) : 0
+      let remaining = ((gorge.plate.ready && visualReady) || paintingFallback) ? frameDelta : 0
       while (remaining > 0 && !advanced) {
-        if(holdMode==='door' && PHASES[phaseIndex]==='holdCore') break
-        if(holdMode==='gorge' && PHASES[phaseIndex]==='fallC' && phaseTime>=FALL-0.5-1e-9) break
-        if(holdMode==='salute' && PHASES[phaseIndex]==='salute' && phaseTime>=durations[phaseIndex]/2-1e-9) break
         let boundary=durations[phaseIndex]
-        if(holdMode==='gorge' && PHASES[phaseIndex]==='fallC') boundary=FALL-0.5
-        if(holdMode==='salute' && PHASES[phaseIndex]==='salute') boundary=durations[phaseIndex]/2
         if(PHASES[phaseIndex]==='throw' && phaseTime<Math.min(THROW_RELEASE,throwDuration)-1e-9)
           boundary=Math.min(boundary,Math.min(THROW_RELEASE,throwDuration))
         if(PHASES[phaseIndex]==='explosion' && phaseTime<EXPLOSION_GROW-1e-9) boundary=EXPLOSION_GROW
         const step = Math.min(remaining, boundary - phaseTime)
         phaseTime += step
-        timeline += step
         remaining -= step
         gorge.update(step)
         present(step)
-        if(import.meta.env?.DEV && PHASES[phaseIndex]==='explosion' && Math.abs(phaseTime-EXPLOSION_GROW)<1e-9)
-          console.info('[ending-check] explosion-peak',core.explosion.coverage())
         if (phaseTime >= durations[phaseIndex] - 1e-9) enterPhase(phaseIndex + 1)
       }
-      if (alignMode) { gorge.update(Math.max(0, delta)); present(Math.max(0, delta)) }
-      else present(0)
-      if(import.meta.env?.DEV) {
-        if(activeShot===1 && player.mesh.visible && timeline-lastActorCheck>=0.5) {
-          lastActorCheck=timeline
-          const centre=new THREE.Vector3(-1.485,train.door.threshold.y+1.05,train.door.threshold.z).applyMatrix4(train.carriages[0].matrixWorld).project(shots[1])
-          const angles=new THREE.Euler().setFromQuaternion(shots[1].quaternion,'YXZ')
-          console.info('[ending-check] B',{phase:PHASES[phaseIndex],animation:endingAction?.getClip().name??'none',footErrorCm:actorMetrics.footErrorCm,headMarginCm:actorMetrics.headMarginCm,doorCentreNdc:centre,cameraPitchDeg:THREE.MathUtils.radToDeg(angles.x),cameraRollDeg:THREE.MathUtils.radToDeg(angles.z),roofAngleDeg:measureEndingRoofAngle(train.carriages[0],shots[1]),doorLeafAnglesDeg:train.door.hinges.map(({hinge})=>THREE.MathUtils.radToDeg(hinge.rotation.y)),standingIntersections:train.door.standingIntersections()})
-        }
-      }
-      if (import.meta.env?.DEV && !budgetLogged && timeline >= ENDING_FADE_IN + APPROACH + BRAKE + 1) {
-        budgetLogged = true
-        console.info('[ending render budget, previous rendered frame]', {
-          calls: renderer?.info.render.calls, triangles: renderer?.info.render.triangles,
-          trainOnly: true })
-      }
+      present(0)
     },
     dispose() {
       if (disposed) return
       disposed = true
       audio.dispose()
-      removeAlignment?.()
       post?.resetGrade()
       if (previousPostEnabled !== undefined) post.setEnabled(previousPostEnabled)
       if(renderCamera && previousRenderCamera)renderCamera.copy(previousRenderCamera,false)
       hud.hideCinematicSkip?.()
+      fadeAnimation.cancel()
       overlay.remove()
       skipControl.dispose()
       skipRoot.remove()
-      if(throwHandle) throwHandle.cancelled=true
       player.cancelScriptedWalk?.()
       player.resetInteractionAnimation?.()
       player.setPose?.(previousPlayer.position,new THREE.Euler().setFromQuaternion(previousPlayer.quaternion).y)
