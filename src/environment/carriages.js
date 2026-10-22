@@ -152,18 +152,100 @@ function applyBeadWear(material, kind) {
   material.normalScale.set(wood ? 1.35 : 1.65, wood ? 0.85 : 0.5)
 }
 
+// Recessed field with full-thickness rails. Origin matches BoxGeometry so the
+// existing wall placements still sit on the opening. Both faces step back, so
+// the same mesh works on the left and right walls.
+function framedPanel(thickness, height, depth) {
+  const rail = Math.min(0.07, height * 0.1)
+  const coreH = Math.max(0.04, height - rail * 2)
+  const core = new THREE.BoxGeometry(thickness * 0.62, coreH, depth * 0.996)
+  const top = new THREE.BoxGeometry(thickness, rail, depth)
+  top.translate(0, (height - rail) / 2, 0)
+  const bottom = new THREE.BoxGeometry(thickness, rail, depth)
+  bottom.translate(0, -(height - rail) / 2, 0)
+  const merged = mergeGeometries([core, top, bottom], false)
+  core.dispose()
+  top.dispose()
+  bottom.dispose()
+  return merged
+}
+
+// Cornice at the walls, a higher centre field, and two ribs along the aisle.
+// One mesh, same placement as the old flat slab. Level 3 only.
+function cofferedCeiling(length) {
+  const edge = new THREE.BoxGeometry(0.32, 0.1, length)
+  edge.translate(-WALL_X + 0.16, 0, 0)
+  const edgeR = edge.clone()
+  edgeR.translate(WALL_X * 2 - 0.32, 0, 0)
+  const field = new THREE.BoxGeometry(WALL_X * 2 - 0.56, 0.04, length)
+  field.translate(0, 0.025, 0)
+  const ribA = new THREE.BoxGeometry(0.05, 0.025, length)
+  ribA.translate(-0.9, -0.012, 0)
+  const ribB = ribA.clone()
+  ribB.translate(1.8, 0, 0)
+  const merged = mergeGeometries([edge, edgeR, field, ribA, ribB], false)
+  edge.dispose()
+  edgeR.dispose()
+  field.dispose()
+  ribA.dispose()
+  ribB.dispose()
+  return merged
+}
+
+// Flat polygon, thin in local X, tall in Y, wide in Z. Replaces a torn box.
+function irregularSheet(height, width) {
+  const shape = new THREE.Shape()
+  shape.moveTo(-width * 0.46, -height * 0.42)
+  shape.lineTo(width * 0.5, -height * 0.5)
+  shape.lineTo(width * 0.32, height * 0.12)
+  shape.lineTo(width * 0.08, height * 0.48)
+  shape.lineTo(-width * 0.4, height * 0.34)
+  shape.lineTo(-width * 0.5, -0.02)
+  shape.closePath()
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: false, steps: 1 })
+  geo.rotateY(Math.PI / 2)
+  geo.translate(-0.015, 0, 0)
+  return geo
+}
+
+function tornCeilingTile() {
+  const shape = new THREE.Shape()
+  shape.moveTo(-0.2, -0.52)
+  shape.lineTo(0.26, -0.38)
+  shape.lineTo(0.16, 0.12)
+  shape.lineTo(-0.04, 0.55)
+  shape.lineTo(-0.24, 0.18)
+  shape.closePath()
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.026, bevelEnabled: false, steps: 1 })
+  geo.rotateX(-Math.PI / 2)
+  return geo
+}
+
+function ceilingIBeam(length) {
+  const web = new THREE.BoxGeometry(length, 0.045, 0.035)
+  const flange = new THREE.BoxGeometry(length, 0.012, 0.1)
+  flange.translate(0, 0.026, 0)
+  const lower = new THREE.BoxGeometry(length, 0.012, 0.1)
+  lower.translate(0, -0.026, 0)
+  const merged = mergeGeometries([web, flange, lower], false)
+  web.dispose()
+  flange.dispose()
+  lower.dispose()
+  return merged
+}
+
 function addLuxuryCeilingRun(g, half, shared, name) {
   const run = new THREE.Group()
   run.name = name
   const count = Math.max(2, Math.min(5, Math.round(half / 3.5)))
   const reach = Math.max(2.4, half * 2 - 3.2)
-  const shell = new THREE.BoxGeometry(0.36, 0.03, 1.02)
-  shell.translate(0, 0.02, 0)
-  const recess = new THREE.BoxGeometry(0.2, 0.018, 0.72)
-  recess.translate(0, 0.004, 0)
-  const housingGeo = mergeGeometries([shell, recess], false)
-  shell.dispose()
-  recess.dispose()
+  const lip = new THREE.BoxGeometry(0.48, 0.018, 1.2)
+  lip.translate(0, 0.016, 0)
+  const tray = new THREE.BoxGeometry(0.32, 0.012, 0.9)
+  tray.translate(0, 0.004, 0)
+  const housingGeo = mergeGeometries([lip, tray], false)
+  lip.dispose()
+  tray.dispose()
   const diffuserMat = new THREE.MeshStandardMaterial({
     color: 0xf4e6cc,
     emissive: 0xffc890,
@@ -171,16 +253,16 @@ function addLuxuryCeilingRun(g, half, shared, name) {
     roughness: 0.62
   })
   const housings = new THREE.InstancedMesh(housingGeo, shared.brass, count)
-  const diffusers = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.01, 0.56), diffuserMat, count)
+  const diffusers = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.008, 0.7), diffuserMat, count)
   const dummy = new THREE.Object3D()
   for (let i = 0; i < count; i += 1) {
     const z = -reach / 2 + (i + 0.5) * (reach / count)
-    dummy.position.set(0, CARRIAGE_CEILING_Y - 0.055, z)
+    dummy.position.set(0, CARRIAGE_CEILING_Y - 0.042, z)
     dummy.rotation.set(0, 0, 0)
     dummy.scale.set(1, 1, 1)
     dummy.updateMatrix()
     housings.setMatrixAt(i, dummy.matrix)
-    dummy.position.y = CARRIAGE_CEILING_Y - 0.074
+    dummy.position.y = CARRIAGE_CEILING_Y - 0.058
     dummy.updateMatrix()
     diffusers.setMatrixAt(i, dummy.matrix)
   }
@@ -189,11 +271,11 @@ function addLuxuryCeilingRun(g, half, shared, name) {
   noCam(housings)
   noCam(diffusers)
   const panel = new THREE.Mesh(
-    new THREE.BoxGeometry(0.62, 0.018, 1.05),
+    tornCeilingTile(),
     new THREE.MeshStandardMaterial({ color: 0x3a2c1e, roughness: 0.88, metalness: 0.06 })
   )
-  panel.position.set(0.35, CARRIAGE_CEILING_Y - 0.03, reach * 0.18)
-  panel.rotation.z = 0.05
+  panel.position.set(0.42, CARRIAGE_CEILING_Y - 0.04, reach * 0.18)
+  panel.rotation.z = 0.08
   noCam(panel)
   run.add(housings, diffusers, panel)
   g.add(run)
@@ -654,7 +736,14 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
     ceilingMat = wallMat
   }
   if (hasCeiling) {
-    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, length), ceilingMat)
+    const coffer = damaged && (
+      key === 'vault' || key === 'convergence' || key === 'mechanical' || key === 'cargo'
+      || key === 'relay' || key === 'security' || key === 'passenger' || key === 'cab'
+    )
+    const ceiling = new THREE.Mesh(
+      coffer ? cofferedCeiling(length) : new THREE.BoxGeometry(WALL_X * 2, 0.1, length),
+      ceilingMat
+    )
     ceiling.name = `ceiling-${key}`
     ceiling.position.y = CARRIAGE_CEILING_Y
     g.add(ceiling)
@@ -723,12 +812,12 @@ function addBlownViewports(g, half, key, shared) {
 
   for (const s of [-1, 1]) {
     const x = s * WALL_X
-    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.12, lowerH, half * 2), wallMat)
+    const lower = new THREE.Mesh(framedPanel(0.12, lowerH, half * 2), wallMat)
     lower.name = `wall-band-${key}-lower`
     lower.position.set(x, lowerH / 2, 0)
     lower.receiveShadow = true
     g.add(lower)
-    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.12, upperH, half * 2), wallMat)
+    const upper = new THREE.Mesh(framedPanel(0.12, upperH, half * 2), wallMat)
     upper.name = `wall-band-${key}-upper`
     upper.position.set(x, lintelY + upperH / 2, 0)
     upper.receiveShadow = true
@@ -748,7 +837,7 @@ function addBlownViewports(g, half, key, shared) {
     if (tail > 0.06) piers.push({ x: s * WALL_X, z: cursor + tail / 2, span: tail })
   }
   if (piers.length) {
-    const pierMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, paneH, 1), wallMat, piers.length)
+    const pierMesh = new THREE.InstancedMesh(framedPanel(0.12, paneH, 1), wallMat, piers.length)
     pierMesh.name = `wall-piers-${key}`
     pierMesh.receiveShadow = true
     piers.forEach((pier, i) => {
@@ -933,7 +1022,7 @@ function addWreckage(g, half, shared, fx, key) {
 
   // Torn lining hinged off the wall at the ceiling joint — still wall-aligned.
   // On cars with blown viewports, hang it inside the opening instead of filling it.
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, openView ? 0.82 : 1.45, openView ? 0.7 : 1.45), panelMat, n), n, (d, i) => {
+  g.add(scatterInstances(new THREE.InstancedMesh(irregularSheet(openView ? 0.82 : 1.45, openView ? 0.7 : 1.45), panelMat, n), n, (d, i) => {
     const c = sites[i]
     // The -Z left-wall site used to sit on the first window centre, so that
     // pane was covered and read as a much smaller window. Park the sheet on
@@ -941,22 +1030,26 @@ function addWreckage(g, half, shared, fx, key) {
     const panelZ = openView ? c.z + (c.z < 0 ? -1.7 : 1.7) : c.z
     d.position.set(c.side * (WALL_X - (openView ? 0.48 : 0.06)), openView ? 2.08 : 1.45, panelZ)
     d.rotation.set(0, 0, c.side * (openView ? 0.18 : 0.14))
+    d.scale.set(1, 0.86 + (i % 3) * 0.1, 0.78 + (i % 2) * 0.18)
   }))
 
-  // Ceiling tile still attached at the wall-roof corner, sagging inward a little.
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.03, 1.15), panelMat, n), n, (d, i) => {
+  // Torn ceiling piece still attached at the wall-roof corner.
+  g.add(scatterInstances(new THREE.InstancedMesh(tornCeilingTile(), panelMat, n), n, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * 1.2, CARRIAGE_CEILING_Y - 0.06, c.z)
-    d.rotation.set(0, 0, c.side * 0.22)
+    d.rotation.set(0.04 * c.side, 0.15 * (i % 2 ? 1 : -1), c.side * 0.22)
+    d.scale.set(0.85 + (i % 2) * 0.2, 1, 0.8 + (i % 3) * 0.12)
   }))
 
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.35), shared.steel, n), n, (d, i) => {
+  const pipe = new THREE.CylinderGeometry(0.032, 0.032, 1.35, 6)
+  pipe.rotateX(Math.PI / 2)
+  g.add(scatterInstances(new THREE.InstancedMesh(pipe, shared.steel, n), n, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * (WALL_X - 0.16), CARRIAGE_CEILING_Y - 0.12, c.z)
     d.rotation.set(0, 0, c.side * 0.05)
   }))
 
-  const ribGeo = new THREE.BoxGeometry(WALL_X * 2 - 0.55, 0.08, 0.12)
+  const ribGeo = ceilingIBeam(WALL_X * 2 - 0.55)
   for (const c of sites) {
     const rib = new THREE.Mesh(ribGeo, shared.steel)
     rib.position.set(0, CARRIAGE_CEILING_Y - 0.02, c.z)
