@@ -123,6 +123,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     quaternion:player.mesh.quaternion.clone(),scale:player.mesh.scale.clone(),view:player.getCinematicView?.() ?? null}
   let visual=null,visualReady=true,actionStates=[],throwHandle=null,throwDuration=2.2
   let endingAction=null,runClipSpeed=2.7
+  let animationReleased=false
   const footBones=[],footPoint=new THREE.Vector3(),floorInverse=new THREE.Matrix4()
   let headBone=null,actorScale=1
   const actorMetrics={footErrorCm:0,headMarginCm:0,lowestFootY:0,floorY:0,headY:0}
@@ -135,11 +136,9 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   if (player.loadVisual && player.mesh.getObjectByName('detective')) {
     visualReady=false
     player.loadVisual().then(value=>{
-      if(disposed)return
+      if(disposed||advanced)return
       visual=value
-      actionStates=Object.values(visual?.actions ?? {}).map(action=>({action,time:action.time,
-        weight:action.getEffectiveWeight(),speed:action.getEffectiveTimeScale(),paused:action.paused,
-        enabled:action.enabled,running:action.isRunning()}))
+      actionStates=Object.values(visual?.actions ?? {}).map(action=>({action,speed:action.timeScale}))
       throwDuration=visual?.actions.throw?.getClip().duration ?? 2.2
       durations[PHASES.indexOf('salute')]=visual?.actions.salute?.getClip().duration ?? SALUTE
       visual?.root.traverse(node=>{if(node.isMesh){visualShadowStates.push([node,node.castShadow,node.receiveShadow]);node.castShadow=false;node.receiveShadow=false}})
@@ -238,10 +237,27 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     }
     // Player pose/interaction resets may disable an action between frames.
     // Reassert the sampled action after main.js has ticked the live mixer.
-    for(const state of actionStates)if(state.action!==action)state.action.enabled=false
+    for(const state of actionStates)if(state.action!==action){state.action.enabled=false;state.action.setEffectiveWeight(0)}
     action.enabled=true;action.stopFading().stopWarping().setEffectiveWeight(1);action.paused=true
     action.time=Math.max(0,Math.min(time,action.getClip().duration))
     visual.mixer.update(0)
+  }
+  function releaseAnimation() {
+    if(!visual||animationReleased)return
+    animationReleased=true
+    if(throwHandle)throwHandle.cancelled=true
+    player.cancelScriptedWalk?.();player.resetInteractionAnimation?.()
+    // Return the normal controller's cached current action to idle too. Its
+    // idle→idle fast path alone cannot undo actions sampled by the cinematic.
+    visual.setScriptedWalking(true);visual.setScriptedWalking(false)
+    visual.mixer.stopAllAction()
+    for(const state of actionStates) {
+      state.action.stop().stopFading().stopWarping().setEffectiveTimeScale(state.speed)
+      state.action.enabled=false;state.action.paused=false;state.action.setEffectiveWeight(0)
+    }
+    const idle=visual.actions.idle
+    if(idle)idle.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play()
+    endingAction=null;visual.mixer.update(0)
   }
   function measureRunStride() {
     const left=visual?.root.getObjectByName('mixamorigLeftToeBase'),right=visual?.root.getObjectByName('mixamorigRightToeBase')
@@ -542,6 +558,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if(import.meta.env?.DEV)console.info('[ending-check] phase',{phase,animation:player.mesh.visible?endingAction?.getClip().name??'none':'none',shot:'ABC'[activeShot]})
     if (PHASES[index] === 'done' && !advanced) {
       advanced = true
+      releaseAnimation()
       audio.stop()
       hud.hideCinematicSkip?.()
       skipControl.hide()
@@ -677,11 +694,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       player.mesh.position.copy(previousPlayer.position);player.mesh.quaternion.copy(previousPlayer.quaternion)
       player.mesh.scale.copy(previousPlayer.scale);player.mesh.visible=previousPlayer.visible
       player.setCinematicView(previousPlayer.view)
-      for(const state of actionStates) {
-        state.action.stop();state.action.enabled=state.enabled;state.action.paused=state.paused
-        state.action.time=state.time;state.action.setEffectiveWeight(state.weight);state.action.setEffectiveTimeScale(state.speed)
-        if(state.running) state.action.play()
-      }
+      releaseAnimation()
       for(const [node,castShadow,receiveShadow] of visualShadowStates){node.castShadow=castShadow;node.receiveShadow=receiveShadow}
       visual?.mixer.update(0)
       handFallback.removeFromParent()

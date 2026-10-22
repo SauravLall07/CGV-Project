@@ -392,6 +392,7 @@ let arrival = null
 let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
 let titleBackdrop = null // the silently-built station behind the title screen
+let titleReturnPromise = null // coalesce returns and hold New Game until its backdrop is ready
 let modelEditor = null // DEV-only live scene/model workshop (F2)
 
 // Large walkthrough popups freeze gameplay and silence actions, but keep the
@@ -646,6 +647,10 @@ function updateForecourtArrival(delta) {
 }
 
 function startGame() {
+  if (titleReturnPromise) {
+    titleReturnPromise.then(startGame)
+    return
+  }
   respawn.reset()
   timeSystem.resetForRun()
   gameStarted = true
@@ -705,6 +710,7 @@ function devStartOptions() {
 // so the player lands back on the same live station shot they started from
 // without a page refresh.
 async function quitToTitle() {
+  if (titleReturnPromise) return titleReturnPromise
   gameStarted = false
   paused = false
   elapsed = 0
@@ -722,10 +728,17 @@ async function quitToTitle() {
   hud.setObjective('')
   hud.resetRunTimer()
 
-  titleBackdrop = await buildTitleBackdrop()
   disposeGameplayDrone()
+  // Reveal the menu and resume audio inside the dismissal gesture, without
+  // waiting for station assets or construction. First-launch unlock is unchanged.
   menu.show()
   unlockAudio()
+  titleReturnPromise = buildTitleBackdrop().then(backdrop => {
+    titleBackdrop = backdrop
+    // The builder parks the player at its checkpoint; reapply the title pose.
+    menu.show()
+  }).finally(() => { titleReturnPromise = null })
+  return titleReturnPromise
 }
 
 // Defer by two animation frames: the first paints the loading screen,

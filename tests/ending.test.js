@@ -603,6 +603,7 @@ test('Ending: doorway framing, gorge exclusion, owned plates and faithful core c
 
 test('Ending: real Throw skeleton holds and releases the core, completes its visible arc and restores the player', async t => {
   const player=createPlayer()
+  let assetLoads=0
   const previousParseWindow=globalThis.window
   globalThis.window={URL:globalThis.URL}
   function parseThrow(filename='Throw.fbx') {
@@ -612,6 +613,7 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     return new FBXLoader(manager).parse(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'')
   }
   const visual=await player.loadVisual({async loadFbx(url) {
+    assetLoads++
     if(url.endsWith('/Throw.fbx'))return parseThrow()
     if(url.endsWith('/Salute.fbx'))return parseThrow('Salute.fbx')
     if(url.endsWith('/Running.fbx'))return parseThrow('Running.fbx')
@@ -621,6 +623,21 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     const model=new THREE.Group();model.animations=[new THREE.AnimationClip('locomotion',1,[])];return model
   }})
   globalThis.window=previousParseWindow
+  const initialLoads=assetLoads,originalMixer=visual.mixer,originalRoot=visual.root
+  const assertNormalVisual=async()=>{
+    assert.equal(await player.loadVisual(),visual);assert.equal(visual.mixer,originalMixer);assert.equal(visual.root,originalRoot)
+    assert.equal(assetLoads,initialLoads,'ending never loads another detective')
+    const detectives=[];player.mesh.traverse(node=>{if(node.name==='detective')detectives.push(node)})
+    assert.equal(detectives.length,1,'one normal player visual remains attached')
+    assert.equal(visual.actions.idle.isRunning(),true);assert.equal(visual.actions.idle.paused,false)
+    assert.equal(visual.actions.idle.getEffectiveWeight(),1)
+    for(const [name,action] of Object.entries(visual.actions))if(name!=='idle') {
+      assert.equal(action.isScheduled(),false,name+' is not scheduled')
+      assert.equal(action.enabled,false,name+' is disabled')
+      assert.equal(action.paused,false,name+' is not left paused by the ending')
+      assert.equal(action.getEffectiveWeight(),0,name+' has no stale ending weight')
+    }
+  }
   const oldPosition=player.mesh.position.clone(),oldRotation=player.mesh.quaternion.clone(),oldVisible=player.mesh.visible
   const h=harness({playerOverride:player})
   await Promise.resolve()
@@ -736,12 +753,29 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     h.level.update(EMPTY_BEAT+TILT_UP)
     assert.equal(h.level.phase,'skyHold');assert.equal(player.mesh.visible,false)
     assert.equal(h.overlay.style.opacity,'0');assert.equal(h.overlay.children.length,0)
+    h.level.update(SKY_HOLD+0.001)
+    assert.equal(h.manager.advances,1)
+    await assertNormalVisual()
+    player.updateVisual(1/60);await assertNormalVisual()
     h.level.dispose()
+    await assertNormalVisual()
     assert.equal(player.mesh.visible,oldVisible)
     assert.deepEqual(player.mesh.position,oldPosition);assertQuaternionClose(player.mesh.quaternion,oldRotation)
     assert.equal(player.getCinematicView(),null)
     assert.equal(player.mesh.getObjectByName('ending-chrono-core'),undefined)
     assert.equal(h.doc.body.children.length,0)
+    for(const action of ['skip','dispose']) {
+      const again=harness({playerOverride:player})
+      await Promise.resolve()
+      try {
+        again.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE+BEAT+DOOR_HOLD+DOOR_OPEN+HOLD_CORE+0.2)
+        assert.equal(again.level.activeAnimation,'throw')
+        if(action==='skip')again.skip()
+        else again.level.dispose()
+        await assertNormalVisual()
+        again.level.dispose();player.updateVisual(1/60);await assertNormalVisual()
+      } finally {again.restore()}
+    }
   } finally {h.restore();visual.dispose();disposeObject(player.mesh)}
 })
 
@@ -1191,7 +1225,40 @@ test('Ending: hard cuts switch camera, projection and painting atomically; blue 
   } finally {console.info=originalInfo;h.restore()}
 })
 
-test('Credits: completion Main Menu uses the existing dismissal once; menu credits and Escape keep their behaviour', () => {
+function titleReturnHarness() {
+  const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
+  const extract=(signature,next)=>{
+    const start=source.indexOf(signature),end=source.indexOf(next,start)
+    assert.ok(start>=0&&end>start,'main.js test boundary '+signature)
+    return source.slice(start,end)
+  }
+  const calls=[],pending=[],menu={visible:false,show(){this.visible=true;calls.push('menu.show')}}
+  const levelManager={unload(){calls.push('unload')},adopt(state){calls.push('adopt:'+state)},enter(state){calls.push('enter:'+state)}}
+  const hud={setVisible(){},setSuspicion(){},setObjective(){},resetRunTimer(){}}
+  const deps={menu,levelManager,hud,respawn:{reset(){},resetLives(){}},timeSystem:{resetForRun(){},resetRun(){}},
+    playerView:{reset(){}},keyboardLock:{release(){},engage(){}},syncInputState(){},disposeGameplayDrone(){},
+    devStartOptions:()=>null,beginForecourtArrival(){calls.push('arrival')},
+    buildTitleBackdrop(){calls.push('backdrop');return new Promise(resolve=>pending.push(resolve))},
+    initAudio(){calls.push('initAudio')},preloadAbilitySfx:()=>null,getContext:()=>({state:'running'}),
+    resumeAudio(){calls.push('resumeAudio');return Promise.resolve()},loadTrack:file=>file,
+    startLevelMusic(file){calls.push('music:'+file);return Promise.resolve()}}
+  // Execute the actual composition-root functions with controlled dependencies;
+  // importing main.js would construct WebGL and start its application loop.
+  const factory=new Function('deps',`
+    const {menu,levelManager,hud,respawn,timeSystem,playerView,keyboardLock,syncInputState,disposeGameplayDrone,
+      devStartOptions,beginForecourtArrival,buildTitleBackdrop,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic}=deps;
+    const console={log(){}};
+    let gameStarted=true,paused=true,elapsed=12,resetCount=2,titleBackdrop=null,titleReturnPromise=null;
+    ${extract('async function playMenuMusic() {','function unlockAudio() {')}
+    ${extract('function unlockAudio() {','// Earliest possible unlock:')}
+    ${extract('function startGame() {','// Dev builds only:')}
+    ${extract('async function quitToTitle() {','// Defer by two animation frames')}
+    return {quitToTitle,startGame,unlockAudio,beginRun(){gameStarted=true;menu.visible=false},
+      get state(){return {gameStarted,paused,elapsed,resetCount,pending:!!titleReturnPromise}}};`)
+  return Object.assign(factory(deps),{calls,menu,pending})
+}
+
+test('Credits: completion Main Menu uses the existing dismissal once; menu credits and Escape keep their behaviour', async () => {
   const previousDocument=globalThis.document,previousWindow=globalThis.window,previousPerformance=globalThis.performance,previousTimeout=globalThis.setTimeout
   let clock=0,titleCalls=0
   const listeners=new Map(),timers=[],dismissals=[],doc={activeElement:null}
@@ -1208,7 +1275,8 @@ test('Credits: completion Main Menu uses the existing dismissal once; menu credi
   doc.getElementById=id=>doc.body.find(node=>node.id===id)??doc.head.find(node=>node.id===id)
   globalThis.document=doc;globalThis.performance={now:()=>clock};globalThis.setTimeout=callback=>{timers.push(callback);return timers.length}
   globalThis.window={innerHeight:900,addEventListener:(type,listener)=>listeners.set(type,listener),removeEventListener:type=>listeners.delete(type),location:{reload(){throw new Error('credits must not reload')}}}
-  const credits=createCredits({onDismiss:source=>{dismissals.push(source);if(source==='complete')titleCalls++}})
+  const title=titleReturnHarness(),returns=[]
+  const credits=createCredits({onDismiss:source=>{dismissals.push(source);if(source==='complete'){titleCalls++;returns.push(title.quitToTitle())}}})
   const button=doc.getElementById('credits-main-menu'),key=(name,target=doc.activeElement)=>listeners.get('keydown')({key:name,target,repeat:false,preventDefault(){},stopPropagation(){}})
   try {
     credits.open({source:'complete',completionTime:100})
@@ -1216,9 +1284,22 @@ test('Credits: completion Main Menu uses the existing dismissal once; menu credi
     assert.equal(button.type,'button');assert.equal(doc.activeElement,button)
     button.dispatchEvent(new Event('click',{cancelable:true}));button.dispatchEvent(new Event('click',{cancelable:true}))
     key('Enter');assert.equal(titleCalls,1);assert.equal(credits.isOpen,false)
+    assert.equal(title.menu.visible,true,'main menu visible before the backdrop promise resolves')
+    assert.equal(title.calls.filter(call=>call==='unload').length,1)
+    assert.ok(title.calls.indexOf('resumeAudio')<title.calls.indexOf('backdrop'),'resume remains in the button gesture')
+    await Promise.resolve();await Promise.resolve()
+    assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,1,'menu music requested without another click')
+    title.pending.shift()({});await returns.at(-1)
+    title.beginRun()
     credits.open({source:'complete'});key('Enter');key('Enter');assert.equal(titleCalls,2)
+    assert.equal(title.menu.visible,true,'second ending also reveals the menu immediately')
+    await Promise.resolve();await Promise.resolve()
+    assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,2)
+    title.pending.shift()({});await returns.at(-1)
+    title.beginRun()
     credits.open({source:'complete'});key('Escape');assert.equal(credits.isOpen,true,'Escape retains dismissal grace')
     clock+=600;key('Escape');assert.equal(titleCalls,3)
+    title.pending.shift()({});await returns.at(-1)
     credits.open({source:'menu'});assert.equal(button.hidden,true);assert.equal(button.style.display,'none')
     clock+=600;key('Escape');assert.equal(credits.isOpen,false);assert.equal(titleCalls,3)
     assert.deepEqual(dismissals,['complete','complete','complete','menu'])
@@ -1229,6 +1310,25 @@ test('Credits: completion Main Menu uses the existing dismissal once; menu credi
   } finally {
     credits.dispose();globalThis.document=previousDocument;globalThis.window=previousWindow;globalThis.performance=previousPerformance;globalThis.setTimeout=previousTimeout
   }
+})
+
+test('Title return: pause quit shares the immediate menu path, pending returns coalesce and New Game waits for backdrop ownership', async () => {
+  const title=titleReturnHarness()
+  title.unlockAudio();await Promise.resolve();await Promise.resolve()
+  assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,0,'audio unlock during play does not start menu music')
+  const first=title.quitToTitle(),duplicate=title.quitToTitle()
+  assert.equal(title.menu.visible,true)
+  assert.deepEqual(title.state,{gameStarted:false,paused:false,elapsed:0,resetCount:0,pending:true})
+  assert.equal(title.calls.filter(call=>call==='unload').length,1)
+  title.startGame()
+  assert.equal(title.calls.some(call=>call.startsWith('adopt:')||call.startsWith('enter:')),false)
+  await Promise.resolve();await Promise.resolve()
+  assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,1)
+  title.pending.shift()({});await first;await duplicate;await Promise.resolve()
+  assert.equal(title.state.gameStarted,true,'queued New Game starts after the rebuilt backdrop is owned')
+  assert.equal(title.calls.filter(call=>call==='adopt:Boarding').length,1)
+  const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
+  assert.match(source,/onQuit: \(\) => quitToTitle\(\)/,'pause menu still uses the same title path')
 })
 
 test('Ending: story sounds share the master bus and skip/dispose stop every source', () => {
