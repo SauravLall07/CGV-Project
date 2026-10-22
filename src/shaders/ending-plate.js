@@ -7,11 +7,26 @@ export const PLATE_CAMERA_POSITION = new THREE.Vector3(47.1, 19.43, -3.01)
 export const PLATE_CAMERA_TARGET = new THREE.Vector3(1.09, -1.13, 9.74)
 export const PLATE_CAMERA_FOV = 39.5
 export const PLATE_CAMERA_ASPECT = 1671 / 941
+export const DOOR_PLATE_WIDTH = 1322
+export const DOOR_PLATE_HEIGHT = 1190
+export const DOOR_PLATE_FOV = 74
 
 export function createEndingPlate(onReady) {
   const camera = new THREE.PerspectiveCamera(PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT, 0.1, 1800)
   camera.position.copy(PLATE_CAMERA_POSITION); camera.lookAt(PLATE_CAMERA_TARGET); camera.updateMatrixWorld(true)
   const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+  const doorCamera = new THREE.PerspectiveCamera(DOOR_PLATE_FOV,DOOR_PLATE_WIDTH/DOOR_PLATE_HEIGHT,0.1,1800)
+  const nativeUv=[new THREE.Matrix3(),new THREE.Matrix3(),new THREE.Matrix3()]
+  let activeIndex=0,doorConfigured=false
+  function configureDoor(shot) {
+    doorCamera.position.copy(shot.position);doorCamera.quaternion.copy(shot.quaternion)
+    doorCamera.setViewOffset(DOOR_PLATE_WIDTH,DOOR_PLATE_HEIGHT,
+      DOOR_PLATE_WIDTH*90/1672,-DOOR_PLATE_HEIGHT*0.23,DOOR_PLATE_WIDTH,DOOR_PLATE_HEIGHT)
+    doorCamera.updateMatrixWorld(true)
+    const e=new THREE.Matrix4().multiplyMatrices(doorCamera.projectionMatrix,shot.projectionMatrixInverse).elements
+    nativeUv[1].set(e[0],e[4],e[12],e[1],e[5],e[13],0,0,1)
+    doorConfigured=true
+  }
   let ready = false, disposed = false
   let loadedCount = 0
   const textures = [plateUrl, doorUrl, gorgeUrl].map(url => new THREE.TextureLoader().load(url, loaded => {
@@ -30,15 +45,18 @@ export function createEndingPlate(onReady) {
     name: 'ending-projected-plate',
     uniforms: { uPlate: { value: texture }, uIncoming: { value: texture }, uPlateMix: { value: 0 },
       uWhip: { value: 0 }, uWhipDirection: { value: 1 }, uShot: { value: 0 },
+      uOutgoingUv:{value:nativeUv[0]},uIncomingUv:{value:nativeUv[0]},
       uPlateViewProj: { value: viewProjection },
       uOutsideColor: { value: new THREE.Color(0x0d1426) }, uTime: { value: 0 }, uFlow: { value: 1 } },
     side: THREE.BackSide, toneMapped: false, fog: false, depthWrite: false, depthTest: false,
     vertexShader: `
       varying vec3 vWorld;
+      varying vec4 vClip;
       void main() {
         vec4 world = modelMatrix * vec4(position, 1.0);
         vWorld = world.xyz;
         gl_Position = projectionMatrix * viewMatrix * world;
+        vClip = gl_Position;
       }`,
     fragmentShader: `
       uniform sampler2D uPlate;
@@ -48,10 +66,13 @@ export function createEndingPlate(onReady) {
       uniform float uWhipDirection;
       uniform float uShot;
       uniform mat4 uPlateViewProj;
+      uniform mat3 uOutgoingUv;
+      uniform mat3 uIncomingUv;
       uniform vec3 uOutsideColor;
       uniform float uTime;
       uniform float uFlow;
       varying vec3 vWorld;
+      varying vec4 vClip;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p) {
         vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -67,9 +88,14 @@ export function createEndingPlate(onReady) {
             vec3 painting = vec3(0.0);
             for (int i = 0; i < 16; i++) {
               float offset = (float(i) / 15.0 - 0.25) * uWhip * uWhipDirection;
-              vec2 sampleUv = clamp(uv + vec2(0.0, offset), vec2(0.001), vec2(0.999));
-              painting += mix(texture2D(uPlate, sampleUv).rgb,
-                texture2D(uIncoming, sampleUv).rgb, uPlateMix) / 16.0;
+              vec2 outgoingUv=uv,incomingUv=uv;
+              if(uWhip>0.00001) {
+                vec3 screen=vec3(vClip.xy/vClip.w+vec2(0.0,offset*2.0),1.0);
+                outgoingUv=(uOutgoingUv*screen).xy*0.5+0.5;
+                incomingUv=(uIncomingUv*screen).xy*0.5+0.5;
+              }
+              painting += mix(texture2D(uPlate,clamp(outgoingUv,vec2(0.001),vec2(0.999))).rgb,
+                texture2D(uIncoming,clamp(incomingUv,vec2(0.001),vec2(0.999))).rgb,uPlateMix)/16.0;
             }
             // Threshold in display colour; uPlate is decoded from sRGB by the texture sampler.
             vec3 displayColor = pow(max(painting, vec3(0.0)), vec3(1.0 / 2.2));
@@ -97,12 +123,15 @@ export function createEndingPlate(onReady) {
   function setFov(value) {
     camera.fov = THREE.MathUtils.clamp(value, 10, 100)
     camera.updateProjectionMatrix()
-    viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    const projector=activeIndex===1&&doorConfigured?doorCamera:camera
+    viewProjection.multiplyMatrices(projector.projectionMatrix,projector.matrixWorldInverse)
     return camera.fov
   }
   function setShot(shot, index) {
+    activeIndex=index
     camera.copy(shot); camera.updateMatrixWorld(true)
-    viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    const projector=index===1&&doorConfigured?doorCamera:camera
+    viewProjection.multiplyMatrices(projector.projectionMatrix,projector.matrixWorldInverse)
     mesh.position.copy(camera.position)
     material.uniforms.uPlate.value = textures[index]
     material.uniforms.uIncoming.value = textures[index]
@@ -116,13 +145,21 @@ export function createEndingPlate(onReady) {
     material.uniforms.uPlateMix.value = mix
     material.uniforms.uWhip.value = strength
     material.uniforms.uWhipDirection.value = direction
+    material.uniforms.uOutgoingUv.value=nativeUv[outgoing]
+    material.uniforms.uIncomingUv.value=nativeUv[incoming]
   }
-  return { mesh, camera, texture, textures, material, setShot, setWhip, get ready() { return ready },
+  function updateRenderPose(shot) {
+    camera.position.copy(shot.position);camera.quaternion.copy(shot.quaternion);camera.updateMatrixWorld(true)
+    mesh.position.copy(shot.position)
+  }
+  return { mesh, camera, doorCamera, configureDoor, updateRenderPose, texture, textures, material, setShot, setWhip, get ready() { return ready },
     setFov,
     update(delta) { material.uniforms.uTime.value += Math.max(0, delta) * material.uniforms.uFlow.value },
     dispose() {
       if (disposed) return
-      disposed = true; setFov(PLATE_CAMERA_FOV)
+      disposed = true; activeIndex=0
+      camera.view=null;camera.aspect=PLATE_CAMERA_ASPECT;camera.position.copy(PLATE_CAMERA_POSITION)
+      camera.lookAt(PLATE_CAMERA_TARGET);camera.updateMatrixWorld(true);setFov(PLATE_CAMERA_FOV)
       mesh.removeFromParent(); mesh.geometry.dispose(); material.dispose(); textures.forEach(item => item.dispose())
     } }
 }

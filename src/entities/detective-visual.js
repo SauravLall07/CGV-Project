@@ -32,11 +32,12 @@ const FILES = {
   crouchIdle: new URL('../assets/models/detective/Crouch Idle 02 Looking Around.fbx', import.meta.url),
   crouchWalk: new URL('../assets/models/detective/Crouch Walk Forward.fbx', import.meta.url),
   crouchToStand: new URL('../assets/models/detective/Crouch To Standing.fbx', import.meta.url),
-  throw: new URL('../assets/models/detective/Throw.fbx', import.meta.url)
+  throw: new URL('../assets/models/detective/Throw.fbx', import.meta.url),
+  salute: new URL('../assets/models/detective/Salute.fbx', import.meta.url)
 }
 
 const CROUCH_TRANSITIONS = new Set(['standToCrouch', 'crouchToStand'])
-const ONE_SHOTS = new Set(['cast', 'throw'])
+const ONE_SHOTS = new Set(['cast', 'throw', 'salute'])
 // Throw.fbx's forward hand swing, sampled at 30 fps (frame 24).
 const THROW_RELEASE_TIME = 24 / 30
 
@@ -349,7 +350,8 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     crouchIdle: firstClip(crouchIdleFbx, 'crouchIdle'),
     crouchWalk: firstClip(crouchWalkFbx, 'crouchWalk'),
     crouchToStand: firstClip(crouchToStandFbx, 'crouchToStand'),
-    throw: firstClip(throwFbx, 'throw')
+    throw: firstClip(throwFbx, 'throw'),
+    salute: firstClip(await loadOptionalFbx(assets, FILES.salute.href), 'salute')
   }
 
   const crouchWalkTravel = rootTravel(clips.crouchWalk, info.scale)

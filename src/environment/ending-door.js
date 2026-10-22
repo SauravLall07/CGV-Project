@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { ENDING_DOOR_HOLE } from '../shaders/ending-time-damage.js'
+import { woodMaterial } from './textures.js'
 
 export const DOOR_WIDTH = 1.3
 export const DOOR_HEIGHT = 2.1
@@ -8,15 +9,24 @@ export const DOOR_FLOOR_Y = 1.55
 export const DOOR_Z = 7.5
 export const DOOR_OPEN_ANGLE = 1.5
 export const DOOR_MOTION_SECONDS = 0.6
+export const CORRIDOR_DEPTH = 3.5
+export const RUN_DISTANCE = 2.45
 
 export function createEndingDoor(pivot, source) {
   const root = new THREE.Group(); root.name = 'ending-doorway'; pivot.add(root)
   root.position.z = DOOR_Z
   // Source materials and texture wrappers are already ending-owned clones.
-  const paint = source.paint.clone(), wood = source.wood.clone(), brass = source.brass.clone()
-  wood.emissive.setHex(0x5a2c12); wood.emissiveMap = wood.map; wood.emissiveIntensity = 0.75
-  const lamp = new THREE.MeshBasicMaterial({ color: 0xffcc80 })
-  const carpet = source.carpet.clone()
+  const paint = source.paint.clone(), brass = source.brass.clone()
+  // Local copies of the damaged cab's look; no Level 3 builders or resources.
+  const wood = woodMaterial({repeat:[1,2],light:0x5a8a80,dark:0x1e3a34,roughness:0.5,seed:151})
+  wood.color.setHex(0xd2ebe4)
+  const floor = woodMaterial({repeat:[2,2],light:0x7a5234,dark:0x2e1a10,roughness:0.42,seed:153})
+  floor.color.setHex(0xead2b6)
+  const ceiling = woodMaterial({repeat:[2,1],light:0x6a4a2e,dark:0x2e1a10,roughness:0.58,seed:155})
+  ceiling.color.setHex(0xe8d2b4)
+  const lamp = new THREE.MeshStandardMaterial({color:0xffe2b0,emissive:0xffc27a,emissiveIntensity:1.4,roughness:0.35})
+  const velvet = new THREE.MeshStandardMaterial({color:0x7a2430,roughness:0.92,emissive:0x1a0608,emissiveIntensity:0.1})
+  const dark = new THREE.MeshStandardMaterial({color:0x060908,roughness:1})
   const batches = new Map(), hinges = []
   function box(parent, material, w,h,d,x,y,z) {
     const geometry = new THREE.BoxGeometry(w,h,d); geometry.translate(x,y,z)
@@ -25,10 +35,26 @@ export function createEndingDoor(pivot, source) {
     if (!group.has(material)) group.set(material,[])
     group.get(material).push(geometry)
   }
-  box(root,carpet,2.6,0.06,1.9,0,DOOR_FLOOR_Y-0.03,0)
-  box(root,wood,0.06,2.15,1.9,1.26,2.625,0)
+  box(root,floor,2.95,0.06,1.9,-0.075,DOOR_FLOOR_Y-0.03,0)
   for (const z of [-0.95,0.95]) box(root,wood,2.6,2.15,0.06,0,2.625,z)
-  box(root,wood,2.6,0.06,1.9,0,3.68,0)
+  box(root,ceiling,2.95,0.06,1.9,-0.075,3.68,0)
+  // A black, unlit tunnel behind the lit vestibule gives the exit real depth.
+  box(root,dark,CORRIDOR_DEPTH,0.06,1.2,0.1+CORRIDOR_DEPTH/2,DOOR_FLOOR_Y-0.03,0)
+  box(root,dark,CORRIDOR_DEPTH,0.06,1.2,0.1+CORRIDOR_DEPTH/2,3.68,0)
+  for(const side of [-1,1]) {
+    box(root,dark,CORRIDOR_DEPTH,2.1,0.08,0.1+CORRIDOR_DEPTH/2,2.6,side*0.64)
+    box(root,brass,2.85,0.035,0.04,-0.05,2.55,side*0.89)
+    box(root,velvet,0.12,1.05,0.24,0.95,2.7,side*0.75)
+    box(root,lamp,0.18,0.16,0.16,0.45,3.15,side*0.86)
+    box(root,brass,0.04,0.2,0.18,0.45,3.0,side*0.84)
+  }
+  box(root,dark,0.08,2.1,1.36,0.1+CORRIDOR_DEPTH,2.6,0)
+  for(const x of [-0.9,0.1,1.1]) box(root,brass,0.05,0.06,1.8,x,3.58,0)
+  // Brake-room identity: brass instrument cabinet, amber firebox slots, red lever.
+  box(root,wood,0.6,0.75,0.12,0.45,2.1,0.84)
+  box(root,brass,0.65,0.04,0.16,0.45,2.5,0.82)
+  for(const x of [0.25,0.45,0.65]) box(root,lamp,0.04,0.22,0.025,x,2.05,0.765)
+  box(root,velvet,0.06,0.4,0.06,0.75,2.55,0.75)
   box(root,brass,0.14,0.04,DOOR_WIDTH,-1.43,DOOR_FLOOR_Y,0)
   box(root,brass,0.5,0.06,1.45,-1.7,1.3,0)
   for (const z of [-0.7,0.7]) {
@@ -69,5 +95,7 @@ export function createEndingDoor(pivot, source) {
   }
   return {root,hinges,hole:ENDING_DOOR_HOLE,setOpen,get openness(){return openness},
     inside:new THREE.Vector3(-0.25,DOOR_FLOOR_Y,DOOR_Z),
-    threshold:new THREE.Vector3(-1.45,DOOR_FLOOR_Y,DOOR_Z)}
+    corridorDepth:CORRIDOR_DEPTH,
+    runEnd:new THREE.Vector3(-1.25+RUN_DISTANCE,DOOR_FLOOR_Y,DOOR_Z),
+    threshold:new THREE.Vector3(-1.25,DOOR_FLOOR_Y,DOOR_Z)}
 }

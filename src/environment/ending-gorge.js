@@ -5,10 +5,10 @@ import { createEndingPlate, PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET } from '.
 export const MOON_ELEVATION_DEGREES = 40
 export const MOON_CAMERA_RIGHT_DEGREES = 25
 export const MOON_COLOR = 0xc4d2ff
-export const MOON_INTENSITY = 2.2
+export const MOON_INTENSITY = 2.6
 export const HEMISPHERE_SKY = 0x34467a
 export const HEMISPHERE_GROUND = 0x0e1118
-export const HEMISPHERE_INTENSITY = 2.4
+export const HEMISPHERE_INTENSITY = 2.8
 
 export function createEndingGorge(scene, renderer) {
   const root = new THREE.Group()

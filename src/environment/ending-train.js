@@ -14,8 +14,6 @@ export const STOP_CENTER_Z = 7.6
 export const SETTLE_PITCH = THREE.MathUtils.degToRad(1.5)
 export const COUPLING_BUMP = 0.22
 export const COUPLING_DELAY = 0.12
-const YAW_DEGREES = [0.6, -1.2, 0.9, -0.5]
-const ROLL_DEGREES = [0.6, -0.6, 0.6, -0.6]
 const SPRING_FREQUENCY = 9
 const SPRING_DAMPING = 3.8
 const SPRING_GAIN = 1.8
@@ -55,7 +53,12 @@ export function createEndingTrain() {
   function cloneTexture(texture) {
     if (!textureClones.has(texture)) {
       const owned = texture.clone()
+      owned.source = new THREE.Source(texture.source.data)
       delete owned.userData.sharedTexture
+      owned.generateMipmaps = true
+      owned.minFilter = THREE.LinearMipmapLinearFilter
+      owned.anisotropy = 4
+      owned.needsUpdate = true
       textureClones.set(texture, owned)
     }
     return textureClones.get(texture)
@@ -64,21 +67,10 @@ export function createEndingTrain() {
     if (!materialClones.has(material)) {
       const owned = material.clone()
       for (const [key, value] of Object.entries(material)) if (value?.isTexture) {
-        // The distant finale uses even lamplight, without the station's curtain illustration.
-        owned[key] = material === kit.carriageWindow && (key === 'map' || key === 'emissiveMap') ? null : cloneTexture(value)
+        owned[key] = cloneTexture(value)
       }
       for (const [key, uniform] of Object.entries(material.uniforms ?? {})) {
         if (uniform.value?.isTexture) owned.uniforms[key].value = cloneTexture(uniform.value)
-      }
-      if (material === kit.carriageGreen || material === kit.carriageRoof) {
-        const color = material === kit.carriageGreen ? 0x2c4a36 : 0x2a2e33
-        owned.color.setHex(color); owned.emissive.setHex(color); owned.emissiveIntensity = 0.04
-        owned.roughness = material === kit.carriageGreen ? 0.52 : 0.72
-        owned.metalness = 0.08; owned.envMapIntensity = 1
-      } else if (material === kit.carriageWindow) {
-        owned.name = 'ending-amber-windows'
-        owned.color.setHex(0x6a3d16); owned.emissive.setHex(0xffb35c)
-        owned.emissiveIntensity = 0.85; owned.roughness = 0.3; owned.metalness = 0
       }
       materialClones.set(material, owned)
       if (!sharedMaterials.has(material)) factoryMaterials.add(material)
@@ -132,7 +124,7 @@ export function createEndingTrain() {
     }
     const center = (bounds.min.z + bounds.max.z) / 2
     const pivot = makePivot(`ending-carriage-${i + 1}`, batches, center)
-    for (const mesh of batches) if (mesh.material.color?.getHex() === 0x2a2e33) subdivideRoof(mesh)
+    for (const mesh of batches) if (mesh.material === ownMaterial(kit.carriageRoof)) subdivideRoof(mesh)
     const uniforms = createDamageUniforms(i === 0 ? [...CARRIAGE_HOLES[i],ENDING_DOOR_HOLE] : CARRIAGE_HOLES[i])
     uniforms.uSag.value = 0.25
     if (i === 0) uniforms.uProtectedFront.value = 6
@@ -146,8 +138,6 @@ export function createEndingTrain() {
       }
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(patch) : patch(mesh.material)
     }
-    pivot.rotation.y = THREE.MathUtils.degToRad(YAW_DEGREES[i])
-    pivot.rotation.z = THREE.MathUtils.degToRad(ROLL_DEGREES[i])
     carriages.push(pivot); carCenters.push(center)
   }
   // Undo the station translation, retain the factory's pi yaw, and centre the engine.
