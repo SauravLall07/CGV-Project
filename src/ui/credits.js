@@ -1,4 +1,4 @@
-import { THEME, createOverlayRoot } from './ui-theme.js'
+import { THEME, createOverlayRoot, createButton } from './ui-theme.js'
 
 // Rolling credits overlay. Two entry points share this panel: the title
 // screen's CREDITS button (solid dark scrim) and the Complete state (a
@@ -202,6 +202,13 @@ export function createCredits({ onDismiss } = {}) {
   const heistCompleteBlock = roll.querySelector('[data-heist-complete]')
   const completionTimeLine = roll.querySelector('[data-completion-time]')
   root.appendChild(roll)
+  const mainMenu=createButton('Main Menu',{onClick:event=>{
+    event.preventDefault();event.stopPropagation()
+    if(isOpen&&source==='complete')close()
+  }})
+  mainMenu.id='credits-main-menu'
+  Object.assign(mainMenu.style,{position:'absolute',right:'24px',bottom:'24px',display:'none',zIndex:'1'})
+  mainMenu.hidden=true;root.appendChild(mainMenu)
   document.body.appendChild(root)
 
   let isOpen = false
@@ -235,6 +242,7 @@ export function createCredits({ onDismiss } = {}) {
     source = nextSource
     isOpen = true
     ignoreUntil = performance.now() + DISMISS_GRACE_MS
+    mainMenu.hidden=source!=='complete';mainMenu.style.display=source==='complete'?'block':'none';mainMenu.disabled=false
     if (source === 'complete' && completionTime != null && Number.isFinite(completionTime)) {
       heistCompleteBlock.style.display = 'flex'
       completionTimeLine.textContent = `Completion Time: ${formatCompletionClock(completionTime)}`
@@ -247,11 +255,13 @@ export function createCredits({ onDismiss } = {}) {
     void root.offsetWidth
     root.style.opacity = '1'
     startRoll()
+    if(source==='complete')mainMenu.focus({preventScroll:true})
   }
 
   function close() {
     if (!isOpen) return
     isOpen = false
+    mainMenu.disabled=true
     roll.style.animation = 'none'
     root.style.opacity = '0'
     root.style.pointerEvents = 'none'
@@ -277,6 +287,10 @@ export function createCredits({ onDismiss } = {}) {
 
   function onKeyDown(event) {
     if (!isOpen || event.repeat) return
+    if(source==='complete'&&event.key==='Tab')return
+    if(source==='complete'&&event.target===mainMenu&&(event.key==='Enter'||event.key===' ')) {
+      event.preventDefault();event.stopPropagation();close();return
+    }
     tryDismiss(event)
   }
 
@@ -288,6 +302,7 @@ export function createCredits({ onDismiss } = {}) {
   root.addEventListener('click', onClick)
 
   function dispose() {
+    isOpen=false
     window.removeEventListener('keydown', onKeyDown, true)
     root.remove()
   }

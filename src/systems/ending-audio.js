@@ -29,7 +29,7 @@ export function createEndingAudio({ context = getContext, output = getMasterGain
     const ctx=context(),master=output()
     if(disposed||stopped||!ctx||!master||ctx.state!=='running')return
     if(kind==='ambient'&&ambient)return
-    const sources=[],nodes=[],duration=kind==='impact'?1.2:kind==='ambient'?Infinity:kind==='door'?0.65:kind==='whip'?0.3:0.35
+    const sources=[],nodes=[],duration=kind==='impact'?1.2:kind==='ambient'?Infinity:kind==='door'?0.65:0.35
     const bus=ctx.createGain();bus.gain.value=1;bus.connect(master);nodes.push(bus)
     function tone(frequency,end,volume,type='sine',seconds=duration) {
       const source=ctx.createOscillator(),gain=ctx.createGain()
@@ -54,7 +54,6 @@ export function createEndingAudio({ context = getContext, output = getMasterGain
       const source=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain()
       source.buffer=noiseBuffer;source.loop=true;filter.type=kind==='ambient'?'lowpass':'bandpass'
       filter.frequency.value=kind==='ambient'?650:kind==='door'?800:1800
-      if(kind==='whip') filter.frequency.setTargetAtTime(350,ctx.currentTime,0.08)
       filter.Q.value=0.7;gain.gain.value=kind==='ambient'?0:0.025
       gain.gain.setTargetAtTime(kind==='ambient'?0.012:0,ctx.currentTime,kind==='ambient'?0.8:duration/3)
       source.connect(filter).connect(gain).connect(bus);source.start()
@@ -99,7 +98,7 @@ export function createEndingAudio({ context = getContext, output = getMasterGain
   return {
     get active() { return graph !== null },
     get voiceCount(){return voices.size+(graph?1:0)},
-    door:()=>cue('door'),throw:()=>cue('throw'),whip:()=>cue('whip'),
+    door:()=>cue('door'),throw:()=>cue('throw'),
     impact(){cue('impact');cue('ambient')},
     fadeOut(){if(ambient)ambient.bus.gain.setTargetAtTime(0,context().currentTime,0.3)},
     update(progress, intensity, delta = 0) {

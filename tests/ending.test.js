@@ -4,10 +4,12 @@ import * as THREE from 'three'
 import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, BEAT, DOOR_OPEN, HOLD_CORE,
   THROW, THROW_RELEASE, FALL, PHASES, DURATIONS, TRAIN_START_NOSE_Z,
   SKY_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS } from '../src/levels/ending.js'
-import { DOOR_HOLD, WHIP_SECONDS, RELEASE_TO_WHIP, SNAP_HOLD, DIP_DOWN, DIP_UP, TURN, RUN, EMPTY_BEAT, TILT_UP, TILT_DEGREES, CRANE_HEIGHT, DOOR_EYE_HEIGHT, measureEndingFrame, measureEndingRoofAngle } from '../src/levels/ending.js'
+import { DOOR_HOLD, RELEASE_TO_CUT, IMPACT_HOLD, TURN, RUN, EMPTY_BEAT, TILT_UP, TILT_DEGREES, CRANE_HEIGHT, DOOR_EYE_HEIGHT, measureEndingFrame, measureEndingRoofAngle } from '../src/levels/ending.js'
 import { RUN_IN, RUN_RADIUS, RUN_CORRIDOR, DOOR_OPEN_ANGLE } from '../src/environment/ending-door.js'
 import { createPlayer } from '../src/entities/player.js'
-import { FLASH_SECONDS, SCREEN_FLASH_PEAK, RIVER_TARGET_NDC, GORGE_FLOOR_Y } from '../src/environment/ending-core.js'
+import { RIVER_TARGET_NDC, GORGE_FLOOR_Y } from '../src/environment/ending-core.js'
+import { EXPLOSION_GROW, EXPLOSION_HOLD, EXPLOSION_FADE, EXPLOSION_SECONDS } from '../src/shaders/ending-explosion.js'
+import { createCredits } from '../src/ui/credits.js'
 import { ENDING_DOOR_HOLE } from '../src/shaders/ending-time-damage.js'
 import fs from 'node:fs'
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
@@ -205,8 +207,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         assert.ok(nose > 0, `physical nose never crosses the edge: ${nose}`)
         if (elapsed >= ENDING_FADE_IN + APPROACH + BRAKE + SETTLE) assert.ok(Math.abs(nose - STOP_NOSE_Z) <= 0.1)
         const index=PHASES.indexOf(h.level.phase)
-        const visible=index>=PHASES.indexOf('doorOpen') && index<=PHASES.indexOf('run') &&
-          (h.level.phase!=='whipDown' || h.level.phaseTime<0.06 || h.level.phaseTime>0.24)
+        const visible=index>=PHASES.indexOf('doorOpen') && index<=PHASES.indexOf('run')
         assert.equal(h.player.mesh.visible, visible)
       }
       if (fps === 60) t.diagnostic(`Physical nose: settled ${noseZ()}, minimum ${minimumNose}`)
@@ -463,9 +464,9 @@ test('Ending: peak budget reserves twelve detective draws with every ending effe
     h.level.door.setOpen(1)
     const core=h.level.core
     core.update(0,-1,0.25)
-    core.payload.visible=true;core.trail.visible=true;core.flash.visible=true;core.light.intensity=1.5
+    core.payload.visible=true;core.trail.visible=true;core.explosion.mesh.visible=true;core.light.intensity=1.5
     assert.equal(h.level.door.openness,1)
-    assert.ok(core.payload.visible && core.trail.visible && core.flash.visible && core.light.intensity>0)
+    assert.ok(core.payload.visible && core.trail.visible && core.explosion.mesh.visible && core.light.intensity>0)
     let calls=0,triangles=0
     h.scene.traverse(node=>{
       if(!node.isMesh && !node.isSprite && !node.isPoints && !node.isLine)return
@@ -501,9 +502,7 @@ test('Ending: full story matches each active plate camera and keeps light count 
       assert.deepEqual(h.view.initialPosition,h.view.position)
       assertQuaternionClose(h.view.initialRotation,h.view.targetRotation)
       assert.deepEqual(h.scene.getObjectByName('ending-plate-sphere').position,shot.position)
-      if(h.level.phase!=='whipDown') {
-        assert.equal(river.uWhip.value,0);assert.equal(river.uPlateMix.value,0)
-      }
+      assert.equal('uWhip' in river,false);assert.equal('uPlateMix' in river,false)
       assert.ok(steam.value>previousSteam);assert.ok(river.uTime.value>previousRiver)
       previousSteam=steam.value;previousRiver=river.uTime.value
       assert.equal(river.uFlow.value,1)
@@ -535,7 +534,7 @@ test('Ending: skip from every phase produces one complete transition and an empt
       assert.equal(h.level.activeShot,1)
       assert.equal(h.player.mesh.visible,false);assert.equal(h.level.door.openness,1)
       assert.equal(h.level.core.payload.visible,false);assert.equal(h.level.core.trail.visible,false)
-      assert.equal(h.level.core.flash.visible,false);assert.equal(Number(h.level.core.screen.style.opacity),0)
+      assert.equal(h.level.core.explosion.mesh.visible,false);assert.equal(h.level.core.explosion.uniforms.uOpacity.value,0)
       h.level.update(TOTAL+1);skip();h.level.update(100)
       assert.equal(h.manager.advances,1)
     } finally {h.restore()}
@@ -631,7 +630,7 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     assert.equal(h.level.phase,'holdCore');assert.equal(player.mesh.visible,true)
     assert.equal(visual.actions.salute.loop,THREE.LoopOnce)
     assert.equal(visual.actions.salute.clampWhenFinished,true)
-    assert.equal(h.level.durationOf('salute')+DIP_UP,visual.actions.salute.getClip().duration)
+    assert.equal(h.level.durationOf('salute'),visual.actions.salute.getClip().duration)
     t.diagnostic('Salute duration '+visual.actions.salute.getClip().duration+' s; measured run stance speed '+h.level.runClipSpeed+' m/s')
     h.scene.updateMatrixWorld(true)
     const carriage=h.scene.getObjectByName('ending-carriage-1'),inverse=carriage.matrixWorld.clone().invert(),sole=new THREE.Vector3()
@@ -661,9 +660,9 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
       if(previous) assert.ok(worldPoint.distanceTo(previous)<1,'continuous ballistic samples')
       previous=worldPoint.clone()
       projected.copy(worldPoint).project(core.camera)
-      if(time>=RELEASE_TO_WHIP+WHIP_SECONDS && Math.abs(projected.x)<1 && Math.abs(projected.y)<1 && projected.z>-1 && projected.z<1)
+      if(time>=RELEASE_TO_CUT && Math.abs(projected.x)<1 && Math.abs(projected.y)<1 && projected.z>-1 && projected.z<1)
         entry??={time,ndc:projected.clone()}
-      if(time>=RELEASE_TO_WHIP+WHIP_SECONDS && Math.abs(projected.x)<=0.85 && Math.abs(projected.y)<=0.85 && projected.z>-1 && projected.z<1) {
+      if(time>=RELEASE_TO_CUT && Math.abs(projected.x)<=0.85 && Math.abs(projected.y)<=0.85 && projected.z>-1 && projected.z<1) {
         first??={time,ndc:projected.clone()};last=time
       }
       if(first) {
@@ -673,9 +672,9 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
       }
     }
     assert.ok(entry && entry.ndc.y>0.97 && Math.abs(entry.ndc.x)<0.95,'C entry is through the top, not the side: '+JSON.stringify(entry))
-    const delay=entry.time-RELEASE_TO_WHIP-WHIP_SECONDS
-    assert.ok(delay>=0 && delay<=0.6,'C entry delay after whip '+delay)
-    t.diagnostic('Core appears '+delay+' s after WHIP_DOWN ends')
+    const delay=entry.time-RELEASE_TO_CUT
+    assert.ok(delay>=0 && delay<=0.6,'C entry delay after cut '+delay)
+    t.diagnostic('Core appears '+delay+' s after B→C cut')
     assert.ok(first.ndc.y>0.8,'core enters safe frame from above')
     assert.ok(first && last-first.time>=1.5,'C visibility at least 1.5 seconds')
     const horizontalSpeed=Math.hypot(core.velocity.x,core.velocity.z)
@@ -687,13 +686,13 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     assert.ok(worldPoint.y>core.camera.position.y,'lob passes above C camera elevation')
     let topExit=null
     for(let i=1;i<=200 && !topExit;i++) {
-      const time=RELEASE_TO_WHIP*i/200
+      const time=RELEASE_TO_CUT*i/200
       core.pointAt(time,worldPoint).project(h.level.shots[1])
       if(worldPoint.y>1 && worldPoint.z>-1 && worldPoint.z<1)topExit=time
     }
-    assert.ok(topExit!==null,'B exit is through its top before whip')
-    const exit=core.pointAt(RELEASE_TO_WHIP+WHIP_SECONDS,worldPoint).project(h.level.shots[1])
-    assert.ok(Math.abs(exit.x)>1 || Math.abs(exit.y)>1 || exit.z>1 || exit.z< -1,'core leaves B by end of whip')
+    assert.ok(topExit!==null,'B exit is through its top before cut')
+    const exit=core.pointAt(RELEASE_TO_CUT,worldPoint).project(h.level.shots[1])
+    assert.ok(Math.abs(exit.x)>1 || Math.abs(exit.y)>1 || exit.z>1 || exit.z< -1,'core leaves B by cut')
     t.diagnostic('C top entry '+JSON.stringify(entry)+'; first safe-frame sample '+JSON.stringify(first)+'; visible '+(last-first.time)+' seconds; B exit '+JSON.stringify(exit))
     t.diagnostic('Solved launch angle '+launchAngle+' degrees; speed '+core.velocity.length()+' m/s; closest-to-C time '+closestTime+' s')
     core.pointAt(core.flightDuration,projected);assert.ok(projected.distanceTo(core.impact)<0.5)
@@ -705,20 +704,22 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     const throughImpact=core.flightDuration-0.001+1/60
     player.updateVisual(throughImpact)
     h.level.update(throughImpact)
-    assert.equal(h.level.phase,'flash');assert.equal(core.light.intensity,0)
+    assert.equal(h.level.phase,'explosion');assert.equal(core.light.intensity,0)
     assert.ok(core.payload.position.distanceTo(core.impact)<0.5)
     assert.equal(player.mesh.visible,true)
-    h.level.update(SCREEN_FLASH_PEAK);assert.equal(player.mesh.visible,true)
-    assert.ok(Number(core.screen.style.opacity)>=0.84)
-    // Advance precisely to the returned salute beat, independent of the flash sample offset.
-    h.level.update(h.level.durationOf('flash')-h.level.phaseTime+SNAP_HOLD)
-    assert.equal(h.level.phase,'dipDown');assert.equal(h.level.activeShot,2)
-    h.level.update(DIP_DOWN)
-    assert.equal(h.level.phase,'dipUp');assert.equal(h.level.activeShot,1)
-    assert.equal(h.overlay.style.opacity,'1');assert.equal(player.mesh.visible,true)
+    h.level.update(EXPLOSION_GROW-h.level.phaseTime);assert.equal(player.mesh.visible,true)
+    assert.equal(core.explosion.coverage().coveredFraction,1)
+    assert.equal(core.explosion.coverage().minimumCornerOpacity,1)
+    h.level.update(EXPLOSION_SECONDS-EXPLOSION_GROW)
+    assert.equal(h.level.phase,'impactHold');assert.equal(h.level.activeShot,2)
+    assert.equal(core.explosion.mesh.visible,false)
+    h.level.update(IMPACT_HOLD-0.001);assert.equal(h.level.activeShot,2)
+    h.level.update(0.001)
+    assert.equal(h.level.phase,'salute');assert.equal(h.level.activeShot,1)
+    assert.equal(h.overlay.style.opacity,'0');assert.equal(player.mesh.visible,true)
     assert.equal(h.level.activeAnimation,'salute')
-    h.level.update(DIP_UP+h.level.durationOf('salute')/2)
-    assert.equal(h.level.phase,'salute');assert.ok(Math.abs(visual.actions.salute.time-(DIP_UP+h.level.durationOf('salute')/2))<1e-6)
+    h.level.update(h.level.durationOf('salute')/2)
+    assert.equal(h.level.phase,'salute');assert.ok(Math.abs(visual.actions.salute.time-h.level.durationOf('salute')/2)<1e-6)
     h.level.update(h.level.durationOf('salute')-h.level.phaseTime+TURN)
     assert.equal(h.level.phase,'run')
     assert.equal(h.level.activeAnimation,'run')
@@ -767,7 +768,7 @@ test('Ending: straight textured steam car, B-only track, bounded crane and sky h
     assert.equal(h.level.track.root.visible,false)
     h.level.update(BEAT+DOOR_HOLD+DOOR_OPEN+HOLD_CORE)
     assert.equal(h.level.activeShot,1);assert.equal(h.level.track.root.visible,true)
-    h.level.update(THROW_RELEASE+RELEASE_TO_WHIP+WHIP_SECONDS)
+    h.level.update(THROW_RELEASE+RELEASE_TO_CUT)
     assert.equal(h.level.activeShot,2);assert.equal(h.level.track.root.visible,false)
     const tiltStart=DURATIONS.slice(0,PHASES.indexOf('tiltUp')).reduce((sum,value)=>sum+value,0)
     const elapsed=DURATIONS.slice(0,PHASES.indexOf('fallC')).reduce((sum,value)=>sum+value,0)
@@ -845,6 +846,7 @@ test('Ending: outward doors clear the standing volume and the sealed left run is
     const door=h.level.door,carriage=h.scene.getObjectByName('ending-carriage-1')
     h.scene.updateMatrixWorld(true)
     assert.equal(door.standingIntersections(),0)
+    assert.deepEqual(door.clearanceCounts(),{doorwayMeshes:0,sweptMeshes:0},'all doorway, corridor and steam-room triangles clear the full swept body')
     for(const {hinge,side} of door.hinges) {
       assert.ok(Math.abs(hinge.rotation.y-side*DOOR_OPEN_ANGLE)<1e-10)
       assert.ok(180-Math.abs(THREE.MathUtils.radToDeg(hinge.rotation.y))<=10)
@@ -1140,6 +1142,95 @@ test('Ending: screech requires a running shared context and stops on skip, dispo
   restarted.dispose()
 })
 
+test('Ending: hard cuts switch camera, projection and painting atomically; blue explosion covers and clears the screen', t => {
+  const h=harness(),originalInfo=console.info,logs=[]
+  console.info=(...args)=>{if(String(args[0]).startsWith('[ending-check]'))logs.push(args)}
+  try {
+    const beforeCut=DURATIONS.slice(0,PHASES.indexOf('throw')).reduce((sum,value)=>sum+value,0)+THROW_RELEASE+RELEASE_TO_CUT
+    h.level.update(beforeCut-0.001)
+    assert.equal(h.level.activeShot,1);assert.equal(h.level.phase,'throw')
+    h.level.update(0.001)
+    assert.equal(h.level.activeShot,2);assert.equal(h.level.phase,'fallC')
+    const plate=h.level.plate,core=h.level.core
+    assert.deepEqual(h.renderCamera.position,h.level.shots[2].position)
+    assertQuaternionClose(h.renderCamera.quaternion,h.level.shots[2].quaternion)
+    assert.equal(plate.material.uniforms.uPlate.value,plate.textures[2])
+    const projection=new THREE.Matrix4().multiplyMatrices(h.level.shots[2].projectionMatrix,h.level.shots[2].matrixWorldInverse)
+    assert.deepEqual(plate.material.uniforms.uPlateViewProj.value.elements,projection.elements)
+    assert.equal(h.overlay.style.opacity,'0')
+    assert.ok(PHASES.every(phase=>!/^whip|^dip|^flash|snapHold/.test(phase)))
+    const plateSource=fs.readFileSync(new URL('../src/shaders/ending-plate.js',import.meta.url),'utf8')
+    assert.doesNotMatch(plateSource,/uWhip|uPlateMix|uIncoming|setWhip/)
+    assert.equal(h.scene.getObjectByName('ending-impact-flash'),undefined)
+    assert.equal(h.doc.body.children.some(node=>node.id==='ending-impact-screen-flash'||node.id==='ending-dev-phase'),false)
+    const explosion=core.explosion
+    assert.equal(explosion.material.blending,THREE.AdditiveBlending)
+    assert.equal(explosion.material.depthTest,false);assert.equal(explosion.material.depthWrite,false)
+    assert.equal(explosion.uniforms.uCore.value.getHexString(),'eaf6ff');assert.equal(explosion.uniforms.uBody.value.getHexString(),'4aa8ff')
+    assert.equal(EXPLOSION_GROW,0.35);assert.equal(EXPLOSION_HOLD,0.15);assert.equal(EXPLOSION_FADE,1)
+    for(const aspect of [16/9,1,9/16]) {
+      const camera=core.camera.clone(false);camera.aspect=aspect;camera.updateProjectionMatrix()
+      explosion.configure(core.impact,camera)
+      for(const time of [EXPLOSION_GROW,EXPLOSION_GROW+EXPLOSION_HOLD]) {
+        explosion.update(time)
+        assert.deepEqual(explosion.coverage(),{coveredFraction:1,minimumCornerOpacity:1,opacity:1,visible:true})
+        for(const x of [-1,1])for(const y of [-1,1])assert.ok(explosion.guaranteedOpacity(x,y)>=0.95)
+      }
+      explosion.update(EXPLOSION_SECONDS)
+      assert.equal(explosion.coverage().coveredFraction,0);assert.equal(explosion.mesh.visible,false);assert.equal(explosion.uniforms.uOpacity.value,0)
+    }
+    explosion.configure(core.impact,core.camera)
+    h.level.update(FALL+EXPLOSION_SECONDS+IMPACT_HOLD-0.001)
+    assert.equal(h.level.activeShot,2);assert.equal(h.level.phase,'impactHold')
+    assert.equal(explosion.mesh.visible,false)
+    h.level.update(0.001)
+    assert.equal(h.level.phase,'salute');assert.equal(h.level.activeShot,1)
+    assert.equal(plate.material.uniforms.uPlate.value,plate.textures[1]);assert.equal(h.overlay.style.opacity,'0')
+    assert.deepEqual(logs,[],'no DEV logs without import.meta.env.DEV')
+    t.diagnostic('Cuts have no intermediate pose; explosion peak guarantees 100% screen coverage at opacity 1 for landscape, square and portrait')
+  } finally {console.info=originalInfo;h.restore()}
+})
+
+test('Credits: completion Main Menu uses the existing dismissal once; menu credits and Escape keep their behaviour', () => {
+  const previousDocument=globalThis.document,previousWindow=globalThis.window,previousPerformance=globalThis.performance,previousTimeout=globalThis.setTimeout
+  let clock=0,titleCalls=0
+  const listeners=new Map(),timers=[],dismissals=[],doc={activeElement:null}
+  class Element extends EventTarget {
+    constructor(tag){super();this.tagName=tag.toUpperCase();this.style={};this.dataset={};this.children=[];this.offsetHeight=700}
+    appendChild(child){this.children.push(child);child.parent=this;return child}
+    remove(){if(this.parent)this.parent.children=this.parent.children.filter(child=>child!==this)}
+    get lastElementChild(){return this.children.at(-1)}
+    focus(){doc.activeElement=this}
+    find(predicate){if(predicate(this))return this;for(const child of this.children){const found=child.find(predicate);if(found)return found}return null}
+    querySelector(selector){const key=selector.slice(6,-1).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase());return this.find(node=>node.dataset[key]!=null)}
+  }
+  doc.createElement=tag=>new Element(tag);doc.body=new Element('body');doc.head=new Element('head')
+  doc.getElementById=id=>doc.body.find(node=>node.id===id)??doc.head.find(node=>node.id===id)
+  globalThis.document=doc;globalThis.performance={now:()=>clock};globalThis.setTimeout=callback=>{timers.push(callback);return timers.length}
+  globalThis.window={innerHeight:900,addEventListener:(type,listener)=>listeners.set(type,listener),removeEventListener:type=>listeners.delete(type),location:{reload(){throw new Error('credits must not reload')}}}
+  const credits=createCredits({onDismiss:source=>{dismissals.push(source);if(source==='complete')titleCalls++}})
+  const button=doc.getElementById('credits-main-menu'),key=(name,target=doc.activeElement)=>listeners.get('keydown')({key:name,target,repeat:false,preventDefault(){},stopPropagation(){}})
+  try {
+    credits.open({source:'complete',completionTime:100})
+    assert.equal(button.hidden,false);assert.equal(button.textContent,'Main Menu');assert.equal(button.style.bottom,'24px');assert.equal(button.style.right,'24px')
+    assert.equal(button.type,'button');assert.equal(doc.activeElement,button)
+    button.dispatchEvent(new Event('click',{cancelable:true}));button.dispatchEvent(new Event('click',{cancelable:true}))
+    key('Enter');assert.equal(titleCalls,1);assert.equal(credits.isOpen,false)
+    credits.open({source:'complete'});key('Enter');key('Enter');assert.equal(titleCalls,2)
+    credits.open({source:'complete'});key('Escape');assert.equal(credits.isOpen,true,'Escape retains dismissal grace')
+    clock+=600;key('Escape');assert.equal(titleCalls,3)
+    credits.open({source:'menu'});assert.equal(button.hidden,true);assert.equal(button.style.display,'none')
+    clock+=600;key('Escape');assert.equal(credits.isOpen,false);assert.equal(titleCalls,3)
+    assert.deepEqual(dismissals,['complete','complete','complete','menu'])
+    const main=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
+    assert.match(main,/if \(source === 'complete'\) quitToTitle\(\)/,'completion callback reaches existing title path')
+    credits.dispose();assert.equal(listeners.has('keydown'),false)
+    button.dispatchEvent(new Event('click'));assert.equal(titleCalls,3)
+  } finally {
+    credits.dispose();globalThis.document=previousDocument;globalThis.window=previousWindow;globalThis.performance=previousPerformance;globalThis.setTimeout=previousTimeout
+  }
+})
+
 test('Ending: story sounds share the master bus and skip/dispose stop every source', () => {
   const silent=createEndingAudio({context:()=>null,output:()=>null})
   assert.doesNotThrow(()=>{silent.door();silent.throw();silent.impact();silent.fadeOut();silent.dispose()})
@@ -1155,8 +1246,8 @@ test('Ending: story sounds share the master bus and skip/dispose stop every sour
       assert.equal(h.level.phase,'doorOpen');assert.equal(mock.sources.length,7,'latch and slide start at door opening')
       h.level.update(DOOR_OPEN+HOLD_CORE)
       assert.equal(h.level.phase,'throw');assert.equal(mock.sources.length,8,'whoosh starts at throw')
-      h.level.update(THROW_RELEASE+RELEASE_TO_WHIP+WHIP_SECONDS+FALL)
-      assert.equal(h.level.phase,'flash');assert.equal(mock.sources.length,13,'whip, impact layers and ambient start at impact')
+      h.level.update(THROW_RELEASE+RELEASE_TO_CUT+FALL)
+      assert.equal(h.level.phase,'explosion');assert.equal(mock.sources.length,12,'impact layers and ambient start at impact, with no transition whoosh')
       assert.ok(mock.sources.every(source=>source.started),'every created sound is started')
       const reachesMaster=(node,seen=new Set())=>node===mock.master || (!seen.has(node) && (seen.add(node),node.destinations.some(next=>reachesMaster(next,seen))))
       assert.ok(mock.sources.slice(5).every(source=>reachesMaster(source)),'every story source reaches the shared master')

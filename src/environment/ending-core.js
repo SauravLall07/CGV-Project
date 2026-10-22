@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { disposeObject } from '../core/dispose.js'
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../shaders/ending-plate.js'
+import { createEndingExplosion } from '../shaders/ending-explosion.js'
 
 export const CORE_SIZE = 0.18
 export const CORE_LIGHT_INTENSITY = 1.5
@@ -14,12 +15,6 @@ export const CORE_GRAVITY = -9.8
 // T = sqrt(2 * (horizontalRange * tan(50 degrees) - heightDifference) / 9.8).
 // 25–40 degrees enters C through its side; this lob enters through its top.
 export const CORE_FLIGHT_SECONDS = 5.271405625686219
-export const IMPACT_FLASH_SIZE = 24
-export const FLASH_GROW_SECONDS = 0.25
-export const FLASH_SECONDS = 0.8
-export const SCREEN_FLASH_PEAK = 0.08
-export const SCREEN_FLASH_HOLD = 0.1
-export const SCREEN_FLASH_FADE = 0.5
 
 export function createEndingCore(scene) {
   const root=new THREE.Group();root.name='ending-core-effects';scene.add(root)
@@ -59,11 +54,12 @@ export function createEndingCore(scene) {
   const ray=new THREE.Raycaster();ray.setFromCamera(RIVER_TARGET_NDC,camera)
   const impact=new THREE.Vector3()
   ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),-GORGE_FLOOR_Y),impact)
+  const explosion=createEndingExplosion();root.add(explosion.mesh);explosion.configure(impact,camera)
   function setImpactCamera(shot) {
     camera.copy(shot);camera.updateMatrixWorld(true)
     ray.setFromCamera(RIVER_TARGET_NDC,camera)
     ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),-GORGE_FLOOR_Y),impact)
-    flash.position.copy(impact)
+    explosion.configure(impact,camera)
   }
   const start=new THREE.Vector3(),velocity=new THREE.Vector3(),gravity=new THREE.Vector3(0,CORE_GRAVITY,0)
   const trailGeometry=new THREE.PlaneGeometry(1,1)
@@ -78,18 +74,11 @@ export function createEndingCore(scene) {
   })
   const trail=new THREE.InstancedMesh(trailGeometry,trailMaterial,8)
   trail.name='ending-core-trail';trail.frustumCulled=false;root.add(trail)
-  const flashMaterial=glowMaterial.clone();flashMaterial.color.setHex(0xd8f4ff)
-  flashMaterial.depthTest=false
-  const flash=new THREE.Sprite(flashMaterial);flash.geometry=flash.geometry.clone()
-  flash.name='ending-impact-flash';flash.position.copy(impact);flash.renderOrder=90;root.add(flash)
-  const screen=document.createElement('div');screen.id='ending-impact-screen-flash'
-  Object.assign(screen.style,{position:'fixed',inset:'0',zIndex:'59',pointerEvents:'none',background:'#d8f4ff',opacity:'0'})
-  document.body.appendChild(screen)
   let flight=-1,clock=0,disposed=false,flightDuration=CORE_FALL_SECONDS
   function pointAt(t,target) {return target.copy(start).addScaledVector(velocity,t).addScaledVector(gravity,t*t/2)}
   function reset() {
-    root.attach(payload);payload.visible=false;trail.visible=false;flash.visible=false
-    light.intensity=0;screen.style.opacity='0';flight=-1
+    root.attach(payload);payload.visible=false;trail.visible=false;explosion.update(-1)
+    light.intensity=0;flight=-1
   }
   function hold(hand) {
     hand.add(payload);payload.position.set(0,0,0);payload.quaternion.identity();payload.scale.setScalar(1)
@@ -105,7 +94,7 @@ export function createEndingCore(scene) {
     flight=0;payload.visible=true;trail.visible=true;trailMaterial.uniforms.uVisible.value=1
     pointAt(0,payload.position)
   }
-  function update(delta,flightTime=-1,flashTime=-1) {
+  function update(delta,flightTime=-1,explosionTime=-1) {
     clock+=Math.max(0,delta)
     for(const material of design.userData.shaderMats) {
       material.uniforms.uTime.value=clock;material.uniforms.uIntensity.value=0.25
@@ -118,20 +107,13 @@ export function createEndingCore(scene) {
       trailMaterial.uniforms.uFlight.value=flight
     }
     payload.updateWorldMatrix(true,false);payload.getWorldPosition(light.position)
-    light.intensity=payload.visible && flashTime<0 ? CORE_LIGHT_INTENSITY*(0.92+0.08*Math.sin(clock*2.3)) : 0
-    if(flashTime>=0) {
-      payload.visible=false;trail.visible=false;flash.visible=flashTime<FLASH_SECONDS
-      flash.scale.setScalar(IMPACT_FLASH_SIZE*Math.min(1,flashTime/FLASH_GROW_SECONDS))
-      flashMaterial.opacity=Math.max(0,1-flashTime/FLASH_SECONDS)
-      const alpha=flashTime<SCREEN_FLASH_PEAK ? flashTime/SCREEN_FLASH_PEAK
-        : flashTime<SCREEN_FLASH_PEAK+SCREEN_FLASH_HOLD ? 1
-        : Math.max(0,1-(flashTime-SCREEN_FLASH_PEAK-SCREEN_FLASH_HOLD)/SCREEN_FLASH_FADE)
-      screen.style.opacity=String(alpha*0.85)
-    }
+    light.intensity=payload.visible && explosionTime<0 ? CORE_LIGHT_INTENSITY*(0.92+0.08*Math.sin(clock*2.3)) : 0
+    explosion.update(explosionTime)
+    if(explosionTime>=0){payload.visible=false;trail.visible=false}
   }
   reset()
-  return {root,payload,light,trail,flash,screen,impact,start,velocity,gravity,camera,design,setImpactCamera,hold,launch,pointAt,update,reset,
+  return {root,payload,light,trail,explosion,impact,start,velocity,gravity,camera,design,setImpactCamera,hold,launch,pointAt,update,reset,
     get flight(){return flight},
     get flightDuration(){return flightDuration},
-    dispose(){if(disposed)return;disposed=true;root.attach(payload);root.removeFromParent();screen.remove();disposeObject(root)}}
+    dispose(){if(disposed)return;disposed=true;root.attach(payload);root.removeFromParent();disposeObject(root)}}
 }

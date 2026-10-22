@@ -6,7 +6,8 @@ import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAM
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
 import { createEndingAudio } from '../systems/ending-audio.js'
 import { brakeIntensity } from '../environment/ending-sparks.js'
-import { createEndingCore, CORE_FLIGHT_SECONDS, FLASH_SECONDS, SCREEN_FLASH_PEAK } from '../environment/ending-core.js'
+import { createEndingCore, CORE_FLIGHT_SECONDS } from '../environment/ending-core.js'
+import { EXPLOSION_GROW, EXPLOSION_SECONDS } from '../shaders/ending-explosion.js'
 import { DOOR_MOTION_SECONDS } from '../environment/ending-door.js'
 
 export const DOOR_CAMERA_DISTANCE = 6.6
@@ -41,12 +42,8 @@ export const APPROACH = (TRAIN_START_NOSE_Z - STOP_NOSE_Z - TRAIN_SPEED * BRAKE 
 export const SETTLE = 1.6
 export const BEAT = 0.6
 export const DOOR_HOLD = 0.6
-export const WHIP_SECONDS = 0.3
-export const RELEASE_TO_WHIP = 2.0
-export const SNAP_HOLD = 1.2
-export const SALUTE_BEAT = 0.4
-export const DIP_DOWN = 0.25
-export const DIP_UP = 0.35
+export const RELEASE_TO_CUT = 2.15 // The old B→C camera switch, measured from release.
+export const IMPACT_HOLD = 0.6
 export const SALUTE = 3.0 // Replaced by the loaded Salute clip's duration.
 export const TURN = 0.5
 export const RUN = 2.1
@@ -59,7 +56,7 @@ export const DOOR_OPEN = 0.8
 export const HOLD_CORE = 0.8
 export const THROW = 2.2 // Actual loaded Throw clip duration replaces this fallback.
 export const THROW_RELEASE = 24 / 30
-export const FALL = CORE_FLIGHT_SECONDS - RELEASE_TO_WHIP - WHIP_SECONDS
+export const FALL = CORE_FLIGHT_SECONDS - RELEASE_TO_CUT
 const BRAKING_DISTANCE = TRAIN_SPEED * BRAKE / 2
 const APPROACH_DISTANCE = TRAIN_SPEED * APPROACH
 export const START_CENTER_Z = STOP_CENTER_Z + APPROACH_DISTANCE + BRAKING_DISTANCE
@@ -67,8 +64,8 @@ export const ENDING_CAMERA_POSITION = PLATE_CAMERA_POSITION
 export const ENDING_CAMERA_TARGET = PLATE_CAMERA_TARGET
 export const ENDING_CAMERA_FOV = PLATE_CAMERA_FOV
 export const WORLD_ALIGN_DEFAULTS = Object.freeze({ x: -0.75, y: -3.25, z: -0.75, yaw: -20.25, pitch: -2.75, roll: 0, scale: 1 })
-export const PHASES = Object.freeze(['fadeIn','approach','braking','settle','beat','cutB','doorHold','doorOpen','holdCore','throw','whipDown','fallC','flash','snapHold','dipDown','dipUp','salute','turn','run','emptyBeat','tiltUp','skyHold','done'])
-export const DURATIONS = Object.freeze([ENDING_FADE_IN,APPROACH,BRAKE,SETTLE,BEAT,0,DOOR_HOLD,DOOR_OPEN,HOLD_CORE,THROW_RELEASE+RELEASE_TO_WHIP,WHIP_SECONDS,FALL,FLASH_SECONDS,SNAP_HOLD,DIP_DOWN,DIP_UP,SALUTE-DIP_UP,TURN,RUN,EMPTY_BEAT,TILT_UP,SKY_HOLD])
+export const PHASES = Object.freeze(['fadeIn','approach','braking','settle','beat','cutB','doorHold','doorOpen','holdCore','throw','cutC','fallC','explosion','impactHold','salute','turn','run','emptyBeat','tiltUp','skyHold','done'])
+export const DURATIONS = Object.freeze([ENDING_FADE_IN,APPROACH,BRAKE,SETTLE,BEAT,0,DOOR_HOLD,DOOR_OPEN,HOLD_CORE,THROW_RELEASE+RELEASE_TO_CUT,0,FALL,EXPLOSION_SECONDS,IMPACT_HOLD,SALUTE,TURN,RUN,EMPTY_BEAT,TILT_UP,SKY_HOLD])
 
 export function measureEndingRoofAngle(carriage,shot) {
   const left=new THREE.Vector3(-1.48,4,6.5).applyMatrix4(carriage.matrixWorld).project(shot)
@@ -144,7 +141,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         weight:action.getEffectiveWeight(),speed:action.getEffectiveTimeScale(),paused:action.paused,
         enabled:action.enabled,running:action.isRunning()}))
       throwDuration=visual?.actions.throw?.getClip().duration ?? 2.2
-      durations[PHASES.indexOf('salute')]=(visual?.actions.salute?.getClip().duration ?? SALUTE)-DIP_UP
+      durations[PHASES.indexOf('salute')]=visual?.actions.salute?.getClip().duration ?? SALUTE
       visual?.root.traverse(node=>{if(node.isMesh){visualShadowStates.push([node,node.castShadow,node.receiveShadow]);node.castShadow=false;node.receiveShadow=false}})
       for(const name of ['mixamorigLeftFoot','mixamorigRightFoot','mixamorigLeftToeBase','mixamorigRightToeBase']) {
         const bone=visual?.root.getObjectByName(name);if(bone)footBones.push(bone)
@@ -189,6 +186,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     initialPosition: ENDING_CAMERA_POSITION.clone(), initialRotation: viewRotation.clone(),
     targetRotation: viewRotation, moveSeconds: 1, moveElapsed: 0, allowPress: false }
   function selectShot(index) {
+    const before=activeShot
     activeShot = index
     track.root.visible = index === 1
     const shot = shots[index]
@@ -203,16 +201,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       renderCamera.view = shot.view ? { ...shot.view } : null
       renderCamera.updateProjectionMatrix(); renderCamera.updateMatrixWorld(true)
     }
-  }
-  function updateWhip(phase, time) {
-    const t = Math.min(1, time / WHIP_SECONDS)
-    const from = 1, to = 2
-    if (activeShot !== (t < 0.5 ? from : to)) selectShot(t < 0.5 ? from : to)
-    gorge.plate.setWhip(from, to, t*t*(3-2*t), Math.sin(Math.PI*t)*1.8, -1)
-    const visible = time < 0.06 || time > 0.24
-    worldAlign.visible = visible
-    core.root.visible = visible
-    player.mesh.visible = visible
+    if(import.meta.env?.DEV && warmed && before!==index)console.info('[ending-check] cut',{before:'ABC'[before],after:'ABC'[index],instantaneous:true,smear:false,dip:false})
   }
   function tiltDoor(progress) {
     const t=THREE.MathUtils.clamp(progress,0,1),ease=t*t*(3-2*t)
@@ -321,9 +310,9 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         localFacing.setFromAxisAngle(localUp,Math.atan2(runTangent.x,runTangent.z))
         player.mesh.quaternion.copy(carriageRotation).multiply(localFacing)
       }
-      if(phase==='salute'||phase==='dipUp')sampleAnimation('salute',phase==='dipUp'?time:time+DIP_UP)
+      if(phase==='salute')sampleAnimation('salute',time)
       else if(phase==='run')sampleAnimation('run',(time*(train.door.runDistance/RUN)/runClipSpeed)%(visual?.actions.run?.getClip().duration??1))
-      else if(index>=PHASES.indexOf('throw') && index<=PHASES.indexOf('dipDown'))
+      else if(index>=PHASES.indexOf('throw') && index<=PHASES.indexOf('impactHold'))
         sampleAnimation('throw',phase==='throw'?Math.min(time,throwDuration):throwDuration)
       else sampleAnimation('idle',0)
       groundDetective()
@@ -371,12 +360,9 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const savedViewport = new THREE.Vector4()
   const savedScissor = new THREE.Vector4()
   let budgetLogged = false
-  let phaseLabel=null,lastActorCheck=-Infinity,shaderCheckLogged=false
+  let lastActorCheck=-Infinity,shaderCheckLogged=false
   let alignMode = false, removeAlignment = null, holdMode = null
   if (import.meta.env?.DEV) {
-    phaseLabel=document.createElement('div');phaseLabel.id='ending-dev-phase'
-    Object.assign(phaseLabel.style,{position:'fixed',left:'8px',top:'8px',zIndex:'80',color:'#d8e4ff',background:'#020b1bcc',padding:'4px 7px',font:'12px monospace',pointerEvents:'none'})
-    document.body.appendChild(phaseLabel)
     let nearWindows=0,passengerBatches=0
     train.carriages[0].traverse(node=>{
       if(node.name==='ending-damage-interior')passengerBatches++
@@ -534,15 +520,19 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if (import.meta.env?.DEV) console.info(`[ending +${timeline.toFixed(3)}s @${(performance.now() - startedAt).toFixed(0)}ms] ${PHASES[index]}`)
     const phase=PHASES[index]
     if(phase==='cutB') selectShot(1)
-    if(phase==='whipDown') audio.whip?.()
-    if(phase==='fallC') {selectShot(2);worldAlign.visible=true;core.root.visible=true;player.mesh.visible=true}
-    if(phase==='dipUp') {selectShot(1);worldAlign.visible=true;core.root.visible=true;core.reset();player.mesh.visible=true;sampleAnimation('salute',0)}
+    if(phase==='cutC') {selectShot(2);worldAlign.visible=true;core.root.visible=true;player.mesh.visible=true}
+    if(phase==='salute') {selectShot(1);core.reset();player.mesh.visible=true;sampleAnimation('salute',0)}
     if(phase==='doorOpen') {placeDetective();audio.door?.()}
     if(phase==='holdCore') {
       player.cancelScriptedWalk?.();player.mesh.position.copy(threshold)
+      if(import.meta.env?.DEV)console.info('[ending-check] clearance',train.door.clearanceCounts())
     }
     if(phase==='throw') audio.throw?.()
-    if(phase==='flash') {core.update(0,-1,0);audio.impact?.()}
+    if(phase==='explosion') {core.update(0,-1,0);audio.impact?.()}
+    if(phase==='impactHold') {
+      core.explosion.update(EXPLOSION_SECONDS)
+      if(import.meta.env?.DEV)console.info('[ending-check] explosion-dissipated',core.explosion.coverage())
+    }
     if(phase==='emptyBeat') {if(runMetrics.fullyOccluded)player.mesh.visible=false;core.reset()}
     if(phase==='skyHold') {
       selectShot(1);tiltDoor(1);audio.fadeOut?.();hud.hideCinematicSkip?.();skipControl.hide()
@@ -573,10 +563,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
 
   function present(delta) {
     const phase = PHASES[phaseIndex]
-    overlay.style.background = phase==='dipDown'||phase==='dipUp'?'#020b1b':'#000'
-    overlay.style.opacity = String(phase === 'fadeIn' ? 1 - phaseTime / ENDING_FADE_IN
-      : phase==='dipDown'?phaseTime/DIP_DOWN:phase==='dipUp'?1-phaseTime/DIP_UP
-      : 0)
+    overlay.style.opacity = String(phase === 'fadeIn' ? 1 - phaseTime / ENDING_FADE_IN : 0)
     let distance = 0
     let brakingProgress = -1
     let settleTime = -1
@@ -595,10 +582,8 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if(phaseIndex>PHASES.indexOf('doorOpen')) train.door.setOpen(1)
     updateDetective(phase,phaseTime,delta)
     const flightTime=phase==='throw' && launched ? Math.max(0,phaseTime-Math.min(THROW_RELEASE,throwDuration))
-      : phase==='whipDown' ? RELEASE_TO_WHIP+phaseTime
-      : phase==='fallC' ? RELEASE_TO_WHIP+WHIP_SECONDS+phaseTime : -1
-    core.update(delta,flightTime,phase==='flash'?phaseTime:-1)
-    if(phase==='whipDown') updateWhip(phase,phaseTime)
+      : phase==='fallC' ? RELEASE_TO_CUT+phaseTime : -1
+    core.update(delta,flightTime,phase==='explosion'?phaseTime:-1)
     if(phase==='tiltUp')tiltDoor(phaseTime/TILT_UP)
   }
 
@@ -645,19 +630,20 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         if(holdMode==='salute' && PHASES[phaseIndex]==='salute') boundary=durations[phaseIndex]/2
         if(PHASES[phaseIndex]==='throw' && phaseTime<Math.min(THROW_RELEASE,throwDuration)-1e-9)
           boundary=Math.min(boundary,Math.min(THROW_RELEASE,throwDuration))
-        if(PHASES[phaseIndex]==='flash' && phaseTime<SCREEN_FLASH_PEAK-1e-9) boundary=SCREEN_FLASH_PEAK
+        if(PHASES[phaseIndex]==='explosion' && phaseTime<EXPLOSION_GROW-1e-9) boundary=EXPLOSION_GROW
         const step = Math.min(remaining, boundary - phaseTime)
         phaseTime += step
         timeline += step
         remaining -= step
         gorge.update(step)
         present(step)
+        if(import.meta.env?.DEV && PHASES[phaseIndex]==='explosion' && Math.abs(phaseTime-EXPLOSION_GROW)<1e-9)
+          console.info('[ending-check] explosion-peak',core.explosion.coverage())
         if (phaseTime >= durations[phaseIndex] - 1e-9) enterPhase(phaseIndex + 1)
       }
       if (alignMode) { gorge.update(Math.max(0, delta)); present(Math.max(0, delta)) }
       else present(0)
       if(import.meta.env?.DEV) {
-        if(phaseLabel)phaseLabel.textContent=PHASES[phaseIndex]+' '+phaseTime.toFixed(2)+'s'
         if(activeShot===1 && player.mesh.visible && timeline-lastActorCheck>=0.5) {
           lastActorCheck=timeline
           const centre=new THREE.Vector3(-1.485,train.door.threshold.y+1.05,train.door.threshold.z).applyMatrix4(train.carriages[0].matrixWorld).project(shots[1])
@@ -682,7 +668,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       if(renderCamera && previousRenderCamera)renderCamera.copy(previousRenderCamera,false)
       hud.hideCinematicSkip?.()
       overlay.remove()
-      phaseLabel?.remove()
       skipControl.dispose()
       skipRoot.remove()
       if(throwHandle) throwHandle.cancelled=true

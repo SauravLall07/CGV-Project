@@ -28,7 +28,6 @@ export function createEndingDoor(pivot, source) {
   const ceiling = woodMaterial({repeat:[2,1],light:0x6a4a2e,dark:0x2e1a10,roughness:0.58,seed:155})
   ceiling.color.setHex(0xe8d2b4)
   const lamp = new THREE.MeshStandardMaterial({color:0xffe2b0,emissive:0xffc27a,emissiveIntensity:1.4,roughness:0.35})
-  const velvet = new THREE.MeshStandardMaterial({color:0x7a2430,roughness:0.92,emissive:0x1a0608,emissiveIntensity:0.1})
   const dark = new THREE.MeshStandardMaterial({color:0x060908,roughness:1})
   const batches = new Map(), hinges = []
   function box(parent, material, w,h,d,x,y,z,role='solid') {
@@ -56,18 +55,10 @@ export function createEndingDoor(pivot, source) {
     box(root,lamp,0.1,0.16,0.18,0.82,3.2,z)
     box(root,brass,0.05,0.25,0.22,0.86,3.1,z)
   }
-  for(const side of [-1,1]) {
-    box(root,lamp,0.18,0.16,0.16,0.45,3.15,side*0.86)
-    box(root,brass,0.04,0.2,0.18,0.45,3.0,side*0.84)
-  }
   box(root,dark,0.08,2.15,1.9,1.34,2.625,0,'back')
-  // Brake-room identity: brass instrument cabinet, amber firebox slots, red lever.
+  // Brake-room instrument cabinet stays on the wall beside the cleared opening.
   box(root,wood,0.6,0.75,0.12,0.45,2.1,0.84)
   box(root,brass,0.65,0.04,0.16,0.45,2.5,0.82)
-  for(const x of [0.25,0.45,0.65]) box(root,lamp,0.04,0.22,0.025,x,2.05,0.765)
-  box(root,velvet,0.06,0.4,0.06,0.75,2.55,0.75)
-  box(root,brass,0.14,0.04,DOOR_WIDTH,-1.43,DOOR_FLOOR_Y,0)
-  box(root,brass,0.5,0.06,1.45,-1.7,1.3,0)
   for (const z of [-0.7,0.7]) {
     box(root,paint,0.11,2.25,0.1,-1.49,2.6,z)
   }
@@ -78,13 +69,8 @@ export function createEndingDoor(pivot, source) {
     hinge.position.set(-1.485,0,side*DOOR_WIDTH/2);root.add(hinge)
     const width=DOOR_WIDTH/2-0.012, center=-side*DOOR_WIDTH/4
     box(hinge,paint,0.03,DOOR_HEIGHT-0.02,width,0.015,2.6,center)
-    for (const y of [1.69,2.08,2.4,3.14,3.53])
-      box(hinge,brass,0.012,0.018,width-0.08,-0.006,y,center)
-    for (const edge of [-1,1])
-      box(hinge,brass,0.012,DOOR_HEIGHT-0.24,0.018,-0.006,2.6,center+edge*(width/2-0.04))
     box(hinge,wood,0.042,0.62,width-0.12,0.012,2.88,center)
     box(hinge,wood,0.012,0.48,width-0.12,0.036,1.91,center)
-    box(hinge,brass,0.04,0.14,0.03,-0.04,2.24,-side*(DOOR_WIDTH/2-0.06))
     hinges.push({hinge,side})
   }
   for (const [parent,groups] of batches) for (const [material,parts] of groups) {
@@ -141,8 +127,46 @@ export function createEndingDoor(pivot, source) {
     }
     return true
   }
+  let clearanceCache=null,clearanceOpenness=-1
+  function clearanceCounts() {
+    if(clearanceCache&&clearanceOpenness===openness)return clearanceCache
+    pivot.updateWorldMatrix(true,true)
+    const inverse=pivot.matrixWorld.clone().invert(),matrix=new THREE.Matrix4(),triangle=new THREE.Triangle()
+    const doorway=new THREE.Box3(new THREE.Vector3(-1.75,DOOR_FLOOR_Y+0.025,DOOR_Z-0.635),new THREE.Vector3(-0.85,DOOR_FLOOR_Y+2.1,DOOR_Z+0.635))
+    // Boxes enclosing every consecutive path segment conservatively contain
+    // the continuous 0.35 m-radius, 1.9 m-tall body capsule, including the bend.
+    const swept=[],a=new THREE.Vector3(),b=new THREE.Vector3()
+    sampleRun(0,a)
+    for(let i=1;i<=128;i++) {
+      sampleRun(RUN_DISTANCE*i/128,b)
+      const box=new THREE.Box3().setFromPoints([a,b]).expandByScalar(0.351)
+      box.min.y=DOOR_FLOOR_Y+0.025;box.max.y=DOOR_FLOOR_Y+1.9;swept.push(box);a.copy(b)
+    }
+    const envelope=swept.reduce((bounds,box)=>bounds.union(box),new THREE.Box3()).union(doorway)
+    let doorwayMeshes=0,sweptMeshes=0
+    const inspect=node=>{
+      if(!node.isMesh||!node.geometry)return
+      const positions=node.geometry.attributes.position,index=node.geometry.index
+      if(!positions)return
+      matrix.multiplyMatrices(inverse,node.matrixWorld)
+      let inDoor=false,inPath=false
+      for(let i=0;i<(index?.count??positions.count);i+=3) {
+        for(const [corner,key] of [[0,'a'],[1,'b'],[2,'c']])triangle[key].fromBufferAttribute(positions,index?index.getX(i+corner):i+corner).applyMatrix4(matrix)
+        if(Math.max(triangle.a.y,triangle.b.y,triangle.c.y)<=DOOR_FLOOR_Y+0.02)continue
+        if(!envelope.intersectsTriangle(triangle))continue
+        if(!inDoor&&doorway.intersectsTriangle(triangle))inDoor=true
+        if(!inPath&&swept.some(box=>box.intersectsTriangle(triangle)))inPath=true
+        if(inDoor&&inPath)break
+      }
+      if(inDoor)doorwayMeshes++;if(inPath)sweptMeshes++
+    }
+    root.traverse(inspect)
+    for(const node of pivot.children)if(node.name==='ending-steam-room-interior')inspect(node)
+    clearanceOpenness=openness;clearanceCache={doorwayMeshes,sweptMeshes}
+    return clearanceCache
+  }
   return {root,hinges,hole:ENDING_DOOR_HOLE,setOpen,get openness(){return openness},
-    standingVolume,standingIntersections,sampleRun,fullyOccluded,runDistance:RUN_DISTANCE,
+    standingVolume,standingIntersections,sampleRun,fullyOccluded,clearanceCounts,runDistance:RUN_DISTANCE,
     inside:new THREE.Vector3(-0.25,DOOR_FLOOR_Y,DOOR_Z),
     corridorDepth:CORRIDOR_DEPTH,
     runEnd:sampleRun(RUN_DISTANCE).position,

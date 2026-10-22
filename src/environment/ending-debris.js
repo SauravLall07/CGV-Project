@@ -98,7 +98,9 @@ function createSteamRoom(pivot) {
   box(wall,0.09,2.45,16,1.29,2.77,-1.7)
   for(const z of [-9.7,9.7])box(wall,2.65,2.45,0.08,0,2.77,z)
   box(ceiling,2.65,0.08,19.4,0,3.98,0)
-  for(const x of [-1.1,1.1])box(brass,0.05,0.04,19,x,2.6,0)
+  // Keep waist rails outside the doorway and its entire inward approach.
+  for(const x of [-1.1,1.1])for(const [from,to] of [[-9.5,6.3],[8.7,9.5]])
+    box(brass,0.05,0.04,to-from,x,2.6,(from+to)/2)
   for(const z of [-8,-4,0,4])box(brass,2.4,0.06,0.09,0,3.8,z)
   // Brake-room backhead, five pressure dials, firebox and regulator levers.
   box(wall,0.35,1.5,2.2,1.02,2.45,-3)
