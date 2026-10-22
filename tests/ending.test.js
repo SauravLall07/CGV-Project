@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, BEAT, DOOR_OPEN, HOLD_CORE,
   THROW, THROW_RELEASE, FALL, PHASES, DURATIONS, TRAIN_START_NOSE_Z,
-  TITLE_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS } from '../src/levels/ending.js'
-import { DOOR_HOLD, WHIP_SECONDS, RELEASE_TO_WHIP, SNAP_HOLD, SALUTE_BEAT, TURN, RUN, EMPTY_BEAT, TILT_UP, TITLE_FADE, TILT_DEGREES } from '../src/levels/ending.js'
+  SKY_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS } from '../src/levels/ending.js'
+import { DOOR_HOLD, WHIP_SECONDS, RELEASE_TO_WHIP, SNAP_HOLD, DIP_DOWN, DIP_UP, TURN, RUN, EMPTY_BEAT, TILT_UP, TILT_DEGREES, CRANE_HEIGHT, DOOR_EYE_HEIGHT, measureEndingFrame } from '../src/levels/ending.js'
 import { createPlayer } from '../src/entities/player.js'
 import { FLASH_SECONDS, SCREEN_FLASH_PEAK, RIVER_TARGET_NDC, GORGE_FLOOR_Y } from '../src/environment/ending-core.js'
 import { ENDING_DOOR_HOLE } from '../src/shaders/ending-time-damage.js'
@@ -97,6 +97,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
       }
       assert.equal(h.begins, 1)
       assert.equal(h.listenerAdds, 0, 'alignment registers no window listeners without align')
+      assert.equal(h.doc.body.children.some(node=>node.id==='ending-dev-phase'),false,'no DEV label without import.meta.env.DEV')
       assert.deepEqual(ENDING_CAMERA_POSITION, PLATE_CAMERA_POSITION)
       assert.deepEqual(ENDING_CAMERA_TARGET, PLATE_CAMERA_TARGET)
       assert.equal(ENDING_CAMERA_FOV, PLATE_CAMERA_FOV)
@@ -204,7 +205,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         if (elapsed >= ENDING_FADE_IN + APPROACH + BRAKE + SETTLE) assert.ok(Math.abs(nose - STOP_NOSE_Z) <= 0.1)
         const index=PHASES.indexOf(h.level.phase)
         const visible=index>=PHASES.indexOf('doorOpen') && index<=PHASES.indexOf('run') &&
-          (!['whipDown','whipUp'].includes(h.level.phase) || h.level.phaseTime<0.06 || h.level.phaseTime>0.24)
+          (h.level.phase!=='whipDown' || h.level.phaseTime<0.06 || h.level.phaseTime>0.24)
         assert.equal(h.player.mesh.visible, visible)
       }
       if (fps === 60) t.diagnostic(`Physical nose: settled ${noseZ()}, minimum ${minimumNose}`)
@@ -217,7 +218,7 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         for (let i = 0; i < 16; i++) assert.ok(Math.abs(train.matrixWorld.elements[i] - alignedStop.elements[i]) < 1e-10,
           `full approach reaches the aligned stopped pose, matrix element ${i}`)
       } finally { stopped.dispose() }
-      assert.equal(h.manager.advances, 0); assert.equal(h.overlay.children[0].style.opacity, '1')
+      assert.equal(h.manager.advances, 0); assert.equal(h.overlay.children.length,0);assert.equal(h.overlay.style.opacity,'0')
       h.level.update(0.02); assert.equal(h.manager.state, 'Complete'); assert.equal(h.manager.advances, 1)
       h.level.update(100); assert.equal(h.manager.advances, 1); assert.equal(h.begins, 1)
     } finally { h.restore() }
@@ -284,17 +285,16 @@ test('Ending: damage resources dispose once and restart restores running effects
   } finally { restarted.restore() }
 })
 
-test('Ending: skip uses live sky title and advances once despite repeated or stale activation', () => {
+test('Ending: skip advances immediately once despite repeated or stale activation', () => {
   const h = harness()
   try {
     h.level.update(0)
     const staleSkip = h.skip, button = h.doc.activeElement
     assert.equal(button.tagName, 'BUTTON')
     button.dispatchEvent(new Event('click')); staleSkip(); button.dispatchEvent(new Event('click'))
-    assert.equal(h.manager.advances, 0)
-    assert.equal(h.level.phase,'title');assert.equal(h.level.activeShot,1)
-    assert.equal(h.overlay.style.background,'transparent')
-    h.level.update(TITLE_FADE + TITLE_HOLD - 0.01); assert.equal(h.manager.advances, 0)
+    assert.equal(h.manager.advances, 1)
+    assert.equal(h.level.phase,'done');assert.equal(h.level.activeShot,1)
+    assert.equal(h.overlay.children.length,0)
     h.level.update(0.02); staleSkip(); h.level.update(100); assert.equal(h.manager.advances, 1)
   } finally { h.restore() }
 })
@@ -493,7 +493,7 @@ test('Ending: full story matches each active plate camera and keeps light count 
       assert.deepEqual(h.view.initialPosition,h.view.position)
       assertQuaternionClose(h.view.initialRotation,h.view.targetRotation)
       assert.deepEqual(h.scene.getObjectByName('ending-plate-sphere').position,shot.position)
-      if(!['whipDown','whipUp'].includes(h.level.phase)) {
+      if(h.level.phase!=='whipDown') {
         assert.equal(river.uWhip.value,0);assert.equal(river.uPlateMix.value,0)
       }
       assert.ok(steam.value>previousSteam);assert.ok(river.uTime.value>previousRiver)
@@ -560,7 +560,7 @@ test('Ending: doorway framing, gorge exclusion, owned plates and faithful core c
     const bottom=h.level.door.threshold.clone().applyMatrix4(carriage.matrixWorld)
     const top=h.level.door.threshold.clone().add(new THREE.Vector3(0,2.1,0)).applyMatrix4(carriage.matrixWorld)
     const framing=Math.abs(top.project(h.level.shots[1]).y-bottom.project(h.level.shots[1]).y)/2
-    assert.ok(framing>=0.4 && framing<=0.5,'door frame fraction '+framing)
+    assert.ok(framing>=0.5 && framing<=0.6,'head-height door frame fraction '+framing)
     const c=h.level.shots[2]
     const frustum=new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(c.projectionMatrix,c.matrixWorldInverse))
     h.scene.getObjectByName('ending-train').traverse(node=>{
@@ -596,20 +596,24 @@ test('Ending: doorway framing, gorge exclusion, owned plates and faithful core c
 
 test('Ending: real Throw skeleton holds and releases the core, completes its visible arc and restores the player', async t => {
   const player=createPlayer()
+  const previousParseWindow=globalThis.window
+  globalThis.window={URL:globalThis.URL}
   function parseThrow(filename='Throw.fbx') {
     const bytes=fs.readFileSync(new URL('../src/assets/models/detective/'+filename,import.meta.url))
-    return new FBXLoader().parse(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'')
+    const manager=new THREE.LoadingManager(),textures=new THREE.TextureLoader(manager)
+    textures.load=()=>new THREE.Texture();manager.addHandler(/.*/,textures)
+    return new FBXLoader(manager).parse(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'')
   }
   const visual=await player.loadVisual({async loadFbx(url) {
     if(url.endsWith('/Throw.fbx'))return parseThrow()
     if(url.endsWith('/Salute.fbx'))return parseThrow('Salute.fbx')
     if(url.endsWith('/Running.fbx'))return parseThrow('Running.fbx')
     if(url.endsWith('/Idle.fbx')) {
-      const model=parseThrow(),bounds=new THREE.Mesh(new THREE.BoxGeometry(1,180,1),new THREE.MeshStandardMaterial())
-      bounds.position.y=90;model.add(bounds);model.animations=[new THREE.AnimationClip('idle',1,[])];return model
+      return parseThrow('Idle.fbx')
     }
     const model=new THREE.Group();model.animations=[new THREE.AnimationClip('locomotion',1,[])];return model
   }})
+  globalThis.window=previousParseWindow
   const oldPosition=player.mesh.position.clone(),oldRotation=player.mesh.quaternion.clone(),oldVisible=player.mesh.visible
   const h=harness({playerOverride:player})
   await Promise.resolve()
@@ -619,20 +623,17 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     assert.equal(h.level.phase,'holdCore');assert.equal(player.mesh.visible,true)
     assert.equal(visual.actions.salute.loop,THREE.LoopOnce)
     assert.equal(visual.actions.salute.clampWhenFinished,true)
-    assert.equal(h.level.durationOf('salute'),visual.actions.salute.getClip().duration)
+    assert.equal(h.level.durationOf('salute')+DIP_UP,visual.actions.salute.getClip().duration)
     t.diagnostic('Salute duration '+visual.actions.salute.getClip().duration+' s; measured run stance speed '+h.level.runClipSpeed+' m/s')
     h.scene.updateMatrixWorld(true)
     const carriage=h.scene.getObjectByName('ending-carriage-1'),inverse=carriage.matrixWorld.clone().invert(),sole=new THREE.Vector3()
     let lowest=Infinity
-    visual.root.traverse(mesh=>{
-      if(!mesh.isMesh)return
-      if(mesh.isSkinnedMesh)mesh.skeleton.update()
-      for(let i=0;i<mesh.geometry.attributes.position.count;i++) {
-        mesh.getVertexPosition(i,sole).applyMatrix4(mesh.matrixWorld).applyMatrix4(inverse)
-        lowest=Math.min(lowest,sole.y)
-      }
-    })
-    assert.ok(Math.abs(lowest-h.level.door.threshold.y)<=0.03,'soles on tilted vestibule floor')
+    for(const name of ['mixamorigLeftFoot','mixamorigRightFoot','mixamorigLeftToeBase','mixamorigRightToeBase']) {
+      const bone=visual.root.getObjectByName(name);assert.ok(bone,name)
+      bone.getWorldPosition(sole).applyMatrix4(inverse);lowest=Math.min(lowest,sole.y)
+    }
+    assert.ok(Math.abs(lowest-h.level.door.threshold.y)<=0.03,'live foot/toe bones on tilted vestibule floor')
+    assert.ok(h.level.actorMetrics.headMarginCm>=0,'head below door top')
     assert.equal(h.level.core.payload.parent.name,'mixamorigRightHand')
     assert.ok(h.level.core.payload.getWorldScale(new THREE.Vector3()).distanceTo(new THREE.Vector3(1,1,1))<1e-6)
     player.updateVisual(HOLD_CORE);h.level.update(HOLD_CORE)
@@ -702,12 +703,17 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     h.level.update(SCREEN_FLASH_PEAK);assert.equal(player.mesh.visible,true)
     assert.ok(Number(core.screen.style.opacity)>=0.84)
     // Advance precisely to the returned salute beat, independent of the flash sample offset.
-    h.level.update(h.level.durationOf('flash')-h.level.phaseTime+SNAP_HOLD+WHIP_SECONDS)
-    assert.equal(h.level.phase,'saluteBeat');assert.equal(player.mesh.visible,true)
-    h.level.update(SALUTE_BEAT+h.level.durationOf('salute')/2)
-    assert.equal(h.level.phase,'salute');assert.ok(Math.abs(visual.actions.salute.time-h.level.durationOf('salute')/2)<1e-6)
+    h.level.update(h.level.durationOf('flash')-h.level.phaseTime+SNAP_HOLD)
+    assert.equal(h.level.phase,'dipDown');assert.equal(h.level.activeShot,2)
+    h.level.update(DIP_DOWN)
+    assert.equal(h.level.phase,'dipUp');assert.equal(h.level.activeShot,1)
+    assert.equal(h.overlay.style.opacity,'1');assert.equal(player.mesh.visible,true)
+    assert.equal(h.level.activeAnimation,'salute')
+    h.level.update(DIP_UP+h.level.durationOf('salute')/2)
+    assert.equal(h.level.phase,'salute');assert.ok(Math.abs(visual.actions.salute.time-(DIP_UP+h.level.durationOf('salute')/2))<1e-6)
     h.level.update(h.level.durationOf('salute')-h.level.phaseTime+TURN)
     assert.equal(h.level.phase,'run')
+    assert.equal(h.level.activeAnimation,'run')
     h.level.update(RUN/2)
     assert.equal(player.mesh.visible,true)
     const expectedRunTime=(RUN/2*h.level.door.runEnd.distanceTo(h.level.door.threshold)/RUN/h.level.runClipSpeed)%visual.actions.run.getClip().duration
@@ -717,8 +723,8 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     const localExit=player.mesh.position.clone().applyMatrix4(carriage.matrixWorld.clone().invert())
     assert.ok(localExit.x-h.level.door.threshold.x>=2,'hidden only after running at least 2 m inside')
     h.level.update(EMPTY_BEAT+TILT_UP)
-    assert.equal(h.level.phase,'title');assert.equal(player.mesh.visible,false)
-    assert.equal(h.overlay.style.background,'transparent')
+    assert.equal(h.level.phase,'skyHold');assert.equal(player.mesh.visible,false)
+    assert.equal(h.overlay.style.opacity,'0');assert.equal(h.overlay.children.length,0)
     h.level.dispose()
     assert.equal(player.mesh.visible,oldVisible)
     assert.deepEqual(player.mesh.position,oldPosition);assertQuaternionClose(player.mesh.quaternion,oldRotation)
@@ -728,7 +734,7 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
   } finally {h.restore();visual.dispose();disposeObject(player.mesh)}
 })
 
-test('Ending: straight textured carriages, B-only track contact, bounded tilt and live-sky title', t => {
+test('Ending: straight textured steam car, B-only track, bounded crane and sky hold', t => {
   const h=harness()
   try {
     h.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE)
@@ -761,19 +767,56 @@ test('Ending: straight textured carriages, B-only track contact, bounded tilt an
     let maximum=0
     for(let frame=0;frame<=90;frame++) {
       if(frame)h.level.update(TILT_UP/90)
-      assert.deepEqual(h.renderCamera.position,fixedPosition)
+      assert.equal(h.renderCamera.position.x,fixedPosition.x);assert.equal(h.renderCamera.position.z,fixedPosition.z)
       for(const x of [-1,1])for(const y of [-1,1]) {
-        point.set(x,y,0.5).unproject(h.renderCamera).applyMatrix4(h.level.plate.material.uniforms.uPlateViewProj.value)
+        point.set(x,y,0.5).unproject(h.renderCamera).sub(h.renderCamera.position).normalize().multiplyScalar(1500).add(h.renderCamera.position).applyMatrix4(h.level.plate.material.uniforms.uPlateViewProj.value)
         maximum=Math.max(maximum,Math.abs(point.x),Math.abs(point.y))
         assert.ok(Math.abs(point.x)<=0.98 && Math.abs(point.y)<=0.98,'tilt stays inside painting '+JSON.stringify(point))
       }
     }
-    assert.equal(h.level.phase,'title');assert.equal(h.overlay.style.background,'transparent')
+    assert.equal(h.level.phase,'skyHold');assert.equal(h.overlay.style.opacity,'0');assert.equal(h.overlay.children.length,0)
+    assert.ok(Math.abs(h.renderCamera.position.y-fixedPosition.y-CRANE_HEIGHT)<1e-8)
+    const final=measureEndingFrame(h.scene.getObjectByName('ending-train'),h.renderCamera,h.level.plate.doorCamera)
+    assert.equal(final.visibleTrainBounds,0);assert.equal(final.trainOverlapPercent,0);assert.ok(final.maxPlateNdc<=0.98)
     assert.ok(Math.abs(THREE.MathUtils.radToDeg(startRotation.angleTo(h.renderCamera.quaternion))-TILT_DEGREES)<1e-7)
     assert.equal(h.manager.advances,0)
-    h.level.update(TITLE_FADE+TITLE_HOLD-0.01);assert.equal(h.manager.advances,0)
+    h.level.update(SKY_HOLD-0.01);assert.equal(h.manager.advances,0)
     h.level.update(0.02);h.level.update(100);assert.equal(h.manager.advances,1)
-    t.diagnostic('Tilt '+TILT_DEGREES+' degrees; largest source-plate corner coordinate '+maximum)
+    t.diagnostic('Crane '+CRANE_HEIGHT+' m, tilt '+TILT_DEGREES+' degrees; largest plate corner '+maximum+'; final '+JSON.stringify(final))
+  } finally {h.restore()}
+})
+
+test('Ending: level eye-height B, steam-room exterior and reserved terrain identifiers', t => {
+  const h=harness()
+  try {
+    h.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE+BEAT+DOOR_HOLD+DOOR_OPEN)
+    h.scene.updateMatrixWorld(true)
+    const carriage=h.scene.getObjectByName('ending-carriage-1'),shot=h.level.shots[1]
+    const floor=new THREE.Vector3(-1.485,h.level.door.threshold.y,h.level.door.threshold.z).applyMatrix4(carriage.matrixWorld)
+    const centre=new THREE.Vector3(-1.485,h.level.door.threshold.y+1.05,h.level.door.threshold.z).applyMatrix4(carriage.matrixWorld).project(shot)
+    const angles=new THREE.Euler().setFromQuaternion(shot.quaternion,'YXZ')
+    assert.ok(Math.abs(angles.x)<1e-10 && Math.abs(angles.z)<1e-10,'B pitch and roll zero')
+    assert.ok(Math.abs(shot.position.y-floor.y-DOOR_EYE_HEIGHT)<1e-8)
+    assert.ok(Math.abs(centre.x)<1e-10,'door centred horizontally')
+    assert.ok(carriage.getObjectByName('ending-steam-solid-panelling'))
+    assert.equal(carriage.children.some(node=>node.name==='ending-damage-interior'),false)
+    assert.ok(carriage.children.some(node=>node.name==='ending-steam-room-interior'))
+    for(const mesh of carriage.children.filter(node=>node.userData.endingWindowBatch)) {
+      const p=mesh.geometry.attributes.position
+      for(let i=0;i<p.count;i+=3)assert.ok((p.getX(i)+p.getX(i+1)+p.getX(i+2))/3>=0,'no near-side window triangle')
+    }
+    for(let i=2;i<=4;i++) {
+      const other=h.scene.getObjectByName('ending-carriage-'+i)
+      assert.ok(other.children.some(node=>node.material?.map?.image===getKitMaterials().carriageWindow.map.image))
+      assert.ok(other.children.some(node=>node.name==='ending-damage-interior'))
+    }
+    assert.equal(PHASES.includes('whipUp'),false);assert.equal(PHASES.includes('title'),false)
+    const source=fs.readFileSync(new URL('../src/shaders/terrain-shader.js',import.meta.url),'utf8')
+    const reserved=new Set('patch sample common partition active asm class union enum typedef template this resource goto inline noinline public static extern external interface long short half fixed unsigned superp input output sizeof cast namespace using packed'.split(' '))
+    const declarations=[...source.matchAll(/\b(?:float|int|bool|vec[234]|mat[234]|sampler2D)\s+(\w+)/g)].map(match=>match[1])
+    assert.deepEqual(declarations.filter(name=>reserved.has(name)),[])
+    assert.match(source,/float soilVariation = noise\(vWorldPosition.xz \* 0.011\)/)
+    t.diagnostic('B position '+JSON.stringify(shot.position)+' FOV '+shot.fov+'; doorway '+JSON.stringify(centre)+'; pitch/roll '+angles.x+'/'+angles.z)
   } finally {h.restore()}
 })
 
@@ -874,7 +917,34 @@ test('Ending: thin blue tear emission and warm lamp stutter stay active', t => {
         }
       }
     })
-    assert.ok(patchedCarriageMaterials>12);assert.ok(lamps.length>=5)
+    assert.ok(patchedCarriageMaterials>12)
+    // F3 removes carriage 1's passenger lamps. Each remaining carriage merges
+    // two table lamps and three wall lamps into one rift-stutter batch.
+    const tableLamp=new THREE.CylinderGeometry(0.08,0.15,0.16,14,1,true)
+    const wallLamp=new THREE.CylinderGeometry(0.06,0.09,0.16,8)
+    const vertexCount=geometry=>geometry.index?.count??geometry.attributes.position.count
+    const expectedLampVertices=2*vertexCount(tableLamp)+3*vertexCount(wallLamp)
+    tableLamp.dispose();wallLamp.dispose()
+    const passengerCarriages=[2,3,4],locomotiveLamps=[]
+    h.scene.getObjectByName('ending-hero-locomotive').traverse(node=>{
+      if(node.material?.userData.endingLamp)locomotiveLamps.push(node)
+    })
+    assert.equal(locomotiveLamps.length,1,'locomotive cab retains its rift lamp batch')
+    assert.equal(lamps.length,1+passengerCarriages.length)
+    for(const i of [1,...passengerCarriages]) {
+      const carriage=h.scene.getObjectByName('ending-carriage-'+i),batches=[],glows=[]
+      carriage.traverse(node=>{
+        if(node.material?.userData.endingLamp)batches.push(node)
+        if(node.name==='ending-interior-lamp-glows')glows.push(node)
+      })
+      assert.equal(batches.length,i===1?0:1,'rift lamp batch count for carriage '+i)
+      assert.equal(glows.length,i===1?0:1,'glow batch count for carriage '+i)
+      if(i===1)continue
+      assert.equal(batches[0].geometry.attributes.position.count,expectedLampVertices)
+      assert.equal(glows[0].geometry.attributes.position.count,5*4)
+      assert.equal(glows[0].material.uniforms.uRift.value,1)
+      assert.match(glows[0].material.fragmentShader,/mix\(1\.0,endingLampFlicker\(uTime,2\.1\),uRift\)/)
+    }
     assert.deepEqual([...unpatchedCarriages].sort(),[0,1,2,3].map(i=>`carriage-${i}-collider`))
     t.diagnostic('Unpatched carriage meshes (hidden interaction boxes only): '+[...unpatchedCarriages].sort().join(', '))
     for(const uniforms of effects) assert.equal(uniforms.uRift.value,1)

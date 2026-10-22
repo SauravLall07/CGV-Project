@@ -84,6 +84,38 @@ function addBrokenFrame(pivot, holes) {
 }
 
 // Ending-owned interior geometry only; nothing detaches from the train.
+function createSteamRoom(pivot) {
+  const wall=woodMaterial({repeat:[1,6],light:0x5a8a80,dark:0x1e3a34,roughness:0.5,seed:151});wall.color.setHex(0xd2ebe4)
+  const floor=woodMaterial({repeat:[2,9],light:0x7a5234,dark:0x2e1a10,roughness:0.42,seed:153});floor.color.setHex(0xead2b6)
+  const ceiling=woodMaterial({repeat:[2,6],light:0x6a4a2e,dark:0x2e1a10,roughness:0.58,seed:155});ceiling.color.setHex(0xe8d2b4)
+  const brass=new THREE.MeshStandardMaterial({color:0xb08d3f,roughness:0.3,metalness:0.9})
+  const dial=new THREE.MeshStandardMaterial({color:0xf2ead6,emissive:0xffcf8a,emissiveIntensity:1.55,roughness:0.5})
+  const fire=new THREE.MeshStandardMaterial({color:0x2a2218,emissive:0xff8a3c,emissiveIntensity:1.65,roughness:0.55,metalness:0.45})
+  const batches=new Map(),meshes=[]
+  const add=(material,geometry)=>{if(!batches.has(material))batches.set(material,[]);batches.get(material).push(geometry)}
+  const box=(material,w,h,d,x,y,z)=>add(material,new THREE.BoxGeometry(w,h,d).translate(x,y,z))
+  box(floor,2.65,0.1,19.4,0,1.50,0)
+  box(wall,0.09,2.45,16,1.29,2.77,-1.7)
+  for(const z of [-9.7,9.7])box(wall,2.65,2.45,0.08,0,2.77,z)
+  box(ceiling,2.65,0.08,19.4,0,3.98,0)
+  for(const x of [-1.1,1.1])box(brass,0.05,0.04,19,x,2.6,0)
+  for(const z of [-8,-4,0,4])box(brass,2.4,0.06,0.09,0,3.8,z)
+  // Brake-room backhead, five pressure dials, firebox and regulator levers.
+  box(wall,0.35,1.5,2.2,1.02,2.45,-3)
+  box(brass,0.04,1.35,2.05,0.82,2.45,-3)
+  for(const [z,y] of [[-3.62,2.87],[-3,2.95],[-2.38,2.87],[-3.35,2.5],[-2.65,2.5]]) {
+    add(dial,new THREE.CylinderGeometry(0.13,0.13,0.05,16).rotateZ(Math.PI/2).translate(0.78,y,z))
+    add(brass,new THREE.TorusGeometry(0.14,0.02,8,16).rotateY(Math.PI/2).translate(0.74,y,z))
+  }
+  box(fire,0.12,0.6,0.9,0.76,1.97,-3)
+  for(let z=-3.35;z<-2.6;z+=0.12)box(brass,0.04,0.48,0.035,0.68,1.97,z)
+  for(const z of [-4,-2])add(brass,new THREE.CylinderGeometry(0.035,0.045,0.8,10).rotateX(0.35).translate(0.72,2.1,z))
+  for(const [material,parts] of batches) {
+    const mesh=new THREE.Mesh(mergeGeometries(parts),material);mesh.name='ending-steam-room-interior'
+    parts.forEach(part=>part.dispose());pivot.add(mesh);meshes.push(mesh)
+  }
+  return meshes
+}
 export function createEndingDebris(root, carriages) {
   const shells = [], uniforms = [], glows = []
   const wood = woodMaterial({ repeat: [1, 4], light: 0x8a5c33, dark: 0x452a16 })
@@ -101,6 +133,7 @@ export function createEndingDebris(root, carriages) {
   for (let i = 0; i < carriages.length; i++) {
     const pivot = carriages[i], hole = CARRIAGE_HOLES[i][0], center = hole.center.z
     createTornFlaps(pivot, CARRIAGE_HOLES[i]); addBrokenFrame(pivot, CARRIAGE_HOLES[i])
+    if(i===0){shells.push(...createSteamRoom(pivot));continue}
     const effects = createDamageUniforms(CARRIAGE_HOLES[i]); uniforms.push(effects)
     const lamp = new THREE.MeshStandardMaterial({ color: 0xfff0d6, emissive: 0xffd49a, emissiveIntensity: 1.6, roughness: 0.6 })
     patchEndingLamp(lamp, effects)

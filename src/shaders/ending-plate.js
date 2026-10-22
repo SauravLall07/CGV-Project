@@ -21,7 +21,7 @@ export function createEndingPlate(onReady) {
   function configureDoor(shot) {
     doorCamera.position.copy(shot.position);doorCamera.quaternion.copy(shot.quaternion)
     doorCamera.setViewOffset(DOOR_PLATE_WIDTH,DOOR_PLATE_HEIGHT,
-      DOOR_PLATE_WIDTH*90/1672,-DOOR_PLATE_HEIGHT*0.23,DOOR_PLATE_WIDTH,DOOR_PLATE_HEIGHT)
+      0,-DOOR_PLATE_HEIGHT*0.15,DOOR_PLATE_WIDTH,DOOR_PLATE_HEIGHT)
     doorCamera.updateMatrixWorld(true)
     const e=new THREE.Matrix4().multiplyMatrices(doorCamera.projectionMatrix,shot.projectionMatrixInverse).elements
     nativeUv[1].set(e[0],e[4],e[12],e[1],e[5],e[13],0,0,1)

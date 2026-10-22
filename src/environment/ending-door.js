@@ -10,7 +10,7 @@ export const DOOR_Z = 7.5
 export const DOOR_OPEN_ANGLE = 1.5
 export const DOOR_MOTION_SECONDS = 0.6
 export const CORRIDOR_DEPTH = 3.5
-export const RUN_DISTANCE = 2.45
+export const RUN_DISTANCE = 2.2
 
 export function createEndingDoor(pivot, source) {
   const root = new THREE.Group(); root.name = 'ending-doorway'; pivot.add(root)
@@ -72,7 +72,7 @@ export function createEndingDoor(pivot, source) {
       box(hinge,brass,0.012,0.018,width-0.08,-0.006,y,center)
     for (const edge of [-1,1])
       box(hinge,brass,0.012,DOOR_HEIGHT-0.24,0.018,-0.006,2.6,center+edge*(width/2-0.04))
-    box(hinge,lamp,0.042,0.62,width-0.12,0.012,2.88,center)
+    box(hinge,wood,0.042,0.62,width-0.12,0.012,2.88,center)
     box(hinge,wood,0.012,0.48,width-0.12,0.036,1.91,center)
     box(hinge,brass,0.04,0.14,0.03,-0.04,2.24,-side*(DOOR_WIDTH/2-0.06))
     hinges.push({hinge,side})

@@ -124,6 +124,25 @@ export function createEndingTrain() {
     }
     const center = (bounds.min.z + bounds.max.z) / 2
     const pivot = makePivot(`ending-carriage-${i + 1}`, batches, center)
+    if(i===0) {
+      pivot.userData.steamRoom=true
+      for(const mesh of batches) if(mesh.material===ownMaterial(kit.carriageWindow)) {
+        mesh.userData.endingWindowBatch=true
+        const old=mesh.geometry,positions=old.attributes.position,keep=[]
+        for(let vertex=0;vertex<positions.count;vertex+=3)
+          if((positions.getX(vertex)+positions.getX(vertex+1)+positions.getX(vertex+2))/3>=0)
+            keep.push(vertex,vertex+1,vertex+2)
+        const geometry=new THREE.BufferGeometry()
+        for(const [name,attribute] of Object.entries(old.attributes)) {
+          const values=new Float32Array(keep.length*attribute.itemSize)
+          for(let n=0;n<keep.length;n++) for(let k=0;k<attribute.itemSize;k++)values[n*attribute.itemSize+k]=attribute.array[keep[n]*attribute.itemSize+k]
+          geometry.setAttribute(name,new THREE.BufferAttribute(values,attribute.itemSize))
+        }
+        mesh.geometry=geometry;old.dispose();geometry.computeBoundingBox();geometry.computeBoundingSphere()
+      }
+      const panel=new THREE.Mesh(new THREE.BoxGeometry(0.06,1.3,19.5).translate(-1.42,2.75,0),ownMaterial(kit.carriageGreen))
+      panel.name='ending-steam-solid-panelling';pivot.add(panel);batches.push(panel)
+    }
     for (const mesh of batches) if (mesh.material === ownMaterial(kit.carriageRoof)) subdivideRoof(mesh)
     const uniforms = createDamageUniforms(i === 0 ? [...CARRIAGE_HOLES[i],ENDING_DOOR_HOLE] : CARRIAGE_HOLES[i])
     uniforms.uSag.value = 0.25
