@@ -48,7 +48,7 @@ export function createLevelManager({
   }
 
   function teardown() {
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] level-manager teardown currentState=${currentState} hasCurrent=${Boolean(current)}`
     )
     if (onLeave) onLeave()
@@ -99,7 +99,7 @@ export function createLevelManager({
       }
       hud.setObjective(current.objective ?? '')
     }
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] level-manager onEnter("${state}") preserve=${Boolean(preserve)} pendingToken=${pendingToken}`
     )
     if (onEnter) onEnter(state)
@@ -152,7 +152,7 @@ export function createLevelManager({
 
   function enter(state, { preserveEnergy = false, levelOptions = null } = {}) {
     if (!factories.has(state)) throw new Error(`level-manager: unknown state "${state}"`)
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] level-manager enter("${state}") currentState=${currentState} pendingToken=${pendingToken}`
     )
     const token = ++pendingToken

@@ -187,11 +187,11 @@ export function createTerrainShaderMaterial(options = {}) {
         float tileMix = 0.38 + 0.28 * noise(vWorldPosition.xz * 0.041);
         vec3 groundTex = mix(groundFine, groundBroad, tileMix);
         // Patches many metres across, so the soil is not one flat tint.
-        float patch = noise(vWorldPosition.xz * 0.011);
+        float soilVariation = noise(vWorldPosition.xz * 0.011);
         // Stay in the green. The old high end (1.08, 1.00, 0.88) lifted the
         // red leaf-litter in the photo, and the blue night multiply turned
         // those patches magenta.
-        groundTex *= mix(vec3(0.66, 0.86, 0.60), vec3(0.80, 1.06, 0.68), patch);
+        groundTex *= mix(vec3(0.66, 0.86, 0.60), vec3(0.80, 1.06, 0.68), soilVariation);
         vec3 rockTex = pow(texture2D(uRockMap, rockUv).rgb, vec3(2.2));
         vec3 photo = mix(groundTex, rockTex, cliffFactor);
         // Daylight photos are too green and too saturated for moonlight.
