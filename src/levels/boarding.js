@@ -17,6 +17,7 @@ import {
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createMoonlitValley } from '../environment/moonlit-valley.js'
+import { createPlatformSurroundings } from '../environment/platform-surroundings.js'
 import { getBoardingAssets } from '../environment/nature-props.js'
 import { createSkyDome } from '../environment/sky-dome.js'
 import { captureSkyEnvironment } from '../environment/sky-environment.js'
@@ -313,12 +314,15 @@ export function createBoardingLevel({
   const platformValley = createMoonlitValley({
     static: true, speed: 0, valleySide: 1, offsetX: 7, offsetY: 0.8,
     chunkCount: 3, centerZ: 0, omitHillSide: true, rails: false, poles: false,
-    fogColor: 0x1f3d63, moonDirection: PLATFORM_MOON_DIRECTION
+    fogColor: 0x1f3d63, moonDirection: PLATFORM_MOON_DIRECTION,
+    staticGroundColor: 0x849482
   })
   const platformBackdrop = platformValley.group
   platformBackdrop.visible = false
+  const surroundings = createPlatformSurroundings(platformValley, sky.timeUniform)
+  surroundings.group.visible = false
 
-  // Two low sheets, with procedural alpha and soft edges. No texture, lights,
+  // Far sheet, with procedural alpha and soft edges. No texture, lights,
   // collision or per-frame geometry uploads; the shared sky clock drifts noise.
   const mistMaterial = new THREE.ShaderMaterial({
     uniforms: THREE.UniformsUtils.merge([
@@ -366,7 +370,9 @@ export function createBoardingLevel({
   // UniformsUtils.merge clones uniforms; restore this clock's shared identity.
   mistMaterial.uniforms.uTime = sky.timeUniform
   const mistGeometry = new THREE.PlaneGeometry(1, 1)
-  for (const [x, y, z, width, length] of [[65, 1.0, 0, 100, 260], [145, 2.4, 20, 180, 300]]) {
+  // Remove only the near floating blob formerly centred at world (65,1,0).
+  // Retain the distant sheet and the separate end fog banks unchanged.
+  for (const [x, y, z, width, length] of [[145, 2.4, 20, 180, 300]]) {
     const mist = new THREE.Mesh(mistGeometry, mistMaterial)
     mist.name = 'platform-valley-mist'
     mist.rotation.x = -Math.PI / 2
@@ -378,15 +384,16 @@ export function createBoardingLevel({
     mist.userData.noInteractionBlocker = true
     platformBackdrop.add(mist)
   }
-  platformBackdrop.userData.drawCalls = platformValley.stats.drawCalls + 2
-  platformBackdrop.userData.triangles = platformValley.stats.triangles + 4
+  platformBackdrop.userData.drawCalls = platformValley.stats.drawCalls + 1
+  platformBackdrop.userData.triangles = platformValley.stats.triangles + 2
   if (import.meta.env?.DEV) console.info('[boarding platform backdrop]', {
     drawCalls: platformBackdrop.userData.drawCalls,
     triangles: platformBackdrop.userData.triangles,
-    terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 2
+    terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 1
   })
 
   scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights)
+  scene.add(surroundings.group)
 
   // Capture each look once. Retain the original environment map everywhere
   // outside the platform; no per-frame capture or forecourt reflection change.
@@ -672,7 +679,9 @@ export function createBoardingLevel({
   // Native waypoint patrols preserve detection, scanning and distractions.
   const platformPatrols = [
     { id: 'platform-A', points: [[-3.2, -16], [3.65, -16]], speed: 1.25, waitTime: 2, yaw: Math.PI / 2 },
-    { id: 'platform-B', points: [[-3.2, -8], [-3.2, -24]], speed: 1.1, waitTime: 4, yaw: Math.PI },
+    // The hall's north wall crosses x=-3.2 at z=-21.75. Stay north of
+    // its face; the nearest bench/tree edges remain 0.62/0.65 m away.
+    { id: 'platform-B', points: [[-3.2, -8], [-3.2, -20.4]], speed: 1.1, waitTime: 4, yaw: Math.PI },
     { id: 'platform-C', points: [[3, -4], [3, 16], [-3, 16], [-3, -4]], speed: 1.3, waitTime: 2, yaw: 0 },
     { id: 'platform-D', points: [[3.65, 16], [3.65, -4]], speed: 1.15, waitTime: 4, yaw: Math.PI },
     { id: 'platform-E', points: [[0, 30]], speed: 1.2, waitTime: 0, yaw: Math.PI },
@@ -1081,7 +1090,7 @@ export function createBoardingLevel({
   zones.addRegion('train', train, stationSteam)
   zones.addRegion('landing', landing.group)
   zones.addRegion('outdoor', outdoorEnv.group)
-  zones.addRegion('platform-backdrop', platformBackdrop)
+  zones.addRegion('platform-backdrop', platformBackdrop, surroundings.group)
 
   // Sources stay hidden. These slots are the only point lights and guard
   // torches the shader ever sees, and the count does not change at runtime.
@@ -1384,6 +1393,7 @@ export function createBoardingLevel({
       stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()
+      surroundings.dispose()
       platformValley.dispose()
       sky.dispose()
       if (skyTarget) {
@@ -1397,6 +1407,7 @@ export function createBoardingLevel({
       platformSkyTarget?.dispose()
       platformSkyTarget = null
       scene.remove(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights, lightPools, lampPools)
+      scene.remove(surroundings.group)
       disposeObject([station, hallDressing, train, stationSteam, landing.group, ...lights, lightPools, lampPools])
     }
   }
