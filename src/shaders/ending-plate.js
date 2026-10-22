@@ -15,11 +15,12 @@ export function createEndingPlate(onReady) {
   const camera = new THREE.PerspectiveCamera(PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT, 0.1, 1800)
   camera.position.copy(PLATE_CAMERA_POSITION); camera.lookAt(PLATE_CAMERA_TARGET); camera.updateMatrixWorld(true)
   const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+  const initialCamera=camera.clone(false),initialProjection=viewProjection.clone()
   const doorCamera = new THREE.PerspectiveCamera(DOOR_PLATE_FOV,DOOR_PLATE_WIDTH/DOOR_PLATE_HEIGHT,0.1,1800)
   const nativeUv=[new THREE.Matrix3(),new THREE.Matrix3(),new THREE.Matrix3()]
   let activeIndex=0,doorConfigured=false
   function configureDoor(shot) {
-    doorCamera.position.copy(shot.position);doorCamera.quaternion.copy(shot.quaternion)
+    doorCamera.position.copy(shot.position);doorCamera.quaternion.copy(shot.quaternion);doorCamera.up.copy(shot.up)
     doorCamera.setViewOffset(DOOR_PLATE_WIDTH,DOOR_PLATE_HEIGHT,
       0,-DOOR_PLATE_HEIGHT*0.15,DOOR_PLATE_WIDTH,DOOR_PLATE_HEIGHT)
     doorCamera.updateMatrixWorld(true)
@@ -158,8 +159,7 @@ export function createEndingPlate(onReady) {
     dispose() {
       if (disposed) return
       disposed = true; activeIndex=0
-      camera.view=null;camera.aspect=PLATE_CAMERA_ASPECT;camera.position.copy(PLATE_CAMERA_POSITION)
-      camera.lookAt(PLATE_CAMERA_TARGET);camera.updateMatrixWorld(true);setFov(PLATE_CAMERA_FOV)
+      camera.copy(initialCamera,false);viewProjection.copy(initialProjection)
       mesh.removeFromParent(); mesh.geometry.dispose(); material.dispose(); textures.forEach(item => item.dispose())
     } }
 }

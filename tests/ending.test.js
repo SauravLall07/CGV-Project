@@ -4,7 +4,8 @@ import * as THREE from 'three'
 import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, BEAT, DOOR_OPEN, HOLD_CORE,
   THROW, THROW_RELEASE, FALL, PHASES, DURATIONS, TRAIN_START_NOSE_Z,
   SKY_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS } from '../src/levels/ending.js'
-import { DOOR_HOLD, WHIP_SECONDS, RELEASE_TO_WHIP, SNAP_HOLD, DIP_DOWN, DIP_UP, TURN, RUN, EMPTY_BEAT, TILT_UP, TILT_DEGREES, CRANE_HEIGHT, DOOR_EYE_HEIGHT, measureEndingFrame } from '../src/levels/ending.js'
+import { DOOR_HOLD, WHIP_SECONDS, RELEASE_TO_WHIP, SNAP_HOLD, DIP_DOWN, DIP_UP, TURN, RUN, EMPTY_BEAT, TILT_UP, TILT_DEGREES, CRANE_HEIGHT, DOOR_EYE_HEIGHT, measureEndingFrame, measureEndingRoofAngle } from '../src/levels/ending.js'
+import { RUN_IN, RUN_RADIUS, RUN_CORRIDOR, DOOR_OPEN_ANGLE } from '../src/environment/ending-door.js'
 import { createPlayer } from '../src/entities/player.js'
 import { FLASH_SECONDS, SCREEN_FLASH_PEAK, RIVER_TARGET_NDC, GORGE_FLOOR_Y } from '../src/environment/ending-core.js'
 import { ENDING_DOOR_HOLE } from '../src/shaders/ending-time-damage.js'
@@ -302,6 +303,11 @@ test('Ending: skip advances immediately once despite repeated or stale activatio
 test('Ending: completed disposal releases the plate once and restores FOV, grade, fog and scene ownership', () => {
   const h = harness()
   try {
+    const cameraState=camera=>({position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),up:camera.up.toArray(),
+      fov:camera.fov,aspect:camera.aspect,near:camera.near,far:camera.far,zoom:camera.zoom,view:camera.view?{...camera.view}:null,
+      matrix:camera.matrix.toArray(),world:camera.matrixWorld.toArray(),worldInverse:camera.matrixWorldInverse.toArray(),
+      projection:camera.projectionMatrix.toArray(),projectionInverse:camera.projectionMatrixInverse.toArray()})
+    const originalRenderState=cameraState(h.renderCamera),originalPlateState=cameraState(h.level.plate.camera)
     h.level.update(0)
     const staleSkip = h.skip, texture = h.scene.getObjectByName('ending-plate-sphere').material.uniforms.uPlate.value
     const projection = h.scene.getObjectByName('ending-plate-sphere').material.uniforms.uPlateViewProj.value
@@ -319,6 +325,8 @@ test('Ending: completed disposal releases the plate once and restores FOV, grade
     assert.equal(textureDisposals, 1)
     assert.equal(glowTextureDisposals, 1); assert.equal(glowGeometryDisposals, 1)
     assert.deepEqual(projection.elements, defaultProjection.elements, 'plate projection restores its initial camera FOV')
+    assert.deepEqual(cameraState(h.level.plate.camera),originalPlateState,'plate camera restores captured pose, up and matrices exactly')
+    assert.deepEqual(cameraState(h.renderCamera),originalRenderState,'render camera restores captured pose, up and matrices exactly')
     assert.equal(h.renderCamera.fov, h.originalFov); assert.equal(h.renderCamera.aspect, h.originalAspect)
     assert.deepEqual(h.grade, h.defaultGrade); assert.equal(h.postEnabled, true)
     assert.equal(h.scene.children.length, 0); assert.equal(h.scene.fog, h.originalFog); assert.equal(h.scene.background, h.originalBackground)
@@ -716,12 +724,14 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     assert.equal(h.level.activeAnimation,'run')
     h.level.update(RUN/2)
     assert.equal(player.mesh.visible,true)
-    const expectedRunTime=(RUN/2*h.level.door.runEnd.distanceTo(h.level.door.threshold)/RUN/h.level.runClipSpeed)%visual.actions.run.getClip().duration
+    const expectedRunTime=(RUN/2*h.level.door.runDistance/RUN/h.level.runClipSpeed)%visual.actions.run.getClip().duration
     assert.ok(Math.abs(visual.actions.run.time-expectedRunTime)<1e-6,'run stride matches translation speed')
     h.level.update(RUN/2)
     assert.equal(h.level.phase,'emptyBeat');assert.equal(player.mesh.visible,false)
     const localExit=player.mesh.position.clone().applyMatrix4(carriage.matrixWorld.clone().invert())
-    assert.ok(localExit.x-h.level.door.threshold.x>=2,'hidden only after running at least 2 m inside')
+    assert.ok(localExit.distanceTo(h.level.door.runEnd)<0.03,'finishes around the corridor corner')
+    assert.equal(h.level.runMetrics.fullyOccluded,true);assert.equal(h.level.runMetrics.hidden,true)
+    assert.equal(h.level.door.fullyOccluded(h.level.shots[1].position,player.mesh.position),true)
     h.level.update(EMPTY_BEAT+TILT_UP)
     assert.equal(h.level.phase,'skyHold');assert.equal(player.mesh.visible,false)
     assert.equal(h.overlay.style.opacity,'0');assert.equal(h.overlay.children.length,0)
@@ -767,7 +777,8 @@ test('Ending: straight textured steam car, B-only track, bounded crane and sky h
     let maximum=0
     for(let frame=0;frame<=90;frame++) {
       if(frame)h.level.update(TILT_UP/90)
-      assert.equal(h.renderCamera.position.x,fixedPosition.x);assert.equal(h.renderCamera.position.z,fixedPosition.z)
+      const rise=h.renderCamera.position.clone().sub(fixedPosition)
+      assert.ok(rise.clone().cross(h.level.shots[1].up).length()<1e-8,'crane follows carriage up')
       for(const x of [-1,1])for(const y of [-1,1]) {
         point.set(x,y,0.5).unproject(h.renderCamera).sub(h.renderCamera.position).normalize().multiplyScalar(1500).add(h.renderCamera.position).applyMatrix4(h.level.plate.material.uniforms.uPlateViewProj.value)
         maximum=Math.max(maximum,Math.abs(point.x),Math.abs(point.y))
@@ -775,7 +786,7 @@ test('Ending: straight textured steam car, B-only track, bounded crane and sky h
       }
     }
     assert.equal(h.level.phase,'skyHold');assert.equal(h.overlay.style.opacity,'0');assert.equal(h.overlay.children.length,0)
-    assert.ok(Math.abs(h.renderCamera.position.y-fixedPosition.y-CRANE_HEIGHT)<1e-8)
+    assert.ok(Math.abs(h.renderCamera.position.distanceTo(fixedPosition)-CRANE_HEIGHT)<1e-8)
     const final=measureEndingFrame(h.scene.getObjectByName('ending-train'),h.renderCamera,h.level.plate.doorCamera)
     assert.equal(final.visibleTrainBounds,0);assert.equal(final.trainOverlapPercent,0);assert.ok(final.maxPlateNdc<=0.98)
     assert.ok(Math.abs(THREE.MathUtils.radToDeg(startRotation.angleTo(h.renderCamera.quaternion))-TILT_DEGREES)<1e-7)
@@ -786,7 +797,7 @@ test('Ending: straight textured steam car, B-only track, bounded crane and sky h
   } finally {h.restore()}
 })
 
-test('Ending: level eye-height B, steam-room exterior and reserved terrain identifiers', t => {
+test('Ending: carriage-local eye-height B, steam-room exterior and reserved terrain identifiers', t => {
   const h=harness()
   try {
     h.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE+BEAT+DOOR_HOLD+DOOR_OPEN)
@@ -795,8 +806,15 @@ test('Ending: level eye-height B, steam-room exterior and reserved terrain ident
     const floor=new THREE.Vector3(-1.485,h.level.door.threshold.y,h.level.door.threshold.z).applyMatrix4(carriage.matrixWorld)
     const centre=new THREE.Vector3(-1.485,h.level.door.threshold.y+1.05,h.level.door.threshold.z).applyMatrix4(carriage.matrixWorld).project(shot)
     const angles=new THREE.Euler().setFromQuaternion(shot.quaternion,'YXZ')
-    assert.ok(Math.abs(angles.x)<1e-10 && Math.abs(angles.z)<1e-10,'B pitch and roll zero')
-    assert.ok(Math.abs(shot.position.y-floor.y-DOOR_EYE_HEIGHT)<1e-8)
+    const up=new THREE.Vector3(0,1,0).transformDirection(carriage.matrixWorld)
+    const normal=new THREE.Vector3(-1,0,0).transformDirection(carriage.matrixWorld)
+    assert.ok(shot.up.distanceTo(up)<1e-10)
+    assert.ok(new THREE.Vector3(0,1,0).applyQuaternion(shot.quaternion).distanceTo(up)<1e-10)
+    assert.ok(shot.getWorldDirection(new THREE.Vector3()).distanceTo(normal.negate())<1e-10)
+    assert.ok(Math.abs(shot.position.clone().sub(floor).dot(up)-DOOR_EYE_HEIGHT)<1e-8)
+    assertQuaternionClose(h.level.plate.doorCamera.quaternion,shot.quaternion)
+    const roofAngle=measureEndingRoofAngle(carriage,shot)
+    assert.ok(Math.abs(roofAngle)<=0.3,'roof line level in B: '+roofAngle)
     assert.ok(Math.abs(centre.x)<1e-10,'door centred horizontally')
     assert.ok(carriage.getObjectByName('ending-steam-solid-panelling'))
     assert.equal(carriage.children.some(node=>node.name==='ending-damage-interior'),false)
@@ -816,7 +834,72 @@ test('Ending: level eye-height B, steam-room exterior and reserved terrain ident
     const declarations=[...source.matchAll(/\b(?:float|int|bool|vec[234]|mat[234]|sampler2D)\s+(\w+)/g)].map(match=>match[1])
     assert.deepEqual(declarations.filter(name=>reserved.has(name)),[])
     assert.match(source,/float soilVariation = noise\(vWorldPosition.xz \* 0.011\)/)
-    t.diagnostic('B position '+JSON.stringify(shot.position)+' FOV '+shot.fov+'; doorway '+JSON.stringify(centre)+'; pitch/roll '+angles.x+'/'+angles.z)
+    t.diagnostic('B position '+JSON.stringify(shot.position)+' FOV '+shot.fov+'; doorway '+JSON.stringify(centre)+'; world pitch/roll '+angles.x+'/'+angles.z+'; roof angle '+roofAngle)
+  } finally {h.restore()}
+})
+
+test('Ending: outward doors clear the standing volume and the sealed left run is wall-occluded before hiding', t => {
+  const h=harness()
+  try {
+    h.level.update(DURATIONS.slice(0,PHASES.indexOf('holdCore')).reduce((sum,value)=>sum+value,0))
+    const door=h.level.door,carriage=h.scene.getObjectByName('ending-carriage-1')
+    h.scene.updateMatrixWorld(true)
+    assert.equal(door.standingIntersections(),0)
+    for(const {hinge,side} of door.hinges) {
+      assert.ok(Math.abs(hinge.rotation.y-side*DOOR_OPEN_ANGLE)<1e-10)
+      assert.ok(180-Math.abs(THREE.MathUtils.radToDeg(hinge.rotation.y))<=10)
+      const bounds=new THREE.Box3()
+      hinge.traverse(node=>{
+        if(!node.geometry)return
+        const matrix=new THREE.Matrix4().multiplyMatrices(door.root.matrixWorld.clone().invert(),node.matrixWorld)
+        node.geometry.computeBoundingBox();bounds.union(node.geometry.boundingBox.clone().applyMatrix4(matrix))
+      })
+      assert.ok(bounds.max.x<=-1.42,'leaves outside the carriage wall')
+      assert.ok(side>0?bounds.min.z>=0.61:bounds.max.z<=-0.61,'leaves outside the opening')
+    }
+    const start=door.sampleRun(0),corner=door.sampleRun(RUN_IN),end=door.sampleRun(door.runDistance)
+    assert.equal(RUN_IN,1);assert.ok(RUN_CORRIDOR>=3&&RUN_CORRIDOR<=4)
+    assert.ok(start.position.distanceTo(door.threshold)<1e-10)
+    assert.ok(Math.abs(corner.position.x-start.position.x-1)<1e-10)
+    assert.equal(corner.position.z,start.position.z)
+    const before=door.sampleRun(RUN_IN+Math.PI*RUN_RADIUS/2-1e-5)
+    const after=door.sampleRun(RUN_IN+Math.PI*RUN_RADIUS/2+1e-5)
+    assert.ok(before.tangent.distanceTo(after.tangent)<1e-4,'rounded turn has continuous facing')
+    const projectedStart=corner.position.clone().applyMatrix4(carriage.matrixWorld).project(h.level.shots[1])
+    const projectedEnd=end.position.clone().applyMatrix4(carriage.matrixWorld).project(h.level.shots[1])
+    assert.ok(projectedEnd.x<projectedStart.x,'corridor runs screen-left')
+    // Actual raycasts from inside the corridor must hit opaque enclosure in all 26 directions.
+    const origin=new THREE.Vector3(0.15,2.5,-2.5).applyMatrix4(door.root.matrixWorld),raycaster=new THREE.Raycaster()
+    for(const x of [-1,0,1])for(const y of [-1,0,1])for(const z of [-1,0,1]) {
+      if(!x&&!y&&!z)continue
+      const direction=new THREE.Vector3(x,y,z).normalize().transformDirection(door.root.matrixWorld)
+      raycaster.set(origin,direction)
+      assert.ok(raycaster.intersectObject(door.root,true).some(hit=>!hit.object.material.transparent),'sealed corridor direction '+[x,y,z])
+    }
+    h.level.update(DURATIONS.slice(PHASES.indexOf('holdCore'),PHASES.indexOf('run')).reduce((sum,value)=>sum+value,0))
+    assert.equal(h.level.phase,'run')
+    let firstOccluded=null
+    for(let frame=1;frame<=60;frame++) {
+      h.level.update(RUN/60)
+      const metrics=h.level.runMetrics,sample=door.sampleRun(metrics.distance)
+      const facing=new THREE.Vector3(0,0,1).applyQuaternion(h.player.mesh.quaternion)
+      const expected=sample.tangent.clone().transformDirection(carriage.matrixWorld)
+      assert.ok(facing.distanceTo(expected)<1e-8,'facing follows path tangent')
+      if(metrics.fullyOccluded)firstOccluded??=metrics.distance
+      if(frame<60)assert.equal(h.player.mesh.visible,true,'no visibility hide before path end')
+      if(!h.player.mesh.visible)assert.equal(metrics.fullyOccluded,true)
+    }
+    assert.ok(firstOccluded>RUN_IN&&firstOccluded<door.runDistance,'wall occlusion precedes cleanup hide')
+    assert.equal(h.level.runMetrics.hidden,true);assert.equal(h.player.mesh.visible,false)
+    // Check the final conservative body envelope against the rendered meshes independently.
+    const local=door.runEnd.clone();local.z-=door.root.position.z
+    const camera=h.level.shots[1].position
+    for(const x of [-0.45,0.45])for(const y of [0.08,1,1.95])for(const z of [-0.45,0.45]) {
+      const target=new THREE.Vector3(local.x+x,door.threshold.y+y,local.z+z).applyMatrix4(door.root.matrixWorld)
+      raycaster.set(camera,target.clone().sub(camera).normalize())
+      assert.ok(raycaster.intersectObject(door.root,true).some(hit=>!hit.object.material.transparent&&hit.distance<camera.distanceTo(target)-0.02),'rendered wall occludes full body')
+    }
+    t.diagnostic('Doors ±'+THREE.MathUtils.radToDeg(DOOR_OPEN_ANGLE)+' degrees; standing intersections 0; path '+door.runDistance+' m; first fully occluded at '+firstOccluded+' m')
   } finally {h.restore()}
 })
 
