@@ -52,6 +52,12 @@ function holdFill(h) {
   }
   return fill
 }
+function visiblePointLights(scene) {
+  let count = 0
+  scene.traverseVisible((node) => { if (node.isPointLight) count += 1 })
+  return count
+}
+
 function summon(h) {
   h.player.setPose(h.pad, Math.PI)
   h.tick(0.5)
@@ -69,6 +75,21 @@ function walkReleasedDoor(h, target = -4.4, run = false) {
   h.tick(0.175 / multiplier, { left: true, run })
   h.tick((-1.95 - target) / (4 * multiplier), { forward: true, run })
 }
+
+test('Relay: Ghost on the release keeps the real point-light count stable while the door opens', () => {
+  const h = levelHarness()
+  try {
+    const before = visiblePointLights(h.scene)
+    summon(h)
+    assert.equal(visiblePointLights(h.scene), before)
+    h.tick(0.4)
+    assert.equal(visiblePointLights(h.scene), before)
+    assert.ok(h.time.getGhost().isOccupying(h.pad, 0.56))
+    assert.ok(leafX(h) > 1.5, 'echo still holds the plate open')
+    const beacon = h.time.getGhost().mesh.getObjectByName('time-ghost-beacon')
+    assert.ok(beacon?.isMesh && !beacon.isLight)
+  } finally { h.dispose() }
+})
 
 test('Relay: Ghost holds release while the real player walks to the catch with energy/time margin', () => {
   for (const fps of [30, 60, 144]) {
