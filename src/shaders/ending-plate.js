@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import plateUrl from '../assets/textures/backdrop/ending-plate.jpg'
+import doorUrl from '../assets/textures/backdrop/ending-plate-door.jpg'
+import gorgeUrl from '../assets/textures/backdrop/ending-plate-gorge.jpg'
 
 export const PLATE_CAMERA_POSITION = new THREE.Vector3(47.1, 19.43, -3.01)
 export const PLATE_CAMERA_TARGET = new THREE.Vector3(1.09, -1.13, 9.74)
@@ -11,18 +13,24 @@ export function createEndingPlate(onReady) {
   camera.position.copy(PLATE_CAMERA_POSITION); camera.lookAt(PLATE_CAMERA_TARGET); camera.updateMatrixWorld(true)
   const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
   let ready = false, disposed = false
-  const texture = new THREE.TextureLoader().load(plateUrl, loaded => {
+  let loadedCount = 0
+  const textures = [plateUrl, doorUrl, gorgeUrl].map(url => new THREE.TextureLoader().load(url, loaded => {
     if (disposed) return
-    ready = true
+    ready = ++loadedCount === 3
     onReady?.(loaded)
-  })
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.minFilter = THREE.LinearFilter
-  texture.magFilter = THREE.LinearFilter
-  texture.generateMipmaps = false
+  }))
+  const texture = textures[0]
+  for (const item of textures) {
+    item.colorSpace = THREE.SRGBColorSpace
+    item.minFilter = THREE.LinearFilter
+    item.magFilter = THREE.LinearFilter
+    item.generateMipmaps = false
+  }
   const material = new THREE.ShaderMaterial({
     name: 'ending-projected-plate',
-    uniforms: { uPlate: { value: texture }, uPlateViewProj: { value: viewProjection },
+    uniforms: { uPlate: { value: texture }, uIncoming: { value: texture }, uPlateMix: { value: 0 },
+      uWhip: { value: 0 }, uWhipDirection: { value: 1 }, uShot: { value: 0 },
+      uPlateViewProj: { value: viewProjection },
       uOutsideColor: { value: new THREE.Color(0x0d1426) }, uTime: { value: 0 }, uFlow: { value: 1 } },
     side: THREE.BackSide, toneMapped: false, fog: false, depthWrite: false, depthTest: false,
     vertexShader: `
@@ -34,6 +42,11 @@ export function createEndingPlate(onReady) {
       }`,
     fragmentShader: `
       uniform sampler2D uPlate;
+      uniform sampler2D uIncoming;
+      uniform float uPlateMix;
+      uniform float uWhip;
+      uniform float uWhipDirection;
+      uniform float uShot;
       uniform mat4 uPlateViewProj;
       uniform vec3 uOutsideColor;
       uniform float uTime;
@@ -51,7 +64,13 @@ export function createEndingPlate(onReady) {
         if (projected.w > 0.0) {
           vec2 uv = projected.xy / projected.w * 0.5 + 0.5;
           if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
-            vec3 painting = texture2D(uPlate, uv).rgb;
+            vec3 painting = vec3(0.0);
+            for (int i = 0; i < 16; i++) {
+              float offset = (float(i) / 15.0 - 0.25) * uWhip * uWhipDirection;
+              vec2 sampleUv = clamp(uv + vec2(0.0, offset), vec2(0.001), vec2(0.999));
+              painting += mix(texture2D(uPlate, sampleUv).rgb,
+                texture2D(uIncoming, sampleUv).rgb, uPlateMix) / 16.0;
+            }
             // Threshold in display colour; uPlate is decoded from sRGB by the texture sampler.
             vec3 displayColor = pow(max(painting, vec3(0.0)), vec3(1.0 / 2.2));
             float luma = dot(displayColor, vec3(0.2126, 0.7152, 0.0722));
@@ -59,11 +78,13 @@ export function createEndingPlate(onReady) {
             // Exclude the moon, stars and the left foreground from the colour mask.
             river *= smoothstep(0.45, 0.5, uv.x) * (1.0 - smoothstep(0.9, 0.95, uv.x));
             river *= smoothstep(0.0, 0.03, uv.y) * (1.0 - smoothstep(0.64, 0.7, uv.y));
+            if (uShot > 1.5) river *= 1.0 - smoothstep(0.48, 0.58, uv.y);
+            if (uShot > 0.5 && uShot < 1.5) river = 0.0;
             float streak = smoothstep(0.65, 0.9, noise(vec2(uv.x * 650.0, uv.y * 150.0 + uTime * 0.7)));
             // Clock advancement is scaled by uFlow; zero freezes the existing shimmer phase.
             painting += vec3(0.62396, 0.7454, 1.0) * river * streak * 0.018;
             float edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-            color = mix(uOutsideColor, painting, smoothstep(0.0, 0.03, edge));
+            color = mix(uOutsideColor, painting, mix(smoothstep(0.0, 0.03, edge), 1.0, step(0.001, uWhip)));
           }
         }
         gl_FragColor = vec4(color, 1.0);
@@ -79,12 +100,29 @@ export function createEndingPlate(onReady) {
     viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
     return camera.fov
   }
-  return { mesh, camera, texture, get ready() { return ready },
+  function setShot(shot, index) {
+    camera.copy(shot); camera.updateMatrixWorld(true)
+    viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    mesh.position.copy(camera.position)
+    material.uniforms.uPlate.value = textures[index]
+    material.uniforms.uIncoming.value = textures[index]
+    material.uniforms.uShot.value = index
+    material.uniforms.uPlateMix.value = 0
+    material.uniforms.uWhip.value = 0
+  }
+  function setWhip(outgoing, incoming, mix, strength, direction) {
+    material.uniforms.uPlate.value = textures[outgoing]
+    material.uniforms.uIncoming.value = textures[incoming]
+    material.uniforms.uPlateMix.value = mix
+    material.uniforms.uWhip.value = strength
+    material.uniforms.uWhipDirection.value = direction
+  }
+  return { mesh, camera, texture, textures, material, setShot, setWhip, get ready() { return ready },
     setFov,
     update(delta) { material.uniforms.uTime.value += Math.max(0, delta) * material.uniforms.uFlow.value },
     dispose() {
       if (disposed) return
       disposed = true; setFov(PLATE_CAMERA_FOV)
-      mesh.removeFromParent(); mesh.geometry.dispose(); material.dispose(); texture.dispose()
+      mesh.removeFromParent(); mesh.geometry.dispose(); material.dispose(); textures.forEach(item => item.dispose())
     } }
 }

@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { createEndingLevel, ENDING_FADE_IN, APPROACH, BRAKE, SETTLE, BEAT, DOOR_OPEN, STEP_OUT, HOLD_CORE,
   THROW, THROW_RELEASE, FALL, EMPTY_HOLD, FADE_OUT, PHASES, DURATIONS, TRAIN_START_NOSE_Z,
   TITLE_HOLD, ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, ENDING_CAMERA_FOV, WORLD_ALIGN_DEFAULTS } from '../src/levels/ending.js'
+import { DOOR_HOLD, WHIP_SECONDS, RELEASE_TO_WHIP, SNAP_HOLD, WIDE_HOLD } from '../src/levels/ending.js'
 import { createPlayer } from '../src/entities/player.js'
 import { FLASH_SECONDS, SCREEN_FLASH_PEAK, RIVER_TARGET_NDC, GORGE_FLOOR_Y } from '../src/environment/ending-core.js'
 import { ENDING_DOOR_HOLE } from '../src/shaders/ending-time-damage.js'
@@ -29,7 +30,8 @@ function assertQuaternionClose(actual,expected) {
 
 function harness({ delayPlate = false, audioFactory, playerOverride } = {}) {
   const previousDocument = globalThis.document, previousWindow = globalThis.window, previousLocation = globalThis.location
-  let listenerAdds = 0, releasePlate = null
+  let listenerAdds = 0
+  const pendingPlates = []
   globalThis.window = { addEventListener() { listenerAdds++ }, removeEventListener() {} }
   globalThis.location = { search: '?start=ending' }
   const doc = { activeElement: null }
@@ -45,7 +47,7 @@ function harness({ delayPlate = false, audioFactory, playerOverride } = {}) {
     const image = new Element(tag); image.width = 1671; image.height = 941; image.complete = true
     Object.defineProperty(image, 'src', { set(url) {
       const loaded = () => image.dispatchEvent(new Event('load'))
-      if (delayPlate && String(url).includes('ending-plate')) releasePlate = loaded
+      if (delayPlate && String(url).includes('ending-plate')) pendingPlates.push(loaded)
       else loaded()
     } })
     return image
@@ -76,7 +78,7 @@ function harness({ delayPlate = false, audioFactory, playerOverride } = {}) {
     renderCamera, originalFov, originalAspect, defaultGrade,
     get view() { return cinematicView }, get skip() { return callback }, get begins() { return begins },
     get grade() { return grade }, get postEnabled() { return postEnabled }, get listenerAdds() { return listenerAdds },
-    releasePlate() { releasePlate?.() },
+    releasePlate() { pendingPlates.splice(0).forEach(loaded=>loaded()) },
     restore() {
       level.dispose(); globalThis.document = previousDocument; globalThis.window = previousWindow; globalThis.location = previousLocation
     } }
@@ -201,7 +203,8 @@ test('Ending: plate camera, passive alignment, geometry budget, physical stop an
         const nose = noseZ(); minimumNose = Math.min(minimumNose, nose)
         assert.ok(nose > 0, `physical nose never crosses the edge: ${nose}`)
         if (elapsed >= ENDING_FADE_IN + APPROACH + BRAKE + SETTLE) assert.ok(Math.abs(nose - STOP_NOSE_Z) <= 0.1)
-        const visible=['stepOut','holdCore','throw','fall'].includes(h.level.phase) ||
+        const visible=['stepOut','holdCore','throw','fallC'].includes(h.level.phase) ||
+          (h.level.phase==='whipDown' && (h.level.phaseTime<0.06 || h.level.phaseTime>0.24)) ||
           (h.level.phase==='flash' && h.level.phaseTime<SCREEN_FLASH_PEAK)
         assert.equal(h.player.mesh.visible, visible)
       }
@@ -465,11 +468,10 @@ test('Ending: peak budget reserves twelve detective draws with every ending effe
   } finally {h.restore()}
 })
 
-test('Ending: full story keeps the camera and light count fixed while river, steam and rifts run', t => {
+test('Ending: full story matches each active plate camera and keeps light count fixed', t => {
   const h=harness()
   try {
     h.level.update(0)
-    const position=h.renderCamera.position.clone(),rotation=h.renderCamera.quaternion.clone(),fov=h.renderCamera.fov
     const countLights=()=>{let count=0;h.scene.traverse(node=>{if(node.isLight)count++});return count}
     const lights=countLights(),phases=[h.level.phase]
     const steam=h.scene.getObjectByName('ending-chimney-steam').material.uniforms.uTime
@@ -480,8 +482,16 @@ test('Ending: full story keeps the camera and light count fixed while river, ste
       const dt=Math.min(1/30,TOTAL-0.001-elapsed)
       h.level.update(dt);elapsed+=dt
       if(phases.at(-1)!==h.level.phase)phases.push(h.level.phase)
-      assert.deepEqual(h.renderCamera.position,position);assertQuaternionClose(h.renderCamera.quaternion,rotation)
-      assert.equal(h.renderCamera.fov,fov);assert.equal(countLights(),lights)
+      const shot=h.level.shots[h.level.activeShot]
+      assert.deepEqual(h.renderCamera.position,shot.position);assertQuaternionClose(h.renderCamera.quaternion,shot.quaternion)
+      assert.equal(h.renderCamera.fov,shot.fov);assert.equal(h.renderCamera.aspect,shot.aspect)
+      assert.equal(countLights(),lights)
+      assert.deepEqual(h.view.initialPosition,h.view.position)
+      assertQuaternionClose(h.view.initialRotation,h.view.targetRotation)
+      assert.deepEqual(h.scene.getObjectByName('ending-plate-sphere').position,shot.position)
+      if(!['whipDown','whipUp'].includes(h.level.phase)) {
+        assert.equal(river.uWhip.value,0);assert.equal(river.uPlateMix.value,0)
+      }
       assert.ok(steam.value>previousSteam);assert.ok(river.uTime.value>previousRiver)
       previousSteam=steam.value;previousRiver=river.uTime.value
       assert.equal(river.uFlow.value,1)
@@ -495,7 +505,7 @@ test('Ending: full story keeps the camera and light count fixed while river, ste
       if(PHASES.indexOf(h.level.phase)<PHASES.indexOf('doorOpen'))assert.equal(h.level.door.openness,0)
       if(PHASES.indexOf(h.level.phase)>PHASES.indexOf('doorOpen'))assert.equal(h.level.door.openness,1)
     }
-    assert.deepEqual(phases,PHASES.slice(0,-1));assert.equal(h.manager.advances,0)
+    assert.deepEqual(phases,PHASES.filter((_,i)=>DURATIONS[i]>0));assert.equal(h.manager.advances,0)
     h.level.update(0.01);h.level.update(100);assert.equal(h.manager.advances,1)
     t.diagnostic('Impact world '+JSON.stringify(h.level.core.impact)+'; NDC '+JSON.stringify(h.level.core.impact.clone().project(h.level.core.camera)))
   } finally {h.restore()}
@@ -503,12 +513,14 @@ test('Ending: full story keeps the camera and light count fixed while river, ste
 
 test('Ending: skip from every phase produces one complete transition and an empty open doorway', () => {
   for(let phase=0;phase<PHASES.length-1;phase++) {
+    if(DURATIONS[phase]===0)continue // Cuts execute atomically with the following phase.
     const h=harness()
     try {
       h.level.update(0);const skip=h.skip
       const elapsed=DURATIONS.slice(0,phase).reduce((sum,value)=>sum+value,0)+0.00001
       h.level.update(elapsed);assert.equal(h.level.phase,PHASES[phase])
       skip();skip()
+      assert.equal(h.level.activeShot,0)
       assert.equal(h.player.mesh.visible,false);assert.equal(h.level.door.openness,1)
       assert.equal(h.level.core.payload.visible,false);assert.equal(h.level.core.trail.visible,false)
       assert.equal(h.level.core.flash.visible,false);assert.equal(Number(h.level.core.screen.style.opacity),0)
@@ -535,6 +547,49 @@ test('Ending: clean doorway bypasses damage and sag inside the protected front z
   } finally {h.restore()}
 })
 
+test('Ending: doorway framing, gorge exclusion, owned plates and faithful core construction', t => {
+  const h=harness()
+  try {
+    h.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE)
+    h.scene.updateMatrixWorld(true)
+    const carriage=h.scene.getObjectByName('ending-carriage-1')
+    const bottom=h.level.door.threshold.clone().applyMatrix4(carriage.matrixWorld)
+    const top=h.level.door.threshold.clone().add(new THREE.Vector3(0,2.1,0)).applyMatrix4(carriage.matrixWorld)
+    const framing=Math.abs(top.project(h.level.shots[1]).y-bottom.project(h.level.shots[1]).y)/2
+    assert.ok(framing>=0.4 && framing<=0.5,'door frame fraction '+framing)
+    const c=h.level.shots[2]
+    const frustum=new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(c.projectionMatrix,c.matrixWorldInverse))
+    h.scene.getObjectByName('ending-train').traverse(node=>{
+      if(!node.isMesh && !node.isSprite && !node.isPoints)return
+      const box=new THREE.Box3().setFromObject(node)
+      assert.equal(frustum.intersectsBox(box),false,'C excludes '+node.name)
+    })
+    const detectiveBox=new THREE.Box3().setFromCenterAndSize(
+      h.level.door.threshold.clone().applyMatrix4(carriage.matrixWorld).add(new THREE.Vector3(0,0.9,0)),new THREE.Vector3(1,2,1))
+    assert.equal(frustum.intersectsBox(detectiveBox),false)
+    for(let i=0;i<3;i++) {
+      const shot=h.level.shots[i],aim=shot.getWorldDirection(new THREE.Vector3()).add(shot.position)
+      t.diagnostic(`Shot ${'ABC'[i]} position ${JSON.stringify(shot.position)}; aim ${JSON.stringify(aim)}; FOV ${shot.fov}; aspect ${shot.aspect}`)
+    }
+    t.diagnostic(`B doorway ${framing*100}%; C train/door and conservative detective bounds excluded`)
+    const design=h.level.core.design
+    assert.equal(design.getObjectByName('chrono-core-orb').geometry.type,'IcosahedronGeometry')
+    assert.equal(design.getObjectByName('chrono-core-orb').geometry.parameters.detail,2)
+    assert.equal(design.getObjectByName('chrono-core-orb').material.uniforms.uBaseColor.value.getHex(),0x0284c7)
+    assert.equal(design.getObjectByName('chrono-core-ring-b').geometry.parameters.radius,0.58)
+    assert.equal(design.getObjectByName('chrono-core-base').material.metalness,0.92)
+    assert.equal(design.scale.x,0.13)
+    const textures=h.level.plate.textures,counts=[0,0,0]
+    textures.forEach((texture,index)=>texture.addEventListener('dispose',()=>counts[index]++))
+    const other=harness()
+    try {
+      assert.notEqual(other.level.core.design.getObjectByName('chrono-core-orb').material,
+        design.getObjectByName('chrono-core-orb').material)
+    } finally {other.restore()}
+    h.level.dispose();h.level.dispose();assert.deepEqual(counts,[1,1,1])
+  } finally {h.restore()}
+})
+
 test('Ending: real Throw skeleton holds and releases the core, completes its visible arc and restores the player', async t => {
   const player=createPlayer()
   function parseThrow() {
@@ -554,7 +609,7 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
   await Promise.resolve()
   try {
     h.level.update(0)
-    h.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE+BEAT+DOOR_OPEN)
+    h.level.update(ENDING_FADE_IN+APPROACH+BRAKE+SETTLE+BEAT+DOOR_HOLD+DOOR_OPEN)
     assert.equal(h.level.phase,'stepOut');assert.equal(player.mesh.visible,true)
     assert.equal(h.level.core.payload.parent.name,'mixamorigRightHand')
     assert.ok(h.level.core.payload.getWorldScale(new THREE.Vector3()).distanceTo(new THREE.Vector3(1,1,1))<1e-6)
@@ -568,19 +623,48 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     player.updateVisual(0.011);h.level.update(0.011)
     assert.equal(h.level.core.payload.parent,h.level.core.root)
     const core=h.level.core,projected=new THREE.Vector3()
-    for(let i=0;i<=100;i++) {
-      core.pointAt(core.flightDuration*i/100,projected).project(core.camera)
-      assert.ok(Math.abs(projected.x)<1 && Math.abs(projected.y)<1 && projected.z>-1 && projected.z<1,
-        'trajectory remains in frame: '+JSON.stringify(projected))
+    let first=null,last=null,previous=null,entry=null,previousCHeight=Infinity
+    const worldPoint=new THREE.Vector3()
+    for(let i=0;i<=400;i++) {
+      const time=core.flightDuration*i/400
+      core.pointAt(time,worldPoint)
+      if(previous) assert.ok(worldPoint.distanceTo(previous)<1,'continuous ballistic samples')
+      previous=worldPoint.clone()
+      projected.copy(worldPoint).project(core.camera)
+      if(time>=RELEASE_TO_WHIP+WHIP_SECONDS && Math.abs(projected.x)<1 && Math.abs(projected.y)<1 && projected.z>-1 && projected.z<1)
+        entry??={time,ndc:projected.clone()}
+      if(time>=RELEASE_TO_WHIP+WHIP_SECONDS && Math.abs(projected.x)<=0.85 && Math.abs(projected.y)<=0.85 && projected.z>-1 && projected.z<1) {
+        first??={time,ndc:projected.clone()};last=time
+      }
+      if(first) {
+        assert.ok(Math.abs(projected.x)<=0.85 && Math.abs(projected.y)<=0.85 && projected.z>-1 && projected.z<1,'C remains inside safe frame through impact')
+        assert.ok(projected.y<=previousCHeight,'core descends through C')
+        previousCHeight=projected.y
+      }
     }
+    assert.ok(entry && entry.ndc.y>0.97 && Math.abs(entry.ndc.x)<0.95,'C entry is through the top, not the side: '+JSON.stringify(entry))
+    assert.ok(first.ndc.y>0.8,'core enters safe frame from above')
+    assert.ok(first && last-first.time>=1.5,'C visibility at least 1.5 seconds')
+    const horizontalSpeed=Math.hypot(core.velocity.x,core.velocity.z)
+    const launchAngle=THREE.MathUtils.radToDeg(Math.atan2(core.velocity.y,horizontalSpeed))
+    assert.ok(Math.abs(launchAngle-50)<0.01,'solved upward launch angle '+launchAngle)
+    const closestTime=((core.camera.position.x-core.start.x)*core.velocity.x+
+      (core.camera.position.z-core.start.z)*core.velocity.z)/(horizontalSpeed*horizontalSpeed)
+    core.pointAt(closestTime,worldPoint)
+    assert.ok(worldPoint.y>core.camera.position.y,'lob passes above C camera elevation')
+    const beforeWhip=core.pointAt(RELEASE_TO_WHIP,worldPoint).project(h.level.shots[1])
+    assert.ok(beforeWhip.y>1 && beforeWhip.z>-1 && beforeWhip.z<1,'B exit is through its top before whip')
+    const exit=core.pointAt(RELEASE_TO_WHIP+WHIP_SECONDS,worldPoint).project(h.level.shots[1])
+    assert.ok(Math.abs(exit.x)>1 || Math.abs(exit.y)>1 || exit.z>1 || exit.z< -1,'core leaves B by end of whip')
+    t.diagnostic('C top entry '+JSON.stringify(entry)+'; first safe-frame sample '+JSON.stringify(first)+'; visible '+(last-first.time)+' seconds; B exit '+JSON.stringify(exit))
+    t.diagnostic('Solved launch angle '+launchAngle+' degrees; speed '+core.velocity.length()+' m/s; closest-to-C time '+closestTime+' s')
     core.pointAt(core.flightDuration,projected);assert.ok(projected.distanceTo(core.impact)<0.5)
     assert.ok(Math.abs(core.impact.y-GORGE_FLOOR_Y)<=1e-6)
     projected.copy(core.impact).project(core.camera)
     assert.ok(Math.abs(projected.x-RIVER_TARGET_NDC.x)<0.03 && Math.abs(projected.y-RIVER_TARGET_NDC.y)<0.03)
     t.diagnostic('Launch '+JSON.stringify(core.start)+'; velocity '+JSON.stringify(core.velocity)+'; flight '+core.flightDuration+' s')
-    t.diagnostic('Impact world '+JSON.stringify(core.impact)+'; NDC '+JSON.stringify(projected)+'; all 101 arc samples inside frame')
-    // FBX duration is 2.200000047683716, slightly beyond the nominal THROW constant.
-    const throughImpact=visual.actions.throw.getClip().duration-THROW_RELEASE-0.001+FALL+1/60
+    t.diagnostic('Impact world '+JSON.stringify(core.impact)+'; NDC '+JSON.stringify(projected))
+    const throughImpact=core.flightDuration-0.001+1/60
     player.updateVisual(throughImpact)
     h.level.update(throughImpact)
     assert.equal(h.level.phase,'flash');assert.equal(core.light.intensity,0)
@@ -588,7 +672,7 @@ test('Ending: real Throw skeleton holds and releases the core, completes its vis
     assert.equal(player.mesh.visible,true)
     h.level.update(SCREEN_FLASH_PEAK);assert.equal(player.mesh.visible,false)
     assert.ok(Number(core.screen.style.opacity)>=0.84)
-    h.level.update(FLASH_SECONDS-SCREEN_FLASH_PEAK+EMPTY_HOLD)
+    h.level.update(FLASH_SECONDS-SCREEN_FLASH_PEAK+SNAP_HOLD+WHIP_SECONDS+EMPTY_HOLD+WIDE_HOLD)
     assert.equal(h.level.phase,'fadeOut');assert.equal(player.mesh.visible,false)
     h.level.dispose()
     assert.equal(player.mesh.visible,oldVisible)
@@ -820,12 +904,12 @@ test('Ending: story sounds share the master bus and skip/dispose stop every sour
       h.level.update(0)
       h.level.update(ENDING_FADE_IN+APPROACH+0.1)
       assert.equal(mock.sources.length,5,'braking sources start in game')
-      h.level.update(BRAKE-0.1+SETTLE+BEAT+0.000001)
+      h.level.update(BRAKE-0.1+SETTLE+BEAT+DOOR_HOLD+0.000001)
       assert.equal(h.level.phase,'doorOpen');assert.equal(mock.sources.length,7,'latch and slide start at door opening')
       h.level.update(DOOR_OPEN+STEP_OUT+HOLD_CORE)
       assert.equal(h.level.phase,'throw');assert.equal(mock.sources.length,8,'whoosh starts at throw')
-      h.level.update(THROW+FALL)
-      assert.equal(h.level.phase,'flash');assert.equal(mock.sources.length,12,'impact layers and ambient start at impact')
+      h.level.update(THROW_RELEASE+RELEASE_TO_WHIP+WHIP_SECONDS+FALL)
+      assert.equal(h.level.phase,'flash');assert.equal(mock.sources.length,13,'whip, impact layers and ambient start at impact')
       assert.ok(mock.sources.every(source=>source.started),'every created sound is started')
       const reachesMaster=(node,seen=new Set())=>node===mock.master || (!seen.has(node) && (seen.add(node),node.destinations.some(next=>reachesMaster(next,seen))))
       assert.ok(mock.sources.slice(5).every(source=>reachesMaster(source)),'every story source reaches the shared master')

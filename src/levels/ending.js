@@ -5,22 +5,53 @@ import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAM
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
 import { createEndingAudio } from '../systems/ending-audio.js'
 import { brakeIntensity } from '../environment/ending-sparks.js'
-import { createEndingCore, CORE_FALL_SECONDS, FLASH_SECONDS, SCREEN_FLASH_PEAK } from '../environment/ending-core.js'
+import { createEndingCore, CORE_FLIGHT_SECONDS, FLASH_SECONDS, SCREEN_FLASH_PEAK } from '../environment/ending-core.js'
 import { DOOR_MOTION_SECONDS } from '../environment/ending-door.js'
+
+export const DOOR_CAMERA_DISTANCE = 6.5
+export const GORGE_CAMERA_DISTANCE = 15
+export const GORGE_CAMERA_PITCH = 55
+export const NEW_PLATE_ASPECT = 1672 / 941
+
+export function createEndingShots(carriage, door) {
+  carriage.updateWorldMatrix(true, false)
+  const centre = door.threshold.clone().add(new THREE.Vector3(0, 1.05, 0)).applyMatrix4(carriage.matrixWorld)
+  const outward = new THREE.Vector3(-1, 0, 0).transformDirection(carriage.matrixWorld)
+  const horizontal = outward.clone(); horizontal.y = 0; horizontal.normalize()
+  const a = new THREE.PerspectiveCamera(PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT, 0.1, 1800)
+  a.position.copy(PLATE_CAMERA_POSITION); a.lookAt(PLATE_CAMERA_TARGET)
+  const b = new THREE.PerspectiveCamera(40, NEW_PLATE_ASPECT, 0.1, 1800)
+  b.position.copy(centre).addScaledVector(outward, DOOR_CAMERA_DISTANCE); b.position.y -= 0.3
+  b.lookAt(centre)
+  // Off-axis lens places the doorway slightly left without tilting the horizon.
+  b.setViewOffset(1672, 941, 90, 0, 1672, 941)
+  const c = new THREE.PerspectiveCamera(45, NEW_PLATE_ASPECT, 0.1, 1800)
+  const rail = new THREE.Vector3(0, 0, door.threshold.z).applyMatrix4(carriage.matrixWorld)
+  c.position.copy(rail).addScaledVector(horizontal, GORGE_CAMERA_DISTANCE); c.position.y += 2
+  const down = THREE.MathUtils.degToRad(GORGE_CAMERA_PITCH)
+  c.lookAt(c.position.clone().addScaledVector(horizontal, Math.cos(down)).add(new THREE.Vector3(0, -Math.sin(down), 0)))
+  for (const shot of [a,b,c]) shot.updateMatrixWorld(true)
+  return [a,b,c]
+}
 
 export const ENDING_FADE_IN = 1.0
 export const TRAIN_START_NOSE_Z = 140
 export const BRAKE = 4.5
 export const APPROACH = (TRAIN_START_NOSE_Z - STOP_NOSE_Z - TRAIN_SPEED * BRAKE / 2) / TRAIN_SPEED
 export const SETTLE = 1.6
-export const BEAT = 0.8
+export const BEAT = 0.6
+export const DOOR_HOLD = 0.6
+export const WHIP_SECONDS = 0.3
+export const RELEASE_TO_WHIP = 0.3
+export const SNAP_HOLD = 1.2
+export const WIDE_HOLD = 2.5
 export const DOOR_OPEN = 0.8
 export const STEP_OUT = 1.0
-export const HOLD_CORE = 0.6
+export const HOLD_CORE = 0.8
 export const THROW = 2.2 // Actual loaded Throw clip duration replaces this fallback.
 export const THROW_RELEASE = 24 / 30
-export const FALL = CORE_FALL_SECONDS
-export const EMPTY_HOLD = 3.0
+export const FALL = CORE_FLIGHT_SECONDS - RELEASE_TO_WHIP - WHIP_SECONDS
+export const EMPTY_HOLD = 2.5
 export const FADE_OUT = 1.5
 export const TITLE_HOLD = 2.5
 const TITLE_FADE = 0.6
@@ -31,8 +62,8 @@ export const ENDING_CAMERA_POSITION = PLATE_CAMERA_POSITION
 export const ENDING_CAMERA_TARGET = PLATE_CAMERA_TARGET
 export const ENDING_CAMERA_FOV = PLATE_CAMERA_FOV
 export const WORLD_ALIGN_DEFAULTS = Object.freeze({ x: -0.75, y: -3.25, z: -0.75, yaw: -20.25, pitch: -2.75, roll: 0, scale: 1 })
-export const PHASES = Object.freeze(['fadeIn','approach','braking','settle','beat','doorOpen','stepOut','holdCore','throw','fall','flash','emptyHold','fadeOut','title','done'])
-export const DURATIONS = Object.freeze([ENDING_FADE_IN,APPROACH,BRAKE,SETTLE,BEAT,DOOR_OPEN,STEP_OUT,HOLD_CORE,THROW,FALL,FLASH_SECONDS,EMPTY_HOLD,FADE_OUT,TITLE_FADE+TITLE_HOLD])
+export const PHASES = Object.freeze(['fadeIn','approach','braking','settle','beat','cutB','doorHold','doorOpen','stepOut','holdCore','throw','whipDown','fallC','flash','snapHold','whipUp','emptyHold','cutA','wideHold','fadeOut','title','done'])
+export const DURATIONS = Object.freeze([ENDING_FADE_IN,APPROACH,BRAKE,SETTLE,BEAT,0,DOOR_HOLD,DOOR_OPEN,STEP_OUT,HOLD_CORE,THROW_RELEASE+RELEASE_TO_WHIP,WHIP_SECONDS,FALL,FLASH_SECONDS,SNAP_HOLD,WHIP_SECONDS,EMPTY_HOLD,0,WIDE_HOLD,FADE_OUT,TITLE_FADE+TITLE_HOLD])
 
 export function createEndingLevel({ scene, player, camera, renderCamera, hud, beginCinematic, advance, renderer, post = null,
   audioFactory = createEndingAudio }) {
@@ -56,6 +87,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const previousEnvironmentIntensity = scene.environmentIntensity
   const previousFov = renderCamera?.fov
   const previousAspect = renderCamera?.aspect
+  const previousCameraView = renderCamera?.view ? { ...renderCamera.view } : null
   const previousPlayer = {visible:player.mesh.visible,position:player.mesh.position.clone(),
     quaternion:player.mesh.quaternion.clone(),scale:player.mesh.scale.clone(),view:player.getCinematicView?.() ?? null}
   let visual=null,visualReady=true,actionStates=[],throwHandle=null,throwDuration=2.2
@@ -68,7 +100,6 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         weight:action.getEffectiveWeight(),speed:action.getEffectiveTimeScale(),paused:action.paused,
         enabled:action.enabled,running:action.isRunning()}))
       throwDuration=visual?.actions.throw?.getClip().duration ?? 2.2
-      durations[PHASES.indexOf('throw')]=throwDuration
       visualReady=true
     })
   }
@@ -91,11 +122,41 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   worldAlign.scale.setScalar(WORLD_ALIGN_DEFAULTS.scale)
   worldAlign.add(train.root); scene.add(worldAlign)
   train.update(START_CENTER_Z, 0, -1)
+  train.update(STOP_CENTER_Z, 0, -1, SETTLE)
+  const shots = createEndingShots(train.carriages[0], train.door)
+  core.setImpactCamera(shots[2])
+  train.update(START_CENTER_Z, 0, -1)
+  let activeShot = 0
   const viewRotation = new THREE.Quaternion().setFromRotationMatrix(
     new THREE.Matrix4().lookAt(ENDING_CAMERA_POSITION, ENDING_CAMERA_TARGET, new THREE.Vector3(0, 1, 0)))
   const view = { mode: 'fixed', position: ENDING_CAMERA_POSITION.clone(), target: ENDING_CAMERA_TARGET.clone(),
     initialPosition: ENDING_CAMERA_POSITION.clone(), initialRotation: viewRotation.clone(),
     targetRotation: viewRotation, moveSeconds: 1, moveElapsed: 0, allowPress: false }
+  function selectShot(index) {
+    activeShot = index
+    const shot = shots[index]
+    view.position.copy(shot.position); view.initialPosition.copy(shot.position)
+    view.initialRotation.copy(shot.quaternion); view.targetRotation.copy(shot.quaternion)
+    view.moveElapsed = view.moveSeconds
+    shotFov = shot.fov
+    gorge.plate.setShot(shot, index)
+    if (renderCamera) {
+      renderCamera.position.copy(shot.position); renderCamera.quaternion.copy(shot.quaternion)
+      renderCamera.fov = shot.fov; renderCamera.aspect = shot.aspect
+      renderCamera.view = shot.view ? { ...shot.view } : null
+      renderCamera.updateProjectionMatrix(); renderCamera.updateMatrixWorld(true)
+    }
+  }
+  function updateWhip(phase, time) {
+    const down = phase === 'whipDown', t = Math.min(1, time / WHIP_SECONDS)
+    const from = down ? 1 : 2, to = down ? 2 : 1
+    if (activeShot !== (t < 0.5 ? from : to)) selectShot(t < 0.5 ? from : to)
+    gorge.plate.setWhip(from, to, t*t*(3-2*t), Math.sin(Math.PI*t)*1.8, down ? -1 : 1)
+    const visible = time < 0.06 || time > 0.24
+    worldAlign.visible = visible
+    core.root.visible = visible
+    player.mesh.visible = visible && down
+  }
   function placeDetective() {
     train.carriages[0].updateWorldMatrix(true,false)
     inside.copy(train.door.inside).applyMatrix4(train.carriages[0].matrixWorld)
@@ -114,7 +175,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if(phase==='throw' && !launched && time>=Math.min(THROW_RELEASE,throwDuration)-1e-9) {
       player.mesh.updateWorldMatrix(true,true)
       hand.getWorldPosition(releasePosition)
-      core.launch(throwHandle?.releasePosition ?? releasePosition,throwDuration-Math.min(THROW_RELEASE,throwDuration)+FALL);launched=true
+      core.launch(throwHandle?.releasePosition ?? releasePosition,CORE_FLIGHT_SECONDS);launched=true
     }
     if(phase==='flash' && time>=SCREEN_FLASH_PEAK) player.mesh.visible=false
   }
@@ -145,8 +206,9 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   function setShotFov(value) {
     if (disposed) return shotFov
     shotFov = gorge.plate.setFov(value)
+    shots[activeShot].fov = shotFov; shots[activeShot].updateProjectionMatrix()
     if (renderCamera) {
-      renderCamera.fov = shotFov; renderCamera.aspect = PLATE_CAMERA_ASPECT; renderCamera.updateProjectionMatrix()
+      renderCamera.fov = shotFov; renderCamera.aspect = shots[activeShot].aspect; renderCamera.updateProjectionMatrix()
     }
     warmCamera.fov = shotFov; warmCamera.updateProjectionMatrix()
     return shotFov
@@ -154,9 +216,13 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   const savedViewport = new THREE.Vector4()
   const savedScissor = new THREE.Vector4()
   let budgetLogged = false
-  let alignMode = false, removeAlignment = null
+  let alignMode = false, removeAlignment = null, holdMode = null
   if (import.meta.env?.DEV) {
     const parameters = new URLSearchParams(globalThis.location?.search ?? '')
+    if(parameters.get('start')==='ending' && ['door','gorge'].includes(parameters.get('hold'))) {
+      holdMode=parameters.get('hold');phaseIndex=PHASES.indexOf('beat')
+      timeline=ENDING_FADE_IN+APPROACH+BRAKE+SETTLE
+    }
     if(parameters.get('start')==='ending' && parameters.get('from')==='stop') {
       phaseIndex=PHASES.indexOf('beat');timeline=ENDING_FADE_IN+APPROACH+BRAKE+SETTLE
     }
@@ -250,28 +316,34 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         if (time && !savedTimes.has(time)) savedTimes.set(time,time.value)
       }
     })
-    if (gorge.plate.ready) renderer.initTexture?.(gorge.plate.texture)
+    for(const texture of gorge.plate.textures) renderer.initTexture?.(texture)
+    const savedShot=activeShot
     try {
       sparkIntensity.value = 1
       scene.updateMatrixWorld(true)
       renderer.compile(scene, warmCamera)
       renderer.setRenderTarget(target)
       renderer.setScissorTest(false)
-      train.door.setOpen(0)
-      for (const uniform of savedTimes.keys()) uniform.value = 4.23
-      renderer.render(scene, warmCamera)
-      train.door.setOpen(1)
-      for (const uniform of savedTimes.keys()) uniform.value = 0.19
-      renderer.render(scene, warmCamera)
-      core.launch(threshold,THROW-THROW_RELEASE+FALL);core.update(0,0.3)
-      renderer.render(scene,warmCamera)
-      core.update(0,-1,0.25);renderer.render(scene,warmCamera)
+      for(let index=0;index<shots.length;index++) {
+        selectShot(index);warmCamera.copy(shots[index]);warmCamera.updateMatrixWorld(true)
+        core.hold(hand);core.update(0)
+        train.door.setOpen(0)
+        for (const uniform of savedTimes.keys()) uniform.value = 4.23
+        renderer.render(scene, warmCamera)
+        train.door.setOpen(1)
+        for (const uniform of savedTimes.keys()) uniform.value = 0.19
+        renderer.render(scene, warmCamera)
+        core.launch(threshold,CORE_FLIGHT_SECONDS);core.update(0,2)
+        renderer.render(scene,warmCamera)
+        core.update(0,-1,0.25);renderer.render(scene,warmCamera)
+      }
     } finally {
       sparkIntensity.value = previousSparkIntensity
       core.reset();train.door.setOpen(savedDoor)
       train.root.position.z=savedTrainZ;train.locomotive.rotation.x=savedPitch
       player.mesh.position.copy(savedPlayerPosition);player.mesh.quaternion.copy(savedPlayerQuaternion)
       player.mesh.visible=savedPlayerVisible
+      selectShot(savedShot)
       for (const [uniform, value] of savedTimes) uniform.value = value
       for (const [node, culling] of savedCulling) node.frustumCulled = culling
       renderer.setRenderTarget(previousTarget)
@@ -287,6 +359,11 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     phaseTime = 0
     if (import.meta.env?.DEV) console.info(`[ending +${timeline.toFixed(3)}s @${(performance.now() - startedAt).toFixed(0)}ms] ${PHASES[index]}`)
     const phase=PHASES[index]
+    if(phase==='cutB') selectShot(1)
+    if(phase==='cutA' || phase==='fadeOut') selectShot(0)
+    if(phase==='whipDown' || phase==='whipUp') audio.whip?.()
+    if(phase==='fallC') {selectShot(2);worldAlign.visible=true;core.root.visible=true;player.mesh.visible=true}
+    if(phase==='emptyHold') {selectShot(1);worldAlign.visible=true;core.root.visible=true}
     if(phase==='doorOpen') audio.door?.()
     if(phase==='stepOut') placeDetective()
     if(phase==='holdCore') {
@@ -312,6 +389,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     player.cancelScriptedWalk?.();player.resetInteractionAnimation?.()
     if(throwHandle) throwHandle.cancelled=true
     player.mesh.visible=false;core.reset();train.door.setOpen(1)
+    worldAlign.visible=true;core.root.visible=true;selectShot(0)
     enterPhase(PHASES.indexOf('fadeOut'))
   }
 
@@ -338,14 +416,16 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if(phaseIndex>PHASES.indexOf('doorOpen')) train.door.setOpen(1)
     updateDetective(phase,phaseTime,delta)
     const flightTime=phase==='throw' && launched ? Math.max(0,phaseTime-Math.min(THROW_RELEASE,throwDuration))
-      : phase==='fall' ? throwDuration-Math.min(THROW_RELEASE,throwDuration)+phaseTime : -1
+      : phase==='whipDown' ? RELEASE_TO_WHIP+phaseTime
+      : phase==='fallC' ? RELEASE_TO_WHIP+WHIP_SECONDS+phaseTime : -1
     core.update(delta,flightTime,phase==='flash'?phaseTime:-1)
+    if(phase==='whipDown' || phase==='whipUp') updateWhip(phase,phaseTime)
   }
 
   return {
     objective: '', checkpoint: { position: new THREE.Vector3(0, 0, STOP_CENTER_Z), yaw: 0 },
     isCinematic: true,
-    setShotFov, core, door:train.door,
+    setShotFov, core, plate:gorge.plate, door:train.door, shots, get activeShot(){return activeShot},
     get phase(){return PHASES[phaseIndex]},get phaseTime(){return phaseTime},
     update(delta) {
       if (disposed || advanced) return
@@ -364,14 +444,17 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         if (!alignMode) { hud.showCinematicSkip?.(skip); skipControl.show(skip) }
         if (import.meta.env?.DEV) console.info('[ending] fadeIn')
       }
-      if(!warmed&&visualReady){warmScene();warmed=true}
+      if(!warmed&&visualReady&&gorge.plate.ready){warmScene();warmed=true}
       // Settings subscribers may run while paused; keep this shot's lens static.
-      if (renderCamera && (renderCamera.fov !== shotFov || renderCamera.aspect !== PLATE_CAMERA_ASPECT)) {
+      if (renderCamera && (renderCamera.fov !== shotFov || renderCamera.aspect !== shots[activeShot].aspect)) {
         setShotFov(shotFov)
       }
       let remaining = gorge.plate.ready && visualReady && !alignMode ? Math.max(0, delta) : 0
       while (remaining > 0 && !advanced) {
+        if(holdMode==='door' && PHASES[phaseIndex]==='holdCore') break
+        if(holdMode==='gorge' && PHASES[phaseIndex]==='fallC' && phaseTime>=FALL-0.5-1e-9) break
         let boundary=durations[phaseIndex]
+        if(holdMode==='gorge' && PHASES[phaseIndex]==='fallC') boundary=FALL-0.5
         if(PHASES[phaseIndex]==='throw' && phaseTime<Math.min(THROW_RELEASE,throwDuration)-1e-9)
           boundary=Math.min(boundary,Math.min(THROW_RELEASE,throwDuration))
         if(PHASES[phaseIndex]==='flash' && phaseTime<SCREEN_FLASH_PEAK-1e-9) boundary=SCREEN_FLASH_PEAK
@@ -401,6 +484,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       if (previousPostEnabled !== undefined) post.setEnabled(previousPostEnabled)
       if (renderCamera && previousFov !== undefined) {
         renderCamera.fov = previousFov; renderCamera.aspect = previousAspect; renderCamera.updateProjectionMatrix()
+        renderCamera.view = previousCameraView; renderCamera.updateProjectionMatrix()
       }
       hud.hideCinematicSkip?.()
       overlay.remove()
