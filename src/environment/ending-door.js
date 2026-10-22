@@ -13,10 +13,20 @@ export const RUN_IN = 1
 export const RUN_RADIUS = 0.4
 export const RUN_CORRIDOR = 3.4
 export const RUN_DISTANCE = RUN_IN+Math.PI*RUN_RADIUS/2+RUN_CORRIDOR
+export const RIM_COLOR = 0xffb066
+export const RIM_INTENSITY = 4
+export const RIM_RANGE = 6
+export const RIM_DECAY = 2
+export const RIM_X = -0.35
+export const RIM_Y = 3.45
+export const RIM_Z = 0.3
 
 export function createEndingDoor(pivot, source) {
   const root = new THREE.Group(); root.name = 'ending-doorway'; pivot.add(root)
   root.position.z = DOOR_Z
+  const rim = new THREE.PointLight(RIM_COLOR, 0, RIM_RANGE, RIM_DECAY)
+  rim.name = 'ending-vestibule-rim'; rim.castShadow = false
+  rim.position.set(RIM_X, RIM_Y, RIM_Z); root.add(rim)
   // Source materials and texture wrappers are already ending-owned clones.
   const paint = source.paint.clone(), brass = source.brass.clone()
   // Local copies of the damaged cab's look; no Level 3 builders or resources.
@@ -172,7 +182,7 @@ export function createEndingDoor(pivot, source) {
     clearanceOpenness=openness;clearanceCache={doorwayMeshes,sweptMeshes}
     return clearanceCache
   }
-  return {root,hinges,hole:ENDING_DOOR_HOLE,setOpen,get openness(){return openness},
+  return {root,hinges,rim,hole:ENDING_DOOR_HOLE,setOpen,get openness(){return openness},
     standingVolume,standingIntersections,sampleRun,sampleRunInto,fullyOccluded,clearanceCounts,runDistance:RUN_DISTANCE,
     runEnd:sampleRun(RUN_DISTANCE).position,
     threshold:new THREE.Vector3(-1.25,DOOR_FLOOR_Y,DOOR_Z)}

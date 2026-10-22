@@ -22,6 +22,10 @@ import { createCarriageEnvironment } from '../src/environment/carriages.js'
 import { disposeObject } from '../src/core/dispose.js'
 import { createEndingAudio } from '../src/systems/ending-audio.js'
 import { SPARK_COUNT } from '../src/environment/ending-sparks.js'
+import { MOON_INTENSITY, HEMISPHERE_INTENSITY, DOOR_MOON_INTENSITY, DOOR_HEMISPHERE_INTENSITY,
+  DOOR_MOON_ELEVATION_DEGREES, DOOR_MOON_LEFT_DEGREES } from '../src/environment/ending-gorge.js'
+import { RIM_COLOR, RIM_INTENSITY, RIM_RANGE, RIM_DECAY, RIM_X, RIM_Y, RIM_Z } from '../src/environment/ending-door.js'
+import { CORE_LIGHT_INTENSITY, CORE_LIGHT_RANGE, DOOR_CORE_LIGHT_INTENSITY, DOOR_CORE_LIGHT_RANGE } from '../src/environment/ending-core.js'
 
 const TOTAL = DURATIONS.reduce((sum,value)=>sum+value,0)
 
@@ -540,6 +544,57 @@ test('Ending: peak budget reserves twelve detective draws with every ending effe
     })
     assert.ok(calls<=168,`peak draws: ${calls}`);assert.ok(triangles<=220000,`peak triangles: ${triangles}`)
     t.diagnostic(`Conservative peak without detective, with open doors and all core effects together: ${calls} draw calls, ${triangles} triangles (before culling); twelve detective draws reserved`)
+  } finally {h.restore()}
+})
+
+test('Ending: B key, fill, rim and visible core boost restore exactly at cuts and dispose the rim', () => {
+  const h=harness()
+  const moon=h.scene.getObjectByName('ending-moonlight'),fill=h.scene.getObjectByName('ending-hemisphere')
+  const rim=h.level.door.rim,core=h.level.core
+  const originalPosition=moon.position.clone(),originalTarget=moon.target.position.clone()
+  const originalDoorPosition=h.level.shots[1].position.clone()
+  const countLights=()=>{let count=0;h.scene.traverse(node=>{if(node.isLight)count++});return count}
+  const lightCount=countLights(),seen=new Set()
+  let rimDisposals=0,sawCoreBoost=false,sawThrownExit=false,sawSalute=false
+  rim.addEventListener('dispose',()=>rimDisposals++)
+  try {
+    assert.equal(lightCount,4,'exactly one additional light exists from creation')
+    assert.equal(rim.intensity,0);assert.equal(rim.color.getHex(),RIM_COLOR)
+    assert.equal(rim.distance,RIM_RANGE);assert.equal(rim.decay,RIM_DECAY);assert.equal(rim.castShadow,false)
+    assert.deepEqual(rim.position,new THREE.Vector3(RIM_X,RIM_Y,RIM_Z))
+    const check=()=>{
+      const shot=h.level.activeShot,phase=h.level.phase
+      seen.add(shot);assert.equal(countLights(),lightCount)
+      if(shot===1) {
+        assert.equal(moon.intensity,DOOR_MOON_INTENSITY);assert.equal(fill.intensity,DOOR_HEMISPHERE_INTENSITY)
+        assert.equal(rim.intensity,RIM_INTENSITY)
+        const direction=moon.position.clone().sub(moon.target.position).normalize()
+        assert.ok(Math.abs(THREE.MathUtils.radToDeg(Math.asin(direction.y))-DOOR_MOON_ELEVATION_DEGREES)<1e-10)
+        // B is level in carriage coordinates; derive camera-left independently.
+        const front=originalDoorPosition.clone().sub(moon.target.position);front.y=0;front.normalize()
+        const left=new THREE.Vector3().crossVectors(front,new THREE.Vector3(0,1,0))
+        const horizontal=direction.clone();horizontal.y=0;horizontal.normalize()
+        assert.ok(Math.abs(THREE.MathUtils.radToDeg(Math.atan2(horizontal.dot(left),horizontal.dot(front)))-DOOR_MOON_LEFT_DEGREES)<1e-10)
+      } else {
+        assert.deepEqual(moon.position,originalPosition);assert.deepEqual(moon.target.position,originalTarget)
+        assert.equal(moon.intensity,MOON_INTENSITY);assert.equal(fill.intensity,HEMISPHERE_INTENSITY)
+        assert.equal(rim.intensity,0)
+      }
+      const ndc=core.light.position.clone().project(h.level.shots[1])
+      const boosted=shot===1&&(phase==='holdCore'||phase==='throw')&&Math.abs(ndc.x)<=1&&Math.abs(ndc.y)<=1&&Math.abs(ndc.z)<=1
+      assert.equal(core.light.distance,boosted?DOOR_CORE_LIGHT_RANGE:CORE_LIGHT_RANGE)
+      if(core.payload.visible&&phase!=='explosion'&&phase!=='impactHold') {
+        const clock=core.design.userData.shaderMats[0].uniforms.uTime.value
+        assert.equal(core.light.intensity,(boosted?DOOR_CORE_LIGHT_INTENSITY:CORE_LIGHT_INTENSITY)*(0.92+0.08*Math.sin(clock*2.3)))
+      }
+      if(phase==='holdCore'){assert.equal(boosted,true);sawCoreBoost=true}
+      if(phase==='throw'&&!boosted&&core.flight>0)sawThrownExit=true
+      if(phase==='salute'){sawSalute=true;assert.equal(core.light.intensity,0)}
+    }
+    h.level.update(0);check()
+    for(let elapsed=0;elapsed<TOTAL+0.05;elapsed+=1/30){h.level.update(1/30);check()}
+    assert.deepEqual([...seen].sort(),[0,1,2]);assert.ok(sawCoreBoost&&sawThrownExit&&sawSalute)
+    h.level.dispose();h.level.dispose();assert.equal(rimDisposals,1)
   } finally {h.restore()}
 })
 
@@ -1215,11 +1270,16 @@ test('Ending: three complete ownership cycles release GPU resources, warm target
       resources.set(resource,0);types[type]++
       resource.addEventListener('dispose',()=>resources.set(resource,resources.get(resource)+1))
     }
-    let target=null,audio
+    let target=null,audio,warmedDoorLighting=false
     const renderer={getRenderTarget:()=>target,getViewport:v=>v.set(0,0,1280,720),
       getScissor:v=>v.set(0,0,1280,720),getScissorTest:()=>false,
       setRenderTarget(value){target=value;if(value)watch(value,'target')},
-      setViewport(){},setScissor(){},setScissorTest(){},compile(){},render(){},
+      setViewport(){},setScissor(){},setScissorTest(){},compile(){},render(scene){
+        const moon=scene.getObjectByName('ending-moonlight'),rim=scene.getObjectByName('ending-vestibule-rim')
+        const fill=scene.getObjectByName('ending-hemisphere'),core=scene.getObjectByName('ending-core-light')
+        if(moon.intensity===DOOR_MOON_INTENSITY&&fill.intensity===DOOR_HEMISPHERE_INTENSITY&&rim.intensity===RIM_INTENSITY&&core.distance===DOOR_CORE_LIGHT_RANGE&&core.intensity>CORE_LIGHT_INTENSITY)
+          warmedDoorLighting=true
+      },
       initTexture(texture){watch(texture,'texture')}}
     const mock=fakeEndingAudioContext()
     const h=harness({renderer,audioFactory:()=>audio=createEndingAudio({context:()=>mock.context,output:()=>mock.master})})
@@ -1236,6 +1296,7 @@ test('Ending: three complete ownership cycles release GPU resources, warm target
       })
       h.level.update(0)
       assert.equal(types.target,1,'the shader warm-up target is exercised')
+      assert.equal(warmedDoorLighting,true,'warm-up renders the complete B lighting state before its cut')
       h.level.update(TOTAL+1)
       assert.equal(h.manager.advances,1)
       h.level.dispose();h.level.dispose()

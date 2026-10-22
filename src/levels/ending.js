@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { createEndingGorge } from '../environment/ending-gorge.js'
+import { createEndingGorge, DOOR_KEY_TARGET_HEIGHT } from '../environment/ending-gorge.js'
 import { createEndingTrain, TRAIN_SPEED, STOP_CENTER_Z, STOP_NOSE_Z } from '../environment/ending-train.js'
 import { createEndingTrack } from '../environment/ending-track.js'
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../shaders/ending-plate.js'
@@ -8,7 +8,7 @@ import { createEndingAudio } from '../systems/ending-audio.js'
 import { brakeIntensity } from '../environment/ending-sparks.js'
 import { createEndingCore, CORE_FLIGHT_SECONDS } from '../environment/ending-core.js'
 import { EXPLOSION_GROW, EXPLOSION_SECONDS } from '../shaders/ending-explosion.js'
-import { DOOR_MOTION_SECONDS } from '../environment/ending-door.js'
+import { DOOR_MOTION_SECONDS, RIM_INTENSITY } from '../environment/ending-door.js'
 export { prefetchEndingPaintings } from '../shaders/ending-plate.js'
 
 export const DOOR_CAMERA_DISTANCE = 6.6
@@ -139,6 +139,10 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
   train.update(START_CENTER_Z, 0, -1)
   train.update(STOP_CENTER_Z, 0, -1, SETTLE)
   const shots = createEndingShots(train.carriages[0], train.door)
+  const doorLightingTarget = train.door.threshold.clone()
+  doorLightingTarget.y += DOOR_KEY_TARGET_HEIGHT
+  doorLightingTarget.applyMatrix4(train.carriages[0].matrixWorld)
+  gorge.configureDoorLighting(shots[1], doorLightingTarget)
   gorge.plate.configureDoor(shots[1])
   const doorRotation=shots[1].quaternion.clone(),tiltRotation=new THREE.Quaternion(),tiltAxis=new THREE.Vector3(1,0,0)
   const doorPosition=shots[1].position.clone()
@@ -153,6 +157,8 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     targetRotation: viewRotation, moveSeconds: 1, moveElapsed: 0, allowPress: false }
   function selectShot(index) {
     activeShot = index
+    gorge.setShot(index)
+    train.door.rim.intensity = index === 1 ? RIM_INTENSITY : 0
     track.root.visible = index === 1
     const shot = shots[index]
     view.position.copy(shot.position); view.initialPosition.copy(shot.position)
@@ -379,7 +385,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
       renderer.setScissorTest(false)
       for(let index=0;index<shots.length;index++) {
         selectShot(index);warmCamera.copy(shots[index]);warmCamera.updateMatrixWorld(true)
-        core.hold(hand);core.update(0)
+        core.hold(hand);core.update(0,-1,-1,index===1?shots[1]:null)
         train.door.setOpen(0)
         for (const uniform of savedTimes.keys()) uniform.value = 4.23
         renderer.render(scene, warmCamera)
@@ -391,7 +397,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
         train.door.setOpen(1)
         for (const uniform of savedTimes.keys()) uniform.value = 0.19
         renderer.render(scene, warmCamera)
-        core.launch(threshold,CORE_FLIGHT_SECONDS);core.update(0,2)
+        core.launch(threshold,CORE_FLIGHT_SECONDS);core.update(0,2,-1,index===1?shots[1]:null)
         renderer.render(scene,warmCamera)
         core.update(0,-1,0.25);renderer.render(scene,warmCamera)
       }
@@ -484,7 +490,8 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     updateDetective(phase,phaseTime,delta)
     const flightTime=phase==='throw' && launched ? Math.max(0,phaseTime-Math.min(THROW_RELEASE,throwDuration))
       : phase==='fallC' ? RELEASE_TO_CUT+phaseTime : -1
-    core.update(delta,flightTime,phase==='explosion'?phaseTime:-1)
+    core.update(delta,flightTime,phase==='explosion'?phaseTime:-1,
+      activeShot===1&&(phase==='holdCore'||phase==='throw')?shots[1]:null)
     if(phase==='tiltUp')tiltDoor(phaseTime/TILT_UP)
   }
 

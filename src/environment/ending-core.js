@@ -6,6 +6,8 @@ import { createEndingExplosion } from '../shaders/ending-explosion.js'
 
 export const CORE_LIGHT_INTENSITY = 1.5
 export const CORE_LIGHT_RANGE = 4
+export const DOOR_CORE_LIGHT_INTENSITY = CORE_LIGHT_INTENSITY * 2
+export const DOOR_CORE_LIGHT_RANGE = 5
 export const RIVER_TARGET_NDC = Object.freeze({x:0.20,y:-0.62})
 export const GORGE_FLOOR_Y = -81.25 // 78 m below the aligned rail datum (-3.25).
 export const CORE_GRAVITY = -9.8
@@ -47,6 +49,7 @@ export function createEndingCore(scene) {
   // This light exists for the full level, even when the core is hidden.
   const light=new THREE.PointLight(0x54dcff,0,CORE_LIGHT_RANGE,2)
   light.name='ending-core-light';light.castShadow=false;root.add(light)
+  const lightNdc = new THREE.Vector3()
   const camera=new THREE.PerspectiveCamera(PLATE_CAMERA_FOV,PLATE_CAMERA_ASPECT,0.1,1800)
   camera.position.copy(PLATE_CAMERA_POSITION);camera.lookAt(PLATE_CAMERA_TARGET);camera.updateMatrixWorld(true)
   const ray=new THREE.Raycaster();ray.setFromCamera(RIVER_TARGET_NDC,camera)
@@ -76,7 +79,7 @@ export function createEndingCore(scene) {
   function pointAt(t,target) {return target.copy(start).addScaledVector(velocity,t).addScaledVector(gravity,t*t/2)}
   function reset() {
     root.attach(payload);payload.visible=false;trail.visible=false;explosion.update(-1)
-    light.intensity=0;flight=-1
+    light.intensity=0;light.distance=CORE_LIGHT_RANGE;flight=-1
   }
   function hold(hand) {
     hand.add(payload);payload.position.set(0,0,0);payload.quaternion.identity();payload.scale.setScalar(1)
@@ -92,7 +95,7 @@ export function createEndingCore(scene) {
     flight=0;payload.visible=true;trail.visible=true;trailMaterial.uniforms.uVisible.value=1
     pointAt(0,payload.position)
   }
-  function update(delta,flightTime=-1,explosionTime=-1) {
+  function update(delta,flightTime=-1,explosionTime=-1,doorCamera=null) {
     clock+=Math.max(0,delta)
     for(const material of design.userData.shaderMats) {
       material.uniforms.uTime.value=clock;material.uniforms.uIntensity.value=0.25
@@ -105,7 +108,10 @@ export function createEndingCore(scene) {
       trailMaterial.uniforms.uFlight.value=flight
     }
     payload.updateWorldMatrix(true,false);payload.getWorldPosition(light.position)
-    light.intensity=payload.visible && explosionTime<0 ? CORE_LIGHT_INTENSITY*(0.92+0.08*Math.sin(clock*2.3)) : 0
+    if(doorCamera)lightNdc.copy(light.position).project(doorCamera)
+    const boosted=doorCamera!==null && Math.abs(lightNdc.x)<=1 && Math.abs(lightNdc.y)<=1 && Math.abs(lightNdc.z)<=1
+    light.distance=boosted?DOOR_CORE_LIGHT_RANGE:CORE_LIGHT_RANGE
+    light.intensity=payload.visible && explosionTime<0 ? (boosted?DOOR_CORE_LIGHT_INTENSITY:CORE_LIGHT_INTENSITY)*(0.92+0.08*Math.sin(clock*2.3)) : 0
     explosion.update(explosionTime)
     if(explosionTime>=0){payload.visible=false;trail.visible=false}
   }
