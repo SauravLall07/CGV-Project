@@ -24,23 +24,45 @@ export function createRainLevelMeter(analyser, report = audioLog) {
   }
 }
 export const typewriterProgress = (elapsed, duration, fraction = 0.85) => Math.min(1, Math.max(0, elapsed / Math.max(0.001, duration * fraction)))
-export function endingTimeline(beat, panels) {
+export function endingTimeline(beat, panels, revealProgress = 0.5) {
   const darken = panels[panels.length - 1].end
   const title = darken + beat.timings.darken
   const hold = title + beat.timings.titleIn
   const steam = hold + beat.timings.titleHold
   const train = steam + beat.timings.steamRise
-  const reveal = train + beat.timings.trainPass * beat.timings.trainCover
+  const reveal = train + beat.timings.trainPass * revealProgress - beat.timings.handoverLead
   return { darken, title, hold, steam, train, reveal, trainEnd: train + beat.timings.trainPass,
-    complete: reveal + beat.timings.steamClear }
+    complete: train + beat.timings.trainPass }
 }
 
-export function trainPlacement(beat, width, height, progress, target) {
-  // Source pixels are compared with drawing-buffer pixels, including DPR.
-  target.height = Math.min(beat.train.height, 1024 * beat.train.maxUpscale / height)
+export const DEFAULT_TRAIN_BOUNDS = { left: 0, right: 1, bodyBottom: 0, bodyTop: 0.25 }
+export function measureTrainAlpha(image, beat, doc) {
+  const canvas = doc.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(image, 0, 0)
+  const pixels = ctx.getImageData(0, 0, image.width, image.height).data
+  let left = image.width, right = 0, top = image.height, bottom = 0
+  for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
+    const alpha = pixels[(y * image.width + x) * 4 + 3]
+    if (alpha >= beat.train.alphaThreshold) { left = Math.min(left, x); right = Math.max(right, x + 1) }
+    if (alpha >= beat.train.bodyAlpha && y >= image.height * beat.train.bodyStartY) { top = Math.min(top, y); bottom = Math.max(bottom, y + 1) }
+  }
+  if (left >= right || top >= bottom) throw new Error('Train PNG has no visible body')
+  const bounds = { left: left / image.width, right: right / image.width,
+    bodyBottom: 1 - bottom / image.height, bodyTop: 1 - top / image.height }
+  log('train alpha bounds', bounds)
+  return bounds
+}
+export function trainPlacement(beat, width, height, progress, target, bounds = DEFAULT_TRAIN_BOUNDS) {
+  // CSS image scale is capped, independently of the renderer's DPR.
+  target.height = Math.min(beat.train.bodyHeight / (bounds.bodyTop - bounds.bodyBottom), 1024 * beat.train.maxUpscale / height)
   target.width = target.height * 1.5 * height / width
-  target.x = -target.width / 2 + (1 + target.width) * progress
-  target.y = beat.train.centerY
+  const travel = 1 + target.width * (bounds.right - bounds.left)
+  target.x = -target.width * (bounds.right - 0.5) + travel * progress
+  target.y = beat.train.centerY - ((bounds.bodyBottom + bounds.bodyTop) / 2 - 0.5) * target.height
+  target.trailing = target.x + target.width * (bounds.left - 0.5)
+  target.leading = target.x + target.width * (bounds.right - 0.5)
+  target.revealProgress = target.width * (bounds.right - bounds.left) / travel
   target.blur = (1 + target.width) / beat.timings.trainPass * beat.train.blur
   return target
 }
@@ -67,12 +89,14 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
   measureRain = Boolean(import.meta.env?.DEV),
   context = getContext, master = getMasterGain, doc = globalThis.document,
   keys = globalThis.window, loadImage = url => new THREE.ImageLoader().loadAsync(url),
+  measureTrain = image => measureTrainAlpha(image, beat, doc),
   loadAudio = async (url, ctx, signal) => {
     const response = await fetch(url, { signal })
     if (!response.ok) throw new Error(`Story audio HTTP ${response.status}`)
     return ctx.decodeAudioData(await response.arrayBuffer())
   }, film = createStoryFilm(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
-  let generation = 0, disposed = false, active = false, readyPromise
+  let generation = 0, disposed = false, active = false, readyPromise, warmed = false
+  let trainBounds = DEFAULT_TRAIN_BOUNDS
   let root, caption, button, strip, timeline, index = -1, time = 0, skipped = false
   let source = null, enterReady = false, enterHeld = false, timer, loadTimer
   let narrationGain = null, rainSource = null, rainGain = null, rainBuffer = null
@@ -84,7 +108,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
   let storyBus = null, limiter = null, rainAnalyser = null, rainMeter = null
   let savedRenderer = null
   const savedViewport = new THREE.Vector4()
-  const train = { height: 0, width: 0, x: 0, y: 0, blur: 0 }
+  const train = { height: 0, width: 0, x: 0, y: 0, blur: 0, trailing: 0, leading: 0, revealProgress: 0 }
+  const viewportSize = new THREE.Vector2()
+  function endingForViewport() {
+    renderer.getDrawingBufferSize(viewportSize)
+    trainPlacement(beat, keys.innerWidth || viewportSize.x, keys.innerHeight || viewportSize.y, 0, train, trainBounds)
+    return endingTimeline(beat, timeline, train.revealProgress)
+  }
   function storyResolution() {
     if (!active || !savedRenderer) return
     const ratio = Math.min(keys.devicePixelRatio || 1, 2)
@@ -255,9 +285,9 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       timeline[i] = replacement[i]; timeline[i].start += shift; timeline[i].end += shift
     }
     time = Math.max(time, start); request = null; audioWait = 0
-    ending = endingTimeline(beat, timeline)
+    ending = endingForViewport()
   }
-  function prepare() {
+  function prefetch() {
     if (readyPromise) return readyPromise
     const token = generation
     // Queue ambience before the six images/five voices so a cold connection
@@ -275,7 +305,6 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
         newspaper.magFilter = THREE.LinearFilter
         newspaper.anisotropy = renderer.capabilities.getMaxAnisotropy()
         newspaper.needsUpdate = true
-        renderer.initTexture(newspaper)
       }),
       ...beat.panels.map(async (panel, i) => {
         const image = await loadImage(panel.image)
@@ -287,17 +316,16 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
         texture.anisotropy = renderer.capabilities.getMaxAnisotropy()
         texture.needsUpdate = true
         textures[i] = texture
-        renderer.initTexture(texture)
       }),
       loadImage(beat.train.image).then(image => {
         if (disposed || token !== generation) return
         trainTexture = new THREE.Texture(image)
+        trainBounds = measureTrain(image)
         trainTexture.colorSpace = THREE.SRGBColorSpace
         trainTexture.premultiplyAlpha = true
         trainTexture.generateMipmaps = false
         trainTexture.minFilter = trainTexture.magFilter = THREE.LinearFilter
         trainTexture.needsUpdate = true
-        renderer.initTexture(trainTexture)
       }),
       ...beat.audio.map(async (url, i) => {
         const buffer = await loadAudio(url, context(), abort.signal)
@@ -324,11 +352,20 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       film.uniforms.uPaper.value = newspaper || black
       film.uniforms.uTrain.value = trainTexture || black
       if (newspaper) film.uniforms.uPaperSize.value.set(newspaper.image.width, newspaper.image.height)
-      renderer.initTexture(black)
-      renderer.compile(film.scene, film.camera)
     })
     return readyPromise
   }
+  function warm() {
+    if (disposed || warmed) return
+    warmed = true
+    if (newspaper) renderer.initTexture(newspaper)
+    for (const texture of textures) renderer.initTexture(texture)
+    if (trainTexture) renderer.initTexture(trainTexture)
+    renderer.initTexture(black)
+    renderer.compile(film.scene, film.camera)
+  }
+  function prepare() { return prefetch().then(warm) }
+  function renderPrepared() { if (!disposed && warmed) renderer.render(film.scene, film.camera) }
   function swallow(event) { event.stopPropagation() }
   function keydown(event) {
     if (event.code === 'Enter') enterHeld = true
@@ -409,7 +446,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       titleHeading.style.filter = `blur(${8 * (1 - ease)}px)`
       titleHeading.style.letterSpacing = `${0.55 + (0.14 - 0.55) * ease}em`
       titleSubtitle.style.opacity = Math.min(1, Math.max(0, (time - ending.title - beat.timings.subtitleDelay) / beat.timings.subtitleIn))
-      titleRoot.style.opacity = 1 - Math.min(1, Math.max(0, (time - ending.train) / (beat.timings.trainPass * beat.timings.trainCover)))
+      titleRoot.style.opacity = 1 - Math.min(1, Math.max(0, (time - ending.train) / beat.timings.trainPass))
     }
   }
   function updateEnding() {
@@ -417,31 +454,33 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     strip.style.visibility = 'hidden'
     if (endingPhase < 1) { endingPhase = 1; stopAudio(); log('ending darken') }
     if (time >= ending.title && endingPhase < 2) { endingPhase = 2; log('title in') }
-    if (time >= ending.steam && endingPhase < 3) { endingPhase = 3; phase = 'steam'; log('steam'); playWhistle() }
-    if (time >= ending.train && endingPhase < 4) { endingPhase = 4; log('train') }
+    if (time >= ending.steam && endingPhase < 3) { endingPhase = 3; phase = 'steam'; log('steam puff'); playWhistle() }
+    if (time >= ending.train && endingPhase < 4) { endingPhase = 4; log('train wipe') }
     u.uImage.value = 1 - Math.min(1, (time - ending.darken) / beat.timings.darken)
-    u.uSteam.value = time < ending.steam ? 0 : time < ending.train
-      ? Math.min(0.48, (time - ending.steam) / beat.timings.steamRise * 0.48)
-      : Math.min(1, 0.48 + (time - ending.train) / (beat.timings.trainPass * beat.timings.trainCover) * 0.52)
+    u.uSteam.value = time < ending.steam ? 0 : Math.min(1, (time - ending.steam) / beat.timings.steamRise)
     const pass = Math.min(1, Math.max(0, (time - ending.train) / beat.timings.trainPass))
     renderer.getDrawingBufferSize(size)
-    trainPlacement(beat, size.x, size.y, pass, train)
+    trainPlacement(beat, keys.innerWidth || size.x, keys.innerHeight || size.y, pass, train, trainBounds)
     u.uTrainHeight.value = time >= ending.train && time < ending.trainEnd ? train.height : 0
     u.uTrainCenter.value.set(train.x, train.y)
     u.uTrainBlur.value = train.blur
     u.uTrainRattle.value = Math.sin(time * 93) * beat.train.rattle
+    u.uWiping.value = time >= ending.train ? 1 : 0
+    u.uWipeEdge.value = train.trailing
+    u.uWipeWidth.value = beat.train.wipeWidth
+    u.uPuffOpacity.value = beat.train.puffOpacity
+    u.uPuffHeight.value = beat.train.puffHeight
     updateTitle()
+    // DOM title must disappear under the leading edge, rather than paint
+    // over the train (the canvas itself sits below DOM overlays).
+    titleRoot.style.clipPath = time >= ending.train ? `inset(0 0 0 ${Math.min(100, Math.max(0, train.leading * 100))}%)` : 'none'
     if (time >= ending.reveal) {
       if (!handoverStarted) {
-        // Force complete screen coverage BEFORE restoring or invoking arrival.
-        u.uSteam.value = 1; u.uReveal.value = 1
-        handoverStarted = true; releaseRenderer(); log('reveal')
-        fadeRain(beat.timings.steamClear); onCrossfade()
+        handoverStarted = true; releaseRenderer()
+        fadeRain(Math.max(0.001, ending.complete - time)); onCrossfade()
       }
-      u.uReveal.value = 1
-      u.uSteam.value = Math.max(0, 1 - (time - ending.reveal) / beat.timings.steamClear)
     }
-    if (time >= ending.complete) complete()
+    if (time >= ending.complete) { log('reveal complete'); complete() }
   }
   function start() {
     if (disposed || active) return
@@ -449,7 +488,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     acquireRenderer()
     ensureStoryBus()
     timeline = buildStoryTimeline(beat, buffers, true)
-    ending = endingTimeline(beat, timeline)
+    ending = endingForViewport()
     audioLog(`context=${context()?.state ?? 'missing'} master=${master()?.gain?.value ?? 'missing'}`)
     audioLog(`bus gain=${storyBus?.gain.value ?? 'missing'} master=${master()?.gain?.value ?? 'missing'}`)
     const u = film.uniforms
@@ -587,7 +626,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       audioNodes: [source, narrationGain, rainSource, rainGain, rainAnalyser, whistleSource, whistleGain, storyBus, limiter].filter(Boolean).length,
       textures: disposed ? 0 : textures.length + Number(Boolean(newspaper)) + Number(Boolean(trainTexture)) + 1 }
   }
-  return { prepare, start, update, skip, cancel, dispose, unlockAudio, resources,
+  return { prefetch, prepare, warm, renderPrepared, start, update, skip, cancel, dispose, unlockAudio, resources,
     get active() { return active },
     get showGame() { return active && handoverStarted },
     get showQuad() { return active },

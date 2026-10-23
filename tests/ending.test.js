@@ -1464,7 +1464,7 @@ function titleReturnHarness(devStart = null) {
   const hud={setVisible(){},setSuspicion(){},setObjective(){},resetRunTimer(){}}
   const introPending=[]
   const createStoryPlayer=()=>({active:false,
-    prepare(){calls.push('story.prepare');return new Promise(resolve=>introPending.push(resolve))},
+    prefetch(){calls.push('story.prefetch');return new Promise(resolve=>introPending.push(resolve))},
     start(){this.active=true;calls.push('story.start')},
     cancel(){this.active=false;calls.push('story.cancel')}})
   const deps={menu,levelManager,hud,respawn:{reset(){},resetLives(){}},timeSystem:{resetForRun(){},resetRun(){}},
@@ -1476,17 +1476,19 @@ function titleReturnHarness(devStart = null) {
     initAudio(){calls.push('initAudio')},preloadAbilitySfx:()=>null,getContext:()=>({state:'running'}),
     resumeAudio(){calls.push('resumeAudio');return Promise.resolve()},loadTrack:file=>file,
     startLevelMusic(file){calls.push('music:'+file);return Promise.resolve()},
-    stopLevelMusic(){calls.push('music.stop')},createStoryPlayer,renderer:{},introBeat:{},playMusicForState(){}}
+    stopLevelMusic(){calls.push('music.stop')},createStoryPlayer,renderer:{},introBeat:{},playMusicForState(){},
+    loadBoardingAssets:()=>Promise.resolve(),loadingScreen:{show(){calls.push('loading.show')},setError(){throw new Error('unexpected loading failure')}}}
   // Execute the actual composition-root functions with controlled dependencies;
   // importing main.js would construct WebGL and start its application loop.
   const factory=new Function('deps',`
     const {menu,levelManager,hud,respawn,timeSystem,playerView,keyboardLock,syncInputState,disposeGameplayDrone,
       devStartOptions,beginForecourtArrival,buildTitleBackdrop,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic,
-      stopLevelMusic,createStoryPlayer,renderer,introBeat,playMusicForState,camera,LANDING_CAMERA,
+      stopLevelMusic,createStoryPlayer,renderer,introBeat,playMusicForState,camera,LANDING_CAMERA,loadBoardingAssets,loadingScreen,
       document,requestAnimationFrame,setTimeout}=deps;
     const console={log(){}};
     let gameStarted=true,paused=true,elapsed=12,resetCount=2,titleBackdrop=null,titleReturnPromise=null;
-    let storyRun=0,storyPlayer=createStoryPlayer(),arrival=null,awaitingIntro=false;
+    let storyRun=0,storyPlayer=createStoryPlayer(),arrival=null,awaitingIntro=false,firstLiveFramePending=false;
+    let introReady=Promise.resolve(),boardingFilesReady=null;const charactersReady=Promise.resolve();
     const post={resize(){}},settings={get:()=>0.85};
     ${extract('function prepareIntro() {','// Large walkthrough popups')}
     ${extract('async function playMenuMusic() {','function unlockAudio(')}
@@ -1580,9 +1582,10 @@ test('Title return: pause quit preserves fullscreen, veils construction, coalesc
   assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,1)
   assert.equal(title.calls.filter(call=>call==='story.start').length,0,'intro cannot start during backdrop rebuild')
   title.pending.shift()({});await title.flush()
-  assert.equal(title.state.gameStarted,false,'New Game also waits for title intro preparation')
+  assert.equal(title.menu.visible,true,'the title is presented while intro prefetch remains pending')
+  assert.equal(title.calls.filter(call=>call==='enter:Boarding').length,0,'New Game waits under loading for pending prefetch')
   assert.equal(title.calls.filter(call=>call==='story.start').length,0,'intro cannot start before title preparation finishes')
-  title.introPending.shift()();await first;await duplicate;await Promise.resolve()
+  title.introPending.shift()();await first;await duplicate;await title.flush()
   assert.deepEqual(title.delays,[200,400])
   assert.equal(title.veils.length,0)
   assert.equal(title.state.gameStarted,true,'queued New Game starts after the rebuilt backdrop is owned')

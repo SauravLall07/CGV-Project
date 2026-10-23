@@ -321,6 +321,10 @@ const levelManager = createLevelManager({
   timeSystem,
   loadingScreen,
   onEnter: (state) => {
+    if (state === 'Boarding' && awaitingIntro) {
+      if (import.meta.env?.DEV) console.log(`[load] level1 built ${performance.now().toFixed(1)}ms`)
+      warmLevel1()
+    }
     if (!storyPlayer?.active && !awaitingIntro) playMusicForState(state)
     // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
     // Workshop remaps its stable scene keys here so saved dev-layout overrides
@@ -412,6 +416,10 @@ let modelEditor = null // DEV-only live scene/model workshop (F2)
 let storyPlayer = null
 let storyRun = 0
 let awaitingIntro = false
+let introReady = Promise.resolve()
+let boardingFilesReady = null
+let firstLiveFramePending = false
+let frameStartedAt = 0
 
 function prepareIntro() {
   initAudio()
@@ -420,6 +428,7 @@ function prepareIntro() {
     getRenderScale: () => settings.get('renderScale'), onRendererRestore: () => post.resize(), onCrossfade() {
     if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
     beginForecourtArrival()
+    firstLiveFramePending = true
   }, onComplete() {
     if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
     storyPlayer = null
@@ -428,17 +437,44 @@ function prepareIntro() {
     syncInputState()
   } })
   storyPlayer = owner
-  return owner.prepare()
+  return owner.prefetch()
+}
+
+function setArrivalStartCamera() {
+  const home = LANDING_CAMERA.position, aim = LANDING_CAMERA.target
+  camera.position.set(home.x, home.y + Math.sin(0.6) * LANDING_CAMERA.driftY, home.z + LANDING_CAMERA.driftZ)
+  camera.lookAt(aim.x, aim.y, aim.z)
+}
+
+function warmLevel1() {
+  // Loading is still opaque in levelManager.onEnter. Exercise the SAME
+  // renderer, shadows, bloom and output targets that the reveal will use.
+  const spawnPosition = camera.position.clone(), spawnRotation = camera.quaternion.clone()
+  const textures = new Set()
+  scene.traverse(node => {
+    const materials = Array.isArray(node.material) ? node.material : node.material ? [node.material] : []
+    for (const material of materials) {
+      for (const value of Object.values(material)) if (value?.isTexture && !value.isRenderTargetTexture) textures.add(value)
+      for (const uniform of Object.values(material.uniforms ?? {})) if (uniform.value?.isTexture && !uniform.value.isRenderTargetTexture) textures.add(uniform.value)
+    }
+  })
+  if (scene.background?.isTexture && !scene.background.isRenderTargetTexture) textures.add(scene.background)
+  if (scene.environment?.isTexture && !scene.environment.isRenderTargetTexture) textures.add(scene.environment)
+  for (const texture of textures) renderer.initTexture(texture)
+  storyPlayer.warm(); storyPlayer.renderPrepared()
+  scene.updateMatrixWorld(true)
+  renderer.compile(scene, camera); post.render(scene, camera)
+  setArrivalStartCamera()
+  renderer.compile(scene, camera); post.render(scene, camera)
+  camera.position.copy(spawnPosition); camera.quaternion.copy(spawnRotation)
+  if (import.meta.env?.DEV) console.log(`[load] level1 warmed ${performance.now().toFixed(1)}ms`)
 }
 
 function startPreparedIntro() {
   if (!awaitingIntro || !gameStarted || levelManager.getState() !== 'Boarding' || levelManager.isTransitioning()) return
   awaitingIntro = false
-  // The menu now renders a separate camera. Keep the established initial
-  // station framing for the existing two-second arrival, without showing it.
-  const home = LANDING_CAMERA.position, aim = LANDING_CAMERA.target
-  camera.position.set(home.x, home.y + Math.sin(0.6) * LANDING_CAMERA.driftY, home.z + LANDING_CAMERA.driftZ)
-  camera.lookAt(aim.x, aim.y, aim.z)
+  setArrivalStartCamera()
+  if (import.meta.env?.DEV) console.log(`[load] intro start ${performance.now().toFixed(1)}ms`)
   storyPlayer.start()
 }
 
@@ -565,7 +601,7 @@ function getInputState() {
     story: Boolean(storyPlayer?.active),
     creditsOpen: credits.isOpen,
     paused,
-    transitioning: levelManager.isTransitioning(),
+    transitioning: awaitingIntro || levelManager.isTransitioning(),
     caught: respawn.isFailing(),
     cinematic: levelManager.isCinematic() || Boolean(arrival),
     editor: Boolean(modelEditor?.isOpen())
@@ -717,7 +753,12 @@ function startGame() {
     titleBackdrop.dispose()
     titleBackdrop = null
   }
-  levelManager.enter('Boarding')
+  loadingScreen.show()
+  const run = storyRun, owner = storyPlayer
+  Promise.all([introReady, charactersReady, boardingFilesReady ?? loadBoardingAssets()]).then(() => {
+    if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
+    levelManager.enter('Boarding')
+  }).catch(error => { loadingScreen.setError(); console.error('[load] preparation failed', error) })
   syncInputState()
 }
 
@@ -787,8 +828,12 @@ async function quitToTitle() {
     // unload stops the outgoing track; request title music afterwards.
     playMenuMusic()
     titleBackdrop = await buildTitleBackdrop()
-    await prepareIntro()
     menu.show()
+    if (import.meta.env?.DEV) console.log(`[load] title ready ${performance.now().toFixed(1)}ms since page start`)
+    introReady = prepareIntro()
+    introReady.catch(error => console.error('[load] intro prefetch failed', error))
+    boardingFilesReady = loadBoardingAssets()
+    boardingFilesReady.catch(error => console.error('[load] level1 prefetch failed', error))
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     veil.style.transition = 'opacity 400ms linear'
     veil.style.opacity = '0'
@@ -802,21 +847,18 @@ async function quitToTitle() {
 // pattern used by levelManager.enter() — see core/level-manager.js.
 requestAnimationFrame(() => requestAnimationFrame(async () => {
   try {
-    const introReady = prepareIntro()
     titleBackdrop = await startupTasks.track('backdrop', buildTitleBackdrop())
-
-    await charactersReady
-    await introReady
-
-    // Compile Ghost materials/lights after the Mixamo visual is attached so
-    // first Ghost press does not pay that shader cost in-game.
-    timeSystem.warmGhost(renderer, camera)
 
     // Keep the existing extra frame before revealing the title scene.
     requestAnimationFrame(() => {
       startupTasks.complete('presentation')
       loadingScreen.hide()
       menu.show()
+      if (import.meta.env?.DEV) console.log(`[load] title ready ${performance.now().toFixed(1)}ms since page start`)
+      introReady = prepareIntro()
+      introReady.catch(error => console.error('[load] intro prefetch failed', error))
+      boardingFilesReady = loadBoardingAssets()
+      boardingFilesReady.catch(error => console.error('[load] level1 prefetch failed', error))
       if (benchTarget) {
         menu.hide()
         startGame()
@@ -840,6 +882,10 @@ const loop = createLoop({
     if (storyPlayer?.active) {
       if (storyPlayer.showGame) post.render(world, view)
       storyPlayer.render()
+      if (firstLiveFramePending && storyPlayer.showGame) {
+        firstLiveFramePending = false
+        if (import.meta.env?.DEV) console.log(`[perf] first live frame ${(performance.now() - frameStartedAt).toFixed(2)}ms frame time`)
+      }
       return
     }
     if (!gameStarted && titleBackdrop) {
@@ -865,6 +911,7 @@ const loop = createLoop({
 
 const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
+  frameStartedAt = performance.now()
   if (storyPlayer?.active) {
     storyPlayer.update(delta)
     if (storyPlayer?.showGame && arrival) updateForecourtArrival(delta)

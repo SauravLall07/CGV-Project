@@ -27,7 +27,8 @@ export function createStoryFilm() {
     uTrain: { value: null }, uTrainSize: { value: new THREE.Vector2(1536, 1024) },
     uTrainCenter: { value: new THREE.Vector2(-2, 0.42) },
     uTrainHeight: { value: 0 }, uTrainBlur: { value: 0 }, uTrainRattle: { value: 0 },
-    uSteam: { value: 0 }, uReveal: { value: 0 },
+    uSteam: { value: 0 }, uWiping: { value: 0 }, uWipeEdge: { value: -1 },
+    uWipeWidth: { value: 0.08 }, uPuffOpacity: { value: 0.35 }, uPuffHeight: { value: 1 / 3 },
     uImage: { value: 1 }, uRain: { value: FILM_RAIN },
     uPanA: { value: new THREE.Vector2() },
     uPanB: { value: new THREE.Vector2() },
@@ -56,7 +57,8 @@ export function createStoryFilm() {
       uniform float uSharpen;
       uniform sampler2D uTrain;
       uniform vec2 uTrainSize, uTrainCenter;
-      uniform float uTrainHeight, uTrainBlur, uTrainRattle, uSteam, uReveal;
+      uniform float uTrainHeight, uTrainBlur, uTrainRattle, uSteam, uWiping;
+      uniform float uWipeEdge, uWipeWidth, uPuffOpacity, uPuffHeight;
       varying vec2 vUv;
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -142,6 +144,17 @@ export function createStoryFilm() {
             color = mix(color, paper, uPaperOpacity);
           }
         }
+        float cloud = 0.5;
+        if (uSteam > 0.0) cloud = steamCloud(vec2(vUv.x * aspect * 3.0 + uTime * 0.13, vUv.y * 3.0 - uTime * 0.28));
+        float puff = uSteam * uPuffOpacity * (1.0 - smoothstep(uPuffHeight * 0.6, uPuffHeight, vUv.y)) * cloud;
+        float boundary = uWipeEdge + (cloud - 0.5) * uWipeWidth * 0.35;
+        float darkSide = uWiping > 0.5 ? smoothstep(boundary - uWipeWidth * 0.5, boundary + uWipeWidth * 0.5, vUv.x) : 1.0;
+        float trail = uWiping * uPuffOpacity * max(0.0, 1.0 - abs(vUv.x - boundary) / (uWipeWidth * 0.5));
+        vec3 steamColor = mix(vec3(0.48, 0.51, 0.54), vec3(0.88, 0.89, 0.90), cloud);
+        color = mix(color, steamColor, max(puff, trail));
+        float alpha = uOpacity * max(darkSide, trail);
+        vec3 premul = max(color, vec3(0.0)) * clamp(uFade, 0.0, 1.0) * alpha;
+        // The train is the TOP layer, never obscured by puff or trail.
         if (uTrainHeight > 0.0) {
           vec2 extent = vec2(uTrainHeight * uTrainSize.x / uTrainSize.y / aspect, uTrainHeight);
           vec2 trainUv = (vUv - uTrainCenter - vec2(0.0, uTrainRattle / uResolution.y)) / extent + 0.5;
@@ -152,19 +165,11 @@ export function createStoryFilm() {
             if (all(greaterThanEqual(sampleUv, vec2(0.0))) && all(lessThanEqual(sampleUv, vec2(1.0))))
               train += texture2D(uTrain, sampleUv) * 0.125;
           }
-          color = color * (1.0 - train.a) + train.rgb;
+          float trainAlpha = train.a * uOpacity;
+          premul = premul * (1.0 - trainAlpha) + train.rgb * uOpacity;
+          alpha += trainAlpha * (1.0 - alpha);
         }
-        float cloud = 0.5;
-        if (uSteam > 0.0) cloud = steamCloud(vec2(vUv.x * aspect * 3.0 + uTime * 0.13, vUv.y * 3.0 - uTime * 0.28));
-        // Soft moving cloud front; the explicit full-cover endpoint is opaque
-        // at EVERY pixel before main.js switches scenes behind this quad.
-        float front = uSteam * 1.65 - vUv.y + (cloud - 0.5) * 0.35;
-        float steamAlpha = mix(smoothstep(-0.18, 0.18, front) * smoothstep(0.0, 0.08, uSteam), 1.0, step(1.0, uSteam));
-        vec3 steamColor = mix(vec3(0.48, 0.51, 0.54), vec3(0.88, 0.89, 0.90), cloud);
-        color = mix(color, steamColor, steamAlpha);
-        float alpha = uOpacity * mix(1.0, steamAlpha, uReveal);
-        if (uReveal > 0.5) color = steamColor;
-        gl_FragColor = vec4(max(color, vec3(0.0)) * clamp(uFade, 0.0, 1.0), alpha);
+        gl_FragColor = vec4(premul / max(alpha, 0.00001), alpha);
         #include <colorspace_fragment>
         gl_FragColor.rgb *= gl_FragColor.a;
       }

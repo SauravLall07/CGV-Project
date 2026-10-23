@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { inflateSync } from 'node:zlib'
 import * as THREE from 'three'
 import { introBeat } from '../src/story/intro-beat.js'
-import { createStoryPlayer, buildStoryTimeline, typewriterProgress, endingTimeline, createRainLevelMeter, trainPlacement } from '../src/ui/story-player.js'
+import { createStoryPlayer, buildStoryTimeline, typewriterProgress, endingTimeline, createRainLevelMeter, trainPlacement, measureTrainAlpha, DEFAULT_TRAIN_BOUNDS } from '../src/ui/story-player.js'
 import { createStoryFilm, SHARPEN, FILM_GRAIN, FILM_RAIN, FILM_FLICKER } from '../src/shaders/story-film.js'
 import { resolveInputState } from '../src/core/input-state.js'
 import { createPostProcessing } from '../src/core/postprocessing.js'
@@ -16,6 +17,7 @@ function harness({ locked = false, failed = false, delayed = false, rain = false
   }
   const keys = new EventTarget(), body = new Element(), pending = [], timers = new Map()
   keys.devicePixelRatio = deviceRatio
+  keys.innerWidth = 1920; keys.innerHeight = 1080
   let starts = [], stops = 0, completes = 0, disposals = 0, uploads = 0, renders = 0, compiled = 0, resumes = 0
   const nodes = [], gains = [], resumeResolvers = [], canvases = [], renderOrder = [], textureOwners = [], compressors = [], analysers = [], images = []
   let crossfadeStarts = 0, paints = 0, handoverRatio = null, restores = 0, coveredAtHandover = null
@@ -74,6 +76,7 @@ function harness({ locked = false, failed = false, delayed = false, rain = false
     getDrawingBufferSize(size) { size.set(1920, 1080) }, setRenderTarget() {}, render() { renders++; renderOrder.push(this.autoClear ? 'quad-clear' : 'quad-overlay') } }
   const player = createStoryPlayer({ beat: introBeat, renderer, film, doc: { body, createElement }, keys,
     measureRain: true,
+    measureTrain: () => DEFAULT_TRAIN_BOUNDS,
     onRendererRestore: () => { restores++; assert.equal(renderer.getPixelRatio(), 0.625); restoreHook() },
     getRenderScale: () => 0.5,
     onCrossfade: () => { crossfadeStarts++; handoverRatio = renderer.getPixelRatio(); coveredAtHandover = film.uniforms.uSteam.value },
@@ -100,8 +103,8 @@ function harness({ locked = false, failed = false, delayed = false, rain = false
 }
 
 const narrationTimeline = () => buildStoryTimeline(introBeat, Array(5).fill({ duration: 8 }), true)
-const endStart = () => endingTimeline(introBeat, narrationTimeline()).darken
-const endBeats = () => endingTimeline(introBeat, narrationTimeline())
+const endStart = () => endBeats().darken
+const endBeats = () => endingTimeline(introBeat, narrationTimeline(), trainPlacement(introBeat, 1920, 1080, 0, {}).revealProgress)
 const finishTime = () => endBeats().complete
 const find = (node, id) => node.id === id ? node : node.children.map(child => find(child, id)).find(Boolean)
 function assertStoryRoute(gain, h) {
@@ -349,14 +352,13 @@ test('real newspaper image spins twice, settles, shakes, holds and crossfades wi
   h.player.cancel()
 })
 
-test('ending darkens, draws title, holds, whistles, passes train and reveals only under full steam coverage', async () => {
+test('ending darkens, draws title, puffs modest steam then reveals behind a sharp train wipe', async () => {
   const h = harness({ whistle: true }); await h.player.prepare(); h.player.start()
   const u = h.film.uniforms, t = endBeats()
   assert.equal(t.title - t.darken, 1)
   assert.ok(Math.abs(t.steam - t.hold - 1) < 1e-9)
-  assert.ok(Math.abs(t.train - t.steam - 1) < 1e-9)
-  assert.ok(Math.abs(t.reveal - t.train - 1.3 * 0.7) < 1e-9)
-  assert.ok(Math.abs(t.complete - t.reveal - 1.8) < 1e-9)
+  assert.ok(Math.abs(t.train - t.steam - 0.8) < 1e-9)
+  assert.ok(Math.abs(t.complete - t.train - 1.6) < 1e-9)
   h.player.update(t.darken)
   assert.deepEqual(h.stats.starts, [])
   assert.equal(h.player.showGame, false); assert.equal(h.player.showQuad, true)
@@ -383,22 +385,23 @@ test('ending darkens, draws title, holds, whistles, passes train and reveals onl
   h.player.update(1.0)
   assert.deepEqual(h.stats.starts, ['whistle'])
   assert.equal(h.nodes[0].target.gain.value, 0.8); assertStoryRoute(h.nodes[0].target, h)
-  h.player.update(1.0)
+  h.player.update(0.8)
   assert.ok(u.uTrainHeight.value > 0); assert.equal(h.player.showGame, false)
   assert.ok(u.uTrainCenter.value.x < 0)
-  h.player.update(1.3 * 0.7 - 0.001)
-  assert.equal(h.stats.crossfadeStarts, 0); assert.ok(u.uSteam.value < 1)
+  assert.equal(u.uPuffOpacity.value, 0.35); assert.equal(u.uPuffHeight.value, 1 / 3)
+  assert.equal(u.uTrainBlur.value, 0)
+  h.player.update(t.reveal - t.train - 0.001)
+  assert.equal(h.stats.crossfadeStarts, 0)
   h.player.update(0.0011)
   assert.equal(h.stats.crossfadeStarts, 1)
-  assert.equal(h.stats.coveredAtHandover, 1)
   assert.equal(h.stats.handoverRatio, 0.625); assert.equal(h.stats.restores, 1)
   assert.equal(h.player.showGame, true)
-  assert.equal(u.uReveal.value, 1)
+  assert.ok(u.uWipeEdge.value < 0, 'live scene starts before trailing edge reaches the screen')
+  assert.equal(u.uWiping.value, 1)
   assert.equal(h.player.active, true)
   assert.equal(resolveInputState({ gameStarted: true, story: h.player.active }), 'STORY')
-  h.player.update(0.9); assert.ok(u.uSteam.value > 0.49 && u.uSteam.value < 0.51)
-  assert.equal(h.player.active, true)
-  h.player.update(0.901); assert.equal(h.stats.completes, 1)
+  h.player.update(t.complete - t.reveal - 0.0011); assert.equal(h.player.active, true)
+  h.player.update(0.002); assert.equal(h.stats.completes, 1)
   assert.equal(h.player.showQuad, false)
   assert.equal(resolveInputState({ gameStarted: true, story: h.player.active }), 'PLAYING')
 })
@@ -413,8 +416,8 @@ test('rain loops through the limited story bus at 1.5, fades in over 1.5 and out
   h.ctx.currentTime = endStart(); h.player.update(endStart())
   assert.deepEqual(gain.gain.events.at(-1), ['ramp', 1.5, 1.5], 'rain continues during title and train')
   h.ctx.currentTime = endBeats().reveal; h.player.update(endBeats().reveal - endStart())
-  assert.deepEqual(gain.gain.events.at(-1), ['ramp', 0, endBeats().reveal + 1.8])
-  h.player.update(1.801)
+  assert.deepEqual(gain.gain.events.at(-1), ['ramp', 0, endBeats().complete])
+  h.player.update(endBeats().complete - endBeats().reveal + 0.001)
   assert.equal(rain.stopped, true); assert.equal(gain.disconnected, true)
   assert.equal(h.stats.completes, 1)
 })
@@ -484,7 +487,7 @@ test('crossfade overlays one quad after normal scene, restores renderer state an
   assert.deepEqual(h.renderOrder.slice(-2), ['game', 'quad-overlay'])
   assert.equal(h.renderer.autoClear, true)
   assert.equal(h.film.material.transparent, true)
-  assert.match(h.film.material.fragmentShader, /float alpha = uOpacity \* mix\(1.0, steamAlpha, uReveal\)/)
+  assert.match(h.film.material.fragmentShader, /float alpha = uOpacity \* max\(darkSide, trail\)/)
   assert.doesNotMatch(h.film.material.fragmentShader, /uRipple|uTitle|uDissolve|dissolveNoise|chromatic/)
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
   assert.match(main, /onCrossfade\(\) \{[\s\S]*?beginForecourtArrival\(\)/)
@@ -564,7 +567,7 @@ test('story resolution respects DPR below two and reapplies after the renderer r
 })
 
 test('real main render callback bypasses composer for story quad and preserves post state', async () => {
-  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('\r', '')
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('\r', '').replaceAll('import.meta.env?.DEV', 'false')
   const start = main.indexOf('render(world, view) {'), end = main.indexOf('\n  },', start)
   assert.ok(start >= 0 && end > start)
   const method = main.slice(start, end + 4)
@@ -572,7 +575,7 @@ test('real main render callback bypasses composer for story quad and preserves p
     const h = harness(); await h.player.prepare(); h.player.start()
     let postCalls = 0
     const post = { enabled, render() { postCalls++ } }
-    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
+    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
     render({}, {}); assert.equal(postCalls, 0)
     assert.equal(h.stats.renders, 1)
     h.player.skip(); render({}, {})
@@ -606,12 +609,12 @@ test('panel textures retain original NPOT images, maximum anisotropy and source-
 })
 
 test('real render callback draws only story before coverage, game plus one quad during reveal, then only game', async () => {
-  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('\r', '')
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('\r', '').replaceAll('import.meta.env?.DEV', 'false')
   const start = main.indexOf('render(world, view) {'), end = main.indexOf('\n  },', start)
   assert.ok(start >= 0 && end > start)
   const h = harness(); await h.player.prepare(); h.player.start()
   let games = 0
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
   h.player.update(endStart()); render({}, {})
   assert.equal(games, 0); assert.equal(h.stats.renders, 1)
   h.player.update(endBeats().title - endStart() + 0.1); render({}, {})
@@ -628,16 +631,16 @@ test('real render callback draws only story before coverage, game plus one quad 
 })
 
 test('actual composition callbacks start arrival at crossfade and release music, HUD and input only on completion', async () => {
-  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('import.meta.env?.DEV', 'false')
   const start = main.indexOf('function prepareIntro() {'), end = main.indexOf('// Large walkthrough popups', start)
   assert.ok(start >= 0 && end > start)
   const events = []
   let callbacks
-  const owner = { active: true, prepare: () => Promise.resolve() }
+  const owner = { active: true, prefetch: () => Promise.resolve() }
   const run = new Function('deps', `
     const {createStoryPlayer,initAudio,beginForecourtArrival,playMusicForState,hud,syncInputState,levelManager}=deps;
     const post={resize(){deps.events.push('resize')}},settings={get(){return 0.85}};
-    const introBeat={},renderer={}; let storyPlayer=null,storyRun=1,gameStarted=true;
+    const introBeat={},renderer={}; let storyPlayer=null,storyRun=1,gameStarted=true,firstLiveFramePending=false;
     ${main.slice(start, end)}
     return {prepareIntro, invalidate(){storyRun++}, get owner(){return storyPlayer}};
   `)({
@@ -660,17 +663,17 @@ test('actual composition callbacks start arrival at crossfade and release music,
   assert.equal(events.length, 4, 'stale generation cannot resume a different run')
 })
 
-test('train placement stays offscreen at endpoints, preserves aspect and caps physical pixel upscaling', async () => {
+test('train placement stays offscreen at endpoints, preserves aspect and caps CSS image upscaling', async () => {
   const target = {}
   for (const [width, height] of [[1366, 768], [1920, 1080], [3840, 2160], [768, 1366]]) {
     const start = trainPlacement(introBeat, width, height, 0, target)
     assert.equal(start.x + start.width / 2, 0)
-    assert.ok(start.height * height / 1024 <= 1.30000000001)
+    assert.ok(start.height * height / 1024 <= 1.60000000001)
     assert.ok(Math.abs(start.width * width / (start.height * height) - 1.5) < 1e-9)
-    assert.equal(start.y, 0.42)
+    assert.ok(Math.abs(start.y + (0.125 - 0.5) * start.height - 0.43) < 1e-9)
     const end = trainPlacement(introBeat, width, height, 1, target)
     assert.ok(Math.abs(end.x - end.width / 2 - 1) < 1e-9)
-    assert.ok(end.blur > 0)
+    assert.equal(end.blur, 0)
   }
   const h = harness(); await h.player.prepare()
   const train = h.film.uniforms.uTrain.value
@@ -679,7 +682,8 @@ test('train placement stays offscreen at endpoints, preserves aspect and caps ph
   assert.equal(h.film.material.premultipliedAlpha, true)
   assert.match(h.film.material.fragmentShader, /tap < 8/)
   assert.match(h.film.material.fragmentShader, /octave < 4/)
-  assert.match(h.film.material.fragmentShader, /step\(1.0, uSteam\)/)
+  assert.match(h.film.material.fragmentShader, /uOpacity \* max\(darkSide, trail\)/)
+  assert.ok(h.film.material.fragmentShader.indexOf('color = mix(color, steamColor') < h.film.material.fragmentShader.indexOf('vec4 train ='))
   assert.match(h.film.material.fragmentShader, /gl_FragColor.rgb \*= gl_FragColor.a/)
   h.player.cancel()
 })
@@ -728,4 +732,103 @@ test('a resize during story cannot leave the real composer at story resolution a
       } finally { h.player.cancel(); post.dispose() }
     }
   } finally { globalThis.window = previousWindow; THREE.WebGLRenderTarget.prototype.setSize = original }
+})
+
+test('PNG alpha bounds are measured once, including body height and transparent padding', () => {
+  const pixels = new Uint8ClampedArray(4 * 4 * 4)
+  for (const [x, y] of [[1, 0], [1, 2], [2, 2], [1, 3], [2, 3]]) pixels[(y * 4 + x) * 4 + 3] = 255
+  let reads = 0, draws = 0
+  const bounds = measureTrainAlpha({ width: 4, height: 4 }, introBeat, {
+    createElement: () => ({ getContext: () => ({ drawImage() { draws++ }, getImageData() { reads++; return { data: pixels } } }) })
+  })
+  assert.deepEqual(bounds, { left: 0.25, right: 0.75, bodyBottom: 0, bodyTop: 0.5 })
+  assert.equal(reads, 1); assert.equal(draws, 1)
+  for (const progress of [0, 0.5, 1]) {
+    const placement = trainPlacement(introBeat, 1366, 768, progress, {}, bounds)
+    assert.ok(placement.height * 768 / 1024 <= 1.6)
+    if (progress === 0) assert.ok(Math.abs(placement.leading) < 1e-9)
+    if (progress === 1) assert.ok(Math.abs(placement.trailing - 1) < 1e-9)
+  }
+  assert.equal(reads, 1, 'placement never rereads alpha')
+})
+
+test('committed train PNG supplies real opaque extents and a measured crisp body scale', () => {
+  const png = fs.readFileSync(new URL('../src/assets/textures/story/story-train.png', import.meta.url))
+  const width = png.readUInt32BE(16), height = png.readUInt32BE(20)
+  assert.equal(png[24], 8); assert.equal(png[25], 6, 'fixture is an 8-bit RGBA PNG')
+  assert.equal(png[28], 0, 'fixture is non-interlaced')
+  const chunks = []
+  for (let offset = 8; offset < png.length;) {
+    const length = png.readUInt32BE(offset), kind = png.toString('ascii', offset + 4, offset + 8)
+    if (kind === 'IDAT') chunks.push(png.subarray(offset + 8, offset + 8 + length))
+    offset += 12 + length
+  }
+  const scanlines = inflateSync(Buffer.concat(chunks)), pixels = new Uint8ClampedArray(width * height * 4), stride = width * 4
+  // Reconstruct the five PNG scanline filters, solely for this real-asset test.
+  for (let y = 0; y < height; y++) {
+    const filter = scanlines[y * (stride + 1)]
+    assert.ok(filter <= 4)
+    for (let x = 0; x < stride; x++) {
+      const index = y * stride + x, a = x >= 4 ? pixels[index - 4] : 0
+      const b = y ? pixels[index - stride] : 0, c = y && x >= 4 ? pixels[index - stride - 4] : 0
+      let prediction = 0
+      if (filter === 1) prediction = a
+      if (filter === 2) prediction = b
+      if (filter === 3) prediction = Math.floor((a + b) / 2)
+      if (filter === 4) {
+        const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c)
+        prediction = pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+      }
+      pixels[index] = (scanlines[y * (stride + 1) + 1 + x] + prediction) & 255
+    }
+  }
+  let minAlpha = 255, maxAlpha = 0
+  for (let i = 3; i < pixels.length; i += 4) { minAlpha = Math.min(minAlpha, pixels[i]); maxAlpha = Math.max(maxAlpha, pixels[i]) }
+  assert.equal(minAlpha, 0, 'train asset needs truly transparent background pixels for an alpha-aligned wipe')
+  assert.ok(maxAlpha >= 250, `maximum alpha ${maxAlpha} is opaque enough`)
+  const bounds = measureTrainAlpha({ width, height }, introBeat, { createElement: () => ({ getContext: () => ({
+    drawImage() {}, getImageData: () => ({ data: pixels })
+  }) }) })
+  assert.ok(bounds.left >= 0 && bounds.left < bounds.right && bounds.right <= 1)
+  assert.ok(bounds.bodyTop > bounds.bodyBottom)
+  console.log('[train asset bounds]', JSON.stringify(bounds))
+  for (const [w, h] of [[1366, 768], [1920, 1080]]) {
+    const pose = trainPlacement(introBeat, w, h, 0.5, {}, bounds)
+    const scale = pose.height * h / height, bodyHeight = pose.height * (bounds.bodyTop - bounds.bodyBottom)
+    assert.ok(scale <= 1.600000001)
+    console.log(`[train scale] ${w}x${h} upscale=${scale.toFixed(5)} body=${bodyHeight.toFixed(5)} revealProgress=${pose.revealProgress.toFixed(5)}`)
+  }
+})
+
+test('prefetch performs no GPU work; actual Level 1 warm-up precedes intro and first live frame uploads/compiles nothing', async () => {
+  const h = harness(); await h.player.prefetch()
+  assert.equal(h.stats.uploads, 0); assert.equal(h.stats.compiled, 0); assert.equal(h.stats.renders, 0)
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('\r', '').replaceAll('import.meta.env?.DEV', 'false')
+  const start = main.indexOf('function warmLevel1()'), end = main.indexOf('function startPreparedIntro()', start)
+  const world = new THREE.Scene(), view = new THREE.PerspectiveCamera(), map = new THREE.Texture()
+  world.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({ map })))
+  const events = []
+  const warm = new Function('scene', 'camera', 'renderer', 'post', 'storyPlayer', 'setArrivalStartCamera', `${main.slice(start, end)}; return warmLevel1`)(
+    world, view, h.renderer, { render() { events.push('warm game') } }, h.player, () => events.push('arrival view'))
+  warm(); events.push('warm done')
+  assert.equal(h.stats.uploads, 10); assert.equal(h.stats.compiled, 3)
+  assert.deepEqual(events, ['warm game', 'arrival view', 'warm game', 'warm done'])
+  assert.equal(h.player.active, false)
+  h.player.start(); events.push('intro start')
+  assert.ok(events.indexOf('warm done') < events.indexOf('intro start'))
+  const uploads = h.stats.uploads, compiled = h.stats.compiled
+  h.player.update(endBeats().reveal + 0.001)
+  const renderStart = main.indexOf('render(world, view) {'), renderEnd = main.indexOf('\n  },', renderStart)
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null;let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
+    h.player, { render() { events.push('first live') } }, { getCinematicView: () => null }, null)
+  render(world, view)
+  assert.equal(events.at(-1), 'first live')
+  assert.equal(h.stats.uploads, uploads); assert.equal(h.stats.compiled, compiled)
+  const startup = main.slice(main.indexOf('// Defer by two animation frames'), main.indexOf('const loop ='))
+  assert.doesNotMatch(startup, /await introReady|await charactersReady/)
+  assert.ok(startup.indexOf('menu.show()') < startup.indexOf('introReady = prepareIntro()'))
+  assert.match(main, /state === 'Boarding' && awaitingIntro[\s\S]*?warmLevel1\(\)/)
+  assert.match(main, /Promise.all\(\[introReady, charactersReady, boardingFilesReady/)
+  assert.match(main, /transitioning: awaitingIntro \|\| levelManager.isTransitioning\(\)/)
+  h.player.cancel(); world.children[0].geometry.dispose(); world.children[0].material.dispose(); map.dispose()
 })
