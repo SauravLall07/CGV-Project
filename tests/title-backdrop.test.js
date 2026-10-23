@@ -29,13 +29,26 @@ test('illustrated title owns exactly one quad, every animation uniform and its i
     assert.ok(title.material.fragmentShader.includes(name), key + ' is driven in shader')
     assert.deepEqual(Array.isArray(value) ? title.uniforms[name].value.toArray() : title.uniforms[name].value, value)
   }
-  assert.deepEqual(MENU_FILM.plume, [0.17, 0.29, 0.80, 0.47])
-  assert.equal(PLUME_FLOW_STRENGTH, 0.010)
+  assert.deepEqual(MENU_FILM.plume, [0.08, 0.22, 0.84, 0.50])
+  assert.equal(PLUME_FLOW_STRENGTH, 0.020)
   assert.equal(title.uniforms.uPlumeFlowStrength.value, PLUME_FLOW_STRENGTH)
-  assert.equal(title.uniforms.uPlumeBrightness.value, 0.10)
+  assert.equal(title.uniforms.uPlumeBrightness.value, 0.14)
   assert.equal(title.uniforms.uPlumeSpeedA.value, 0.010)
   assert.equal(title.uniforms.uPlumeSpeedB.value, 0.017)
-  assert.match(title.material.fragmentShader, /mix\(flowA,flowB,phase\)/)
+  assert.equal(title.uniforms.uPlumeSpeedLarge.value, 0.006)
+  assert.equal(title.uniforms.uPlumeLargeCycles.value, 3)
+  assert.equal(title.uniforms.uPlumeLargeWeight.value, 0.65)
+  assert.equal(title.uniforms.uPlumeMinStrength.value, 0.85)
+  assert.equal(title.uniforms.uPlumeMaxStrength.value, 1)
+  assert.deepEqual(title.uniforms.uPlumeLuminance.value.toArray(), [0.45, 0.75])
+  assert.deepEqual(title.uniforms.uPlumeLuminanceWeights.value.toArray(), [0.2126, 0.7152, 0.0722])
+  assert.match(title.material.fragmentShader, /mix\(mix\(flowA,flowB,phase\),flowLarge,uPlumeLargeWeight\)/)
+  assert.match(title.material.fragmentShader, /uTime\*uPlumeSpeedLarge/)
+  assert.match(title.material.fragmentShader, /uPlumeLargeCycles\/\(uPlume.z-uPlume.x\)/)
+  assert.match(title.material.fragmentShader, /float luminance=dot\(original,uPlumeLuminanceWeights\)/)
+  assert.match(title.material.fragmentShader, /float smoke=smoothstep\(uPlumeLuminance.x,uPlumeLuminance.y,luminance\)/)
+  assert.match(title.material.fragmentShader, /float plume=region\(p,uPlume\)\*smoke/)
+  assert.match(title.material.fragmentShader, /q=clamp\(q,vec2\(0\.\),vec2\(1\.\)\)/)
   assert.match(title.material.fragmentShader, /uPlumeFlowStrength\*plume\*turbulence/)
   assert.match(title.material.fragmentShader, /flow\/=max\(1\.,length\(flow\)\)/)
   assert.doesNotMatch(title.material.fragmentShader, /uFunnel|uPuff|float puff|float age/)
@@ -59,6 +72,34 @@ test('illustrated title owns exactly one quad, every animation uniform and its i
   title.dispose(); title.dispose(); title.update(1); title.render()
   assert.equal(renderer.ratio, 0.85); assert.equal(restores, 2); assert.equal(disposals, 3)
   assert.equal(title.scene.children.length, 0); assert.equal(draws, 1)
+})
+
+test('plume mask follows cover-fit image coordinates and keeps at least 85 percent strength across its full width', async () => {
+  const renderer = { capabilities: { getMaxAnisotropy: () => 1 }, initTexture() {}, compile() {} }
+  const title = await createTitleBackdrop({ renderer, keys: {}, loadImage: async () => ({ width: 1920, height: 1080 }) })
+  try {
+    const shader = title.material.fragmentShader
+    const crop = shader.indexOf('vec2 p=(vec2(vUv.x,1.-vUv.y)-.5)*fit/zoom+.5;')
+    assert.ok(crop >= 0)
+    assert.ok(shader.indexOf('vec3 original=image(p)') > crop)
+    assert.ok(shader.indexOf('float plume=region(p,uPlume)*smoke') > shader.indexOf('float luminance=dot(original'))
+    assert.doesNotMatch(shader, /region\(vUv,uPlume\)/)
+    const mix = (a, b, t) => a + (b - a) * t
+    const smoothstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+    const expression = shader.match(/float turbulence=([^;]+);/)[1]
+    const strength = new Function('p', 'uPlume', 'uPlumeMinStrength', 'uPlumeMaxStrength', 'mix', 'smoothstep', `return ${expression}`)
+    const [left, top, right, bottom] = MENU_FILM.plume, region = { x: left, y: top, z: right, w: bottom }
+    for (let i = 0; i <= 100; i++) {
+      const value = strength({ x: mix(left, right, i / 100) }, region, MENU_FILM.plumeMinStrength, MENU_FILM.plumeMaxStrength, mix, smoothstep)
+      assert.ok(value >= 0.85 && value <= 1, `plume width sample ${i}: ${value}`)
+    }
+    assert.equal(smoothstep(...MENU_FILM.plumeLuminance, 0.4), 0)
+    assert.equal(smoothstep(...MENU_FILM.plumeLuminance, 0.8), 1)
+    // Soft region edges and the luminance mask multiply the displacement,
+    // separately from the full-width strength envelope checked above.
+    assert.match(shader, /r.xy-vec2\(uMaskSoftness\),r.xy\+vec2\(uMaskSoftness\)/)
+    assert.match(shader, /uPlumeFlowStrength\*plume\*turbulence/)
+  } finally { title.dispose() }
 })
 
 test('actual title preparation waits for decoded assets, builds once, warms before creating the illustration', async () => {

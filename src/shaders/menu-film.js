@@ -1,14 +1,19 @@
 import * as THREE from 'three'
 
 // All regions use image coordinates, with y measured down from the top.
-export const PLUME_FLOW_STRENGTH = 0.010
+export const PLUME_FLOW_STRENGTH = 0.020
 export const MENU_FILM = {
-  plume: [0.17, 0.29, 0.80, 0.47],
+  plume: [0.08, 0.22, 0.84, 0.50],
   moon: [0.915, 0.13, 0.04], cloudsA: [0, 0, 0.30, 0.25], cloudsB: [0.62, 0, 1, 0.30],
   mist: [0.22, 0.55, 0.80, 0.80], windows: [0.10, 0.475, 0.70, 0.505],
   headlamp: [0.795, 0.478], stars: [0.25, 0, 0.75, 0.22],
-  plumeFlowStrength: PLUME_FLOW_STRENGTH, plumeBrightness: 0.10,
+  plumeFlowStrength: PLUME_FLOW_STRENGTH, plumeBrightness: 0.14,
   plumeSpeedA: 0.010, plumeSpeedB: 0.017, plumePhaseSeconds: 19,
+  plumeSpeedLarge: 0.006, plumeLargeCycles: 3, plumeLargeWeight: 0.65,
+  plumeMinStrength: 0.85, plumeMaxStrength: 1,
+  plumeLuminance: [0.45, 0.75], plumeLuminanceWeights: [0.2126, 0.7152, 0.0722],
+  plumeFineFrequencyA: 22, plumeFineFrequencyB: 31,
+  plumeNoiseCenter: 0.4375, plumeNoiseScale: 2,
   moonBreath: 0.12, moonSeconds: 6, cloudDrift: 0.004, cloudSeconds: 10,
   mistOpacity: 0.12, lightFlicker: 0.10, zoom: 0.02, zoomSeconds: 30, grain: 0.010,
   maskSoftness: 0.015, vignette: 0.22
@@ -30,6 +35,10 @@ export function createMenuFilm(texture) {
       uniform vec3 uMoon;
       uniform vec4 uPlume,uCloudsA,uCloudsB,uMist,uWindows,uStars;
       uniform float uTime,uPlumeFlowStrength,uPlumeBrightness,uPlumeSpeedA,uPlumeSpeedB,uPlumePhaseSeconds;
+      uniform float uPlumeSpeedLarge,uPlumeLargeCycles,uPlumeLargeWeight,uPlumeMinStrength,uPlumeMaxStrength;
+      uniform float uPlumeFineFrequencyA,uPlumeFineFrequencyB,uPlumeNoiseCenter,uPlumeNoiseScale;
+      uniform vec2 uPlumeLuminance;
+      uniform vec3 uPlumeLuminanceWeights;
       uniform float uMoonBreath,uMoonSeconds,uCloudDrift,uCloudSeconds,uMistOpacity;
       uniform float uLightFlicker,uZoom,uZoomSeconds,uGrain,uMaskSoftness,uVignette;
       varying vec2 vUv;
@@ -47,19 +56,25 @@ export function createMenuFilm(texture) {
         vec2 p=(vec2(vUv.x,1.-vUv.y)-.5)*fit/zoom+.5;
         vec3 original=image(p);float brightness=max(original.r,max(original.g,original.b));
         float white=smoothstep(.15,.8,brightness);
-        float plume=region(p,uPlume)*white;
+        // p is the cropped/zoomed IMAGE coordinate, with y measured from top.
+        float luminance=dot(original,uPlumeLuminanceWeights);
+        float smoke=smoothstep(uPlumeLuminance.x,uPlumeLuminance.y,luminance);
+        float plume=region(p,uPlume)*smoke;
         // Advect left: features of f(x+vt) travel toward decreasing x.
         vec2 a=p+vec2(uTime*uPlumeSpeedA,0.);
         vec2 b=p+vec2(uTime*uPlumeSpeedB,0.);
-        vec2 flowA=vec2(fbm(a*22.),fbm(a*22.+9.))-.4375;
-        vec2 flowB=vec2(fbm(b*31.+4.),fbm(b*31.+17.))-.4375;
+        vec2 flowA=vec2(fbm(a*uPlumeFineFrequencyA),fbm(a*uPlumeFineFrequencyA+9.))-uPlumeNoiseCenter;
+        vec2 flowB=vec2(fbm(b*uPlumeFineFrequencyB+4.),fbm(b*uPlumeFineFrequencyB+17.))-uPlumeNoiseCenter;
+        vec2 large=(p+vec2(uTime*uPlumeSpeedLarge,0.))*uPlumeLargeCycles/(uPlume.z-uPlume.x);
+        vec2 flowLarge=vec2(fbm(large),fbm(large+9.))-uPlumeNoiseCenter;
         float phase=.5-.5*cos(uTime*6.283185/uPlumePhaseSeconds);
-        vec2 flow=mix(flowA,flowB,phase)*2.;
+        vec2 flow=mix(mix(flowA,flowB,phase),flowLarge,uPlumeLargeWeight)*uPlumeNoiseScale;
         flow/=max(1.,length(flow));
-        float turbulence=mix(.35,1.,smoothstep(uPlume.x,uPlume.z,p.x));
+        float turbulence=mix(uPlumeMinStrength,uPlumeMaxStrength,smoothstep(uPlume.x,uPlume.z,p.x));
         vec2 q=p+flow*uPlumeFlowStrength*plume*turbulence;
         float clouds=max(region(p,uCloudsA),region(p,uCloudsB))*white;
         q.x+=sin(uTime*6.283185/uCloudSeconds)*uCloudDrift*clouds;
+        q=clamp(q,vec2(0.),vec2(1.));
         vec3 color=image(q)*(1.+plume*uPlumeBrightness*sin(uTime*.8+fbm(p*30.)*6.28));
         vec2 md=(p-uMoon.xy)*vec2(1.,uImageSize.y/uImageSize.x);
         float halo=exp(-dot(md,md)/(uMoon.z*uMoon.z*2.))*0.07;
