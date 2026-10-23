@@ -15,6 +15,9 @@ import { settings, shadowMapSize } from '../core/settings.js'
 // target, and only the final full-screen pass reaches the canvas, so a
 // multisampled backbuffer would just add a resolve every frame.
 const MAX_PIXEL_RATIO = 1.25
+// Applied on top of the brightness slider, so players who already saved a
+// brightness value get the brighter baseline too.
+const EXPOSURE_BOOST = 1.1
 
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false })
@@ -63,7 +66,7 @@ export function createRenderer(canvas) {
   }
 
   function applySettings() {
-    renderer.toneMappingExposure = settings.get('brightness')
+    renderer.toneMappingExposure = settings.get('brightness') * EXPOSURE_BOOST
 
     const quality = settings.get('shadowQuality')
     const enabled = quality !== 'off'

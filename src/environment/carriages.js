@@ -3666,11 +3666,12 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   }
 
   // Base exposure so no corner falls to pure black between the point lights.
-  const ambient = new THREE.AmbientLight(damaged ? 0x343c48 : 0x5b5750, damaged ? 0.58 : 0.5)
+  // Raised so the cars with only one or two lamps still read under ACES.
+  const ambient = new THREE.AmbientLight(damaged ? 0x3c4552 : 0x5b5750, damaged ? 0.82 : 0.7)
   const hemi = new THREE.HemisphereLight(
     damaged ? 0x6a7e98 : 0x8a8272,
-    damaged ? 0x1e242c : 0x2a2620,
-    damaged ? 0.62 : 0.55
+    damaged ? 0x262d36 : 0x322d26,
+    damaged ? 0.85 : 0.75
   )
   root.add(ambient, hemi)
 

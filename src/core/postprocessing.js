@@ -28,6 +28,7 @@ const FINAL_FRAGMENT = /* glsl */ `
   uniform float uVignette;
   uniform float uSaturation;
   uniform float uWarmth;
+  uniform float uLift;
 
   #include <tonemapping_pars_fragment>
   #include <colorspace_pars_fragment>
@@ -41,6 +42,9 @@ const FINAL_FRAGMENT = /* glsl */ `
     color = mix(vec3(luma), color, uSaturation);
     float shadow = 1.0 - smoothstep(0.02, 0.55, luma);
     color += vec3(uWarmth, uWarmth * 0.45, 0.0) * shadow;
+    // Neutral black-level lift. ACES has a long toe, so without it the
+    // unlit corners between lamps crush to flat black.
+    color += vec3(uLift) * shadow;
     vec2 p = vUv * 2.0 - 1.0;
     float vig = smoothstep(1.22, 0.28, length(p * vec2(0.82, 1.0)));
     color *= mix(1.0 - uVignette, 1.0, vig);
@@ -103,10 +107,11 @@ export function createPostProcessing(renderer) {
   bloomFactors[3] = 0
   bloomFactors[4] = 0
 
-  outputPass.uniforms.uVignette = { value: 0.34 }
+  outputPass.uniforms.uVignette = { value: 0.26 }
   outputPass.uniforms.uSaturation = { value: 1.06 }
   outputPass.uniforms.uWarmth = { value: 0.04 }
-  const defaultGrade = { vignette: 0.34, saturation: 1.06, warmth: 0.04 }
+  outputPass.uniforms.uLift = { value: 0.022 }
+  const defaultGrade = { vignette: 0.26, saturation: 1.06, warmth: 0.04 }
   function setGrade({ vignette = defaultGrade.vignette, saturation = defaultGrade.saturation, warmth = defaultGrade.warmth } = {}) {
     outputPass.uniforms.uVignette.value = vignette
     outputPass.uniforms.uSaturation.value = saturation

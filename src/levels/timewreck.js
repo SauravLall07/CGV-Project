@@ -218,7 +218,7 @@ export function createTimewreckLevel({
       stormSky.uniforms.uSkyGain.value = 0.045
       stormEnvTarget = captureSkyEnvironment(renderer, stormSky.mesh)
       scene.environment = stormEnvTarget.texture
-      scene.environmentIntensity = 0.34
+      scene.environmentIntensity = 0.46
     } finally {
       stormSky.dispose()
     }
@@ -227,7 +227,7 @@ export function createTimewreckLevel({
   // Damaged PBR surfaces are very dark; short-range emergency points leave most
   // of each car on ambient alone, which ACES tone mapping crushes to near-black.
   // One soft directional key (no shadows) lights the aisle and player.
-  const aisleKey = new THREE.DirectionalLight(0xb8c8e0, 1.75)
+  const aisleKey = new THREE.DirectionalLight(0xb8c8e0, 2.05)
   aisleKey.position.set(1.6, 13, spans.vault.maxZ + 8)
   scene.add(aisleKey)
   const aisleKeyTarget = new THREE.Object3D()

@@ -9,7 +9,8 @@ import { addFloorGlows } from '../environment/landing/light-pools.js'
 // more than 8 sources, and nothing is ever reassigned in view.
 //
 // Coloured accent lights (terminal screens) always stay real; they are
-// counted against the region's budget first.
+// counted against the region's budget first. A light flagged keepReal is
+// enclosed enough to never be seen popping, so it is left out entirely.
 
 const down = new THREE.Vector3(0, -1, 0)
 const box = new THREE.Box3()
@@ -44,7 +45,8 @@ export function capRegionLights(regions, parent) {
     const accents = []
     const warm = []
     root.traverse((node) => {
-      if (!node.isPointLight || node.userData.lightPoolSlot) return
+      // keepReal lights (the crawl vent's lamp) sit outside the budget.
+      if (!node.isPointLight || node.userData.lightPoolSlot || node.userData.keepReal) return
       ;(isWarm(node) ? warm : accents).push(node)
     })
     const slots = Math.max(0, keep - accents.length)

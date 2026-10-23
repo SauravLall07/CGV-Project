@@ -260,6 +260,30 @@ function createCrouchVent({ group, colliders, floorMat, wallMat, ironMat, player
     clearanceGates.push(gate)
   }
 
+  // Caged work lamps under the crawl ceiling. The duct sits between the P2
+  // and P3 lamps and was lit by neither, so it gets its own real light.
+  // keepReal exempts it from the region cap in boarding-lighting.js; the walls
+  // hide it from everywhere except the two vent mouths.
+  const cageMat = new THREE.MeshStandardMaterial({ color: 0x1c2228, roughness: 0.5, metalness: 0.8 })
+  const ventBulbMat = new THREE.MeshStandardMaterial({
+    color: 0xfff0d8,
+    emissive: 0xffc27a,
+    emissiveIntensity: 2.4
+  })
+  for (const t of [0.3, 0.7]) {
+    const x = startX + length * t
+    const cage = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.18), cageMat)
+    cage.position.set(x, BRIDGE_PASSAGE_FLOOR_Y + height - 0.1, z)
+    group.add(cage)
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.12), ventBulbMat)
+    bulb.position.set(x, BRIDGE_PASSAGE_FLOOR_Y + height - 0.16, z)
+    group.add(bulb)
+  }
+  const ventLight = new THREE.PointLight(0xffd6a0, 4.2, length + 2.5, 2)
+  ventLight.position.set(centerX, BRIDGE_PASSAGE_FLOOR_Y + height - 0.3, z)
+  ventLight.userData.keepReal = true
+  group.add(ventLight)
+
   // Authoritative low-clearance region for the player controller. This keeps
   // the character crouched even when crouch is released or toggled off, or
   // when jump/run is pressed while crawling through the vent.
@@ -948,9 +972,9 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
   const colliders = []
 
   const floorMat = marbleFloorMaterial({ repeat: [16, 4], base: 0x5b6064, vein: 0x34383d, grout: 0x22262a })
-  const wallMat = plasterMaterial({ repeat: [14, 3], base: 0x444b50, roughness: 0.94 })
-  const ceilingMat = plasterMaterial({ repeat: [14, 2], base: 0x252b30, roughness: 0.98 })
-  const ironMat = metalMaterial({ repeat: [9, 2], base: 0x26343e, roughness: 0.48, metalness: 0.78 })
+  const wallMat = plasterMaterial({ repeat: [14, 3], base: 0x525a60, roughness: 0.94 })
+  const ceilingMat = plasterMaterial({ repeat: [14, 2], base: 0x30373d, roughness: 0.98 })
+  const ironMat = metalMaterial({ repeat: [9, 2], base: 0x34444f, roughness: 0.5, metalness: 0.72 })
   const woodMat = woodMaterial({ repeat: [5, 2], light: 0x5b3f2b, dark: 0x2d1d14 })
   const stairRailMat = new THREE.MeshStandardMaterial({
     color: 0xb08d3f,
