@@ -17,11 +17,13 @@ export function createStoryFilm() {
     uSharpen: { value: SHARPEN },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uBand: { value: new THREE.Vector2(0, 1) },
-    uPaper: { value: null }, uTitle: { value: null },
+    uPaper: { value: null }, uPaperSize: { value: new THREE.Vector2(1024, 1536) },
+    uPaperShadowOffset: { value: new THREE.Vector2(0.012, -0.014) },
+    uPaperShadowBlur: { value: 0.025 }, uPaperShadowOpacity: { value: 0.45 },
+    uPaperFalloff: { value: 0.06 },
     uPaperScale: { value: 0 }, uPaperAngle: { value: 0 }, uPaperOpacity: { value: 0 },
     uShake: { value: new THREE.Vector2() },
-    uRipple: { value: -1 }, uTitleOpacity: { value: 0 }, uTitleDistortion: { value: 0 },
-    uDissolve: { value: 0 },
+    uOpacity: { value: 1 },
     uImage: { value: 1 }, uRain: { value: FILM_RAIN },
     uPanA: { value: new THREE.Vector2() },
     uPanB: { value: new THREE.Vector2() },
@@ -39,10 +41,10 @@ export function createStoryFilm() {
       }
     `,
     fragmentShader: `
-      uniform sampler2D uTexA, uTexB, uPaper, uTitle;
-      uniform float uPaperScale, uPaperAngle, uPaperOpacity, uRipple;
-      uniform float uTitleOpacity, uTitleDistortion, uDissolve;
-      uniform vec2 uShake;
+      uniform sampler2D uTexA, uTexB, uPaper;
+      uniform float uPaperScale, uPaperAngle, uPaperOpacity, uOpacity;
+      uniform vec2 uShake, uPaperSize, uPaperShadowOffset;
+      uniform float uPaperShadowBlur, uPaperShadowOpacity, uPaperFalloff;
       uniform vec2 uSizeA, uSizeB, uResolution, uPanA, uPanB;
       uniform vec2 uBand;
       uniform float uImage, uRain;
@@ -83,15 +85,10 @@ export function createStoryFilm() {
         }
         float aspect = uResolution.x / max(uResolution.y, 1.0);
         vec2 centred = (vUv - 0.5) * vec2(aspect, 1.0);
-        float radius = length(centred);
-        float ring = uRipple < 0.0 ? 0.0 : exp(-pow((radius - uRipple * 1.35) / 0.045, 2.0));
-        vec2 offset = normalize(centred + 0.0001) * ring * 0.025 / vec2(aspect, 1.0);
-        vec2 imageUv = vUv + offset;
+        vec2 imageUv = vUv;
         vec3 a = sharpen(uTexA, cover(imageUv, uSizeA, uZoomA, uPanA), uSizeA);
         vec2 bUv = cover(imageUv, uSizeB, uZoomB, uPanB);
         vec3 b = sharpen(uTexB, bUv, uSizeB);
-        b.r = texture2D(uTexB, bUv + offset * 0.15).r;
-        b.b = texture2D(uTexB, bUv - offset * 0.15).b;
         vec3 color = mix(a, b, clamp(uMix, 0.0, 1.0)) * uImage;
         float grain = hash(floor(vUv * uResolution) + floor(uTime * 24.0)) - 0.5;
         float vignette = smoothstep(0.15, 0.72, length(vUv - 0.5));
@@ -109,27 +106,22 @@ export function createStoryFilm() {
         if (uPaperOpacity > 0.0) {
           float cs = cos(uPaperAngle), sn = sin(uPaperAngle);
           vec2 p = mat2(cs, -sn, sn, cs) * (centred + uShake);
-          vec2 paperUv = p / (max(uPaperScale, 0.0001) * vec2(1024.0/1400.0, 1.0)) + 0.5;
+          vec2 paperExtent = max(uPaperScale, 0.0001) * vec2(uPaperSize.x / uPaperSize.y, 1.0);
+          vec2 shadowP = mat2(cs, -sn, sn, cs) * (centred + uShake - uPaperShadowOffset);
+          vec2 d = abs(shadowP) - paperExtent * 0.5;
+          float distance = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+          float shadow = 1.0 - smoothstep(-uPaperShadowBlur, uPaperShadowBlur, distance);
+          color *= 1.0 - shadow * uPaperShadowOpacity * uPaperOpacity;
+          vec2 paperUv = p / paperExtent + 0.5;
           if (all(greaterThanEqual(paperUv, vec2(0.0))) && all(lessThanEqual(paperUv, vec2(1.0)))) {
-            color = mix(color, texture2D(uPaper, paperUv).rgb, uPaperOpacity);
+            // Composited AFTER the panel grade, so subtitles cannot darken
+            // the newspaper. This is only a gentle centre-to-edge falloff.
+            vec3 paper = texture2D(uPaper, paperUv).rgb;
+            paper *= 1.0 - uPaperFalloff * smoothstep(0.0, 0.72, length(paperUv - 0.5));
+            color = mix(color, paper, uPaperOpacity);
           }
         }
-        // #38BDF8 converted to linear working colour (textures decode sRGB).
-        vec3 blue = vec3(0.0395, 0.5089, 0.9387);
-        color += blue * ring * 0.65;
-        vec2 titleUv = (vUv - 0.5) / vec2(0.94, 0.94 * aspect / 4.0) + 0.5;
-        titleUv += vec2(sin(titleUv.y * 42.0 + uTime * 8.0), cos(titleUv.x * 25.0)) * uTitleDistortion * 0.025;
-        if (uTitleOpacity > 0.0 && all(greaterThanEqual(titleUv, vec2(0.0))) && all(lessThanEqual(titleUv, vec2(1.0)))) {
-          vec4 title = texture2D(uTitle, titleUv);
-          color = mix(color, title.rgb, title.a * uTitleOpacity);
-        }
-        float dissolveNoise = hash(floor(vUv * vec2(340.0, 190.0)));
-        float threshold = uDissolve * 1.06 - 0.03;
-        float alpha = uDissolve <= 0.0 ? 1.0 : smoothstep(threshold - 0.025, threshold + 0.025, dissolveNoise);
-        if (uDissolve >= 1.0) alpha = 0.0;
-        float edge = uDissolve > 0.0 ? (1.0 - smoothstep(0.0, 0.045, abs(dissolveNoise - threshold))) : 0.0;
-        color += blue * edge * 0.7;
-        gl_FragColor = vec4(max(color, vec3(0.0)) * clamp(uFade, 0.0, 1.0), alpha);
+        gl_FragColor = vec4(max(color, vec3(0.0)) * clamp(uFade, 0.0, 1.0), uOpacity);
         #include <colorspace_fragment>
       }
     `

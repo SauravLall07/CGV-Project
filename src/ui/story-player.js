@@ -2,8 +2,6 @@ import * as THREE from 'three'
 import { getContext, getMasterGain } from '../core/audio.js'
 import { THEME } from './ui-theme.js'
 import { createStoryFilm, FILM_RAIN, CARD_RAIN } from '../shaders/story-film.js'
-import { createNewspaperTexture } from '../story/newspaper-texture.js'
-import { createTitleTexture } from '../story/title-texture.js'
 
 const log = (...args) => { if (import.meta.env?.DEV) console.log('[story]', ...args) }
 const audioLog = message => { if (import.meta.env?.DEV) console.log('[story-audio]', message) }
@@ -27,11 +25,11 @@ export function createRainLevelMeter(analyser, report = audioLog) {
 }
 export const typewriterProgress = (elapsed, duration, fraction = 0.85) => Math.min(1, Math.max(0, elapsed / Math.max(0.001, duration * fraction)))
 export function endingTimeline(beat, panels) {
-  const push = panels[panels.length - 1].end
-  const ripple = push + beat.timings.push
-  const title = ripple + beat.timings.ripple - beat.timings.titleSettle
-  const dissolve = ripple + beat.timings.ripple + beat.timings.titleHold
-  return { push, ripple, title, dissolve, complete: dissolve + beat.timings.dissolve }
+  const crossfade = panels[panels.length - 1].end
+  const title = crossfade + beat.timings.endingCrossfade + beat.timings.titleDelay
+  const hold = title + beat.timings.titleIn
+  const titleOut = hold + beat.timings.titleHold
+  return { crossfade, title, hold, titleOut, complete: titleOut + beat.timings.titleOut }
 }
 
 export function buildStoryTimeline(beat, buffers, audible) {
@@ -51,7 +49,7 @@ export function buildStoryTimeline(beat, buffers, audible) {
 // This owner is prepared during title loading and consumed by one run. All
 // asynchronous writes check its generation; late decode/image results cannot
 // resurrect a disposed owner. Dependency injection keeps lifecycle tests real.
-export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDissolve = () => {},
+export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCrossfade = () => {},
   measureRain = Boolean(import.meta.env?.DEV),
   context = getContext, master = getMasterGain, doc = globalThis.document,
   keys = globalThis.window, loadImage = url => new THREE.ImageLoader().loadAsync(url),
@@ -61,13 +59,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
     return ctx.decodeAudioData(await response.arrayBuffer())
   }, film = createStoryFilm(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   let generation = 0, disposed = false, active = false, readyPromise
-  let root, caption, button, strip, timeline, index = -1, time = 0, fadeTime = -1
+  let root, caption, button, strip, timeline, index = -1, time = 0, skipped = false
   let source = null, enterReady = false, enterHeld = false, timer, loadTimer
   let narrationGain = null, rainSource = null, rainGain = null, rainBuffer = null
   let request = null, unlockPromise = null, phase = '', audioWait = 0, revealCount = -1
-  let newspaper = null, titleTexture = null, whistleBuffer = null, whistleSource = null, whistleGain = null
-  let dissolving = false, dissolveTime = 0, dissolveDuration = 0, dissolveFrom = 0, rainFailed = false, rainFading = false
-  let ending = null, pushed = false, rippled = false, titled = false
+  let newspaper = null, whistleBuffer = null, whistleSource = null, whistleGain = null
+  let handoverStarted = false, crossfadeTime = 0, crossfadeDuration = 0, crossfadeFrom = 1, rainFailed = false, rainFading = false
+  let ending = null, titleRoot = null, titleHeading = null, titleSubtitle = null, titleInLogged = false, titleOutLogged = false
   let storyBus = null, limiter = null, rainAnalyser = null, rainMeter = null
   let savedRenderer = null
   const savedViewport = new THREE.Vector4()
@@ -135,7 +133,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
   }
   function startRain() {
     const ctx = context()
-    if (!active || fadeTime >= 0 || rainFailed || rainFading || !rainBuffer || rainSource || ctx?.state !== 'running') return
+    if (!active || skipped || handoverStarted || rainFailed || rainFading || !rainBuffer || rainSource || ctx?.state !== 'running') return
     try {
       rainGain = ctx.createGain(); rainGain.connect(ensureStoryBus())
       if (measureRain) {
@@ -169,7 +167,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
     whistleGain?.disconnect(); whistleGain = null
   }
   function playWhistle() {
-    if (!active || dissolving || phase !== 'push' || !whistleBuffer || whistleSource) return
+    if (!active || skipped || phase !== 'crossfade' || !whistleBuffer || whistleSource) return
     const ctx = context()
     if (ctx?.state !== 'running') { unlockAudio().then(playWhistleWhenRunning); return }
     try {
@@ -182,7 +180,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
   function playWhistleWhenRunning() { if (context()?.state === 'running') playWhistle() }
   function tryNarration() {
     const ctx = context(), pending = request
-    if (!pending || pending.started || !active || fadeTime >= 0 || ctx?.state !== 'running') return
+    if (!pending || pending.started || !active || skipped || handoverStarted || ctx?.state !== 'running') return
     try {
       // Own unity gain makes the narration route explicit without touching
       // settings/master volume. Keep both node references until teardown.
@@ -239,14 +237,23 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
   function prepare() {
     if (readyPromise) return readyPromise
     const token = generation
-    newspaper = createNewspaperTexture(doc); titleTexture = createTitleTexture(doc)
-    renderer.initTexture(newspaper); renderer.initTexture(titleTexture)
     // Queue ambience before the six images/five voices so a cold connection
     // pool cannot starve it behind all the larger story downloads.
     const rainReady = beat.rain ? loadAudio(beat.rain.url, context(), abort.signal).then(buffer => {
       if (!disposed && token === generation) rainBuffer = buffer
     }).catch(error => { rainFailed = true; audioLog(`rain failed decode/load: ${error.message}`) }) : Promise.resolve()
     const work = Promise.allSettled([
+      loadImage(beat.newspaper.image).then(image => {
+        if (disposed || token !== generation) return
+        newspaper = new THREE.Texture(image)
+        newspaper.colorSpace = THREE.SRGBColorSpace
+        newspaper.generateMipmaps = true
+        newspaper.minFilter = THREE.LinearMipmapLinearFilter
+        newspaper.magFilter = THREE.LinearFilter
+        newspaper.anisotropy = renderer.capabilities.getMaxAnisotropy()
+        newspaper.needsUpdate = true
+        renderer.initTexture(newspaper)
+      }),
       ...beat.panels.map(async (panel, i) => {
         const image = await loadImage(panel.image)
         if (disposed || token !== generation) return
@@ -281,8 +288,8 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
       if (disposed) return
       film.uniforms.uTexA.value = textures[0] || black
       film.uniforms.uTexB.value = textures[1] || black
-      film.uniforms.uPaper.value = newspaper
-      film.uniforms.uTitle.value = titleTexture
+      film.uniforms.uPaper.value = newspaper || black
+      if (newspaper) film.uniforms.uPaperSize.value.set(newspaper.image.width, newspaper.image.height)
       renderer.initTexture(black)
       renderer.compile(film.scene, film.camera)
     })
@@ -320,40 +327,58 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
     root?.removeEventListener('click', swallow)
     root?.removeEventListener('pointerdown', swallow)
     button?.removeEventListener('click', skip)
-    root?.remove(); root = caption = button = strip = null
+    root?.remove(); root = caption = button = strip = titleRoot = titleHeading = titleSubtitle = null
     captionLetters.length = 0
     textures.forEach(texture => texture.dispose()); textures.length = 0
     buffers.length = 0; timeline = null
-    newspaper?.dispose(); titleTexture?.dispose(); newspaper = titleTexture = null
+    newspaper?.dispose(); newspaper = null
     black.dispose(); film.dispose()
   }
   function complete() {
     if (!active) return
+    // The hard timeout can fire before the scheduled handover. Still give
+    // main.js its arrival-camera callback before releasing STORY.
+    if (!handoverStarted) {
+      skipped = true; stopAudio(); stopWhistle()
+      beginCrossfade(beat.timings.skipCrossfade)
+    }
     log('complete'); dispose(); onComplete()
   }
   function cancel() { if (!disposed) { log('cancel'); dispose() } }
   function skip() {
-    if (!active || fadeTime >= 0) return
-    log('skip'); stopAudio(); stopWhistle(); fadeTime = 0
-    film.uniforms.uTitleOpacity.value = 0
-    film.uniforms.uPaperOpacity.value = 0
-    film.uniforms.uRipple.value = -1
-    film.uniforms.uImage.value = 1
-    film.uniforms.uFade.value = 1
-    // A skipped newspaper dissolves its current painting directly into the
-    // game; panel 1 supplies the underlying image once paper is hidden.
-    setPanel(Math.max(0, index), film.uniforms.uTexA, film.uniforms.uSizeA, film.uniforms.uZoomA, film.uniforms.uPanA)
-    setPanel(Math.max(0, index), film.uniforms.uTexB, film.uniforms.uSizeB, film.uniforms.uZoomB, film.uniforms.uPanB)
-    beginDissolve(beat.timings.skipDissolve)
+    if (!active || skipped) return
+    log('skip'); stopAudio(); stopWhistle(); skipped = true
+    titleRoot.style.visibility = 'hidden'
+    beginCrossfade(beat.timings.skipCrossfade)
   }
-  function beginDissolve(seconds) {
-    const first = !dissolving
-    dissolveFrom = first ? 0 : film.uniforms.uDissolve.value
-    dissolving = true; dissolveTime = 0; dissolveDuration = seconds
+  function beginCrossfade(seconds) {
+    const first = !handoverStarted
+    crossfadeFrom = first ? 1 : film.uniforms.uOpacity.value
+    handoverStarted = true; crossfadeTime = 0; crossfadeDuration = seconds
     strip.style.visibility = 'hidden'; fadeRain(seconds)
-    film.uniforms.uDissolve.value = dissolveFrom
-    log('dissolve')
-    if (first) onDissolve()
+    film.uniforms.uOpacity.value = crossfadeFrom
+    releaseRenderer()
+    log('ending crossfade')
+    if (first) {
+      phase = 'crossfade'
+      onCrossfade()
+      if (!skipped) playWhistle()
+    }
+  }
+  function updateTitle() {
+    if (time >= ending.title) {
+      if (!titleInLogged) { titleInLogged = true; phase = 'title'; log('title in') }
+      titleRoot.style.visibility = 'visible'
+      const progress = Math.min(1, (time - ending.title) / beat.timings.titleIn)
+      const ease = 1 - Math.pow(1 - progress, 3)
+      titleHeading.style.opacity = ease
+      titleHeading.style.filter = `blur(${8 * (1 - ease)}px)`
+      titleHeading.style.letterSpacing = `${0.55 + (0.14 - 0.55) * ease}em`
+      titleSubtitle.style.opacity = Math.min(1, Math.max(0, (time - ending.title - beat.timings.subtitleDelay) / beat.timings.subtitleIn))
+      titleRoot.style.opacity = Math.min(1, Math.max(0, (ending.complete - time) / beat.timings.titleOut))
+    }
+    if (time >= ending.titleOut && !titleOutLogged) { titleOutLogged = true; log('title out') }
+    if (time >= ending.complete) complete()
   }
   function start() {
     if (disposed || active) return
@@ -377,6 +402,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
       captionLetters.push({ block, letters: makeLetters(block, panel.caption) }); caption.appendChild(block)
     }
     strip.appendChild(caption); root.appendChild(strip)
+    titleRoot = doc.createElement('div'); titleRoot.id = 'story-title'
+    Object.assign(titleRoot.style, { position: 'absolute', top: '44%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', visibility: 'hidden', pointerEvents: 'none' })
+    titleHeading = doc.createElement('h1'); titleHeading.textContent = 'CHRONO EXPRESS'
+    Object.assign(titleHeading.style, { margin: '0', fontSize: 'clamp(30px, 7.5vw, 86px)', fontWeight: '800', letterSpacing: '0.55em', opacity: '0', filter: 'blur(8px)', color: '#f0e6cf', textAlign: 'center', whiteSpace: 'nowrap', lineHeight: '1.05', fontFamily: 'Georgia, "Times New Roman", "Palatino Linotype", serif', textShadow: '0 2px 8px rgba(0,0,0,0.9), 0 0 24px rgba(0,0,0,0.65)' })
+    titleSubtitle = doc.createElement('div'); titleSubtitle.textContent = 'THE LAST HEIST'
+    Object.assign(titleSubtitle.style, { fontSize: 'clamp(11px, 2vw, 18px)', fontWeight: '600', letterSpacing: '0.5em', color: 'rgba(176, 141, 63, 0.8)', marginTop: 'clamp(6px, 1.2vh, 16px)', textShadow: '0 1px 6px rgba(0,0,0,0.7)', textTransform: 'uppercase', opacity: '0' })
+    titleRoot.appendChild(titleHeading); titleRoot.appendChild(titleSubtitle); root.appendChild(titleRoot)
     button = doc.createElement('button'); button.type = 'button'; button.textContent = 'Skip intro'
     Object.assign(button.style, { position: 'absolute', right: '24px', top: '12px', padding: '8px 14px', color: THEME.parchment, background: '#111820', border: `1px solid ${THEME.brass}`, borderRadius: '4px', font: 'inherit', cursor: 'pointer' })
     button.addEventListener('click', skip); root.appendChild(button)
@@ -395,18 +427,22 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
     delta = Math.max(0, delta)
     // Pause the presentation clock while a panel waits for its resume,
     // bounded independently of the wall-clock hard timeout.
-    if (request && !request.started && fadeTime < 0) {
+    if (request && !request.started && !skipped && !handoverStarted) {
       audioWait += delta; tryNarration()
       if (!request?.started && audioWait < beat.timings.unlockWait) return
       if (request && !request.started) useFallback(request.line)
       delta = 0
     }
     const u = film.uniforms
-    if (dissolving) {
-      dissolveTime += delta
+    if (handoverStarted) {
+      crossfadeTime += delta
       u.uTime.value += delta
-      u.uDissolve.value = dissolveFrom + (1 - dissolveFrom) * Math.min(1, dissolveTime / dissolveDuration)
-      if (dissolveTime >= dissolveDuration) complete()
+      const progress = Math.min(1, crossfadeTime / crossfadeDuration)
+      const ease = progress * progress * (3 - 2 * progress)
+      u.uOpacity.value = crossfadeFrom * (1 - ease)
+      if (skipped) {
+        if (progress >= 1) complete()
+      } else { time += delta; updateTitle() }
       return
     }
     time += delta
@@ -419,11 +455,14 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
       const spin = Math.min(1, Math.max(0, (time - beat.timings.newspaperLead) / beat.timings.newspaperSpin))
       const ease = 1 - Math.pow(1 - spin, 3)
       const stoppedAt = beat.timings.newspaperLead + beat.timings.newspaperSpin
-      const hold = Math.min(1, Math.max(0, (time - stoppedAt - beat.timings.newspaperShake) / beat.timings.newspaperHold))
+      const settledAt = stoppedAt + beat.timings.newspaperSettle
+      const settle = Math.min(1, Math.max(0, (time - stoppedAt) / beat.timings.newspaperSettle))
+      const hold = Math.min(1, Math.max(0, (time - settledAt - beat.timings.newspaperShake) / beat.timings.newspaperHold))
       const fade = Math.max(0, Math.min(1, (time - (beat.timings.opening - beat.timings.openingCrossfade)) / beat.timings.openingCrossfade))
-      u.uPaperScale.value = (0.015 + (beat.newspaper.height - 0.015) * ease) * (1 + (beat.newspaper.push - 1) * hold)
+      const overshoot = Math.sin(settle * Math.PI) * (beat.newspaper.overshoot - beat.newspaper.height)
+      u.uPaperScale.value = (0.015 + (beat.newspaper.height - 0.015) * ease + overshoot) * (1 + (beat.newspaper.push - 1) * hold)
       u.uPaperAngle.value = (1 - ease) * beat.newspaper.turns * Math.PI * 2
-      const shake = time >= stoppedAt && time < stoppedAt + beat.timings.newspaperShake ? beat.newspaper.shake * (1 - (time - stoppedAt) / beat.timings.newspaperShake) : 0
+      const shake = time >= settledAt && time < settledAt + beat.timings.newspaperShake ? beat.newspaper.shake * (1 - (time - settledAt) / beat.timings.newspaperShake) : 0
       u.uShake.value.set(Math.sin(time * 180) * shake, Math.cos(time * 143) * shake)
       u.uPaperOpacity.value = 1 - fade; u.uImage.value = fade; u.uRain.value = CARD_RAIN
       setPanel(0, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
@@ -432,32 +471,18 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
       return
     }
     u.uPaperOpacity.value = 0; u.uImage.value = 1; u.uRain.value = FILM_RAIN
-    if (time >= ending.push) {
+    if (time >= ending.crossfade) {
       strip.style.visibility = 'hidden'
       const last = beat.panels.length - 1
       setPanel(last, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
       setPanel(last, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
       u.uMix.value = 1
-      const progress = Math.min(1, (time - ending.push) / beat.timings.push)
-      u.uZoomB.value = beat.panels[last].zoom[1] + (beat.ending.zoom - beat.panels[last].zoom[1]) * progress
-      u.uPanB.value.set(beat.panels[last].pan[0] + (beat.ending.pan[0] - beat.panels[last].pan[0]) * progress,
-        beat.panels[last].pan[1] + (beat.ending.pan[1] - beat.panels[last].pan[1]) * progress)
-      if (!pushed) { pushed = true; phase = 'push'; log('ending push'); stopAudio(); playWhistle() }
-      if (time >= ending.ripple) {
-        if (!rippled) { rippled = true; phase = 'ripple'; log('ripple') }
-        u.uRipple.value = Math.min(1, (time - ending.ripple) / beat.timings.ripple)
-      }
-      if (time >= ending.title) {
-        if (!titled) { titled = true; phase = 'title'; log('title') }
-        const settle = Math.min(1, (time - ending.title) / beat.timings.titleSettle)
-        u.uTitleOpacity.value = settle; u.uTitleDistortion.value = 1 - settle
-      }
-      if (time >= ending.dissolve) {
-        beginDissolve(beat.timings.dissolve)
-        dissolveTime = time - ending.dissolve
-        u.uDissolve.value = Math.min(1, dissolveTime / dissolveDuration)
-        if (dissolveTime >= dissolveDuration) complete()
-      }
+      stopAudio()
+      beginCrossfade(beat.timings.endingCrossfade)
+      crossfadeTime = time - ending.crossfade
+      const progress = Math.min(1, crossfadeTime / crossfadeDuration)
+      u.uOpacity.value = 1 - progress * progress * (3 - 2 * progress)
+      updateTitle()
       return
     }
     phase = 'panels'
@@ -503,13 +528,14 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
   }
   return { prepare, start, update, skip, cancel, dispose, unlockAudio,
     get active() { return active },
-    get isDissolving() { return active && dissolving },
+    get showGame() { return active && handoverStarted },
+    get showQuad() { return active && (!handoverStarted || crossfadeTime < crossfadeDuration) },
     render() {
-      if (!active) return
+      if (!active || (handoverStarted && crossfadeTime >= crossfadeDuration)) return
       storyResolution()
       renderer.getDrawingBufferSize(size); film.uniforms.uResolution.value.copy(size)
       const autoClear = renderer.autoClear
-      if (dissolving) renderer.autoClear = false
+      if (handoverStarted) renderer.autoClear = false
       try { renderer.setRenderTarget(null); renderer.render(film.scene, film.camera) }
       finally { renderer.autoClear = autoClear }
     }

@@ -410,7 +410,7 @@ let storyRun = 0
 function prepareIntro() {
   initAudio()
   const run = storyRun
-  const owner = createStoryPlayer({ beat: introBeat, renderer, onDissolve() {
+  const owner = createStoryPlayer({ beat: introBeat, renderer, onCrossfade() {
     if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
     beginForecourtArrival()
   }, onComplete() {
@@ -839,7 +839,7 @@ const loop = createLoop({
   instrumentation: renderOverlay,
   render(world, view) {
     if (storyPlayer?.active) {
-      if (storyPlayer.isDissolving) post.render(world, view)
+      if (storyPlayer.showGame) post.render(world, view)
       storyPlayer.render()
       return
     }
@@ -864,7 +864,7 @@ const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
   if (storyPlayer?.active) {
     storyPlayer.update(delta)
-    if (storyPlayer?.isDissolving && arrival) updateForecourtArrival(delta)
+    if (storyPlayer?.showGame && arrival) updateForecourtArrival(delta)
     return
   }
   renderQuality.update(performance.now())

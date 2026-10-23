@@ -4,6 +4,7 @@ import image3 from '../assets/textures/story/story-intro-03.jpg'
 import image4 from '../assets/textures/story/story-intro-04.jpg'
 import image5 from '../assets/textures/story/story-intro-05.jpg'
 import image6 from '../assets/textures/story/story-intro-06.jpg'
+import newspaper from '../assets/textures/story/story-newspaper.jpg'
 import line1 from '../assets/audio/story/story-intro-line-1.mp3'
 import line2 from '../assets/audio/story/story-intro-line-2.mp3'
 import line3 from '../assets/audio/story/story-intro-line-3.mp3'
@@ -23,24 +24,26 @@ export const HARD_TIMEOUT_S = 90
 export const TYPEWRITER_FRACTION = 0.85
 export const PANEL_ZOOM_START = 1
 export const PANEL_ZOOM_END = 1.04
-export const NEWSPAPER_S = 7.0
-export const NEWSPAPER_SPIN_S = 1.8
-export const NEWSPAPER_LEAD_S = 0.75
-export const NEWSPAPER_HOLD_S = 3.5
-export const NEWSPAPER_SHAKE_S = 0.15
-export const NEWSPAPER_CROSSFADE_S = 0.8
-export const NEWSPAPER_TURNS = 3
-export const NEWSPAPER_HEIGHT = 0.75
-export const NEWSPAPER_PUSH = 1.04
-export const NEWSPAPER_SHAKE = 0.004
-export const END_PUSH_S = 1.2
-export const END_PUSH_ZOOM = 1.25
-export const END_PUSH_PAN = [0.08, 0]
-export const RIPPLE_S = 1.2
-export const TITLE_SETTLE_S = 0.8
-export const TITLE_HOLD_S = 1.5
-export const DISSOLVE_S = 1.5
-export const SKIP_DISSOLVE_S = 0.6
+export const NEWSPAPER_S = 7.5
+export const NEWSPAPER_SPIN_S = 1.6
+export const NEWSPAPER_LEAD_S = 0.83
+export const NEWSPAPER_SETTLE_S = 0.25
+export const NEWSPAPER_HOLD_S = 3.8
+export const NEWSPAPER_SHAKE_S = 0.12
+export const NEWSPAPER_CROSSFADE_S = 0.9
+export const NEWSPAPER_TURNS = 2
+export const NEWSPAPER_HEIGHT = 0.88
+export const NEWSPAPER_OVERSHOOT_HEIGHT = 0.89
+export const NEWSPAPER_PUSH = 1.03
+export const NEWSPAPER_SHAKE = 0.002
+export const ENDING_CROSSFADE_S = 2.2
+export const TITLE_DELAY_S = 0.4
+export const TITLE_IN_S = 2.4
+export const TITLE_SUBTITLE_DELAY_S = 0.6
+export const TITLE_SUBTITLE_IN_S = 1.0
+export const TITLE_HOLD_S = 2.0
+export const TITLE_OUT_S = 1.2
+export const SKIP_CROSSFADE_S = 0.6
 export const WHISTLE_VOLUME = 0.8
 export const RAIN_VOLUME = 1.5
 export const RAIN_FADE_IN_S = 1.5
@@ -71,14 +74,16 @@ export const introBeat = {
     opening: NEWSPAPER_S, openingCrossfade: NEWSPAPER_CROSSFADE_S,
     newspaperSpin: NEWSPAPER_SPIN_S, newspaperLead: NEWSPAPER_LEAD_S,
     newspaperHold: NEWSPAPER_HOLD_S, newspaperShake: NEWSPAPER_SHAKE_S,
-    push: END_PUSH_S, ripple: RIPPLE_S, titleSettle: TITLE_SETTLE_S,
-    titleHold: TITLE_HOLD_S, dissolve: DISSOLVE_S, skipDissolve: SKIP_DISSOLVE_S,
+    newspaperSettle: NEWSPAPER_SETTLE_S,
+    endingCrossfade: ENDING_CROSSFADE_S, titleDelay: TITLE_DELAY_S,
+    titleIn: TITLE_IN_S, subtitleDelay: TITLE_SUBTITLE_DELAY_S, subtitleIn: TITLE_SUBTITLE_IN_S,
+    titleHold: TITLE_HOLD_S, titleOut: TITLE_OUT_S, skipCrossfade: SKIP_CROSSFADE_S,
     captionFade: CAPTION_FADE_S,
     rainFadeIn: RAIN_FADE_IN_S, unlockWait: AUDIO_UNLOCK_WAIT_S,
     prepareTimeout: PREPARE_TIMEOUT_S
   },
-  newspaper: { turns: NEWSPAPER_TURNS, height: NEWSPAPER_HEIGHT, push: NEWSPAPER_PUSH, shake: NEWSPAPER_SHAKE },
-  ending: { zoom: END_PUSH_ZOOM, pan: END_PUSH_PAN },
+  newspaper: { image: newspaper, turns: NEWSPAPER_TURNS, height: NEWSPAPER_HEIGHT,
+    overshoot: NEWSPAPER_OVERSHOOT_HEIGHT, push: NEWSPAPER_PUSH, shake: NEWSPAPER_SHAKE },
   captions: { bottomVh: SUBTITLE_BOTTOM_VH },
   bus: { gain: STORY_BUS_GAIN, threshold: LIMITER_THRESHOLD_DB, knee: LIMITER_KNEE_DB,
     ratio: LIMITER_RATIO, attack: LIMITER_ATTACK_S, release: LIMITER_RELEASE_S },
