@@ -8,6 +8,8 @@ import { createStoryPlayer, buildStoryTimeline, typewriterProgress, endingTimeli
 import { createStoryFilm, SHARPEN, FILM_GRAIN, FILM_RAIN, FILM_FLICKER } from '../src/shaders/story-film.js'
 import { resolveInputState } from '../src/core/input-state.js'
 import { createPostProcessing } from '../src/core/postprocessing.js'
+import { createStealthSystem } from '../src/systems/stealth.js'
+import { LANDING_FIGURE } from '../src/environment/landing/layout.js'
 
 function harness({ locked = false, failed = false, delayed = false, rain = false, resumeLater = false, whistle = false, deviceRatio = 2.5, restoreHook = () => {} } = {}) {
   class Element extends EventTarget {
@@ -233,7 +235,7 @@ test('all six captions match the supplied script exactly', () => {
 test('composition freezes before gameplay updates and renders only story; credits retained', () => {
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
   assert.ok(main.indexOf('storyPlayer.update(delta)') < main.indexOf('player.updateVisual(delta)'))
-  assert.match(main, /if \(storyPlayer.showGame\) post.render\(world, view\)\s+storyPlayer.render\(\)/)
+  assert.match(main, /if \(storyPlayer.showGame\) \{[\s\S]*?post.render\(world, view\)[\s\S]*?minimap.render\(renderer\)[\s\S]*?storyPlayer.render\(\)/)
   assert.match(main, /if \(gameStarted && !storyPlayer\?\.active && !awaitingIntro\) playMusicForState\(state\)/)
   const credits = fs.readFileSync(new URL('../src/ui/credits.js', import.meta.url), 'utf8')
   assert.ok(credits.includes('Story illustrations generated with ChatGPT (OpenAI)'))
@@ -357,7 +359,7 @@ test('real newspaper image spins twice, settles, shakes, holds and crossfades wi
   h.player.cancel()
 })
 
-test('ending darkens, draws title, passes train, covers fully, waits for eight good frames then clears', async () => {
+test('ending darkens, draws title, passes train, covers fully, waits for ten good full frames then clears', async () => {
   const h = harness({ whistle: true }); await h.player.prepare(); h.player.start()
   const u = h.film.uniforms, t = endBeats()
   assert.equal(t.title - t.darken, 1)
@@ -405,7 +407,7 @@ test('ending darkens, draws title, passes train, covers fully, waits for eight g
   assert.equal(u.uTrainHeight.value, 0)
   assert.equal(h.player.active, true)
   assert.equal(resolveInputState({ gameStarted: true, story: h.player.active }), 'STORY')
-  for (let i = 0; i < 8; i++) h.player.recordFrame(16)
+  for (let i = 0; i < 10; i++) h.player.recordFrame(16)
   h.player.update(0.599); assert.equal(u.uSmokeClear.value, 0)
   h.player.update(0.001); assert.equal(u.uSmokeClear.value, 0)
   h.player.update(1); assert.equal(u.uSmokeClear.value, 0.5)
@@ -425,7 +427,7 @@ test('rain loops through the limited story bus at 1.5, fades in over 1.5 and out
   h.ctx.currentTime = endStart(); h.player.update(endStart())
   assert.deepEqual(gain.gain.events.at(-1), ['ramp', 1.5, 1.5], 'rain continues during title and train')
   h.player.update(endBeats().trainEnd - endStart())
-  for (let i = 0; i < 8; i++) h.player.recordFrame(16)
+  for (let i = 0; i < 10; i++) h.player.recordFrame(16)
   h.ctx.currentTime = endBeats().reveal; h.player.update(0.6)
   assert.deepEqual(gain.gain.events.at(-1), ['ramp', 0, endBeats().complete])
   h.player.update(endBeats().complete - endBeats().reveal + 0.001)
@@ -433,27 +435,31 @@ test('rain loops through the limited story bus at 1.5, fades in over 1.5 and out
   assert.equal(h.stats.completes, 1)
 })
 
-test('under-smoke wait resets on a 40 ms frame, needs eight consecutive good frames, and caps at three seconds', async () => {
+test('under-smoke wait needs ten complete good frames, resets on partial or 40 ms frames, and caps at 3.5 seconds', async () => {
   const h = harness(); await h.player.prepare(); h.player.start(); h.player.update(endBeats().trainEnd)
   assert.equal(h.stats.coveredAtHandover, 1)
-  for (let i = 0; i < 7; i++) h.player.recordFrame(16)
+  for (let i = 0; i < 9; i++) h.player.recordFrame(16)
   h.player.update(0.6); h.player.update(0.1)
   assert.equal(h.film.uniforms.uSmokeClear.value, 0)
   h.player.recordFrame(40)
-  for (let i = 0; i < 7; i++) h.player.recordFrame(16)
+  for (let i = 0; i < 9; i++) h.player.recordFrame(16)
   h.player.update(0.1); h.player.update(0.1)
   assert.equal(h.film.uniforms.uSmokeClear.value, 0, 'one slow frame resets the streak')
+  h.player.recordFrame(16, false)
+  for (let i = 0; i < 9; i++) h.player.recordFrame(16)
+  h.player.update(0); h.player.update(0.1)
+  assert.equal(h.film.uniforms.uSmokeClear.value, 0, 'partial game frame breaks the streak too')
   h.player.recordFrame(16); h.player.update(0)
   h.player.update(1); assert.equal(h.film.uniforms.uSmokeClear.value, 0.5)
   h.player.update(1); assert.equal(h.stats.completes, 1)
   const slow = harness(); await slow.player.prepare(); slow.player.start(); slow.player.update(endBeats().trainEnd)
-  slow.player.recordFrame(80); slow.player.update(2.999)
+  slow.player.recordFrame(80); slow.player.update(3.499)
   assert.equal(slow.film.uniforms.uSmokeClear.value, 0)
   slow.player.update(0.001); slow.player.update(1)
-  assert.equal(slow.film.uniforms.uSmokeClear.value, 0.5, 'three-second maximum prevents an indefinite wait')
+  assert.equal(slow.film.uniforms.uSmokeClear.value, 0.5, '3.5-second maximum prevents an indefinite wait')
   slow.player.skip(); slow.player.update(0.6); assert.equal(slow.stats.completes, 1)
   const stalled = harness(); await stalled.player.prepare(); stalled.player.start(); stalled.player.update(endBeats().trainEnd)
-  stalled.player.recordFrame(3100); stalled.player.update(0.1); stalled.player.update(1)
+  stalled.player.recordFrame(3600); stalled.player.update(0.1); stalled.player.update(1)
   assert.equal(stalled.film.uniforms.uSmokeClear.value, 0.5, 'wall-clock cap survives the game loop delta clamp')
   stalled.player.cancel()
 })
@@ -527,7 +533,7 @@ test('crossfade overlays one quad after normal scene, restores renderer state an
   assert.doesNotMatch(h.film.material.fragmentShader, /uRipple|uTitle|uDissolve|dissolveNoise|chromatic/)
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
   assert.match(main, /onCrossfade\(\) \{[\s\S]*?beginForecourtArrival\(\)/)
-  assert.match(main, /if \(storyPlayer\?\.showGame && arrival\) updateForecourtArrival\(delta\)/)
+  assert.match(main, /if \(arrival && !updateForecourtArrival\(delta\) && !presentation\)/)
   assert.equal(fs.existsSync(new URL('../src/story/newspaper-texture.js', import.meta.url)), false)
   assert.equal(fs.existsSync(new URL('../src/story/title-texture.js', import.meta.url)), false)
   const playerSource = fs.readFileSync(new URL('../src/ui/story-player.js', import.meta.url), 'utf8')
@@ -611,7 +617,7 @@ test('real main render callback bypasses composer for story quad and preserves p
     const h = harness(); await h.player.prepare(); h.player.start()
     let postCalls = 0
     const post = { enabled, render() { postCalls++ } }
-    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
+    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
     render({}, {}); assert.equal(postCalls, 0)
     assert.equal(h.stats.renders, 1)
     h.player.skip(); render({}, {})
@@ -621,6 +627,76 @@ test('real main render callback bypasses composer for story quad and preserves p
     assert.equal(postCalls, 2, 'normal scene render resumes')
     assert.equal(post.enabled, enabled)
   }
+})
+
+test('hidden handover runs the complete shared update with neutral input and a stopped run timer', () => {
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('import.meta.env?.DEV', 'false')
+  const start = main.indexOf('function updateGameFrame('), end = main.indexOf('\nloop.start()', start)
+  assert.ok(start >= 0 && end > start)
+  const calls = [], camera = new THREE.PerspectiveCamera(), hud = {
+    updateStats() { calls.push('hud stats') }, isTutorialOpen: () => false,
+    updateRunTimer(options) { calls.push('timer'); assert.equal(options.elapsed, 7); assert.equal(options.running, false) },
+    updateTimeState() { calls.push('hud state') } }
+  let keyboardEnabled = true, interactionEnabled = false
+  const keyboard = { state: { forward: true, interact: true }, consumePress() { throw new Error('hidden update consumed player input') } }
+  const timeSystem = { update() { calls.push('time') }, getMode: () => 'NORMAL', getGhost: () => ({ isPlaying: () => false }),
+    getEnergy: () => 100, getMaxEnergy: () => 100, getGhostCooldown: () => 0, getAbilityAvailability: () => ({}),
+    getStrain: () => 0, getMaxStrain: () => 100, isStrainEnabled: () => false, getFreezeLockout: () => 0 }
+  const deps = { camera, hud, keyboard, timeSystem, scene: new THREE.Scene(), renderQuality: { update() {} },
+    player: { mesh: new THREE.Group(), updateVisual() { calls.push('visual') }, isCrouching: () => false,
+      update(delta, input) { calls.push('player'); assert.equal(keyboardEnabled, false); assert.equal(input.keyboard.forward, false); assert.equal(input.keyboard.interact, false); assert.equal(input.runPressed, false); assert.equal(input.crouchPressed, false) } },
+    levelManager: { getState: () => 'Boarding', update() { calls.push('level') } },
+    playerView: { getYaw: () => 0, update() { calls.push('camera collision'); camera.position.set(999, 999, 999) } },
+    interaction: { setEnabled(value) { interactionEnabled = value }, update() { assert.equal(keyboardEnabled, false); assert.equal(interactionEnabled, true); calls.push('interaction') } },
+    respawn: { update() { calls.push('respawn') } },
+    getInputState: () => 'STORY', syncInputState() { keyboardEnabled = false },
+    updateForecourtArrival() { camera.position.set(10, 20, 30); return false } }
+  const run = new Function('deps', 'THREE', `const {${Object.keys(deps).join(',')}}=deps;
+    const benchmark=null,renderOverlay=null,modelEditor=null,credits={isOpen:false},gameStarted=true;
+    const presentationKeyboard=Object.freeze({forward:false,interact:false});
+    const arrivalFramePosition=new THREE.Vector3(),arrivalFrameRotation=new THREE.Quaternion();
+    let elapsed=7,arrival={},firstHiddenSystemsPending=true;
+    ${main.slice(start, end)}
+    return {updateGameFrame,get elapsed(){return elapsed}};`)(deps, THREE)
+  for (let i = 0; i < 10; i++) assert.equal(run.updateGameFrame(0.1, true), true)
+  assert.equal(run.elapsed, 7); assert.equal(interactionEnabled, false)
+  assert.deepEqual(camera.position.toArray(), [10, 20, 30], 'warming collision must not replace the arrival shot')
+  assert.deepEqual(calls.slice(0, 11), ['visual', 'hud stats', 'timer', 'time', 'level', 'player', 'camera collision', 'interaction', 'respawn', 'hud state', 'visual'])
+  assert.equal(calls.filter(name => name === 'level').length, 10)
+  assert.match(main, /if \(storyPlayer\?\.showGame\) ranFullGameFrame = updateGameFrame\(delta, true\)/)
+  const render = main.slice(main.indexOf('render(world, view) {'), main.indexOf('  afterRender:', main.indexOf('render(world, view) {')))
+  assert.ok(render.indexOf('post.render(world, view)') < render.indexOf('minimap.render(renderer)'))
+  assert.ok(render.indexOf('minimap.render(renderer)') < render.indexOf('storyPlayer.render()'))
+  assert.match(render, /recordFrame\([^\n]*ranFullGameFrame, performance.now\(\)\)/)
+})
+
+test('arrival spawn lies beyond all platform guard sight and camera ranges throughout hidden frames', () => {
+  const source = fs.readFileSync(new URL('../src/levels/boarding.js', import.meta.url), 'utf8')
+  const start = source.indexOf('const platformPatrols = ['), end = source.indexOf('const platformGuards', start)
+  const routes = new Function(`${source.slice(start, end)}; return platformPatrols`)()
+  const mesh = new THREE.Group(); mesh.position.set(LANDING_FIGURE.x, LANDING_FIGURE.y, LANDING_FIGURE.z)
+  const world = new THREE.Scene(); world.add(mesh)
+  let captures = 0
+  const stealth = createStealthSystem({ scene: world, player: { mesh }, respawn: { fail() { captures++ } } })
+  try {
+    for (const route of routes) {
+      assert.ok(route.points.every(([x]) => LANDING_FIGURE.x - x >= 9.95 - 1e-9))
+      for (let i = 0; i < route.points.length; i++) {
+        const [ax, az] = route.points[i], [bx, bz] = route.points[(i + 1) % route.points.length]
+        const dx = bx - ax, dz = bz - az, length2 = dx * dx + dz * dz
+        const t = length2 ? Math.max(0, Math.min(1, ((LANDING_FIGURE.x - ax) * dx + (LANDING_FIGURE.z - az) * dz) / length2)) : 0
+        assert.ok(Math.hypot(LANDING_FIGURE.x - ax - dx * t, LANDING_FIGURE.z - az - dz * t) > 10,
+          route.id + ' remains beyond even the alerted guard range along the complete route')
+      }
+      stealth.addGuard({ waypoints: route.points.map(([x, z]) => new THREE.Vector3(x, 0, z)), speed: route.speed, waitTime: route.waitTime })
+    }
+    assert.match(source, /new THREE.Vector3\(-10.5, 4.6, -21.95\)/)
+    assert.ok(LANDING_FIGURE.x - (-10.5) > 8)
+    stealth.addCamera({ position: new THREE.Vector3(-10.5, 4.6, -21.95), range: 8 })
+    for (let i = 0; i < 210; i++) { stealth.update(1 / 60); assert.equal(stealth.getSuspicion(), 0) }
+    assert.equal(captures, 0)
+    assert.ok(stealth.getGuards().every(guard => guard.state !== 'ALERT'))
+  } finally { stealth.dispose() }
 })
 
 test('panel textures retain original NPOT images, maximum anisotropy and source-texel sharpening', async () => {
@@ -650,7 +726,7 @@ test('real render callback draws only story before coverage, game plus one quad 
   assert.ok(start >= 0 && end > start)
   const h = harness(); await h.player.prepare(); h.player.start()
   let games = 0
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
   h.player.update(endStart()); render({}, {})
   assert.equal(games, 0); assert.equal(h.stats.renders, 1)
   h.player.update(endBeats().title - endStart() + 0.1); render({}, {})
@@ -660,7 +736,7 @@ test('real render callback draws only story before coverage, game plus one quad 
   h.player.update(endBeats().reveal - endBeats().title - 0.1 + 0.0001); render({}, {})
   assert.equal(games, 1); assert.equal(h.stats.renders, 3)
   assert.equal(h.renderOrder.at(-1), 'quad-overlay')
-  h.player.update(3); h.player.update(2); render({}, {})
+  h.player.update(3.5); h.player.update(2); render({}, {})
   assert.equal(games, 2); assert.equal(h.stats.renders, 3)
   assert.match(main, /const show = gameStarted && !storyPlayer\?\.active && !credits.isOpen/)
   h.player.cancel()
@@ -676,19 +752,19 @@ test('actual composition keeps level music silent behind the title and during in
   let callbacks
   const owner = { active: false, prefetch: () => Promise.resolve() }
   const run = new Function('deps', `
-    const {createStoryPlayer,initAudio,beginForecourtArrival,playMusicForState,hud,syncInputState,levelManager}=deps;
+    const {createStoryPlayer,initAudio,beginForecourtArrival,warmGameplayAudio,playMusicForState,hud,syncInputState,levelManager}=deps;
     const post={resize(){deps.events.push('resize')}},settings={get(){return 0.85}};
     const introBeat={},renderer={},camera={},modelEditor=null,timeSystem={warmGhost(){}},requestAnimationFrame=()=>{};
-    let storyPlayer=null,storyRun=1,gameStarted=false,awaitingIntro=false,firstLiveFramePending=false;
+    let storyPlayer=null,storyRun=1,gameStarted=false,awaitingIntro=false,firstLiveFramePending=false,firstPlayableFramePending=false;
     ${main.slice(start, end)}
     const levelCallbacks={${main.slice(enterStart, enterEnd)}};
     return {prepareIntro, enterBoarding(){levelCallbacks.onEnter('Boarding')},
-      beginRun(){gameStarted=true;storyPlayer.active=true}, invalidate(){storyRun++}, get owner(){return storyPlayer}};
+      beginRun(){gameStarted=true;storyPlayer.active=true}, invalidate(){storyRun++}, get owner(){return storyPlayer}, get hudStyle(){return hud.root.style}};
   `)({
     events, createStoryPlayer(options) { callbacks = options; return owner },
-    initAudio() {}, beginForecourtArrival() { events.push('arrival') },
+    initAudio() {}, warmGameplayAudio() { events.push('warm audio') }, beginForecourtArrival() { events.push('arrival') },
     playMusicForState(state) { events.push('music:' + state) },
-    hud: { setVisible(value) { events.push('hud:' + value) } },
+    hud: { root: { style: {} }, setVisible(value) { events.push('hud:' + value) } },
     syncInputState() { events.push('sync') }, levelManager: { getState: () => 'Boarding' }
   })
   await run.prepareIntro()
@@ -699,13 +775,30 @@ test('actual composition keeps level music silent behind the title and during in
   callbacks.onRendererRestore(); assert.deepEqual(events, ['resize']); events.length = 0
   assert.equal(callbacks.getRenderScale(), 0.85)
   callbacks.onCrossfade()
-  assert.deepEqual(events, ['arrival'], 'HUD and music remain blocked over the title')
+  assert.deepEqual(events, ['warm audio', 'arrival'], 'audio constructs under cover, while music and HUD remain blocked')
+  assert.equal(run.hudStyle.display, 'block'); assert.equal(run.hudStyle.visibility, 'hidden', 'HUD layout stays warm under smoke')
   assert.equal(run.owner, owner)
   callbacks.onComplete()
-  assert.deepEqual(events, ['arrival', 'music:Boarding', 'hud:true', 'sync'])
+  assert.deepEqual(events, ['warm audio', 'arrival', 'music:Boarding', 'hud:true', 'sync'])
   assert.equal(run.owner, null)
+  assert.equal(run.hudStyle.visibility, '')
   run.invalidate(); callbacks.onCrossfade(); callbacks.onComplete()
-  assert.equal(events.length, 4, 'stale generation cannot resume a different run')
+  assert.equal(events.length, 5, 'stale generation cannot resume a different run')
+})
+
+test('Boarding music decodes without playback and procedural audio constructs muted under smoke', async () => {
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('import.meta.env?.DEV', 'false')
+  const start = main.indexOf('function prefetchBoardingMusic()'), end = main.indexOf('async function buildTitleBackdrop()', start)
+  const calls = []
+  const deps = { LEVEL_TRACKS: { Boarding: { file: 'level1' } }, loadTrack: file => file,
+    LevelMusicPlayer: class { load() { calls.push('decode'); return Promise.resolve() } dispose() { calls.push('dispose loading owner') } },
+    getContext: () => ({ currentTime: 12 }), ensureGameplayDrone() { calls.push('construct'); return { output: { gain: {
+      cancelScheduledValues(at) { calls.push('cancel:' + at) }, setValueAtTime(value, at) { calls.push(`gain:${value}:${at}`) } } } } }
+  }
+  const run = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps;${main.slice(start, end)};return {prefetchBoardingMusic,warmGameplayAudio}`)(deps)
+  await run.prefetchBoardingMusic(); assert.deepEqual(calls, ['decode', 'dispose loading owner'])
+  run.warmGameplayAudio()
+  assert.deepEqual(calls.slice(2), ['construct', 'cancel:12', 'gain:0:12'])
 })
 
 test('train placement stays offscreen at endpoints, preserves aspect and caps CSS image upscaling', async () => {
@@ -866,7 +959,7 @@ test('prefetch performs no GPU work; actual Level 1 warm-up precedes intro and f
   const uploads = h.stats.uploads, compiled = h.stats.compiled
   h.player.update(endBeats().reveal + 0.001)
   const renderStart = main.indexOf('render(world, view) {'), renderEnd = main.indexOf('\n  },', renderStart)
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16;let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}};let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
     h.player, { render() { events.push('first live') } }, { getCinematicView: () => null }, null)
   render(world, view)
   assert.equal(events.at(-1), 'first live')

@@ -20,7 +20,7 @@ import { createPlayerView } from './cameras/player-view.js'
 import { createInteractionSystem } from './systems/interaction.js'
 import { createRespawnSystem } from './systems/respawn.js'
 import { createTimeSystem } from './systems/time-system.js'
-import { loadTrack, startLevelMusic, stopLevelMusic } from './systems/level-music.js'
+import { loadTrack, startLevelMusic, stopLevelMusic, LevelMusicPlayer } from './systems/level-music.js'
 import { MusicSystem } from './systems/music-system.js'
 import { createHud } from './ui/hud.js'
 import { createMinimap } from './ui/minimap.js'
@@ -179,7 +179,7 @@ function playMusicForState(state) {
   }
   // Sampled tracks swap per level; the drone is one bed under L1–L3 only.
   if (state === 'Complete') disposeGameplayDrone()
-  else ensureGameplayDrone()
+  else ensureGameplayDrone()?.setTimeDilation(1)
   startLevelMusic(loadTrack(spec.file), { loop: spec.loop })
 }
 
@@ -418,6 +418,9 @@ let newGameClickedAt = 0
 let firstLiveFramePending = false
 let frameStartedAt = 0
 let frameIntervalMs = 0
+let ranFullGameFrame = false
+let firstPlayableFramePending = false
+let firstHiddenSystemsPending = true
 
 function prepareIntro() {
   initAudio()
@@ -425,12 +428,19 @@ function prepareIntro() {
   const owner = createStoryPlayer({ beat: introBeat, renderer,
     getRenderScale: () => settings.get('renderScale'), onRendererRestore: () => post.resize(), onCrossfade() {
     if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
+    warmGameplayAudio()
+    // Keep HUD layout/paint preparation live under the smoke, without showing
+    // it. display:none would defer layout until the first playable frame.
+    hud.root.style.display = 'block'
+    hud.root.style.visibility = 'hidden'
     beginForecourtArrival()
     firstLiveFramePending = true
   }, onComplete() {
     if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
     storyPlayer = null
+    firstPlayableFramePending = true
     playMusicForState(levelManager.getState())
+    hud.root.style.visibility = ''
     hud.setVisible(true)
     syncInputState()
   } })
@@ -495,10 +505,26 @@ playerView.setEnabled(false)
 keyboard.setEnabled(false)
 
 // The manager adopts this exact instance on New Game; no second build.
+function prefetchBoardingMusic() {
+  const owner = new LevelMusicPlayer(loadTrack(LEVEL_TRACKS.Boarding.file))
+  return owner.load().finally(() => owner.dispose())
+}
+
+function warmGameplayAudio() {
+  let started = 0
+  if (import.meta.env?.DEV) started = performance.now()
+  const ctx = getContext(), drone = ensureGameplayDrone()
+  if (!ctx || !drone) return
+  // Construct the pink-noise PCM and nodes under cover, without an audible bed.
+  drone.output.gain.cancelScheduledValues(ctx.currentTime)
+  drone.output.gain.setValueAtTime(0, ctx.currentTime)
+  if (import.meta.env?.DEV) console.log(`[perf] first hidden audio ${(performance.now() - started).toFixed(2)}ms`)
+}
+
 async function buildTitleBackdrop() {
   introReady = prepareIntro()
   boardingFilesReady = loadBoardingAssets()
-  await Promise.all([introReady, charactersReady, boardingFilesReady])
+  await Promise.all([introReady, charactersReady, boardingFilesReady, prefetchBoardingMusic()])
   preparedBoarding = createBoardingLevel({ scene, interaction, assets, hud, player,
     camera: playerView, renderCamera: camera, respawn, timeSystem, renderer,
     advance: () => levelManager.advance(), beginCinematic() { respawn.cancel(); syncInputState() } })
@@ -733,6 +759,8 @@ function startGame() {
   }
   if (gameStarted) return
   newGameClickedAt = performance.now()
+  firstHiddenSystemsPending = true
+  firstPlayableFramePending = false
   respawn.reset()
   timeSystem.resetForRun()
   gameStarted = true
@@ -819,6 +847,7 @@ async function quitToTitle() {
   // title screen's cinematic shot needs it back.
   playerView.reset()
   hud.setVisible(false)
+  hud.root.style.visibility = ''
   hud.setSuspicion(0)
   hud.setObjective('')
   hud.resetRunTimer()
@@ -879,17 +908,63 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
   }
 }))
 
+let loopInstrumentation = renderOverlay
+let devMinimapCpuMs = 0
+if (import.meta.env?.DEV) {
+  let detector = null, previous = 0, started = 0, interval = 0
+  let updateStarted = 0, updateMs = 0, drawStarted = 0, drawMs = 0
+  let lastLevel = null, levelStarted = 0
+  let sceneCpuMs = 0
+  const drawWorld = renderer.render
+  renderer.render = function (world, view) {
+    if (!view?.isPerspectiveCamera) return drawWorld.call(this, world, view)
+    const at = performance.now()
+    try { return drawWorld.call(this, world, view) }
+    finally { sceneCpuMs += performance.now() - at }
+  }
+  import('./dev/lag-detector.js').then(({ createLagDetector }) => { detector = createLagDetector() })
+  // Same boundaries as the overlay; sampleFrame() clones, so do not poll it.
+  loopInstrumentation = {
+    beginFrame(timestamp) {
+      renderOverlay?.beginFrame(timestamp)
+      started = performance.now(); interval = previous ? timestamp - previous : 0; previous = timestamp
+      devMinimapCpuMs = 0
+      sceneCpuMs = 0
+    },
+    beginUpdate() { renderOverlay?.beginUpdate(); updateStarted = performance.now() },
+    endUpdate() { updateMs = performance.now() - updateStarted; renderOverlay?.endUpdate() },
+    beginDraw() { renderOverlay?.beginDraw(); drawStarted = performance.now() },
+    endDraw() { drawMs = performance.now() - drawStarted; renderOverlay?.endDraw() },
+    endFrame() {
+      const now = performance.now(), level = levelManager.getState()
+      if (level !== lastLevel) { lastLevel = level; levelStarted = now }
+      detector?.record(now, Math.max(interval, now - started), updateMs, drawMs, devMinimapCpuMs,
+        getInputState(), level ?? 'none', (now - levelStarted) / 1000, sceneCpuMs)
+      renderOverlay?.endFrame()
+    }
+  }
+}
+
 const loop = createLoop({
   renderer,
   scene,
   camera,
   clock,
-  instrumentation: renderOverlay,
+  instrumentation: loopInstrumentation,
   render(world, view) {
     if (storyPlayer?.active) {
-      if (storyPlayer.showGame) post.render(world, view)
+      if (storyPlayer.showGame) {
+        post.render(world, view)
+        // Warm the real icon pools and their draw BEFORE the smoke quad,
+        // otherwise the inset would paint over the opaque cover.
+        minimap.setVisible(false)
+        let mapStarted = 0
+        if (import.meta.env?.DEV) mapStarted = performance.now()
+        minimap.render(renderer)
+        if (import.meta.env?.DEV) devMinimapCpuMs = performance.now() - mapStarted
+      }
       storyPlayer.render()
-      storyPlayer.recordFrame(Math.max(frameIntervalMs, performance.now() - frameStartedAt))
+      storyPlayer.recordFrame(Math.max(frameIntervalMs, performance.now() - frameStartedAt), ranFullGameFrame, performance.now())
       if (firstLiveFramePending && storyPlayer.showGame) {
         firstLiveFramePending = false
         if (import.meta.env?.DEV) console.log(`[perf] first live frame ${(performance.now() - frameStartedAt).toFixed(2)}ms frame time`)
@@ -911,9 +986,18 @@ const loop = createLoop({
     minimap.setVisible(show)
 
     if (show) {
+      let mapStarted = 0
+      if (import.meta.env?.DEV) mapStarted = performance.now()
       minimap.render(gl)
+      if (import.meta.env?.DEV) devMinimapCpuMs = performance.now() - mapStarted
     }
     benchmark?.afterRender()
+    if (import.meta.env?.DEV) {
+      if (firstPlayableFramePending && ranFullGameFrame && getInputState() === 'PLAYING') {
+        firstPlayableFramePending = false
+        console.log(`[perf] first playable frame ${Math.max(frameIntervalMs, performance.now() - frameStartedAt).toFixed(2)}ms`)
+      }
+    }
   }
 })
 
@@ -921,14 +1005,28 @@ const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
   frameIntervalMs = frameStartedAt ? performance.now() - frameStartedAt : 0
   frameStartedAt = performance.now()
+  ranFullGameFrame = false
   if (storyPlayer?.active) {
     storyPlayer.update(delta)
-    if (storyPlayer?.showGame && arrival) updateForecourtArrival(delta)
+    if (storyPlayer?.showGame) ranFullGameFrame = updateGameFrame(delta, true)
     return
   }
   if (!gameStarted && titleBackdrop) {
     titleBackdrop.update(delta, window.innerWidth, window.innerHeight)
     return
+  }
+  ranFullGameFrame = updateGameFrame(delta)
+})
+
+const presentationKeyboard = Object.freeze({ forward: false, back: false, left: false, right: false,
+  run: false, duck: false, jump: false, interact: false })
+const arrivalFramePosition = new THREE.Vector3(), arrivalFrameRotation = new THREE.Quaternion()
+
+function updateGameFrame(delta, presentation = false) {
+  let measureFirst = false, stageAt = 0, setupMs = 0, timeMs = 0, levelMs = 0, playerMs = 0, cameraMs = 0, interactionMs = 0
+  if (import.meta.env?.DEV) {
+    measureFirst = presentation && firstHiddenSystemsPending
+    if (measureFirst) stageAt = performance.now()
   }
   renderQuality.update(performance.now())
   benchmark?.update()
@@ -958,7 +1056,7 @@ loop.add((delta) => {
   // Walkthrough tutorials completely freeze gameplay while the scene remains
   // rendered behind the overlay. Check this before syncInputState() so the
   // tutorial's disabled controls cannot accidentally be re-enabled.
-  if (hud.isTutorialOpen()) return
+  if (hud.isTutorialOpen() && !presentation) return false
 
   syncInputState()
 
@@ -973,33 +1071,36 @@ loop.add((delta) => {
   }
 
   const heistComplete = levelManager.getState() === 'Complete' || levelManager.getState() === 'Ending'
-  if (!heistComplete) elapsed += delta
+  if (!heistComplete && !presentation) elapsed += delta
 
   hud.updateRunTimer({
     elapsed,
     delta,
     mode: timeSystem.getMode(),
     ghostActive: timeSystem.getGhost().isPlaying(),
-    running: !heistComplete
+    running: !heistComplete && !presentation
   })
 
+  if (import.meta.env?.DEV) { if (measureFirst) { setupMs = performance.now() - stageAt; stageAt = performance.now() } }
   timeSystem.update(delta)
+  if (import.meta.env?.DEV) { if (measureFirst) { timeMs = performance.now() - stageAt; stageAt = performance.now() } }
   levelManager.update(delta)
+  if (import.meta.env?.DEV) { if (measureFirst) { levelMs = performance.now() - stageAt; stageAt = performance.now() } }
 
   // A level update may have opened a tutorial this frame. Stop immediately
   // so the player cannot move one extra frame into a hazard under the popup.
-  if (hud.isTutorialOpen()) return
+  if (hud.isTutorialOpen() && !presentation) return false
 
   // New Game keeps the title framing and eases down behind the detective
   // before the third-person camera takes over.
-  if (arrival && !updateForecourtArrival(delta)) {
+  if (arrival && !updateForecourtArrival(delta) && !presentation) {
     syncInputState()
     return
   }
 
   // Cinematics and other non-playing states may still need level animation,
   // but movement and interaction must not resume during the same frame.
-  if (getInputState() !== 'PLAYING') {
+  if (getInputState() !== 'PLAYING' && !presentation) {
     const view = player.getCinematicView()
     if (view?.mode === 'fixed') {
       view.moveElapsed = Math.min(view.moveSeconds, view.moveElapsed + delta)
@@ -1021,9 +1122,9 @@ loop.add((delta) => {
   }
 
   player.update(delta, {
-    keyboard: keyboard.state,
-    crouchPressed: keyboard.consumePress('duck'),
-    runPressed: keyboard.consumePress('run'),
+    keyboard: presentation ? presentationKeyboard : keyboard.state,
+    crouchPressed: !presentation && keyboard.consumePress('duck'),
+    runPressed: !presentation && keyboard.consumePress('run'),
     cameraYaw: playerView.getYaw(),
     bounds: levelManager.bounds,
     obstacles: levelManager.obstacles,
@@ -1031,13 +1132,25 @@ loop.add((delta) => {
     supports: levelManager.supports,
     voids: levelManager.voids
   })
+  if (import.meta.env?.DEV) { if (measureFirst) { playerMs = performance.now() - stageAt; stageAt = performance.now() } }
 
+  if (presentation && arrival) {
+    arrivalFramePosition.copy(camera.position); arrivalFrameRotation.copy(camera.quaternion)
+  }
   playerView.update(delta, player.mesh, scene, {
     crouching: player.isCrouching()
   })
+  if (presentation && arrival) {
+    camera.position.copy(arrivalFramePosition); camera.quaternion.copy(arrivalFrameRotation)
+  }
+  if (import.meta.env?.DEV) { if (measureFirst) { cameraMs = performance.now() - stageAt; stageAt = performance.now() } }
 
-  interaction.update(player.mesh, playerView.getYaw(), delta)
+  // Keyboard remains disabled; only candidate selection is exercised here.
+  if (presentation) interaction.setEnabled(true)
+  try { interaction.update(player.mesh, playerView.getYaw(), delta) }
+  finally { if (presentation) interaction.setEnabled(false) }
   respawn.update()
+  if (import.meta.env?.DEV) { if (measureFirst) { interactionMs = performance.now() - stageAt; stageAt = performance.now() } }
 
   hud.updateTimeState({
     mode: timeSystem.getMode(),
@@ -1051,6 +1164,13 @@ loop.add((delta) => {
     strainEnabled: timeSystem.isStrainEnabled(),
     freezeLockout: timeSystem.getFreezeLockout()
   })
-})
+  if (import.meta.env?.DEV) {
+    if (measureFirst) {
+      firstHiddenSystemsPending = false
+      console.log(`[perf] first hidden systems visual/hud=${setupMs.toFixed(2)} time=${timeMs.toFixed(2)} level=${levelMs.toFixed(2)} player=${playerMs.toFixed(2)} camera=${cameraMs.toFixed(2)} interaction/respawn=${interactionMs.toFixed(2)} hud-state=${(performance.now() - stageAt).toFixed(2)}`)
+    }
+  }
+  return true
+}
 
 loop.start()

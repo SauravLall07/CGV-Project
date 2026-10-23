@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import * as THREE from 'three'
 import { createTitleBackdrop } from '../src/ui/title-backdrop.js'
-import { MENU_FILM } from '../src/shaders/menu-film.js'
+import { MENU_FILM, PLUME_FLOW_STRENGTH } from '../src/shaders/menu-film.js'
 
 test('illustrated title owns exactly one quad, every animation uniform and its independent resources', async () => {
   const viewport = new THREE.Vector4(3, 4, 1366, 768), original = viewport.clone()
@@ -30,6 +30,16 @@ test('illustrated title owns exactly one quad, every animation uniform and its i
     assert.deepEqual(Array.isArray(value) ? title.uniforms[name].value.toArray() : title.uniforms[name].value, value)
   }
   assert.deepEqual(MENU_FILM.plume, [0.17, 0.29, 0.80, 0.47])
+  assert.equal(PLUME_FLOW_STRENGTH, 0.010)
+  assert.equal(title.uniforms.uPlumeFlowStrength.value, PLUME_FLOW_STRENGTH)
+  assert.equal(title.uniforms.uPlumeBrightness.value, 0.10)
+  assert.equal(title.uniforms.uPlumeSpeedA.value, 0.010)
+  assert.equal(title.uniforms.uPlumeSpeedB.value, 0.017)
+  assert.match(title.material.fragmentShader, /mix\(flowA,flowB,phase\)/)
+  assert.match(title.material.fragmentShader, /uPlumeFlowStrength\*plume\*turbulence/)
+  assert.match(title.material.fragmentShader, /flow\/=max\(1\.,length\(flow\)\)/)
+  assert.doesNotMatch(title.material.fragmentShader, /uFunnel|uPuff|float puff|float age/)
+  assert.ok(Object.keys(MENU_FILM).every(key => !/funnel|puff/i.test(key)))
   assert.deepEqual(MENU_FILM.moon, [0.915, 0.13, 0.04])
   assert.deepEqual(MENU_FILM.mist, [0.22, 0.55, 0.80, 0.80])
   assert.match(title.material.fragmentShader, /i<3/)
@@ -62,7 +72,7 @@ test('actual title preparation waits for decoded assets, builds once, warms befo
     levelManager: {}, post: {}, syncInputState() {}, charactersReady: wait('characters'),
     prepareIntro: () => wait('intro'), loadBoardingAssets: () => wait('files'),
     createBoardingLevel: () => { calls.push('build'); return prepared },
-    warmLevel1: () => calls.push('warm'), createTitleBackdrop: () => { calls.push('illustration'); return {} } }
+    warmLevel1: () => calls.push('warm'), prefetchBoardingMusic: () => Promise.resolve(), createTitleBackdrop: () => { calls.push('illustration'); return {} } }
   const run = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps;
     let introReady,boardingFilesReady,preparedBoarding;
     ${source.slice(start, end)}

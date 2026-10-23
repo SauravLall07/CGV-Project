@@ -103,7 +103,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
   let newspaper = null, trainTexture = null, whistleBuffer = null, whistleSource = null, whistleGain = null
   let handoverStarted = false, crossfadeTime = 0, crossfadeDuration = 0, crossfadeFrom = 1, rainFailed = false, rainFading = false
   let ending = null, titleRoot = null, titleHeading = null, titleSubtitle = null
-  let endingPhase = 0, smokeWait = 0, smokeWallTime = 0, goodFrames = 0, clearTime = -1, frameCount = 0
+  let endingPhase = 0, smokeWait = 0, smokeWallTime = 0, smokeStartedAt = 0, goodFrames = 0, clearTime = -1, frameCount = 0
   const smokeFrames = new Float32Array(256)
   let storyBus = null, limiter = null, rainAnalyser = null, rainMeter = null
   let savedRenderer = null
@@ -466,6 +466,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       if (!handoverStarted) {
         // The shader is exactly opaque at uSteam=1, before live rendering.
         u.uSteam.value = 1; phase = 'smoke'; log('smoke cover')
+        smokeStartedAt = performance.now()
         handoverStarted = true; releaseRenderer()
         onCrossfade()
       } else if (clearTime < 0) {
@@ -473,7 +474,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
         if ((smokeWait + 1e-9 >= beat.timings.smokeWaitMin && goodFrames >= beat.timings.smokeGoodFrames)
           || smokeWait + 1e-9 >= beat.timings.smokeWaitMax) {
           clearTime = 0; log('reveal'); fadeRain(beat.timings.smokeClear)
-          if (import.meta.env?.DEV) console.log('[perf] under-smoke frames', Array.from(smokeFrames.subarray(0, Math.min(frameCount, smokeFrames.length))))
+          if (import.meta.env?.DEV) console.log('[perf] under-smoke full frames', Array.from(smokeFrames.subarray(0, Math.min(frameCount, smokeFrames.length))))
         }
       } else {
         clearTime += delta
@@ -627,15 +628,18 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       textures: disposed ? 0 : textures.length + Number(Boolean(newspaper)) + Number(Boolean(trainTexture)) + 1 }
   }
   return { prefetch, prepare, warm, renderPrepared, start, update, skip, cancel, dispose, unlockAudio, resources,
-    recordFrame(ms) {
+    recordFrame(ms, fullGameFrame = true, wallNow) {
       if (!active || skipped || !handoverStarted || clearTime >= 0) return
+      if (Number.isFinite(wallNow)) smokeWallTime = Math.max(0, (wallNow - smokeStartedAt) / 1000)
+      else if (Number.isFinite(ms) && ms >= 0) smokeWallTime += ms / 1000
+      if (!fullGameFrame) { goodFrames = 0; return }
       if (frameCount < smokeFrames.length) smokeFrames[frameCount] = ms
       frameCount++
-      if (Number.isFinite(ms) && ms >= 0) smokeWallTime += ms / 1000
       goodFrames = Number.isFinite(ms) && ms >= 0 && ms < beat.timings.smokeFrameMs ? goodFrames + 1 : 0
     },
     get active() { return active },
     get showGame() { return active && handoverStarted },
+    get underSmoke() { return active && handoverStarted && !skipped && clearTime < 0 },
     get showQuad() { return active },
     render() {
       if (!active) return

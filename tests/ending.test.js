@@ -1462,7 +1462,7 @@ function titleReturnHarness(devStart = null) {
   const levelManager={unload(){calls.push('unload')},getState:()=> 'Boarding',isTransitioning:()=>transitioning,
     adopt(state,level){assert.ok(level);calls.push('adopt:'+state)},
     enter(state){transitioning=true;calls.push('loading.show');calls.push('enter:'+state)}}
-  const hud={setVisible(){},setSuspicion(){},setObjective(){},resetRunTimer(){}}
+  const hud={root:{style:{}},setVisible(){},setSuspicion(){},setObjective(){},resetRunTimer(){}}
   const introPending=[]
   const createStoryPlayer=()=>({active:false,
     prefetch(){calls.push('story.prefetch');return new Promise(resolve=>introPending.push(resolve))},
@@ -1471,7 +1471,7 @@ function titleReturnHarness(devStart = null) {
   const deps={calls,pending,menu,levelManager,hud,respawn:{reset(){},resetLives(){}},timeSystem:{resetForRun(){},resetRun(){}},
     document,requestAnimationFrame:callback=>queueMicrotask(callback),setTimeout(callback,ms){delays.push(ms);queueMicrotask(callback)},
     playerView:{reset(){}},keyboardLock:{release(options){releases.push(options)},engage(){}},syncInputState(){},disposeGameplayDrone(){},
-    devStartOptions:()=>devStart,beginForecourtArrival(){calls.push('arrival')},
+    devStartOptions:()=>devStart,beginForecourtArrival(){calls.push('arrival')},warmGameplayAudio(){},
     buildTitleBackdrop(){calls.push('backdrop');return new Promise(resolve=>pending.push(resolve)).then(()=>({dispose(){calls.push('backdrop.dispose')}}))},
     camera:{position:{set(){}},lookAt(){}},LANDING_CAMERA:{position:{x:0,y:0,z:0},target:{x:0,y:0,z:0},driftY:0,driftZ:0},
     initAudio(){calls.push('initAudio')},preloadAbilitySfx:()=>null,getContext:()=>({state:'running'}),
@@ -1483,12 +1483,13 @@ function titleReturnHarness(devStart = null) {
   // importing main.js would construct WebGL and start its application loop.
   const factory=new Function('deps',`
     const {menu,levelManager,hud,respawn,timeSystem,playerView,keyboardLock,syncInputState,disposeGameplayDrone,
-      devStartOptions,beginForecourtArrival,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic,
+      devStartOptions,beginForecourtArrival,warmGameplayAudio,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic,
       stopLevelMusic,createStoryPlayer,renderer,introBeat,playMusicForState,camera,LANDING_CAMERA,loadBoardingAssets,loadingScreen,
       document,requestAnimationFrame,setTimeout,calls,pending}=deps;
     const console={log(){}};
     let gameStarted=true,paused=true,elapsed=12,resetCount=2,titleBackdrop=null,titleReturnPromise=null;
     let storyRun=0,storyPlayer=createStoryPlayer(),arrival=null,awaitingIntro=false,firstLiveFramePending=false;
+    let firstPlayableFramePending=false,firstHiddenSystemsPending=true;
     let introReady=Promise.resolve(),boardingFilesReady=null,preparedBoarding=null,newGameClickedAt=0;const charactersReady=Promise.resolve();
     async function buildTitleBackdrop(){
       calls.push('backdrop');await new Promise(resolve=>pending.push(resolve));
