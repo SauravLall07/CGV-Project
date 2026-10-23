@@ -1460,6 +1460,7 @@ function titleReturnHarness(devStart = null) {
   const document={body:{appendChild(node){veils.push(node)}},createElement(){return {style:{},remove(){veils.splice(veils.indexOf(this),1)}}}}
   let transitioning=false
   const levelManager={unload(){calls.push('unload')},getState:()=> 'Boarding',isTransitioning:()=>transitioning,
+    adopt(state,level){assert.ok(level);calls.push('adopt:'+state)},
     enter(state){transitioning=true;calls.push('loading.show');calls.push('enter:'+state)}}
   const hud={setVisible(){},setSuspicion(){},setObjective(){},resetRunTimer(){}}
   const introPending=[]
@@ -1467,7 +1468,7 @@ function titleReturnHarness(devStart = null) {
     prefetch(){calls.push('story.prefetch');return new Promise(resolve=>introPending.push(resolve))},
     start(){this.active=true;calls.push('story.start')},
     cancel(){this.active=false;calls.push('story.cancel')}})
-  const deps={menu,levelManager,hud,respawn:{reset(){},resetLives(){}},timeSystem:{resetForRun(){},resetRun(){}},
+  const deps={calls,pending,menu,levelManager,hud,respawn:{reset(){},resetLives(){}},timeSystem:{resetForRun(){},resetRun(){}},
     document,requestAnimationFrame:callback=>queueMicrotask(callback),setTimeout(callback,ms){delays.push(ms);queueMicrotask(callback)},
     playerView:{reset(){}},keyboardLock:{release(options){releases.push(options)},engage(){}},syncInputState(){},disposeGameplayDrone(){},
     devStartOptions:()=>devStart,beginForecourtArrival(){calls.push('arrival')},
@@ -1482,13 +1483,18 @@ function titleReturnHarness(devStart = null) {
   // importing main.js would construct WebGL and start its application loop.
   const factory=new Function('deps',`
     const {menu,levelManager,hud,respawn,timeSystem,playerView,keyboardLock,syncInputState,disposeGameplayDrone,
-      devStartOptions,beginForecourtArrival,buildTitleBackdrop,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic,
+      devStartOptions,beginForecourtArrival,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic,
       stopLevelMusic,createStoryPlayer,renderer,introBeat,playMusicForState,camera,LANDING_CAMERA,loadBoardingAssets,loadingScreen,
-      document,requestAnimationFrame,setTimeout}=deps;
+      document,requestAnimationFrame,setTimeout,calls,pending}=deps;
     const console={log(){}};
     let gameStarted=true,paused=true,elapsed=12,resetCount=2,titleBackdrop=null,titleReturnPromise=null;
     let storyRun=0,storyPlayer=createStoryPlayer(),arrival=null,awaitingIntro=false,firstLiveFramePending=false;
-    let introReady=Promise.resolve(),boardingFilesReady=null;const charactersReady=Promise.resolve();
+    let introReady=Promise.resolve(),boardingFilesReady=null,preparedBoarding=null,newGameClickedAt=0;const charactersReady=Promise.resolve();
+    async function buildTitleBackdrop(){
+      calls.push('backdrop');await new Promise(resolve=>pending.push(resolve));
+      introReady=prepareIntro();await introReady;calls.push('level1.warmed');preparedBoarding={dispose(){}};
+      return {show(){calls.push('backdrop.show')},dispose(){calls.push('backdrop.dispose')}};
+    }
     const post={resize(){}},settings={get:()=>0.85};
     ${extract('function prepareIntro() {','// Large walkthrough popups')}
     ${extract('async function playMenuMusic() {','function unlockAudio(')}
@@ -1582,31 +1588,35 @@ test('Title return: pause quit preserves fullscreen, veils construction, coalesc
   assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,1)
   assert.equal(title.calls.filter(call=>call==='story.start').length,0,'intro cannot start during backdrop rebuild')
   title.pending.shift()({});await title.flush()
-  assert.equal(title.menu.visible,true,'the title is presented while intro prefetch remains pending')
-  assert.equal(title.calls.filter(call=>call==='enter:Boarding').length,0,'New Game waits under loading for pending prefetch')
+  assert.equal(title.menu.visible,false,'title stays veiled while intro and level preparation are pending')
+  assert.equal(title.calls.filter(call=>call==='adopt:Boarding').length,0,'New Game waits for complete preparation')
   assert.equal(title.calls.filter(call=>call==='story.start').length,0,'intro cannot start before title preparation finishes')
   title.introPending.shift()();await first;await duplicate;await title.flush()
   assert.deepEqual(title.delays,[200,400])
   assert.equal(title.veils.length,0)
   assert.equal(title.state.gameStarted,true,'queued New Game starts after the rebuilt backdrop is owned')
-  assert.equal(title.calls.filter(call=>call==='enter:Boarding').length,1)
-  assert.equal(title.calls.filter(call=>call==='story.start').length,0,'Level 1 must finish loading before intro starts')
-  assert.ok(title.calls.indexOf('backdrop.dispose')<title.calls.indexOf('loading.show'),'dispose scenery before building gameplay')
-  title.startPreparedIntro();assert.equal(title.calls.filter(call=>call==='story.start').length,0)
+  assert.equal(title.calls.filter(call=>call==='adopt:Boarding').length,1)
+  assert.equal(title.calls.filter(call=>call==='enter:Boarding').length,0,'prepared level is never rebuilt on New Game')
+  assert.equal(title.calls.filter(call=>call==='story.start').length,1,'intro starts synchronously after the return veil finishes')
+  assert.ok(title.calls.indexOf('level1.warmed')<title.calls.indexOf('menu.show'))
+  assert.ok(title.calls.indexOf('backdrop.dispose')<title.calls.indexOf('adopt:Boarding'))
+  title.startPreparedIntro()
   title.finishLoading();title.finishLoading()
   assert.equal(title.calls.filter(call=>call==='story.start').length,1,'deferred New Game starts exactly one intro')
-  assert.ok(title.calls.indexOf('loading.hide')<title.calls.indexOf('story.start'))
+  assert.ok(title.calls.indexOf('level1.warmed')<title.calls.indexOf('story.start'))
   assert.ok(title.calls.indexOf('menu.show')<title.calls.indexOf('story.start'),'intro starts only after title rebuild is presented')
   const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
   assert.match(source,/onQuit: \(\) => quitToTitle\(\)/,'pause menu still uses the same title path')
 })
 
-test('Title scenery rebuild never constructs Boarding; dev starts retain their direct level route', async () => {
+test('Title preparation builds and warms Boarding before presentation; dev starts retain their direct route', async () => {
   const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
   const start=source.indexOf('async function buildTitleBackdrop()'),end=source.indexOf('const settingsMenu',start)
   const build=source.slice(start,end)
-  assert.match(build,/return createTitleScene\(\)/)
-  assert.doesNotMatch(build,/createBoardingLevel|loadBoardingAssets|adopt/)
+  assert.match(build,/return createTitleBackdrop\(/)
+  assert.ok(build.indexOf('await Promise.all')<build.indexOf('createBoardingLevel('))
+  assert.ok(build.indexOf('createBoardingLevel(')<build.indexOf('warmLevel1()'))
+  assert.ok(build.indexOf('warmLevel1()')<build.indexOf('return createTitleBackdrop('))
   const title=titleReturnHarness({state:'MovingHeist',levelOptions:{startAt:'roof'}})
   const returned=title.quitToTitle();await title.flush()
   title.pending.shift()({});await title.flush();title.introPending.shift()();await returned

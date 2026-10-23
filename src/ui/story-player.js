@@ -24,15 +24,15 @@ export function createRainLevelMeter(analyser, report = audioLog) {
   }
 }
 export const typewriterProgress = (elapsed, duration, fraction = 0.85) => Math.min(1, Math.max(0, elapsed / Math.max(0.001, duration * fraction)))
-export function endingTimeline(beat, panels, revealProgress = 0.5) {
+export function endingTimeline(beat, panels) {
   const darken = panels[panels.length - 1].end
   const title = darken + beat.timings.darken
   const hold = title + beat.timings.titleIn
-  const steam = hold + beat.timings.titleHold
-  const train = steam + beat.timings.steamRise
-  const reveal = train + beat.timings.trainPass * revealProgress - beat.timings.handoverLead
-  return { darken, title, hold, steam, train, reveal, trainEnd: train + beat.timings.trainPass,
-    complete: train + beat.timings.trainPass }
+  const train = hold + beat.timings.titleHold
+  const trainEnd = train + beat.timings.trainPass
+  const reveal = trainEnd + beat.timings.smokeWaitMin
+  return { darken, title, hold, train, trainEnd, reveal,
+    complete: reveal + beat.timings.smokeClear }
 }
 
 export const DEFAULT_TRAIN_BOUNDS = { left: 0, right: 1, bodyBottom: 0, bodyTop: 0.25 }
@@ -59,10 +59,9 @@ export function trainPlacement(beat, width, height, progress, target, bounds = D
   target.width = target.height * 1.5 * height / width
   const travel = 1 + target.width * (bounds.right - bounds.left)
   target.x = -target.width * (bounds.right - 0.5) + travel * progress
-  target.y = beat.train.centerY - ((bounds.bodyBottom + bounds.bodyTop) / 2 - 0.5) * target.height
+  target.y = beat.train.bottom - (bounds.bodyBottom - 0.5) * target.height
   target.trailing = target.x + target.width * (bounds.left - 0.5)
   target.leading = target.x + target.width * (bounds.right - 0.5)
-  target.revealProgress = target.width * (bounds.right - bounds.left) / travel
   target.blur = (1 + target.width) / beat.timings.trainPass * beat.train.blur
   return target
 }
@@ -104,17 +103,12 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
   let newspaper = null, trainTexture = null, whistleBuffer = null, whistleSource = null, whistleGain = null
   let handoverStarted = false, crossfadeTime = 0, crossfadeDuration = 0, crossfadeFrom = 1, rainFailed = false, rainFading = false
   let ending = null, titleRoot = null, titleHeading = null, titleSubtitle = null
-  let endingPhase = 0
+  let endingPhase = 0, smokeWait = 0, smokeWallTime = 0, goodFrames = 0, clearTime = -1, frameCount = 0
+  const smokeFrames = new Float32Array(256)
   let storyBus = null, limiter = null, rainAnalyser = null, rainMeter = null
   let savedRenderer = null
   const savedViewport = new THREE.Vector4()
-  const train = { height: 0, width: 0, x: 0, y: 0, blur: 0, trailing: 0, leading: 0, revealProgress: 0 }
-  const viewportSize = new THREE.Vector2()
-  function endingForViewport() {
-    renderer.getDrawingBufferSize(viewportSize)
-    trainPlacement(beat, keys.innerWidth || viewportSize.x, keys.innerHeight || viewportSize.y, 0, train, trainBounds)
-    return endingTimeline(beat, timeline, train.revealProgress)
-  }
+  const train = { height: 0, width: 0, x: 0, y: 0, blur: 0, trailing: 0, leading: 0 }
   function storyResolution() {
     if (!active || !savedRenderer) return
     const ratio = Math.min(keys.devicePixelRatio || 1, 2)
@@ -220,7 +214,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     whistleGain?.disconnect(); whistleGain = null
   }
   function playWhistle() {
-    if (!active || skipped || phase !== 'steam' || !whistleBuffer || whistleSource) return
+    if (!active || skipped || phase !== 'train' || !whistleBuffer || whistleSource) return
     const ctx = context()
     if (ctx?.state !== 'running') { unlockAudio().then(playWhistleWhenRunning); return }
     try {
@@ -285,7 +279,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       timeline[i] = replacement[i]; timeline[i].start += shift; timeline[i].end += shift
     }
     time = Math.max(time, start); request = null; audioWait = 0
-    ending = endingForViewport()
+    ending = endingTimeline(beat, timeline)
   }
   function prefetch() {
     if (readyPromise) return readyPromise
@@ -424,6 +418,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     log('skip'); stopAudio(); stopWhistle(); skipped = true
     titleRoot.style.visibility = 'hidden'
     film.uniforms.uTrainHeight.value = 0
+    film.uniforms.uSteam.value = 0
     beginCrossfade(beat.timings.skipCrossfade)
   }
   function beginCrossfade(seconds) {
@@ -449,15 +444,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       titleRoot.style.opacity = 1 - Math.min(1, Math.max(0, (time - ending.train) / beat.timings.trainPass))
     }
   }
-  function updateEnding() {
+  function updateEnding(delta) {
     const u = film.uniforms
     strip.style.visibility = 'hidden'
     if (endingPhase < 1) { endingPhase = 1; stopAudio(); log('ending darken') }
     if (time >= ending.title && endingPhase < 2) { endingPhase = 2; log('title in') }
-    if (time >= ending.steam && endingPhase < 3) { endingPhase = 3; phase = 'steam'; log('steam puff'); playWhistle() }
-    if (time >= ending.train && endingPhase < 4) { endingPhase = 4; log('train wipe') }
+    if (time >= ending.train && endingPhase < 3) { endingPhase = 3; phase = 'train'; log('train pass'); playWhistle() }
     u.uImage.value = 1 - Math.min(1, (time - ending.darken) / beat.timings.darken)
-    u.uSteam.value = time < ending.steam ? 0 : Math.min(1, (time - ending.steam) / beat.timings.steamRise)
     const pass = Math.min(1, Math.max(0, (time - ending.train) / beat.timings.trainPass))
     renderer.getDrawingBufferSize(size)
     trainPlacement(beat, keys.innerWidth || size.x, keys.innerHeight || size.y, pass, train, trainBounds)
@@ -465,22 +458,29 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     u.uTrainCenter.value.set(train.x, train.y)
     u.uTrainBlur.value = train.blur
     u.uTrainRattle.value = Math.sin(time * 93) * beat.train.rattle
-    u.uWiping.value = time >= ending.train ? 1 : 0
-    u.uWipeEdge.value = train.trailing
-    u.uWipeWidth.value = beat.train.wipeWidth
-    u.uPuffOpacity.value = beat.train.puffOpacity
-    u.uPuffHeight.value = beat.train.puffHeight
+    u.uSteam.value = pass
+    u.uSmokeClear.value = clearTime < 0 ? 0 : Math.min(1, clearTime / beat.timings.smokeClear)
+    u.uSteamFront.value = Math.min(1, Math.max(0, train.leading))
     updateTitle()
-    // DOM title must disappear under the leading edge, rather than paint
-    // over the train (the canvas itself sits below DOM overlays).
-    titleRoot.style.clipPath = time >= ending.train ? `inset(0 0 0 ${Math.min(100, Math.max(0, train.leading * 100))}%)` : 'none'
-    if (time >= ending.reveal) {
+    if (time >= ending.trainEnd) {
       if (!handoverStarted) {
+        // The shader is exactly opaque at uSteam=1, before live rendering.
+        u.uSteam.value = 1; phase = 'smoke'; log('smoke cover')
         handoverStarted = true; releaseRenderer()
-        fadeRain(Math.max(0.001, ending.complete - time)); onCrossfade()
+        onCrossfade()
+      } else if (clearTime < 0) {
+        smokeWait = Math.max(smokeWait + delta, smokeWallTime)
+        if ((smokeWait + 1e-9 >= beat.timings.smokeWaitMin && goodFrames >= beat.timings.smokeGoodFrames)
+          || smokeWait + 1e-9 >= beat.timings.smokeWaitMax) {
+          clearTime = 0; log('reveal'); fadeRain(beat.timings.smokeClear)
+          if (import.meta.env?.DEV) console.log('[perf] under-smoke frames', Array.from(smokeFrames.subarray(0, Math.min(frameCount, smokeFrames.length))))
+        }
+      } else {
+        clearTime += delta
+        u.uSmokeClear.value = Math.min(1, clearTime / beat.timings.smokeClear)
+        if (clearTime + 1e-9 >= beat.timings.smokeClear) complete()
       }
     }
-    if (time >= ending.complete) { log('reveal complete'); complete() }
   }
   function start() {
     if (disposed || active) return
@@ -488,7 +488,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     acquireRenderer()
     ensureStoryBus()
     timeline = buildStoryTimeline(beat, buffers, true)
-    ending = endingForViewport()
+    ending = endingTimeline(beat, timeline)
     audioLog(`context=${context()?.state ?? 'missing'} master=${master()?.gain?.value ?? 'missing'}`)
     audioLog(`bus gain=${storyBus?.gain.value ?? 'missing'} master=${master()?.gain?.value ?? 'missing'}`)
     const u = film.uniforms
@@ -577,7 +577,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       setPanel(last, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
       setPanel(last, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
       u.uMix.value = 1
-      updateEnding()
+      updateEnding(delta)
       return
     }
     phase = 'panels'
@@ -627,6 +627,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       textures: disposed ? 0 : textures.length + Number(Boolean(newspaper)) + Number(Boolean(trainTexture)) + 1 }
   }
   return { prefetch, prepare, warm, renderPrepared, start, update, skip, cancel, dispose, unlockAudio, resources,
+    recordFrame(ms) {
+      if (!active || skipped || !handoverStarted || clearTime >= 0) return
+      if (frameCount < smokeFrames.length) smokeFrames[frameCount] = ms
+      frameCount++
+      if (Number.isFinite(ms) && ms >= 0) smokeWallTime += ms / 1000
+      goodFrames = Number.isFinite(ms) && ms >= 0 && ms < beat.timings.smokeFrameMs ? goodFrames + 1 : 0
+    },
     get active() { return active },
     get showGame() { return active && handoverStarted },
     get showQuad() { return active },

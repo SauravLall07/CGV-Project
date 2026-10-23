@@ -30,7 +30,7 @@ import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
 import { createCredits } from './ui/credits.js'
 import { createStoryPlayer } from './ui/story-player.js'
-import { createTitleScene } from './ui/title-scene.js'
+import { createTitleBackdrop } from './ui/title-backdrop.js'
 import { introBeat } from './story/intro-beat.js'
 import { createBoardingLevel } from './levels/boarding.js'
 import { LANDING_CAMERA, LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
@@ -321,18 +321,14 @@ const levelManager = createLevelManager({
   timeSystem,
   loadingScreen,
   onEnter: (state) => {
-    if (state === 'Boarding' && awaitingIntro) {
-      if (import.meta.env?.DEV) console.log(`[load] level1 built ${performance.now().toFixed(1)}ms`)
-      warmLevel1()
-    }
-    if (!storyPlayer?.active && !awaitingIntro) playMusicForState(state)
+    if (gameStarted && !storyPlayer?.active && !awaitingIntro) playMusicForState(state)
     // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
     // Workshop remaps its stable scene keys here so saved dev-layout overrides
     // are reapplied before the loading overlay hands control back to the player.
     modelEditor?.sceneChanged?.()
     if (state === 'Complete') showCompleteCredits()
     else if (state === 'Ending') hud.setVisible(false)
-    else timeSystem.warmGhost(renderer, camera)
+    else if (!awaitingIntro) timeSystem.warmGhost(renderer, camera)
     // Start the next module after presentation, never alongside boot FBXs.
     // Prefetch failure is optional; enter() will retry under the loading screen.
     const next = state === 'Boarding' ? 'MovingHeist' : state === 'MovingHeist' ? 'Timewreck' : state === 'Timewreck' ? 'Ending' : null
@@ -403,8 +399,7 @@ if (import.meta.env?.DEV) {
 // ---------------------------------------------------------------
 // Main Menu
 // ---------------------------------------------------------------
-// The title owns independent scenery. Gameplay construction happens only
-// after New Game, under the level manager's existing loading screen.
+// Boarding and the intro are prepared behind loading, before the title opens.
 
 let gameStarted = false
 let arrival = null
@@ -418,8 +413,11 @@ let storyRun = 0
 let awaitingIntro = false
 let introReady = Promise.resolve()
 let boardingFilesReady = null
+let preparedBoarding = null
+let newGameClickedAt = 0
 let firstLiveFramePending = false
 let frameStartedAt = 0
+let frameIntervalMs = 0
 
 function prepareIntro() {
   initAudio()
@@ -474,7 +472,7 @@ function startPreparedIntro() {
   if (!awaitingIntro || !gameStarted || levelManager.getState() !== 'Boarding' || levelManager.isTransitioning()) return
   awaitingIntro = false
   setArrivalStartCamera()
-  if (import.meta.env?.DEV) console.log(`[load] intro start ${performance.now().toFixed(1)}ms`)
+  if (import.meta.env?.DEV) console.log(`[load] new game → intro ${(performance.now() - newGameClickedAt).toFixed(1)}ms`)
   storyPlayer.start()
 }
 
@@ -496,9 +494,23 @@ hud.setVisible(false)
 playerView.setEnabled(false)
 keyboard.setEnabled(false)
 
-// Rebuild scenery on boot and quit, without constructing a gameplay level.
+// The manager adopts this exact instance on New Game; no second build.
 async function buildTitleBackdrop() {
-  return createTitleScene()
+  introReady = prepareIntro()
+  boardingFilesReady = loadBoardingAssets()
+  await Promise.all([introReady, charactersReady, boardingFilesReady])
+  preparedBoarding = createBoardingLevel({ scene, interaction, assets, hud, player,
+    camera: playerView, renderCamera: camera, respawn, timeSystem, renderer,
+    advance: () => levelManager.advance(), beginCinematic() { respawn.cancel(); syncInputState() } })
+  const checkpoint = preparedBoarding.checkpoint
+  player.setPose(checkpoint.position, checkpoint.yaw)
+  playerView.setYaw(checkpoint.yaw ?? 0); playerView.setPitch(checkpoint.pitch)
+  playerView.snap(); playerView.update(0, player.mesh, null)
+  if (import.meta.env?.DEV) console.log(`[load] level1 built ${performance.now().toFixed(1)}ms`)
+  timeSystem.warmGhost(renderer, camera)
+  warmLevel1()
+  hud.setVisible(false)
+  return createTitleBackdrop({ renderer, onRendererRestore: () => post.resize() })
 }
 
 const settingsMenu = createSettingsMenu()
@@ -719,6 +731,8 @@ function startGame() {
     titleReturnPromise.then(startGame)
     return
   }
+  if (gameStarted) return
+  newGameClickedAt = performance.now()
   respawn.reset()
   timeSystem.resetForRun()
   gameStarted = true
@@ -741,6 +755,7 @@ function startGame() {
       titleBackdrop.dispose()
       titleBackdrop = null
     }
+    preparedBoarding?.dispose(); preparedBoarding = null
     levelManager.enter(devStart.state, { levelOptions: devStart.levelOptions })
     return
   }
@@ -753,12 +768,9 @@ function startGame() {
     titleBackdrop.dispose()
     titleBackdrop = null
   }
-  loadingScreen.show()
-  const run = storyRun, owner = storyPlayer
-  Promise.all([introReady, charactersReady, boardingFilesReady ?? loadBoardingAssets()]).then(() => {
-    if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
-    levelManager.enter('Boarding')
-  }).catch(error => { loadingScreen.setError(); console.error('[load] preparation failed', error) })
+  const boarding = preparedBoarding; preparedBoarding = null
+  levelManager.adopt('Boarding', boarding)
+  startPreparedIntro()
   syncInputState()
 }
 
@@ -824,16 +836,14 @@ async function quitToTitle() {
     // Let the opaque veil paint before synchronous scene disposal/construction.
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     levelManager.unload()
+    preparedBoarding?.dispose(); preparedBoarding = null
     disposeGameplayDrone()
     // unload stops the outgoing track; request title music afterwards.
     playMenuMusic()
     titleBackdrop = await buildTitleBackdrop()
+    titleBackdrop.show()
     menu.show()
     if (import.meta.env?.DEV) console.log(`[load] title ready ${performance.now().toFixed(1)}ms since page start`)
-    introReady = prepareIntro()
-    introReady.catch(error => console.error('[load] intro prefetch failed', error))
-    boardingFilesReady = loadBoardingAssets()
-    boardingFilesReady.catch(error => console.error('[load] level1 prefetch failed', error))
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     veil.style.transition = 'opacity 400ms linear'
     veil.style.opacity = '0'
@@ -853,12 +863,9 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
     requestAnimationFrame(() => {
       startupTasks.complete('presentation')
       loadingScreen.hide()
+      titleBackdrop.show()
       menu.show()
       if (import.meta.env?.DEV) console.log(`[load] title ready ${performance.now().toFixed(1)}ms since page start`)
-      introReady = prepareIntro()
-      introReady.catch(error => console.error('[load] intro prefetch failed', error))
-      boardingFilesReady = loadBoardingAssets()
-      boardingFilesReady.catch(error => console.error('[load] level1 prefetch failed', error))
       if (benchTarget) {
         menu.hide()
         startGame()
@@ -882,6 +889,7 @@ const loop = createLoop({
     if (storyPlayer?.active) {
       if (storyPlayer.showGame) post.render(world, view)
       storyPlayer.render()
+      storyPlayer.recordFrame(Math.max(frameIntervalMs, performance.now() - frameStartedAt))
       if (firstLiveFramePending && storyPlayer.showGame) {
         firstLiveFramePending = false
         if (import.meta.env?.DEV) console.log(`[perf] first live frame ${(performance.now() - frameStartedAt).toFixed(2)}ms frame time`)
@@ -889,7 +897,7 @@ const loop = createLoop({
       return
     }
     if (!gameStarted && titleBackdrop) {
-      renderer.render(titleBackdrop.scene, titleBackdrop.camera)
+      titleBackdrop.render()
       return
     }
     // A DEV benchmark can retain a pose after gameplay stops; it must not
@@ -911,6 +919,7 @@ const loop = createLoop({
 
 const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
+  frameIntervalMs = frameStartedAt ? performance.now() - frameStartedAt : 0
   frameStartedAt = performance.now()
   if (storyPlayer?.active) {
     storyPlayer.update(delta)

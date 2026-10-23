@@ -104,8 +104,13 @@ function harness({ locked = false, failed = false, delayed = false, rain = false
 
 const narrationTimeline = () => buildStoryTimeline(introBeat, Array(5).fill({ duration: 8 }), true)
 const endStart = () => endBeats().darken
-const endBeats = () => endingTimeline(introBeat, narrationTimeline(), trainPlacement(introBeat, 1920, 1080, 0, {}).revealProgress)
+const endBeats = () => endingTimeline(introBeat, narrationTimeline())
 const finishTime = () => endBeats().complete
+function finishEnding(h) {
+  h.player.update(finishTime())
+  h.player.update(introBeat.timings.smokeWaitMax)
+  h.player.update(introBeat.timings.smokeClear)
+}
 const find = (node, id) => node.id === id ? node : node.children.map(child => find(child, id)).find(Boolean)
 function assertStoryRoute(gain, h) {
   const bus = gain.target, limiter = h.compressors[0]
@@ -229,7 +234,7 @@ test('composition freezes before gameplay updates and renders only story; credit
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
   assert.ok(main.indexOf('storyPlayer.update(delta)') < main.indexOf('player.updateVisual(delta)'))
   assert.match(main, /if \(storyPlayer.showGame\) post.render\(world, view\)\s+storyPlayer.render\(\)/)
-  assert.match(main, /if \(!storyPlayer\?\.active && !awaitingIntro\) playMusicForState\(state\)/)
+  assert.match(main, /if \(gameStarted && !storyPlayer\?\.active && !awaitingIntro\) playMusicForState\(state\)/)
   const credits = fs.readFileSync(new URL('../src/ui/credits.js', import.meta.url), 'utf8')
   assert.ok(credits.includes('Story illustrations generated with ChatGPT (OpenAI)'))
   assert.ok(credits.includes('Narration voice generated with ElevenLabs (voice: David)'))
@@ -352,13 +357,14 @@ test('real newspaper image spins twice, settles, shakes, holds and crossfades wi
   h.player.cancel()
 })
 
-test('ending darkens, draws title, puffs modest steam then reveals behind a sharp train wipe', async () => {
+test('ending darkens, draws title, passes train, covers fully, waits for eight good frames then clears', async () => {
   const h = harness({ whistle: true }); await h.player.prepare(); h.player.start()
   const u = h.film.uniforms, t = endBeats()
   assert.equal(t.title - t.darken, 1)
-  assert.ok(Math.abs(t.steam - t.hold - 1) < 1e-9)
-  assert.ok(Math.abs(t.train - t.steam - 0.8) < 1e-9)
-  assert.ok(Math.abs(t.complete - t.train - 1.6) < 1e-9)
+  assert.ok(Math.abs(t.train - t.hold - 1) < 1e-9)
+  assert.ok(Math.abs(t.trainEnd - t.train - 1.6) < 1e-9)
+  assert.ok(Math.abs(t.reveal - t.trainEnd - 0.6) < 1e-9)
+  assert.ok(Math.abs(t.complete - t.reveal - 2) < 1e-9)
   h.player.update(t.darken)
   assert.deepEqual(h.stats.starts, [])
   assert.equal(h.player.showGame, false); assert.equal(h.player.showQuad, true)
@@ -385,23 +391,26 @@ test('ending darkens, draws title, puffs modest steam then reveals behind a shar
   h.player.update(1.0)
   assert.deepEqual(h.stats.starts, ['whistle'])
   assert.equal(h.nodes[0].target.gain.value, 0.8); assertStoryRoute(h.nodes[0].target, h)
-  h.player.update(0.8)
   assert.ok(u.uTrainHeight.value > 0); assert.equal(h.player.showGame, false)
   assert.ok(u.uTrainCenter.value.x < 0)
-  assert.equal(u.uPuffOpacity.value, 0.35); assert.equal(u.uPuffHeight.value, 1 / 3)
   assert.equal(u.uTrainBlur.value, 0)
-  h.player.update(t.reveal - t.train - 0.001)
+  h.player.update(1.599)
   assert.equal(h.stats.crossfadeStarts, 0)
   h.player.update(0.0011)
   assert.equal(h.stats.crossfadeStarts, 1)
   assert.equal(h.stats.handoverRatio, 0.625); assert.equal(h.stats.restores, 1)
   assert.equal(h.player.showGame, true)
-  assert.ok(u.uWipeEdge.value < 0, 'live scene starts before trailing edge reaches the screen')
-  assert.equal(u.uWiping.value, 1)
+  assert.equal(h.stats.coveredAtHandover, 1)
+  assert.equal(u.uSmokeClear.value, 0)
+  assert.equal(u.uTrainHeight.value, 0)
   assert.equal(h.player.active, true)
   assert.equal(resolveInputState({ gameStarted: true, story: h.player.active }), 'STORY')
-  h.player.update(t.complete - t.reveal - 0.0011); assert.equal(h.player.active, true)
-  h.player.update(0.002); assert.equal(h.stats.completes, 1)
+  for (let i = 0; i < 8; i++) h.player.recordFrame(16)
+  h.player.update(0.599); assert.equal(u.uSmokeClear.value, 0)
+  h.player.update(0.001); assert.equal(u.uSmokeClear.value, 0)
+  h.player.update(1); assert.equal(u.uSmokeClear.value, 0.5)
+  assert.equal(h.player.active, true)
+  h.player.update(1); assert.equal(h.stats.completes, 1)
   assert.equal(h.player.showQuad, false)
   assert.equal(resolveInputState({ gameStarted: true, story: h.player.active }), 'PLAYING')
 })
@@ -415,17 +424,44 @@ test('rain loops through the limited story bus at 1.5, fades in over 1.5 and out
   assert.deepEqual(gain.gain.events, [['set', 0, 0], ['ramp', 1.5, 1.5]])
   h.ctx.currentTime = endStart(); h.player.update(endStart())
   assert.deepEqual(gain.gain.events.at(-1), ['ramp', 1.5, 1.5], 'rain continues during title and train')
-  h.ctx.currentTime = endBeats().reveal; h.player.update(endBeats().reveal - endStart())
+  h.player.update(endBeats().trainEnd - endStart())
+  for (let i = 0; i < 8; i++) h.player.recordFrame(16)
+  h.ctx.currentTime = endBeats().reveal; h.player.update(0.6)
   assert.deepEqual(gain.gain.events.at(-1), ['ramp', 0, endBeats().complete])
   h.player.update(endBeats().complete - endBeats().reveal + 0.001)
   assert.equal(rain.stopped, true); assert.equal(gain.disconnected, true)
   assert.equal(h.stats.completes, 1)
 })
 
+test('under-smoke wait resets on a 40 ms frame, needs eight consecutive good frames, and caps at three seconds', async () => {
+  const h = harness(); await h.player.prepare(); h.player.start(); h.player.update(endBeats().trainEnd)
+  assert.equal(h.stats.coveredAtHandover, 1)
+  for (let i = 0; i < 7; i++) h.player.recordFrame(16)
+  h.player.update(0.6); h.player.update(0.1)
+  assert.equal(h.film.uniforms.uSmokeClear.value, 0)
+  h.player.recordFrame(40)
+  for (let i = 0; i < 7; i++) h.player.recordFrame(16)
+  h.player.update(0.1); h.player.update(0.1)
+  assert.equal(h.film.uniforms.uSmokeClear.value, 0, 'one slow frame resets the streak')
+  h.player.recordFrame(16); h.player.update(0)
+  h.player.update(1); assert.equal(h.film.uniforms.uSmokeClear.value, 0.5)
+  h.player.update(1); assert.equal(h.stats.completes, 1)
+  const slow = harness(); await slow.player.prepare(); slow.player.start(); slow.player.update(endBeats().trainEnd)
+  slow.player.recordFrame(80); slow.player.update(2.999)
+  assert.equal(slow.film.uniforms.uSmokeClear.value, 0)
+  slow.player.update(0.001); slow.player.update(1)
+  assert.equal(slow.film.uniforms.uSmokeClear.value, 0.5, 'three-second maximum prevents an indefinite wait')
+  slow.player.skip(); slow.player.update(0.6); assert.equal(slow.stats.completes, 1)
+  const stalled = harness(); await stalled.player.prepare(); stalled.player.start(); stalled.player.update(endBeats().trainEnd)
+  stalled.player.recordFrame(3100); stalled.player.update(0.1); stalled.player.update(1)
+  assert.equal(stalled.film.uniforms.uSmokeClear.value, 0.5, 'wall-clock cap survives the game loop delta clamp')
+  stalled.player.cancel()
+})
+
 test('missing rain does not affect narration; skip fades rain and stops it on completion', async () => {
   const failed = harness(); await failed.player.prepare(); failed.player.start()
   failed.player.update(introBeat.timings.opening); assert.deepEqual(failed.stats.starts, [0])
-  failed.player.update(finishTime()); assert.equal(failed.stats.completes, 1)
+  finishEnding(failed); assert.equal(failed.stats.completes, 1)
   for (const time of [0, endStart() + 1]) {
     const h = harness({ rain: true }); await h.player.prepare(); h.player.start(); h.player.update(time)
     const rain = h.nodes[0]; h.player.skip(); assert.notEqual(rain.stopped, true)
@@ -461,8 +497,8 @@ test('cinema subtitles stay centred at 7vh with no box or label on all six panel
   h.player.cancel()
 })
 
-test('skip from newspaper, each panel, darken, title, hold, steam, train and reveal crossfades once', async () => {
-  for (const time of [0, ...narrationTimeline().map(entry => entry.start + 0.5), ...['darken', 'title', 'hold', 'steam', 'train', 'reveal'].map(phase => endBeats()[phase] + 0.2)]) {
+test('skip from newspaper, each panel, darken, title, hold, train and smoke crossfades once', async () => {
+  for (const time of [0, ...narrationTimeline().map(entry => entry.start + 0.5), ...['darken', 'title', 'hold', 'train', 'reveal'].map(phase => endBeats()[phase] + 0.2)]) {
     const h = harness({ rain: true, whistle: true }); await h.player.prepare(); h.player.start(); h.player.update(time)
     const narration = h.nodes.filter(node => typeof node.buffer.id === 'number')
     const whistle = h.nodes.find(node => node.buffer.id === 'whistle')
@@ -487,7 +523,7 @@ test('crossfade overlays one quad after normal scene, restores renderer state an
   assert.deepEqual(h.renderOrder.slice(-2), ['game', 'quad-overlay'])
   assert.equal(h.renderer.autoClear, true)
   assert.equal(h.film.material.transparent, true)
-  assert.match(h.film.material.fragmentShader, /float alpha = uOpacity \* max\(darkSide, trail\)/)
+  assert.match(h.film.material.fragmentShader, /float alpha = uOpacity \* \(uSteam >= 1.0 \? smokeOpacity : 1.0\)/)
   assert.doesNotMatch(h.film.material.fragmentShader, /uRipple|uTitle|uDissolve|dissolveNoise|chromatic/)
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
   assert.match(main, /onCrossfade\(\) \{[\s\S]*?beginForecourtArrival\(\)/)
@@ -505,7 +541,7 @@ test('all story sounds share exactly one bus and limiter; cleanup disconnects ow
   h.player.update(introBeat.timings.opening)
   const narration = h.nodes.find(node => node.buffer.id === 0)
   assert.equal(assertStoryRoute(narration.target, h), bus)
-  h.player.update(endBeats().steam - introBeat.timings.opening)
+  h.player.update(endBeats().train - introBeat.timings.opening)
   const whistle = h.nodes.find(node => node.buffer.id === 'whistle')
   assert.equal(assertStoryRoute(whistle.target, h), bus)
   assert.equal(h.master.gain.value, 0.5)
@@ -543,7 +579,7 @@ test('full device resolution and sRGB restore at crossfade start or on cancel an
     assert.equal(h.renderer.getPixelRatio(), 2)
     assert.equal(h.renderer.outputColorSpace, THREE.SRGBColorSpace)
     assert.equal(h.film.material.toneMapped, false)
-    if (exit === 'complete') h.player.update(finishTime() + 0.01)
+    if (exit === 'complete') finishEnding(h)
     else if (exit === 'skip') { h.player.skip(); assert.equal(h.renderer.getPixelRatio(), 0.625); h.player.update(0.601) }
     else if (exit === 'timeout') h.timers.get(90000)()
     else h.player.cancel()
@@ -575,7 +611,7 @@ test('real main render callback bypasses composer for story quad and preserves p
     const h = harness(); await h.player.prepare(); h.player.start()
     let postCalls = 0
     const post = { enabled, render() { postCalls++ } }
-    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
+    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
     render({}, {}); assert.equal(postCalls, 0)
     assert.equal(h.stats.renders, 1)
     h.player.skip(); render({}, {})
@@ -614,7 +650,7 @@ test('real render callback draws only story before coverage, game plus one quad 
   assert.ok(start >= 0 && end > start)
   const h = harness(); await h.player.prepare(); h.player.start()
   let games = 0
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
   h.player.update(endStart()); render({}, {})
   assert.equal(games, 0); assert.equal(h.stats.renders, 1)
   h.player.update(endBeats().title - endStart() + 0.1); render({}, {})
@@ -624,25 +660,30 @@ test('real render callback draws only story before coverage, game plus one quad 
   h.player.update(endBeats().reveal - endBeats().title - 0.1 + 0.0001); render({}, {})
   assert.equal(games, 1); assert.equal(h.stats.renders, 3)
   assert.equal(h.renderOrder.at(-1), 'quad-overlay')
-  h.player.update(1.801); render({}, {})
+  h.player.update(3); h.player.update(2); render({}, {})
   assert.equal(games, 2); assert.equal(h.stats.renders, 3)
   assert.match(main, /const show = gameStarted && !storyPlayer\?\.active && !credits.isOpen/)
   h.player.cancel()
 })
 
-test('actual composition callbacks start arrival at crossfade and release music, HUD and input only on completion', async () => {
+test('actual composition keeps level music silent behind the title and during intro, then releases music, HUD and input on completion', async () => {
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('import.meta.env?.DEV', 'false')
   const start = main.indexOf('function prepareIntro() {'), end = main.indexOf('// Large walkthrough popups', start)
   assert.ok(start >= 0 && end > start)
+  const enterStart = main.indexOf('onEnter: (state) => {'), enterEnd = main.indexOf('  onLeave:', enterStart)
+  assert.ok(enterStart >= 0 && enterEnd > enterStart)
   const events = []
   let callbacks
-  const owner = { active: true, prefetch: () => Promise.resolve() }
+  const owner = { active: false, prefetch: () => Promise.resolve() }
   const run = new Function('deps', `
     const {createStoryPlayer,initAudio,beginForecourtArrival,playMusicForState,hud,syncInputState,levelManager}=deps;
     const post={resize(){deps.events.push('resize')}},settings={get(){return 0.85}};
-    const introBeat={},renderer={}; let storyPlayer=null,storyRun=1,gameStarted=true,firstLiveFramePending=false;
+    const introBeat={},renderer={},camera={},modelEditor=null,timeSystem={warmGhost(){}},requestAnimationFrame=()=>{};
+    let storyPlayer=null,storyRun=1,gameStarted=false,awaitingIntro=false,firstLiveFramePending=false;
     ${main.slice(start, end)}
-    return {prepareIntro, invalidate(){storyRun++}, get owner(){return storyPlayer}};
+    const levelCallbacks={${main.slice(enterStart, enterEnd)}};
+    return {prepareIntro, enterBoarding(){levelCallbacks.onEnter('Boarding')},
+      beginRun(){gameStarted=true;storyPlayer.active=true}, invalidate(){storyRun++}, get owner(){return storyPlayer}};
   `)({
     events, createStoryPlayer(options) { callbacks = options; return owner },
     initAudio() {}, beginForecourtArrival() { events.push('arrival') },
@@ -651,6 +692,10 @@ test('actual composition callbacks start arrival at crossfade and release music,
     syncInputState() { events.push('sync') }, levelManager: { getState: () => 'Boarding' }
   })
   await run.prepareIntro()
+  run.enterBoarding()
+  assert.deepEqual(events, [], 'built Boarding behind the visible title must not start level music, even with no active intro')
+  run.beginRun(); run.enterBoarding()
+  assert.deepEqual(events, [], 'level music also stays silent while the intro is active')
   callbacks.onRendererRestore(); assert.deepEqual(events, ['resize']); events.length = 0
   assert.equal(callbacks.getRenderScale(), 0.85)
   callbacks.onCrossfade()
@@ -670,7 +715,7 @@ test('train placement stays offscreen at endpoints, preserves aspect and caps CS
     assert.equal(start.x + start.width / 2, 0)
     assert.ok(start.height * height / 1024 <= 1.60000000001)
     assert.ok(Math.abs(start.width * width / (start.height * height) - 1.5) < 1e-9)
-    assert.ok(Math.abs(start.y + (0.125 - 0.5) * start.height - 0.43) < 1e-9)
+    assert.ok(Math.abs(start.y - 0.5 * start.height - 0.05) < 1e-9)
     const end = trainPlacement(introBeat, width, height, 1, target)
     assert.ok(Math.abs(end.x - end.width / 2 - 1) < 1e-9)
     assert.equal(end.blur, 0)
@@ -682,8 +727,8 @@ test('train placement stays offscreen at endpoints, preserves aspect and caps CS
   assert.equal(h.film.material.premultipliedAlpha, true)
   assert.match(h.film.material.fragmentShader, /tap < 8/)
   assert.match(h.film.material.fragmentShader, /octave < 4/)
-  assert.match(h.film.material.fragmentShader, /uOpacity \* max\(darkSide, trail\)/)
-  assert.ok(h.film.material.fragmentShader.indexOf('color = mix(color, steamColor') < h.film.material.fragmentShader.indexOf('vec4 train ='))
+  assert.match(h.film.material.fragmentShader, /uSteam >= 1.0 \? smokeOpacity : 1.0/)
+  assert.ok(h.film.material.fragmentShader.indexOf('color = uSteam >= 1.0') < h.film.material.fragmentShader.indexOf('vec4 train ='))
   assert.match(h.film.material.fragmentShader, /gl_FragColor.rgb \*= gl_FragColor.a/)
   h.player.cancel()
 })
@@ -692,7 +737,7 @@ test('complete, skip and cancel release every owned resource and subsequent upda
   for (const exit of ['complete', 'skip', 'cancel']) {
     const h = harness({ rain: true, whistle: true }); await h.player.prepare(); h.player.start()
     h.player.update(introBeat.timings.opening)
-    if (exit === 'complete') h.player.update(finishTime())
+    if (exit === 'complete') finishEnding(h)
     else if (exit === 'skip') { h.player.skip(); h.player.update(0.601) }
     else h.player.cancel()
     assert.deepEqual(h.player.resources(), { frames: 0, listeners: 0, audioNodes: 0, textures: 0 })
@@ -724,7 +769,7 @@ test('a resize during story cannot leave the real composer at story resolution a
         await h.player.prepare(); h.player.start()
         post.resize()
         assert.deepEqual(sizes.at(-1), [1366 * 2, 768 * 2])
-        if (exit === 'complete') h.player.update(finishTime())
+        if (exit === 'complete') finishEnding(h)
         else if (exit === 'skip') { h.player.skip(); h.player.update(0.601) }
         else h.player.cancel()
         assert.deepEqual(sizes.at(-1), [1366 * 0.625, 768 * 0.625])
@@ -796,7 +841,9 @@ test('committed train PNG supplies real opaque extents and a measured crisp body
     const pose = trainPlacement(introBeat, w, h, 0.5, {}, bounds)
     const scale = pose.height * h / height, bodyHeight = pose.height * (bounds.bodyTop - bounds.bodyBottom)
     assert.ok(scale <= 1.600000001)
-    console.log(`[train scale] ${w}x${h} upscale=${scale.toFixed(5)} body=${bodyHeight.toFixed(5)} revealProgress=${pose.revealProgress.toFixed(5)}`)
+    assert.ok(Math.abs(bodyHeight - 0.28) < 1e-9)
+    assert.ok(Math.abs(pose.y + (bounds.bodyBottom - 0.5) * pose.height - 0.05) < 1e-9)
+    console.log(`[train scale] ${w}x${h} upscale=${scale.toFixed(5)} body=${bodyHeight.toFixed(5)}`)
   }
 })
 
@@ -819,15 +866,18 @@ test('prefetch performs no GPU work; actual Level 1 warm-up precedes intro and f
   const uploads = h.stats.uploads, compiled = h.stats.compiled
   h.player.update(endBeats().reveal + 0.001)
   const renderStart = main.indexOf('render(world, view) {'), renderEnd = main.indexOf('\n  },', renderStart)
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null;let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16;let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
     h.player, { render() { events.push('first live') } }, { getCinematicView: () => null }, null)
   render(world, view)
   assert.equal(events.at(-1), 'first live')
   assert.equal(h.stats.uploads, uploads); assert.equal(h.stats.compiled, compiled)
   const startup = main.slice(main.indexOf('// Defer by two animation frames'), main.indexOf('const loop ='))
   assert.doesNotMatch(startup, /await introReady|await charactersReady/)
-  assert.ok(startup.indexOf('menu.show()') < startup.indexOf('introReady = prepareIntro()'))
-  assert.match(main, /state === 'Boarding' && awaitingIntro[\s\S]*?warmLevel1\(\)/)
+  assert.ok(startup.indexOf('await startupTasks.track') < startup.indexOf('menu.show()'))
+  const prepare = main.slice(main.indexOf('async function buildTitleBackdrop()'), main.indexOf('const settingsMenu'))
+  assert.ok(prepare.indexOf('await Promise.all') < prepare.indexOf('createBoardingLevel('))
+  assert.ok(prepare.indexOf('createBoardingLevel(') < prepare.indexOf('warmLevel1()'))
+  assert.ok(prepare.indexOf('warmLevel1()') < prepare.indexOf('return createTitleBackdrop('))
   assert.match(main, /Promise.all\(\[introReady, charactersReady, boardingFilesReady/)
   assert.match(main, /transitioning: awaitingIntro \|\| levelManager.isTransitioning\(\)/)
   h.player.cancel(); world.children[0].geometry.dispose(); world.children[0].material.dispose(); map.dispose()

@@ -27,8 +27,7 @@ export function createStoryFilm() {
     uTrain: { value: null }, uTrainSize: { value: new THREE.Vector2(1536, 1024) },
     uTrainCenter: { value: new THREE.Vector2(-2, 0.42) },
     uTrainHeight: { value: 0 }, uTrainBlur: { value: 0 }, uTrainRattle: { value: 0 },
-    uSteam: { value: 0 }, uWiping: { value: 0 }, uWipeEdge: { value: -1 },
-    uWipeWidth: { value: 0.08 }, uPuffOpacity: { value: 0.35 }, uPuffHeight: { value: 1 / 3 },
+    uSteam: { value: 0 }, uSmokeClear: { value: 0 }, uSteamFront: { value: 0 },
     uImage: { value: 1 }, uRain: { value: FILM_RAIN },
     uPanA: { value: new THREE.Vector2() },
     uPanB: { value: new THREE.Vector2() },
@@ -57,8 +56,7 @@ export function createStoryFilm() {
       uniform float uSharpen;
       uniform sampler2D uTrain;
       uniform vec2 uTrainSize, uTrainCenter;
-      uniform float uTrainHeight, uTrainBlur, uTrainRattle, uSteam, uWiping;
-      uniform float uWipeEdge, uWipeWidth, uPuffOpacity, uPuffHeight;
+      uniform float uTrainHeight, uTrainBlur, uTrainRattle, uSteam, uSmokeClear, uSteamFront;
       varying vec2 vUv;
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -146,13 +144,16 @@ export function createStoryFilm() {
         }
         float cloud = 0.5;
         if (uSteam > 0.0) cloud = steamCloud(vec2(vUv.x * aspect * 3.0 + uTime * 0.13, vUv.y * 3.0 - uTime * 0.28));
-        float puff = uSteam * uPuffOpacity * (1.0 - smoothstep(uPuffHeight * 0.6, uPuffHeight, vUv.y)) * cloud;
-        float boundary = uWipeEdge + (cloud - 0.5) * uWipeWidth * 0.35;
-        float darkSide = uWiping > 0.5 ? smoothstep(boundary - uWipeWidth * 0.5, boundary + uWipeWidth * 0.5, vUv.x) : 1.0;
-        float trail = uWiping * uPuffOpacity * max(0.0, 1.0 - abs(vUv.x - boundary) / (uWipeWidth * 0.5));
+        float rise = smoothstep(vUv.y - 0.25, vUv.y + 0.25, uSteam * 1.5 + (cloud - 0.5) * 0.4);
+        float behind = 1.0 - smoothstep(uSteamFront - 0.18, uSteamFront + 0.18, vUv.x);
+        float cover = uSteam >= 1.0 ? 1.0 : rise * behind * smoothstep(0.0, 0.2, uSteam);
+        // Continuous cloud opacity, with exact opaque/clear endpoints. The
+        // rising noise field thins softly instead of a threshold/noise wipe.
+        float thinning = clamp(1.0 - uSmokeClear + sin(uSmokeClear * 3.141593) * (cloud - 0.5) * 0.5, 0.0, 1.0);
+        float smokeOpacity = cover * thinning;
         vec3 steamColor = mix(vec3(0.48, 0.51, 0.54), vec3(0.88, 0.89, 0.90), cloud);
-        color = mix(color, steamColor, max(puff, trail));
-        float alpha = uOpacity * max(darkSide, trail);
+        color = uSteam >= 1.0 ? steamColor : mix(color, steamColor, smokeOpacity);
+        float alpha = uOpacity * (uSteam >= 1.0 ? smokeOpacity : 1.0);
         vec3 premul = max(color, vec3(0.0)) * clamp(uFade, 0.0, 1.0) * alpha;
         // The train is the TOP layer, never obscured by puff or trail.
         if (uTrainHeight > 0.0) {
