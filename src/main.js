@@ -30,9 +30,10 @@ import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
 import { createCredits } from './ui/credits.js'
 import { createStoryPlayer } from './ui/story-player.js'
+import { createTitleScene } from './ui/title-scene.js'
 import { introBeat } from './story/intro-beat.js'
 import { createBoardingLevel } from './levels/boarding.js'
-import { LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
+import { LANDING_CAMERA, LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
 import { loadBoardingAssets } from './environment/nature-props.js'
 import { createCompleteLevel } from './levels/complete.js'
 import { createModelEditor } from './dev/model-editor.js'
@@ -320,7 +321,7 @@ const levelManager = createLevelManager({
   timeSystem,
   loadingScreen,
   onEnter: (state) => {
-    if (!storyPlayer?.active) playMusicForState(state)
+    if (!storyPlayer?.active && !awaitingIntro) playMusicForState(state)
     // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
     // Workshop remaps its stable scene keys here so saved dev-layout overrides
     // are reapplied before the loading overlay hands control back to the player.
@@ -336,9 +337,15 @@ const levelManager = createLevelManager({
     }))
   },
   onLeave: stopLevelMusic,
-  onInputStateChange: () => syncInputState(),
+  onInputStateChange: () => {
+    startPreparedIntro()
+    syncInputState()
+  },
   levels: [
-    { state: 'Boarding', create: ctx => createBoardingLevel({ ...ctx, renderCamera: camera }) },
+    { state: 'Boarding', load: async () => {
+      await loadBoardingAssets()
+      return ctx => createBoardingLevel({ ...ctx, renderCamera: camera })
+    } },
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
@@ -392,25 +399,25 @@ if (import.meta.env?.DEV) {
 // ---------------------------------------------------------------
 // Main Menu
 // ---------------------------------------------------------------
-// The station scene is built behind the loading screen so the menu
-// has a live 3D backdrop. The menu then owns the camera until the
-// player clicks NEW GAME, at which point the third-person camera
-// takes over and gameplay begins.
+// The title owns independent scenery. Gameplay construction happens only
+// after New Game, under the level manager's existing loading screen.
 
 let gameStarted = false
 let arrival = null
 let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
-let titleBackdrop = null // the silently-built station behind the title screen
+let titleBackdrop = null // independent scenery, never a gameplay level
 let titleReturnPromise = null // coalesce returns and hold New Game until its backdrop is ready
 let modelEditor = null // DEV-only live scene/model workshop (F2)
 let storyPlayer = null
 let storyRun = 0
+let awaitingIntro = false
 
 function prepareIntro() {
   initAudio()
   const run = storyRun
-  const owner = createStoryPlayer({ beat: introBeat, renderer, onCrossfade() {
+  const owner = createStoryPlayer({ beat: introBeat, renderer,
+    getRenderScale: () => settings.get('renderScale'), onRendererRestore: () => post.resize(), onCrossfade() {
     if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
     beginForecourtArrival()
   }, onComplete() {
@@ -422,6 +429,17 @@ function prepareIntro() {
   } })
   storyPlayer = owner
   return owner.prepare()
+}
+
+function startPreparedIntro() {
+  if (!awaitingIntro || !gameStarted || levelManager.getState() !== 'Boarding' || levelManager.isTransitioning()) return
+  awaitingIntro = false
+  // The menu now renders a separate camera. Keep the established initial
+  // station framing for the existing two-second arrival, without showing it.
+  const home = LANDING_CAMERA.position, aim = LANDING_CAMERA.target
+  camera.position.set(home.x, home.y + Math.sin(0.6) * LANDING_CAMERA.driftY, home.z + LANDING_CAMERA.driftZ)
+  camera.lookAt(aim.x, aim.y, aim.z)
+  storyPlayer.start()
 }
 
 // Large walkthrough popups freeze gameplay and silence actions, but keep the
@@ -442,27 +460,9 @@ hud.setVisible(false)
 playerView.setEnabled(false)
 keyboard.setEnabled(false)
 
-// Build the first level silently (no loading-screen flash) so the
-// station geometry, lighting and outdoor environment render behind
-// the menu overlay.
+// Rebuild scenery on boot and quit, without constructing a gameplay level.
 async function buildTitleBackdrop() {
-  await loadBoardingAssets()
-  const ctx = {
-    scene, interaction, assets, hud, timeSystem, renderer,
-    player, camera: playerView, renderCamera: camera, respawn,
-    advance: () => levelManager.advance(),
-    beginCinematic() {
-      respawn.cancel()
-      syncInputState()
-    }
-  }
-  // Nothing is interactable behind the title screen, and the player is parked
-  // back on the level's spawn — otherwise quitting mid-run would leave the
-  // figure standing wherever the run ended, in shot of the cinematic camera.
-  interaction.setEnabled(false)
-  const level = createBoardingLevel(ctx)
-  if (level.checkpoint) player.setPose(level.checkpoint.position, level.checkpoint.yaw)
-  return level
+  return createTitleScene()
 }
 
 const settingsMenu = createSettingsMenu()
@@ -710,17 +710,15 @@ function startGame() {
   }
   stopLevelMusic()
   disposeGameplayDrone()
-  storyPlayer.start()
+  awaitingIntro = true
   hud.setVisible(false)
-  syncInputState()
   document.exitPointerLock?.()
   if (titleBackdrop) {
-    const level = titleBackdrop
+    titleBackdrop.dispose()
     titleBackdrop = null
-    levelManager.adopt('Boarding', level)
-    return
   }
   levelManager.enter('Boarding')
+  syncInputState()
 }
 
 // Dev builds only: ?start=<target> makes NEW GAME skip ahead for playtesting.
@@ -752,6 +750,7 @@ function devStartOptions() {
 async function quitToTitle() {
   if (titleReturnPromise) return titleReturnPromise
   storyRun++
+  awaitingIntro = false
   storyPlayer?.cancel()
   storyPlayer = null
   arrival = null
@@ -799,7 +798,7 @@ async function quitToTitle() {
 }
 
 // Defer by two animation frames: the first paints the loading screen,
-// the second starts asset preparation and the station build. This matches the
+// the second starts asset preparation and title scenery. This matches the
 // pattern used by levelManager.enter() — see core/level-manager.js.
 requestAnimationFrame(() => requestAnimationFrame(async () => {
   try {
@@ -843,6 +842,10 @@ const loop = createLoop({
       storyPlayer.render()
       return
     }
+    if (!gameStarted && titleBackdrop) {
+      renderer.render(titleBackdrop.scene, titleBackdrop.camera)
+      return
+    }
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
@@ -867,6 +870,10 @@ loop.add((delta) => {
     if (storyPlayer?.showGame && arrival) updateForecourtArrival(delta)
     return
   }
+  if (!gameStarted && titleBackdrop) {
+    titleBackdrop.update(delta, window.innerWidth, window.innerHeight)
+    return
+  }
   renderQuality.update(performance.now())
   benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /
@@ -889,8 +896,6 @@ loop.add((delta) => {
 
   // While the menu is visible, drift the camera and skip gameplay.
   if (!gameStarted) {
-    menu.updateCinematicCamera(delta)
-    titleBackdrop?.updateAtmosphere?.(delta, camera.position)
     return
   }
 

@@ -1448,7 +1448,7 @@ test('Ending: hard cuts switch camera, projection and painting atomically; blue 
   } finally {h.restore()}
 })
 
-function titleReturnHarness() {
+function titleReturnHarness(devStart = null) {
   const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
   const extract=(signature,next)=>{
     const start=source.indexOf(signature),end=source.indexOf(next,start)
@@ -1458,7 +1458,9 @@ function titleReturnHarness() {
   const calls=[],pending=[],menu={visible:false,show(){this.visible=true;calls.push('menu.show')}}
   const veils=[],delays=[],releases=[]
   const document={body:{appendChild(node){veils.push(node)}},createElement(){return {style:{},remove(){veils.splice(veils.indexOf(this),1)}}}}
-  const levelManager={unload(){calls.push('unload')},adopt(state){calls.push('adopt:'+state)},enter(state){calls.push('enter:'+state)}}
+  let transitioning=false
+  const levelManager={unload(){calls.push('unload')},getState:()=> 'Boarding',isTransitioning:()=>transitioning,
+    enter(state){transitioning=true;calls.push('loading.show');calls.push('enter:'+state)}}
   const hud={setVisible(){},setSuspicion(){},setObjective(){},resetRunTimer(){}}
   const introPending=[]
   const createStoryPlayer=()=>({active:false,
@@ -1468,8 +1470,9 @@ function titleReturnHarness() {
   const deps={menu,levelManager,hud,respawn:{reset(){},resetLives(){}},timeSystem:{resetForRun(){},resetRun(){}},
     document,requestAnimationFrame:callback=>queueMicrotask(callback),setTimeout(callback,ms){delays.push(ms);queueMicrotask(callback)},
     playerView:{reset(){}},keyboardLock:{release(options){releases.push(options)},engage(){}},syncInputState(){},disposeGameplayDrone(){},
-    devStartOptions:()=>null,beginForecourtArrival(){calls.push('arrival')},
-    buildTitleBackdrop(){calls.push('backdrop');return new Promise(resolve=>pending.push(resolve))},
+    devStartOptions:()=>devStart,beginForecourtArrival(){calls.push('arrival')},
+    buildTitleBackdrop(){calls.push('backdrop');return new Promise(resolve=>pending.push(resolve)).then(()=>({dispose(){calls.push('backdrop.dispose')}}))},
+    camera:{position:{set(){}},lookAt(){}},LANDING_CAMERA:{position:{x:0,y:0,z:0},target:{x:0,y:0,z:0},driftY:0,driftZ:0},
     initAudio(){calls.push('initAudio')},preloadAbilitySfx:()=>null,getContext:()=>({state:'running'}),
     resumeAudio(){calls.push('resumeAudio');return Promise.resolve()},loadTrack:file=>file,
     startLevelMusic(file){calls.push('music:'+file);return Promise.resolve()},
@@ -1479,19 +1482,22 @@ function titleReturnHarness() {
   const factory=new Function('deps',`
     const {menu,levelManager,hud,respawn,timeSystem,playerView,keyboardLock,syncInputState,disposeGameplayDrone,
       devStartOptions,beginForecourtArrival,buildTitleBackdrop,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic,
-      stopLevelMusic,createStoryPlayer,renderer,introBeat,playMusicForState,
+      stopLevelMusic,createStoryPlayer,renderer,introBeat,playMusicForState,camera,LANDING_CAMERA,
       document,requestAnimationFrame,setTimeout}=deps;
     const console={log(){}};
     let gameStarted=true,paused=true,elapsed=12,resetCount=2,titleBackdrop=null,titleReturnPromise=null;
-    let storyRun=0,storyPlayer=createStoryPlayer(),arrival=null;
+    let storyRun=0,storyPlayer=createStoryPlayer(),arrival=null,awaitingIntro=false;
+    const post={resize(){}},settings={get:()=>0.85};
     ${extract('function prepareIntro() {','// Large walkthrough popups')}
     ${extract('async function playMenuMusic() {','function unlockAudio(')}
     ${extract('function unlockAudio(','// Earliest possible unlock:')}
     ${extract('function startGame() {','// Dev builds only:')}
     ${extract('async function quitToTitle() {','// Defer by two animation frames')}
-    return {quitToTitle,startGame,unlockAudio,beginRun(){gameStarted=true;menu.visible=false},
+    return {quitToTitle,startGame,unlockAudio,startPreparedIntro,beginRun(){gameStarted=true;menu.visible=false},
       get state(){return {gameStarted,paused,elapsed,resetCount,pending:!!titleReturnPromise}}};`)
-  return Object.assign(factory(deps),{calls,menu,pending,introPending,veils,delays,releases,
+  const result=factory(deps)
+  return Object.assign(result,{calls,menu,pending,introPending,veils,delays,releases,
+    finishLoading(){calls.push('loading.hide');transitioning=false;result.startPreparedIntro()},
     async flush(){for(let i=0;i<30;i++)await Promise.resolve()}})
 }
 
@@ -1580,11 +1586,31 @@ test('Title return: pause quit preserves fullscreen, veils construction, coalesc
   assert.deepEqual(title.delays,[200,400])
   assert.equal(title.veils.length,0)
   assert.equal(title.state.gameStarted,true,'queued New Game starts after the rebuilt backdrop is owned')
-  assert.equal(title.calls.filter(call=>call==='adopt:Boarding').length,1)
+  assert.equal(title.calls.filter(call=>call==='enter:Boarding').length,1)
+  assert.equal(title.calls.filter(call=>call==='story.start').length,0,'Level 1 must finish loading before intro starts')
+  assert.ok(title.calls.indexOf('backdrop.dispose')<title.calls.indexOf('loading.show'),'dispose scenery before building gameplay')
+  title.startPreparedIntro();assert.equal(title.calls.filter(call=>call==='story.start').length,0)
+  title.finishLoading();title.finishLoading()
   assert.equal(title.calls.filter(call=>call==='story.start').length,1,'deferred New Game starts exactly one intro')
+  assert.ok(title.calls.indexOf('loading.hide')<title.calls.indexOf('story.start'))
   assert.ok(title.calls.indexOf('menu.show')<title.calls.indexOf('story.start'),'intro starts only after title rebuild is presented')
   const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
   assert.match(source,/onQuit: \(\) => quitToTitle\(\)/,'pause menu still uses the same title path')
+})
+
+test('Title scenery rebuild never constructs Boarding; dev starts retain their direct level route', async () => {
+  const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
+  const start=source.indexOf('async function buildTitleBackdrop()'),end=source.indexOf('const settingsMenu',start)
+  const build=source.slice(start,end)
+  assert.match(build,/return createTitleScene\(\)/)
+  assert.doesNotMatch(build,/createBoardingLevel|loadBoardingAssets|adopt/)
+  const title=titleReturnHarness({state:'MovingHeist',levelOptions:{startAt:'roof'}})
+  const returned=title.quitToTitle();await title.flush()
+  title.pending.shift()({});await title.flush();title.introPending.shift()();await returned
+  title.startGame()
+  assert.equal(title.calls.filter(call=>call==='backdrop.dispose').length,1)
+  assert.equal(title.calls.filter(call=>call==='enter:MovingHeist').length,1)
+  assert.equal(title.calls.filter(call=>call==='story.start').length,0)
 })
 
 test('Ending: story sounds share the master bus and skip/dispose stop every source', () => {

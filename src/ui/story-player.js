@@ -25,11 +25,24 @@ export function createRainLevelMeter(analyser, report = audioLog) {
 }
 export const typewriterProgress = (elapsed, duration, fraction = 0.85) => Math.min(1, Math.max(0, elapsed / Math.max(0.001, duration * fraction)))
 export function endingTimeline(beat, panels) {
-  const crossfade = panels[panels.length - 1].end
-  const title = crossfade + beat.timings.endingCrossfade + beat.timings.titleDelay
+  const darken = panels[panels.length - 1].end
+  const title = darken + beat.timings.darken
   const hold = title + beat.timings.titleIn
-  const titleOut = hold + beat.timings.titleHold
-  return { crossfade, title, hold, titleOut, complete: titleOut + beat.timings.titleOut }
+  const steam = hold + beat.timings.titleHold
+  const train = steam + beat.timings.steamRise
+  const reveal = train + beat.timings.trainPass * beat.timings.trainCover
+  return { darken, title, hold, steam, train, reveal, trainEnd: train + beat.timings.trainPass,
+    complete: reveal + beat.timings.steamClear }
+}
+
+export function trainPlacement(beat, width, height, progress, target) {
+  // Source pixels are compared with drawing-buffer pixels, including DPR.
+  target.height = Math.min(beat.train.height, 1024 * beat.train.maxUpscale / height)
+  target.width = target.height * 1.5 * height / width
+  target.x = -target.width / 2 + (1 + target.width) * progress
+  target.y = beat.train.centerY
+  target.blur = (1 + target.width) / beat.timings.trainPass * beat.train.blur
+  return target
 }
 
 export function buildStoryTimeline(beat, buffers, audible) {
@@ -50,6 +63,7 @@ export function buildStoryTimeline(beat, buffers, audible) {
 // asynchronous writes check its generation; late decode/image results cannot
 // resurrect a disposed owner. Dependency injection keeps lifecycle tests real.
 export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCrossfade = () => {},
+  onRendererRestore = () => {}, getRenderScale = () => undefined,
   measureRain = Boolean(import.meta.env?.DEV),
   context = getContext, master = getMasterGain, doc = globalThis.document,
   keys = globalThis.window, loadImage = url => new THREE.ImageLoader().loadAsync(url),
@@ -63,12 +77,14 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
   let source = null, enterReady = false, enterHeld = false, timer, loadTimer
   let narrationGain = null, rainSource = null, rainGain = null, rainBuffer = null
   let request = null, unlockPromise = null, phase = '', audioWait = 0, revealCount = -1
-  let newspaper = null, whistleBuffer = null, whistleSource = null, whistleGain = null
+  let newspaper = null, trainTexture = null, whistleBuffer = null, whistleSource = null, whistleGain = null
   let handoverStarted = false, crossfadeTime = 0, crossfadeDuration = 0, crossfadeFrom = 1, rainFailed = false, rainFading = false
-  let ending = null, titleRoot = null, titleHeading = null, titleSubtitle = null, titleInLogged = false, titleOutLogged = false
+  let ending = null, titleRoot = null, titleHeading = null, titleSubtitle = null
+  let endingPhase = 0
   let storyBus = null, limiter = null, rainAnalyser = null, rainMeter = null
   let savedRenderer = null
   const savedViewport = new THREE.Vector4()
+  const train = { height: 0, width: 0, x: 0, y: 0, blur: 0 }
   function storyResolution() {
     if (!active || !savedRenderer) return
     const ratio = Math.min(keys.devicePixelRatio || 1, 2)
@@ -77,15 +93,22 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
   }
   function acquireRenderer() {
     renderer.getViewport(savedViewport)
-    savedRenderer = { pixelRatio: renderer.getPixelRatio(), outputColorSpace: renderer.outputColorSpace }
+    savedRenderer = { pixelRatio: renderer.getPixelRatio(), outputColorSpace: renderer.outputColorSpace,
+      toneMapping: renderer.toneMapping, exposure: renderer.toneMappingExposure, autoClear: renderer.autoClear }
     storyResolution()
   }
   function releaseRenderer() {
     if (!savedRenderer) return
     renderer.setPixelRatio(savedRenderer.pixelRatio)
     renderer.outputColorSpace = savedRenderer.outputColorSpace
+    renderer.toneMapping = savedRenderer.toneMapping
+    renderer.toneMappingExposure = savedRenderer.exposure
+    renderer.autoClear = savedRenderer.autoClear
     renderer.setViewport(savedViewport)
     savedRenderer = null
+    // Window/settings resize can resize the composer while story DPR is high.
+    // Resync its targets only AFTER restoring the game's renderer resolution.
+    onRendererRestore()
   }
   function ensureStoryBus() {
     if (storyBus) return storyBus
@@ -167,7 +190,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     whistleGain?.disconnect(); whistleGain = null
   }
   function playWhistle() {
-    if (!active || skipped || phase !== 'crossfade' || !whistleBuffer || whistleSource) return
+    if (!active || skipped || phase !== 'steam' || !whistleBuffer || whistleSource) return
     const ctx = context()
     if (ctx?.state !== 'running') { unlockAudio().then(playWhistleWhenRunning); return }
     try {
@@ -266,6 +289,16 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
         textures[i] = texture
         renderer.initTexture(texture)
       }),
+      loadImage(beat.train.image).then(image => {
+        if (disposed || token !== generation) return
+        trainTexture = new THREE.Texture(image)
+        trainTexture.colorSpace = THREE.SRGBColorSpace
+        trainTexture.premultiplyAlpha = true
+        trainTexture.generateMipmaps = false
+        trainTexture.minFilter = trainTexture.magFilter = THREE.LinearFilter
+        trainTexture.needsUpdate = true
+        renderer.initTexture(trainTexture)
+      }),
       ...beat.audio.map(async (url, i) => {
         const buffer = await loadAudio(url, context(), abort.signal)
         if (!disposed && token === generation) buffers[i] = buffer
@@ -289,6 +322,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       film.uniforms.uTexA.value = textures[0] || black
       film.uniforms.uTexB.value = textures[1] || black
       film.uniforms.uPaper.value = newspaper || black
+      film.uniforms.uTrain.value = trainTexture || black
       if (newspaper) film.uniforms.uPaperSize.value.set(newspaper.image.width, newspaper.image.height)
       renderer.initTexture(black)
       renderer.compile(film.scene, film.camera)
@@ -332,7 +366,10 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     textures.forEach(texture => texture.dispose()); textures.length = 0
     buffers.length = 0; timeline = null
     newspaper?.dispose(); newspaper = null
+    trainTexture?.dispose(); trainTexture = null
     black.dispose(); film.dispose()
+    const counts = resources()
+    if (import.meta.env?.DEV) console.log(`[perf] story disposed: frames=${counts.frames} listeners=${counts.listeners} audioNodes=${counts.audioNodes} textures=${counts.textures} pixelRatio=${renderer.getPixelRatio()} renderScale=${getRenderScale()}`)
   }
   function complete() {
     if (!active) return
@@ -349,6 +386,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     if (!active || skipped) return
     log('skip'); stopAudio(); stopWhistle(); skipped = true
     titleRoot.style.visibility = 'hidden'
+    film.uniforms.uTrainHeight.value = 0
     beginCrossfade(beat.timings.skipCrossfade)
   }
   function beginCrossfade(seconds) {
@@ -358,16 +396,12 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     strip.style.visibility = 'hidden'; fadeRain(seconds)
     film.uniforms.uOpacity.value = crossfadeFrom
     releaseRenderer()
-    log('ending crossfade')
     if (first) {
-      phase = 'crossfade'
       onCrossfade()
-      if (!skipped) playWhistle()
     }
   }
   function updateTitle() {
     if (time >= ending.title) {
-      if (!titleInLogged) { titleInLogged = true; phase = 'title'; log('title in') }
       titleRoot.style.visibility = 'visible'
       const progress = Math.min(1, (time - ending.title) / beat.timings.titleIn)
       const ease = 1 - Math.pow(1 - progress, 3)
@@ -375,9 +409,38 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       titleHeading.style.filter = `blur(${8 * (1 - ease)}px)`
       titleHeading.style.letterSpacing = `${0.55 + (0.14 - 0.55) * ease}em`
       titleSubtitle.style.opacity = Math.min(1, Math.max(0, (time - ending.title - beat.timings.subtitleDelay) / beat.timings.subtitleIn))
-      titleRoot.style.opacity = Math.min(1, Math.max(0, (ending.complete - time) / beat.timings.titleOut))
+      titleRoot.style.opacity = 1 - Math.min(1, Math.max(0, (time - ending.train) / (beat.timings.trainPass * beat.timings.trainCover)))
     }
-    if (time >= ending.titleOut && !titleOutLogged) { titleOutLogged = true; log('title out') }
+  }
+  function updateEnding() {
+    const u = film.uniforms
+    strip.style.visibility = 'hidden'
+    if (endingPhase < 1) { endingPhase = 1; stopAudio(); log('ending darken') }
+    if (time >= ending.title && endingPhase < 2) { endingPhase = 2; log('title in') }
+    if (time >= ending.steam && endingPhase < 3) { endingPhase = 3; phase = 'steam'; log('steam'); playWhistle() }
+    if (time >= ending.train && endingPhase < 4) { endingPhase = 4; log('train') }
+    u.uImage.value = 1 - Math.min(1, (time - ending.darken) / beat.timings.darken)
+    u.uSteam.value = time < ending.steam ? 0 : time < ending.train
+      ? Math.min(0.48, (time - ending.steam) / beat.timings.steamRise * 0.48)
+      : Math.min(1, 0.48 + (time - ending.train) / (beat.timings.trainPass * beat.timings.trainCover) * 0.52)
+    const pass = Math.min(1, Math.max(0, (time - ending.train) / beat.timings.trainPass))
+    renderer.getDrawingBufferSize(size)
+    trainPlacement(beat, size.x, size.y, pass, train)
+    u.uTrainHeight.value = time >= ending.train && time < ending.trainEnd ? train.height : 0
+    u.uTrainCenter.value.set(train.x, train.y)
+    u.uTrainBlur.value = train.blur
+    u.uTrainRattle.value = Math.sin(time * 93) * beat.train.rattle
+    updateTitle()
+    if (time >= ending.reveal) {
+      if (!handoverStarted) {
+        // Force complete screen coverage BEFORE restoring or invoking arrival.
+        u.uSteam.value = 1; u.uReveal.value = 1
+        handoverStarted = true; releaseRenderer(); log('reveal')
+        fadeRain(beat.timings.steamClear); onCrossfade()
+      }
+      u.uReveal.value = 1
+      u.uSteam.value = Math.max(0, 1 - (time - ending.reveal) / beat.timings.steamClear)
+    }
     if (time >= ending.complete) complete()
   }
   function start() {
@@ -434,15 +497,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       delta = 0
     }
     const u = film.uniforms
-    if (handoverStarted) {
+    if (skipped) {
       crossfadeTime += delta
       u.uTime.value += delta
       const progress = Math.min(1, crossfadeTime / crossfadeDuration)
       const ease = progress * progress * (3 - 2 * progress)
       u.uOpacity.value = crossfadeFrom * (1 - ease)
-      if (skipped) {
-        if (progress >= 1) complete()
-      } else { time += delta; updateTitle() }
+      if (progress >= 1) complete()
       return
     }
     time += delta
@@ -471,18 +532,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
       return
     }
     u.uPaperOpacity.value = 0; u.uImage.value = 1; u.uRain.value = FILM_RAIN
-    if (time >= ending.crossfade) {
+    if (time >= ending.darken) {
       strip.style.visibility = 'hidden'
       const last = beat.panels.length - 1
       setPanel(last, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
       setPanel(last, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
       u.uMix.value = 1
-      stopAudio()
-      beginCrossfade(beat.timings.endingCrossfade)
-      crossfadeTime = time - ending.crossfade
-      const progress = Math.min(1, crossfadeTime / crossfadeDuration)
-      u.uOpacity.value = 1 - progress * progress * (3 - 2 * progress)
-      updateTitle()
+      updateEnding()
       return
     }
     phase = 'panels'
@@ -526,12 +582,17 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     zoom.value = panel.zoom[0] + (panel.zoom[1] - panel.zoom[0]) * progress
     pan.value.set(panel.pan[0] * progress, panel.pan[1] * progress)
   }
-  return { prepare, start, update, skip, cancel, dispose, unlockAudio,
+  function resources() {
+    return { frames: active ? 1 : 0, listeners: disposed ? 0 : 4 + (root ? 3 : 0),
+      audioNodes: [source, narrationGain, rainSource, rainGain, rainAnalyser, whistleSource, whistleGain, storyBus, limiter].filter(Boolean).length,
+      textures: disposed ? 0 : textures.length + Number(Boolean(newspaper)) + Number(Boolean(trainTexture)) + 1 }
+  }
+  return { prepare, start, update, skip, cancel, dispose, unlockAudio, resources,
     get active() { return active },
     get showGame() { return active && handoverStarted },
-    get showQuad() { return active && (!handoverStarted || crossfadeTime < crossfadeDuration) },
+    get showQuad() { return active },
     render() {
-      if (!active || (handoverStarted && crossfadeTime >= crossfadeDuration)) return
+      if (!active) return
       storyResolution()
       renderer.getDrawingBufferSize(size); film.uniforms.uResolution.value.copy(size)
       const autoClear = renderer.autoClear
