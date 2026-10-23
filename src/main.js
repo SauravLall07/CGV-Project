@@ -462,19 +462,22 @@ function warmLevel1() {
   scene.traverse(node => {
     const materials = Array.isArray(node.material) ? node.material : node.material ? [node.material] : []
     for (const material of materials) {
+      if (!material.isMaterial) continue
       for (const value of Object.values(material)) if (value?.isTexture && !value.isRenderTargetTexture) textures.add(value)
       for (const uniform of Object.values(material.uniforms ?? {})) if (uniform.value?.isTexture && !uniform.value.isRenderTargetTexture) textures.add(uniform.value)
     }
   })
   if (scene.background?.isTexture && !scene.background.isRenderTargetTexture) textures.add(scene.background)
   if (scene.environment?.isTexture && !scene.environment.isRenderTargetTexture) textures.add(scene.environment)
-  for (const texture of textures) renderer.initTexture(texture)
-  storyPlayer.warm(); storyPlayer.renderPrepared()
-  scene.updateMatrixWorld(true)
-  renderer.compile(scene, camera); post.render(scene, camera)
-  setArrivalStartCamera()
-  renderer.compile(scene, camera); post.render(scene, camera)
-  camera.position.copy(spawnPosition); camera.quaternion.copy(spawnRotation)
+  try {
+    for (const texture of textures) renderer.initTexture(texture)
+    storyPlayer.warm(); storyPlayer.renderPrepared()
+    scene.updateMatrixWorld(true)
+    setArrivalStartCamera()
+    renderer.compile(scene, camera); post.render(scene, camera)
+  } finally {
+    camera.position.copy(spawnPosition); camera.quaternion.copy(spawnRotation)
+  }
   if (import.meta.env?.DEV) console.log(`[load] level1 warmed ${performance.now().toFixed(1)}ms`)
 }
 
@@ -910,7 +913,9 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
 
 let loopInstrumentation = renderOverlay
 let devMinimapCpuMs = 0
+let devParts = null, devPartAt = 0, devPlayerX = 0, devPlayerZ = 0, devSpeed = 0, devRunning = false
 if (import.meta.env?.DEV) {
+  devParts = new Float64Array(8)
   let detector = null, previous = 0, started = 0, interval = 0
   let updateStarted = 0, updateMs = 0, drawStarted = 0, drawMs = 0
   let lastLevel = null, levelStarted = 0
@@ -922,13 +927,28 @@ if (import.meta.env?.DEV) {
     try { return drawWorld.call(this, world, view) }
     finally { sceneCpuMs += performance.now() - at }
   }
-  import('./dev/lag-detector.js').then(({ createLagDetector }) => { detector = createLagDetector() })
+  // Count only when a spike line is emitted, never on ordinary frames.
+  // Zero-intensity visible lights still participate in shader light counts.
+  const renderState = new Float64Array(3)
+  function countLight(node) {
+    if (!node.isLight || !node.layers.test(camera.layers)) return
+    renderState[0]++
+    if (node.castShadow) renderState[1]++
+  }
+  function getRenderState() {
+    renderState.fill(0)
+    scene.traverseVisible(countLight)
+    renderState[2] = renderer.info.programs?.length ?? 0
+    return renderState
+  }
+  import('./dev/lag-detector.js').then(({ createLagDetector }) => { detector = createLagDetector({ getRenderState }) })
   // Same boundaries as the overlay; sampleFrame() clones, so do not poll it.
   loopInstrumentation = {
     beginFrame(timestamp) {
       renderOverlay?.beginFrame(timestamp)
       started = performance.now(); interval = previous ? timestamp - previous : 0; previous = timestamp
       devMinimapCpuMs = 0
+      devParts.fill(0)
       sceneCpuMs = 0
     },
     beginUpdate() { renderOverlay?.beginUpdate(); updateStarted = performance.now() },
@@ -939,7 +959,8 @@ if (import.meta.env?.DEV) {
       const now = performance.now(), level = levelManager.getState()
       if (level !== lastLevel) { lastLevel = level; levelStarted = now }
       detector?.record(now, Math.max(interval, now - started), updateMs, drawMs, devMinimapCpuMs,
-        getInputState(), level ?? 'none', (now - levelStarted) / 1000, sceneCpuMs)
+        getInputState(), level ?? 'none', (now - levelStarted) / 1000, sceneCpuMs,
+        devParts, player.mesh.position.x, player.mesh.position.z, devSpeed, devRunning)
       renderOverlay?.endFrame()
     }
   }
@@ -1035,7 +1056,9 @@ function updateGameFrame(delta, presentation = false) {
   // left the detective frozen in bind pose after the first frame.
   player.updateVisual(delta)
 
+  if (import.meta.env?.DEV) devPartAt = performance.now()
   hud.updateStats(delta)
+  if (import.meta.env?.DEV) devParts[6] += performance.now() - devPartAt
   renderOverlay?.update(delta)
 
   // The model workshop owns the same render camera while open. Gameplay is
@@ -1073,6 +1096,7 @@ function updateGameFrame(delta, presentation = false) {
   const heistComplete = levelManager.getState() === 'Complete' || levelManager.getState() === 'Ending'
   if (!heistComplete && !presentation) elapsed += delta
 
+  if (import.meta.env?.DEV) devPartAt = performance.now()
   hud.updateRunTimer({
     elapsed,
     delta,
@@ -1080,11 +1104,15 @@ function updateGameFrame(delta, presentation = false) {
     ghostActive: timeSystem.getGhost().isPlaying(),
     running: !heistComplete && !presentation
   })
+  if (import.meta.env?.DEV) devParts[6] += performance.now() - devPartAt
 
   if (import.meta.env?.DEV) { if (measureFirst) { setupMs = performance.now() - stageAt; stageAt = performance.now() } }
+  if (import.meta.env?.DEV) devPartAt = performance.now()
   timeSystem.update(delta)
+  if (import.meta.env?.DEV) { devParts[1] = performance.now() - devPartAt; devPartAt = performance.now() }
   if (import.meta.env?.DEV) { if (measureFirst) { timeMs = performance.now() - stageAt; stageAt = performance.now() } }
   levelManager.update(delta)
+  if (import.meta.env?.DEV) { devParts[0] = performance.now() - devPartAt; devPartAt = performance.now() }
   if (import.meta.env?.DEV) { if (measureFirst) { levelMs = performance.now() - stageAt; stageAt = performance.now() } }
 
   // A level update may have opened a tutorial this frame. Stop immediately
@@ -1121,6 +1149,7 @@ function updateGameFrame(delta, presentation = false) {
     return
   }
 
+  if (import.meta.env?.DEV) { devPartAt = performance.now(); devPlayerX = player.mesh.position.x; devPlayerZ = player.mesh.position.z }
   player.update(delta, {
     keyboard: presentation ? presentationKeyboard : keyboard.state,
     crouchPressed: !presentation && keyboard.consumePress('duck'),
@@ -1132,24 +1161,36 @@ function updateGameFrame(delta, presentation = false) {
     supports: levelManager.supports,
     voids: levelManager.voids
   })
+  if (import.meta.env?.DEV) {
+    devParts[2] = performance.now() - devPartAt
+    devSpeed = delta > 0 ? Math.hypot(player.mesh.position.x - devPlayerX, player.mesh.position.z - devPlayerZ) / delta : 0
+    devRunning = player.isRunning(); devPartAt = performance.now()
+  }
   if (import.meta.env?.DEV) { if (measureFirst) { playerMs = performance.now() - stageAt; stageAt = performance.now() } }
 
   if (presentation && arrival) {
     arrivalFramePosition.copy(camera.position); arrivalFrameRotation.copy(camera.quaternion)
   }
+  const arrivalYaw = playerView.getYaw()
+  const lookAngle = presentation ? storyPlayer?.lookAroundAngle || 0 : 0
+  if (lookAngle) playerView.setYaw(arrivalYaw + lookAngle)
   playerView.update(delta, player.mesh, scene, {
     crouching: player.isCrouching()
   })
+  if (lookAngle) playerView.setYaw(arrivalYaw)
   if (presentation && arrival) {
-    camera.position.copy(arrivalFramePosition); camera.quaternion.copy(arrivalFrameRotation)
+    if (!lookAngle) { camera.position.copy(arrivalFramePosition); camera.quaternion.copy(arrivalFrameRotation) }
   }
+  if (import.meta.env?.DEV) { devParts[3] = performance.now() - devPartAt; devPartAt = performance.now() }
   if (import.meta.env?.DEV) { if (measureFirst) { cameraMs = performance.now() - stageAt; stageAt = performance.now() } }
 
   // Keyboard remains disabled; only candidate selection is exercised here.
   if (presentation) interaction.setEnabled(true)
   try { interaction.update(player.mesh, playerView.getYaw(), delta) }
   finally { if (presentation) interaction.setEnabled(false) }
+  if (import.meta.env?.DEV) { devParts[4] = performance.now() - devPartAt; devPartAt = performance.now() }
   respawn.update()
+  if (import.meta.env?.DEV) { devParts[5] = performance.now() - devPartAt; devPartAt = performance.now() }
   if (import.meta.env?.DEV) { if (measureFirst) { interactionMs = performance.now() - stageAt; stageAt = performance.now() } }
 
   hud.updateTimeState({
@@ -1164,6 +1205,7 @@ function updateGameFrame(delta, presentation = false) {
     strainEnabled: timeSystem.isStrainEnabled(),
     freezeLockout: timeSystem.getFreezeLockout()
   })
+  if (import.meta.env?.DEV) devParts[6] += performance.now() - devPartAt
   if (import.meta.env?.DEV) {
     if (measureFirst) {
       firstHiddenSystemsPending = false

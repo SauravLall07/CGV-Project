@@ -639,6 +639,10 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onCro
     },
     get active() { return active },
     get showGame() { return active && handoverStarted },
+    get lookAroundAngle() {
+      if (!active || phase !== 'smoke' || clearTime >= 0 || smokeWait >= beat.timings.smokeLookAround) return 0
+      return Math.PI * 2 * smokeWait / beat.timings.smokeLookAround
+    },
     get underSmoke() { return active && handoverStarted && !skipped && clearTime < 0 },
     get showQuad() { return active },
     render() {

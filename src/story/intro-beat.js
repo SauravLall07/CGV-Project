@@ -44,9 +44,10 @@ export const TITLE_SUBTITLE_IN_S = 1.0
 export const TITLE_HOLD_S = 1.0
 export const TRAIN_PASS_S = 1.6
 export const SMOKE_WAIT_MIN_S = 0.6
-export const SMOKE_WAIT_MAX_S = 3.5
-export const SMOKE_GOOD_FRAMES = 10
-export const SMOKE_FRAME_MS = 40
+export const SMOKE_WAIT_MAX_S = 5.0
+export const SMOKE_GOOD_FRAMES = 20
+export const SMOKE_FRAME_MS = 33
+export const SMOKE_LOOK_AROUND_S = 0.6
 export const SMOKE_CLEAR_S = 2.0
 export const TRAIN_BODY_HEIGHT = 0.28
 export const TRAIN_BODY_BOTTOM = 0.05
@@ -93,6 +94,7 @@ export const introBeat = {
     titleHold: TITLE_HOLD_S, trainPass: TRAIN_PASS_S,
     smokeWaitMin: SMOKE_WAIT_MIN_S, smokeWaitMax: SMOKE_WAIT_MAX_S,
     smokeGoodFrames: SMOKE_GOOD_FRAMES, smokeFrameMs: SMOKE_FRAME_MS,
+    smokeLookAround: SMOKE_LOOK_AROUND_S,
     smokeClear: SMOKE_CLEAR_S, skipCrossfade: SKIP_CROSSFADE_S,
     captionFade: CAPTION_FADE_S,
     rainFadeIn: RAIN_FADE_IN_S, unlockWait: AUDIO_UNLOCK_WAIT_S,

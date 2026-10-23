@@ -359,7 +359,7 @@ test('real newspaper image spins twice, settles, shakes, holds and crossfades wi
   h.player.cancel()
 })
 
-test('ending darkens, draws title, passes train, covers fully, waits for ten good full frames then clears', async () => {
+test('ending darkens, draws title, passes train, covers fully, waits for twenty good full frames then clears', async () => {
   const h = harness({ whistle: true }); await h.player.prepare(); h.player.start()
   const u = h.film.uniforms, t = endBeats()
   assert.equal(t.title - t.darken, 1)
@@ -407,7 +407,7 @@ test('ending darkens, draws title, passes train, covers fully, waits for ten goo
   assert.equal(u.uTrainHeight.value, 0)
   assert.equal(h.player.active, true)
   assert.equal(resolveInputState({ gameStarted: true, story: h.player.active }), 'STORY')
-  for (let i = 0; i < 10; i++) h.player.recordFrame(16)
+  for (let i = 0; i < 20; i++) h.player.recordFrame(16)
   h.player.update(0.599); assert.equal(u.uSmokeClear.value, 0)
   h.player.update(0.001); assert.equal(u.uSmokeClear.value, 0)
   h.player.update(1); assert.equal(u.uSmokeClear.value, 0.5)
@@ -427,7 +427,7 @@ test('rain loops through the limited story bus at 1.5, fades in over 1.5 and out
   h.ctx.currentTime = endStart(); h.player.update(endStart())
   assert.deepEqual(gain.gain.events.at(-1), ['ramp', 1.5, 1.5], 'rain continues during title and train')
   h.player.update(endBeats().trainEnd - endStart())
-  for (let i = 0; i < 10; i++) h.player.recordFrame(16)
+  for (let i = 0; i < 20; i++) h.player.recordFrame(16)
   h.ctx.currentTime = endBeats().reveal; h.player.update(0.6)
   assert.deepEqual(gain.gain.events.at(-1), ['ramp', 0, endBeats().complete])
   h.player.update(endBeats().complete - endBeats().reveal + 0.001)
@@ -435,31 +435,46 @@ test('rain loops through the limited story bus at 1.5, fades in over 1.5 and out
   assert.equal(h.stats.completes, 1)
 })
 
-test('under-smoke wait needs ten complete good frames, resets on partial or 40 ms frames, and caps at 3.5 seconds', async () => {
+test('hidden look-around completes one orbit and returns exactly to arrival yaw before reveal', async () => {
+  assert.equal(introBeat.timings.smokeGoodFrames, 20)
+  assert.equal(introBeat.timings.smokeFrameMs, 33)
+  assert.equal(introBeat.timings.smokeWaitMin, 0.6)
+  assert.equal(introBeat.timings.smokeWaitMax, 5)
+  assert.equal(introBeat.timings.smokeLookAround, 0.6)
+  const h = harness(); await h.player.prepare(); h.player.start(); h.player.update(endBeats().trainEnd)
+  assert.equal(h.player.lookAroundAngle, 0)
+  h.player.update(0.15); assert.ok(Math.abs(h.player.lookAroundAngle - Math.PI / 2) < 1e-9)
+  h.player.update(0.15); assert.ok(Math.abs(h.player.lookAroundAngle - Math.PI) < 1e-9)
+  h.player.update(0.3); assert.equal(h.player.lookAroundAngle, 0)
+  assert.equal(h.film.uniforms.uSmokeClear.value, 0)
+  h.player.cancel(); assert.equal(h.player.lookAroundAngle, 0)
+})
+
+test('under-smoke wait needs twenty complete good frames, resets on partial or 33 ms frames, and caps at 5 seconds', async () => {
   const h = harness(); await h.player.prepare(); h.player.start(); h.player.update(endBeats().trainEnd)
   assert.equal(h.stats.coveredAtHandover, 1)
-  for (let i = 0; i < 9; i++) h.player.recordFrame(16)
+  for (let i = 0; i < 19; i++) h.player.recordFrame(16)
   h.player.update(0.6); h.player.update(0.1)
   assert.equal(h.film.uniforms.uSmokeClear.value, 0)
-  h.player.recordFrame(40)
-  for (let i = 0; i < 9; i++) h.player.recordFrame(16)
+  h.player.recordFrame(33)
+  for (let i = 0; i < 19; i++) h.player.recordFrame(16)
   h.player.update(0.1); h.player.update(0.1)
   assert.equal(h.film.uniforms.uSmokeClear.value, 0, 'one slow frame resets the streak')
   h.player.recordFrame(16, false)
-  for (let i = 0; i < 9; i++) h.player.recordFrame(16)
+  for (let i = 0; i < 19; i++) h.player.recordFrame(16)
   h.player.update(0); h.player.update(0.1)
   assert.equal(h.film.uniforms.uSmokeClear.value, 0, 'partial game frame breaks the streak too')
   h.player.recordFrame(16); h.player.update(0)
   h.player.update(1); assert.equal(h.film.uniforms.uSmokeClear.value, 0.5)
   h.player.update(1); assert.equal(h.stats.completes, 1)
   const slow = harness(); await slow.player.prepare(); slow.player.start(); slow.player.update(endBeats().trainEnd)
-  slow.player.recordFrame(80); slow.player.update(3.499)
+  slow.player.recordFrame(80); slow.player.update(4.999)
   assert.equal(slow.film.uniforms.uSmokeClear.value, 0)
   slow.player.update(0.001); slow.player.update(1)
-  assert.equal(slow.film.uniforms.uSmokeClear.value, 0.5, '3.5-second maximum prevents an indefinite wait')
+  assert.equal(slow.film.uniforms.uSmokeClear.value, 0.5, '5-second maximum prevents an indefinite wait')
   slow.player.skip(); slow.player.update(0.6); assert.equal(slow.stats.completes, 1)
   const stalled = harness(); await stalled.player.prepare(); stalled.player.start(); stalled.player.update(endBeats().trainEnd)
-  stalled.player.recordFrame(3600); stalled.player.update(0.1); stalled.player.update(1)
+  stalled.player.recordFrame(5100); stalled.player.update(0.1); stalled.player.update(1)
   assert.equal(stalled.film.uniforms.uSmokeClear.value, 0.5, 'wall-clock cap survives the game loop delta clamp')
   stalled.player.cancel()
 })
@@ -646,7 +661,9 @@ test('hidden handover runs the complete shared update with neutral input and a s
     player: { mesh: new THREE.Group(), updateVisual() { calls.push('visual') }, isCrouching: () => false,
       update(delta, input) { calls.push('player'); assert.equal(keyboardEnabled, false); assert.equal(input.keyboard.forward, false); assert.equal(input.keyboard.interact, false); assert.equal(input.runPressed, false); assert.equal(input.crouchPressed, false) } },
     levelManager: { getState: () => 'Boarding', update() { calls.push('level') } },
-    playerView: { getYaw: () => 0, update() { calls.push('camera collision'); camera.position.set(999, 999, 999) } },
+    storyPlayer: { lookAroundAngle: Math.PI },
+    playerView: { yaw: 0, getYaw() { return this.yaw }, setYaw(value) { this.yaw = value },
+      update() { calls.push('camera collision'); camera.position.set(999, 999, 999) } },
     interaction: { setEnabled(value) { interactionEnabled = value }, update() { assert.equal(keyboardEnabled, false); assert.equal(interactionEnabled, true); calls.push('interaction') } },
     respawn: { update() { calls.push('respawn') } },
     getInputState: () => 'STORY', syncInputState() { keyboardEnabled = false },
@@ -658,7 +675,11 @@ test('hidden handover runs the complete shared update with neutral input and a s
     let elapsed=7,arrival={},firstHiddenSystemsPending=true;
     ${main.slice(start, end)}
     return {updateGameFrame,get elapsed(){return elapsed}};`)(deps, THREE)
-  for (let i = 0; i < 10; i++) assert.equal(run.updateGameFrame(0.1, true), true)
+  for (let i = 0; i < 10; i++) {
+    deps.storyPlayer.lookAroundAngle = i < 5 ? Math.PI : 0
+    assert.equal(run.updateGameFrame(0.1, true), true)
+    assert.equal(deps.playerView.yaw, 0, 'internal orbit must restore the movement yaw exactly')
+  }
   assert.equal(run.elapsed, 7); assert.equal(interactionEnabled, false)
   assert.deepEqual(camera.position.toArray(), [10, 20, 30], 'warming collision must not replace the arrival shot')
   assert.deepEqual(calls.slice(0, 11), ['visual', 'hud stats', 'timer', 'time', 'level', 'player', 'camera collision', 'interaction', 'respawn', 'hud state', 'visual'])
@@ -736,7 +757,7 @@ test('real render callback draws only story before coverage, game plus one quad 
   h.player.update(endBeats().reveal - endBeats().title - 0.1 + 0.0001); render({}, {})
   assert.equal(games, 1); assert.equal(h.stats.renders, 3)
   assert.equal(h.renderOrder.at(-1), 'quad-overlay')
-  h.player.update(3.5); h.player.update(2); render({}, {})
+  h.player.update(5); h.player.update(2); render({}, {})
   assert.equal(games, 2); assert.equal(h.stats.renders, 3)
   assert.match(main, /const show = gameStarted && !storyPlayer\?\.active && !credits.isOpen/)
   h.player.cancel()
@@ -940,19 +961,30 @@ test('committed train PNG supplies real opaque extents and a measured crisp body
   }
 })
 
-test('prefetch performs no GPU work; actual Level 1 warm-up precedes intro and first live frame uploads/compiles nothing', async () => {
+test('arrival-view warm-up uploads textures and renders once without changing visibility or culling', async () => {
   const h = harness(); await h.player.prefetch()
   assert.equal(h.stats.uploads, 0); assert.equal(h.stats.compiled, 0); assert.equal(h.stats.renders, 0)
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('\r', '').replaceAll('import.meta.env?.DEV', 'false')
   const start = main.indexOf('function warmLevel1()'), end = main.indexOf('function startPreparedIntro()', start)
   const world = new THREE.Scene(), view = new THREE.PerspectiveCamera(), map = new THREE.Texture()
   world.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({ map })))
+  const hidden = new THREE.Group(); hidden.visible = false; hidden.frustumCulled = false
+  world.add(hidden)
+  const initial = []; world.traverse(node => initial.push([node, node.visible, node.frustumCulled]))
+  const initialPosition = view.position.clone(), initialRotation = view.quaternion.clone()
   const events = []
   const warm = new Function('scene', 'camera', 'renderer', 'post', 'storyPlayer', 'setArrivalStartCamera', `${main.slice(start, end)}; return warmLevel1`)(
-    world, view, h.renderer, { render() { events.push('warm game') } }, h.player, () => events.push('arrival view'))
+    world, view, h.renderer, { render() {
+      for (const [node, visible, culled] of initial) { assert.equal(node.visible, visible); assert.equal(node.frustumCulled, culled) }
+      assert.deepEqual(view.position.toArray(), [9, 8, 7])
+      events.push('warm game')
+    } }, h.player, () => { view.position.set(9, 8, 7); events.push('arrival view') })
   warm(); events.push('warm done')
-  assert.equal(h.stats.uploads, 10); assert.equal(h.stats.compiled, 3)
-  assert.deepEqual(events, ['warm game', 'arrival view', 'warm game', 'warm done'])
+  for (const [node, visible, culled] of initial) { assert.equal(node.visible, visible); assert.equal(node.frustumCulled, culled) }
+  assert.deepEqual(view.position, initialPosition); assert.ok(view.quaternion.equals(initialRotation))
+  assert.equal(h.stats.uploads, 10); assert.equal(h.stats.compiled, 2, 'one story compile plus one arrival-view compile')
+  assert.deepEqual(events, ['arrival view', 'warm game', 'warm done'])
+  assert.doesNotMatch(main.slice(start, end), /frustumCulled\s*=|\.visible\s*=|full warm-up/)
   assert.equal(h.player.active, false)
   h.player.start(); events.push('intro start')
   assert.ok(events.indexOf('warm done') < events.indexOf('intro start'))
@@ -974,4 +1006,23 @@ test('prefetch performs no GPU work; actual Level 1 warm-up precedes intro and f
   assert.match(main, /Promise.all\(\[introReady, charactersReady, boardingFilesReady/)
   assert.match(main, /transitioning: awaitingIntro \|\| levelManager.isTransitioning\(\)/)
   h.player.cancel(); world.children[0].geometry.dispose(); world.children[0].material.dispose(); map.dispose()
+})
+
+test('arrival-view warm-up leaves visibility/culling unchanged and restores camera if compilation fails', () => {
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('import.meta.env?.DEV', 'false')
+  const start = main.indexOf('function warmLevel1()'), end = main.indexOf('function startPreparedIntro()', start)
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(), hidden = new THREE.Group()
+  hidden.visible = false; hidden.frustumCulled = false; scene.add(hidden)
+  const position = camera.position.clone(), rotation = camera.quaternion.clone()
+  const warm = new Function('scene', 'camera', 'renderer', 'post', 'storyPlayer', 'setArrivalStartCamera', `${main.slice(start, end)}; return warmLevel1`)(
+    scene, camera, { compile() {
+      assert.equal(hidden.visible, false); assert.equal(hidden.frustumCulled, false)
+      assert.equal(scene.visible, true); assert.equal(scene.frustumCulled, true)
+      camera.position.set(1, 2, 3); throw new Error('compile failure')
+    } }, {},
+    { warm() {}, renderPrepared() {} }, () => {})
+  assert.throws(warm, /compile failure/)
+  assert.equal(scene.visible, true); assert.equal(scene.frustumCulled, true)
+  assert.equal(hidden.visible, false); assert.equal(hidden.frustumCulled, false)
+  assert.deepEqual(camera.position, position); assert.ok(camera.quaternion.equals(rotation))
 })

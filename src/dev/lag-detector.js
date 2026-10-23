@@ -5,7 +5,7 @@ export const FRAME_CAPACITY = 4096
 
 // No sample objects, array growth, slices or sorting copies on the frame path.
 // Strings are created only when emitting a requested diagnostic line.
-export function createLagDetector({ enabled = true, report = console.log, capacity = FRAME_CAPACITY } = {}) {
+export function createLagDetector({ enabled = true, report = console.log, capacity = FRAME_CAPACITY, getRenderState } = {}) {
   if (!enabled) return null
   const samples = new Float64Array(capacity), workspace = new Float64Array(capacity)
   const spikeTimes = new Float64Array(SPIKE_LOGS_PER_SECOND)
@@ -30,7 +30,7 @@ export function createLagDetector({ enabled = true, report = console.log, capaci
     return workspace[k]
   }
   return { samples, workspace,
-    record(now, total, update, render, minimap, state, level, levelSeconds, sceneCpuMs) {
+    record(now, total, update, render, minimap, state, level, levelSeconds, sceneCpuMs, parts, x = 0, z = 0, speed = 0, running = false) {
       if (!Number.isFinite(total) || total < 0) return
       if (start < 0) start = now
       samples[count % capacity] = total
@@ -39,7 +39,8 @@ export function createLagDetector({ enabled = true, report = console.log, capaci
         spikes++
         if (now - spikeTimes[logSlot] >= 1000) {
           spikeTimes[logSlot] = now; logSlot = (logSlot + 1) % SPIKE_LOGS_PER_SECOND
-          report(`[spike] ${total.toFixed(2)} update=${update.toFixed(2)} render=${render.toFixed(2)} minimap=${minimap.toFixed(2)} state=${state} level=${level} t=${levelSeconds.toFixed(2)}${Number.isFinite(sceneCpuMs) ? ` scene=${sceneCpuMs.toFixed(2)}` : ''}`)
+          const renderState = getRenderState?.()
+          report(`[spike] ${total.toFixed(2)} update=${update.toFixed(2)} render=${render.toFixed(2)} minimap=${minimap.toFixed(2)} state=${state} level=${level} t=${levelSeconds.toFixed(2)}${Number.isFinite(sceneCpuMs) ? ` scene=${sceneCpuMs.toFixed(2)}` : ''}${parts ? ` levelUpdate=${parts[0].toFixed(2)} time=${parts[1].toFixed(2)} player=${parts[2].toFixed(2)} camera=${parts[3].toFixed(2)} interaction=${parts[4].toFixed(2)} respawn=${parts[5].toFixed(2)} hud=${parts[6].toFixed(2)} pos=(${x.toFixed(1)},${z.toFixed(1)}) speed=${speed.toFixed(2)} running=${running}` : ''}${renderState ? ` zone=unavailable lights=${renderState[0]} shadowLights=${renderState[1]} programs=${renderState[2]}` : ''}`)
         }
       }
       if (now - start >= SUMMARY_MS) {
