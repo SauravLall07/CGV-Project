@@ -475,14 +475,16 @@ function createApproachCorridor() {
   ticketBooth(kit, k, at(-44.6, 0, southFace + 0.06, 0), 3.8)
   // Framed posters between the pendants, clear of the terminal and gates.
   ;[-43, -35, -21, -13, -3].forEach((x, i) => framedPoster(kit, k, at(x, 2.55, northFace, Math.PI), i))
-  ;[-37, -24, -14, -5].forEach((x, i) => framedPoster(kit, k, at(x, 2.55, southFace, 0), i + 1))
+  // RIVIERA (index 4) must sit west of the platform backing wall at x=-5.
+  // Its frame now ends at -6.04, over 0.6 m clear of that corner.
+  ;[-37, -24, -14, -6.5].forEach((x, i) => framedPoster(kit, k, at(x, 2.55, southFace, 0), i + 1))
   // Clocks over the first and last gate, facing the way the player comes.
   wallClock(kit, k, at(APPROACH_GATE_X[0] - 0.16, 3.7, -25.8, -Math.PI / 2), 0.42)
   wallClock(kit, k, at(APPROACH_GATE_X[2] - 0.16, 3.7, -25.72, -Math.PI / 2), 0.42)
   // Warm wash above each poster, as if from the pendants.
   addWallGlows(group, [
     ...[-43, -35, -21, -13, -3].map((x) => ({ x, y: 3.4, z: northFace - 0.02, yaw: Math.PI / 2, width: 2.6, height: 2.6, strength: 0.16 })),
-    ...[-37, -24, -14, -5].map((x) => ({ x, y: 3.4, z: southFace + 0.02, yaw: -Math.PI / 2, width: 2.6, height: 2.6, strength: 0.16 }))
+    ...[-37, -24, -14, -6.5].map((x) => ({ x, y: 3.4, z: southFace + 0.02, yaw: -Math.PI / 2, width: 2.6, height: 2.6, strength: 0.16 }))
   ], null, 0xff9e52, 'hall-wall-glow')
 
   // Free-standing pieces that should not block guard sight: palms and the

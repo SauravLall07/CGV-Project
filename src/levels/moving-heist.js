@@ -325,7 +325,10 @@ export function createMovingHeistLevel({
     mode: 'moving',
     sceneryStyle: 'moonlit-valley',
     getViewerZ: () => player.mesh.position.z,
-    speed: 38.0,
+    // Passenger -> roof -> forward Vault progresses along +Z. Scenery must
+    // pass toward -Z; the signed time multiplier still slows/freezes/rewinds
+    // this same travel, including chunk recycling and pole/wire wrapping.
+    speed: -38.0,
     fogColor: sky.horizonColor
   })
   let sceneryMultiplier = 1

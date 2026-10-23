@@ -8,6 +8,8 @@ import { createWreckVisibility, installWreckVisibility } from '../environment/wr
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
+import { createSkyDome } from '../environment/sky-dome.js'
+import { captureSkyEnvironment } from '../environment/sky-environment.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
@@ -173,7 +175,8 @@ function createEmergencyBrake() {
 }
 
 export function createTimewreckLevel({
-  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic, startCarriage = null
+  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic, startCarriage = null,
+  renderer = null
 }) {
   // Level 3 is the "unstable" end of the scale — the shaders read this.
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.8)
@@ -201,6 +204,25 @@ export function createTimewreckLevel({
   scene.background = new THREE.Color().copy(NIGHT_COLOR)
   // Cool storm fog — contrasts warm amber carriage fill; range kept for readability.
   scene.fog = new THREE.Fog(0x121a28, 38, 185)
+
+  // One capture of the timewreck sky preset. The dome is not added to the
+  // scene, so background, fog, and lights stay as they are. Glitch and gain
+  // are eased on this instance only so brass reads storm colour, not tear bands.
+  let stormEnvTarget = null
+  const savedEnvironment = scene.environment ?? null
+  const savedEnvironmentIntensity = scene.environmentIntensity ?? 1
+  if (renderer) {
+    const stormSky = createSkyDome('timewreck')
+    try {
+      stormSky.uniforms.uGlitch.value = 0.28
+      stormSky.uniforms.uSkyGain.value = 0.045
+      stormEnvTarget = captureSkyEnvironment(renderer, stormSky.mesh)
+      scene.environment = stormEnvTarget.texture
+      scene.environmentIntensity = 0.34
+    } finally {
+      stormSky.dispose()
+    }
+  }
 
   // Damaged PBR surfaces are very dark; short-range emergency points leave most
   // of each car on ambient alone, which ACES tone mapping crushes to near-black.
@@ -290,7 +312,7 @@ export function createTimewreckLevel({
   const vaultGlowMat = new THREE.MeshBasicMaterial({
     color: 0xff2a2a,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.14,
     blending: THREE.AdditiveBlending,
     depthWrite: false
   })
@@ -300,7 +322,7 @@ export function createTimewreckLevel({
     const group = new THREE.Group()
     group.name = 'vault-security-gate'
     group.position.set(0, 0, z)
-    const laserMat = createSecurityLaserMaterial({ beamCount: 1 })
+    const laserMat = createSecurityLaserMaterial({ beamCount: 1, boost: 1.45 })
     if (laserMat.customUniforms) laserMat.customUniforms.uScanSpeed.value = 5.2
     for (const side of [-1, 1]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.4, 0.2), vaultPostMat)
@@ -339,7 +361,7 @@ export function createTimewreckLevel({
       })
       return { mesh, glow, baseY, emitters }
     })
-    const wash = new THREE.PointLight(0xff3344, 1.2, 5.5, 2)
+    const wash = new THREE.PointLight(0xff3344, 0.42, 5.5, 2)
     wash.position.set(0, 1.3, 0)
     group.add(wash)
     group.traverse((node) => { node.userData.noCameraCollision = true })
@@ -3432,6 +3454,14 @@ export function createTimewreckLevel({
       // come out of the scene here or it survives every level teardown.
       outdoorEnv.dispose()
       wreckExterior.dispose()
+      if (stormEnvTarget) {
+        if (scene.environment === stormEnvTarget.texture) {
+          scene.environment = savedEnvironment
+          scene.environmentIntensity = savedEnvironmentIntensity
+        }
+        stormEnvTarget.dispose()
+        stormEnvTarget = null
+      }
       scene.remove(outdoorEnv.group, wreckExterior.group, root)
       disposeObject(root)
     }

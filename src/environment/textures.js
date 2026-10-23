@@ -156,7 +156,7 @@ function toTexture(key, canvas, repeat, { srgb = true } = {}) {
 
 // --- Canvas generators -----------------------------------------------------
 
-function woodCanvas(size, seed, light, dark) {
+function woodCanvas(size, seed, light, dark, planks = false) {
   const random = createRandom(seed)
   const noise = fbm(size, 4, random)
   const canvas = makeCanvas(size)
@@ -165,6 +165,8 @@ function woodCanvas(size, seed, light, dark) {
 
   const a = new THREE.Color(light)
   const b = new THREE.Color(dark)
+  const cols = 5
+  const plankW = size / cols
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -172,7 +174,8 @@ function woodCanvas(size, seed, light, dark) {
       // Grain rings run along the plank (Y); the sine's frequency is a whole
       // number of cycles across the canvas so it tiles.
       const rings = Math.sin((x / size) * Math.PI * 2 * 7 + noise[i] * 7) * 0.5 + 0.5
-      const t = Math.min(1, rings * 0.55 + noise[i] * 0.45)
+      const board = planks ? 0.86 + ((Math.floor(x / plankW) * 17) % 5) * 0.035 : 1
+      const t = Math.min(1, (rings * 0.55 + noise[i] * 0.45) * board)
       const p = i * 4
       image.data[p] = mix(b.r, a.r, t) * 255
       image.data[p + 1] = mix(b.g, a.g, t) * 255
@@ -181,6 +184,122 @@ function woodCanvas(size, seed, light, dark) {
     }
   }
   ctx.putImageData(image, 0, 0)
+  if (!planks) return canvas
+  const rand = createRandom(seed + 9)
+  ctx.fillStyle = 'rgba(28,16,8,0.72)'
+  for (let c = 0; c < cols; c += 1) {
+    ctx.fillRect(c * plankW, 0, 2, size)
+    const joint = (0.12 + rand() * 0.76) * size
+    ctx.fillRect(c * plankW, joint, plankW, 2)
+  }
+  ctx.strokeStyle = 'rgba(48,28,14,0.55)'
+  ctx.lineWidth = 1
+  for (let i = 0; i < 16; i += 1) {
+    const x = rand() * size
+    const y = rand() * size
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + 12 + rand() * 36, y + (rand() - 0.5) * 10)
+    ctx.stroke()
+  }
+  for (let i = 0; i < 3; i += 1) {
+    const x = rand() * size
+    const y = rand() * size
+    const rx = 18 + rand() * 34
+    const ry = 8 + rand() * 16
+    const wet = ctx.createRadialGradient(x, y, 2, x, y, rx)
+    wet.addColorStop(0, 'rgba(36,24,14,0.42)')
+    wet.addColorStop(1, 'rgba(36,24,14,0)')
+    ctx.fillStyle = wet
+    ctx.beginPath()
+    ctx.ellipse(x, y, rx, ry, rand() * Math.PI, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  return canvas
+}
+
+function plankRoughnessCanvas(size, seed, roughness) {
+  const rand = createRandom(seed + 9)
+  const canvas = makeCanvas(size)
+  const ctx = canvas.getContext('2d')
+  const mid = Math.round(Math.min(1, Math.max(0.2, roughness)) * 255)
+  const cols = 5
+  const plankW = size / cols
+  for (let c = 0; c < cols; c += 1) {
+    const tone = Math.min(255, Math.max(0, mid + ((c * 17) % 5 - 2) * 10))
+    ctx.fillStyle = `rgb(${tone},${tone},${tone})`
+    ctx.fillRect(c * plankW, 0, plankW, size)
+  }
+  ctx.fillStyle = 'rgb(176,176,176)'
+  for (let c = 0; c < cols; c += 1) {
+    ctx.fillRect(c * plankW, 0, 2, size)
+    const joint = (0.12 + rand() * 0.76) * size
+    ctx.fillRect(c * plankW, joint, plankW, 2)
+  }
+  // Same seed stream as the colour scratches, so the shine sits on the stain.
+  for (let i = 0; i < 16; i += 1) {
+    rand(); rand(); rand(); rand()
+  }
+  for (let i = 0; i < 3; i += 1) {
+    const x = rand() * size
+    const y = rand() * size
+    const rx = 18 + rand() * 34
+    const ry = 8 + rand() * 16
+    const wet = ctx.createRadialGradient(x, y, 2, x, y, rx)
+    wet.addColorStop(0, 'rgb(48,48,48)')
+    wet.addColorStop(1, `rgb(${mid},${mid},${mid})`)
+    ctx.fillStyle = wet
+    ctx.beginPath()
+    ctx.ellipse(x, y, rx, ry, rand() * Math.PI, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  return canvas
+}
+
+// Height for the plank normal. Wet stains stay out of this map — they are
+// roughness only. Dark seams and scratches become grooves; the colour canvas
+// is not the height source, or the puddles would dent the floor.
+function plankHeightCanvas(size, seed) {
+  const noise = fbm(size, 3, createRandom(seed + 3), 4)
+  const canvas = makeCanvas(size)
+  const ctx = canvas.getContext('2d')
+  const image = ctx.createImageData(size, size)
+  const cols = 5
+  const plankW = size / cols
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = y * size + x
+      const col = Math.floor(x / plankW)
+      const grain = Math.sin((y / size) * Math.PI * 2 * 6 + noise[i] * 5) * 0.5 + 0.5
+      let height = 0.74 + ((col * 17) % 5) * 0.028 + grain * 0.07 + noise[i] * 0.05
+      if (x % plankW < 3) height = 0.06
+      const value = Math.max(0, Math.min(255, height * 255))
+      const p = i * 4
+      image.data[p] = value
+      image.data[p + 1] = value
+      image.data[p + 2] = value
+      image.data[p + 3] = 255
+    }
+  }
+  ctx.putImageData(image, 0, 0)
+
+  const rand = createRandom(seed + 9)
+  ctx.fillStyle = 'rgb(8,8,8)'
+  for (let c = 0; c < cols; c += 1) {
+    const joint = (0.12 + rand() * 0.76) * size
+    ctx.fillRect(c * plankW, joint, plankW, 3)
+  }
+  ctx.strokeStyle = 'rgb(16,16,16)'
+  ctx.lineWidth = 1
+  for (let i = 0; i < 16; i += 1) {
+    const x = rand() * size
+    const y = rand() * size
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + 12 + rand() * 36, y + (rand() - 0.5) * 10)
+    ctx.stroke()
+  }
   return canvas
 }
 
@@ -281,6 +400,70 @@ function brushedMetalCanvas(size, seed, base) {
     }
   }
   ctx.putImageData(image, 0, 0)
+  return canvas
+}
+
+// Grime and scratches drawn on a fresh brushed plate. wear is 0..1.
+function wornMetalCanvas(size, seed, base, wear) {
+  const canvas = brushedMetalCanvas(size, seed, base)
+  const ctx = canvas.getContext('2d')
+  const random = createRandom(seed + 91)
+  const grime = Math.round(10 + wear * 16)
+  for (let i = 0; i < grime; i += 1) {
+    const x = random() * size
+    const y = random() * size
+    const rx = 8 + random() * 36 * wear
+    const ry = rx * (0.28 + random() * 0.45)
+    ctx.fillStyle = `rgba(22, 18, 14, ${0.08 + wear * 0.22})`
+    ctx.beginPath()
+    ctx.ellipse(x, y, rx, ry, random() * Math.PI, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.lineWidth = 1
+  ctx.strokeStyle = `rgba(255, 236, 206, ${0.18 + wear * 0.28})`
+  const scratches = Math.round(8 + wear * 14)
+  for (let i = 0; i < scratches; i += 1) {
+    const x = random() * size
+    const y = random() * size
+    const len = 16 + random() * 80
+    const ang = random() * Math.PI
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len * 0.35)
+    ctx.stroke()
+  }
+  return canvas
+}
+
+// Linear roughness: dark is polished, light is grimy. Multiplied by material.roughness.
+function metalRoughnessCanvas(size, seed, wear) {
+  const canvas = makeCanvas(size)
+  const ctx = canvas.getContext('2d')
+  const mid = Math.round(108 + wear * 36)
+  ctx.fillStyle = `rgb(${mid},${mid},${mid})`
+  ctx.fillRect(0, 0, size, size)
+  const random = createRandom(seed + 17)
+  for (let i = 0; i < 16; i += 1) {
+    const x = random() * size
+    const y = random() * size
+    const rx = 10 + random() * 40
+    ctx.fillStyle = `rgba(210,210,210,${0.25 + wear * 0.35})`
+    ctx.beginPath()
+    ctx.ellipse(x, y, rx, rx * 0.4, random() * Math.PI, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.strokeStyle = 'rgba(28,28,28,0.75)'
+  ctx.lineWidth = 1
+  for (let i = 0; i < 12; i += 1) {
+    const x = random() * size
+    const y = random() * size
+    const len = 20 + random() * 70
+    const ang = random() * Math.PI
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len * 0.35)
+    ctx.stroke()
+  }
   return canvas
 }
 
@@ -440,17 +623,33 @@ function signCanvas(text, background, foreground, width, height) {
 
 // --- Material factories ----------------------------------------------------
 
-export function woodMaterial({ repeat = [1, 1], seed = 11, light = 0x8a5a33, dark = 0x4a2c17, roughness = 0.62 } = {}) {
-  const key = `wood:${seed}:${light}:${dark}`
-  const colour = cachedCanvas(key, () => woodCanvas(256, seed, light, dark))
-  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.4))
-
-  return new THREE.MeshStandardMaterial({
+export function woodMaterial({
+  repeat = [1, 1], seed = 11, light = 0x8a5a33, dark = 0x4a2c17, roughness = 0.62,
+  clearcoat = 0, clearcoatRoughness = 0.48, planks = false
+} = {}) {
+  const key = `wood:${seed}:${light}:${dark}:${planks ? 'plank' : 'grain'}`
+  const colour = cachedCanvas(key, () => woodCanvas(256, seed, light, dark, planks))
+  const normal = cachedCanvas(`${key}:n`, () => (
+    planks
+      ? normalFromCanvas(plankHeightCanvas(256, seed), 3.2)
+      : normalFromCanvas(colour, 1.4)
+  ))
+  const params = {
     map: toTexture(key, colour, repeat),
     normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
-    roughness,
+    roughness: planks ? 1 : roughness,
     metalness: 0.04
-  })
+  }
+  if (planks) {
+    const rough = cachedCanvas(`${key}:r`, () => plankRoughnessCanvas(256, seed, roughness))
+    params.roughnessMap = toTexture(`${key}:r`, rough, repeat, { srgb: false })
+  }
+  const material = clearcoat > 0
+    ? new THREE.MeshPhysicalMaterial({ ...params, clearcoat, clearcoatRoughness })
+    : new THREE.MeshStandardMaterial(params)
+  if (planks) material.normalScale.set(1.45, 1.2)
+  else if (clearcoat > 0) material.normalScale.set(1.15, 1.15)
+  return material
 }
 
 export function marbleFloorMaterial({ repeat = [1, 1], seed = 23, base = 0xb8ab97, vein = 0x6d6255, grout = 0x4a4238, tiles = 4, roughness = 0.82 } = {}) {
@@ -479,17 +678,32 @@ export function carpetMaterial({ repeat = [1, 1], seed = 37, base = 0x5c2230, ac
   })
 }
 
-export function metalMaterial({ repeat = [1, 1], seed = 53, base = 0x8c8f96, roughness = 0.42, metalness = 0.85 } = {}) {
-  const key = `metal:${seed}:${base}`
-  const colour = cachedCanvas(key, () => brushedMetalCanvas(256, seed, base))
-  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, 1.1))
-
-  return new THREE.MeshStandardMaterial({
+export function metalMaterial({
+  repeat = [1, 1], seed = 53, base = 0x8c8f96, roughness = 0.42, metalness = 0.85,
+  wear = 0, emissive = 0x000000, emissiveIntensity = 0
+} = {}) {
+  const worn = wear > 0
+  const key = `metal:${seed}:${base}:${worn ? wear.toFixed(2) : 'plain'}`
+  const colour = cachedCanvas(key, () => (
+    worn ? wornMetalCanvas(256, seed, base, wear) : brushedMetalCanvas(256, seed, base)
+  ))
+  const normal = cachedCanvas(`${key}:n`, () => normalFromCanvas(colour, worn ? 2.4 : 1.1))
+  const material = new THREE.MeshStandardMaterial({
     map: toTexture(key, colour, repeat),
     normalMap: toTexture(`${key}:n`, normal, repeat, { srgb: false }),
-    roughness,
+    roughness: worn ? 1 : roughness,
     metalness
   })
+  if (worn) {
+    const rough = cachedCanvas(`${key}:r`, () => metalRoughnessCanvas(256, seed, wear))
+    material.roughnessMap = toTexture(`${key}:r`, rough, repeat, { srgb: false })
+    material.normalScale.set(1.25, 0.8)
+  }
+  if (emissiveIntensity > 0) {
+    material.emissive.setHex(emissive)
+    material.emissiveIntensity = emissiveIntensity
+  }
+  return material
 }
 
 function brickCanvas(size, seed, mortar, brick) {
@@ -554,6 +768,262 @@ export function litWindowMaterial({ repeat = [1, 1], paneCount = 6, glass = 0xff
     roughness: 0.28,
     metalness: 0.1
   })
+}
+
+// Distant lights share one seed so the colour view and the emissive map stay aligned.
+function paintStormLights(ctx, width, height, seed, emissive) {
+  const random = createRandom(seed + 17)
+  for (let i = 0; i < 32; i += 1) {
+    const x = random() * width
+    const y = height * (0.2 + random() * 0.5)
+    const length = 16 + random() * (emissive ? 86 : 58)
+    const alpha = emissive ? 0.4 + random() * 0.5 : 0.28 + random() * 0.34
+    const roll = random()
+    const hex = roll > 0.74 ? '130,214,220' : roll > 0.6 ? '190,156,228' : '255,188,112'
+    const streak = ctx.createLinearGradient(x, y, x + length, y)
+    streak.addColorStop(0, `rgba(${hex},0)`)
+    streak.addColorStop(0.5, `rgba(${hex},${alpha})`)
+    streak.addColorStop(1, `rgba(${hex},0)`)
+    ctx.fillStyle = streak
+    const thick = 1.4 + random() * (emissive ? 2.4 : 1.6)
+    ctx.fillRect(x, y - thick * 0.5, length, thick)
+  }
+  for (let i = 0; i < 5; i += 1) {
+    const x = random() * width
+    const y = height * (0.28 + random() * 0.32)
+    const radius = 16 + random() * 34
+    const hex = random() > 0.5 ? '170,150,214' : '100,196,206'
+    const alpha = emissive ? 0.28 : 0.16
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, radius)
+    glow.addColorStop(0, `rgba(${hex},${alpha})`)
+    glow.addColorStop(1, `rgba(${hex},0)`)
+    ctx.fillStyle = glow
+    ctx.beginPath()
+    ctx.arc(x, y, radius, 0, Math.PI * 2)
+    ctx.fill()
+  }
+}
+
+function paintStormClouds(ctx, width, height, seed, emissive) {
+  const random = createRandom(seed + 41)
+  for (const [count, y0, y1, alpha, scale] of [
+    [7, 0.06, 0.4, 0.22, 1],
+    [9, 0.26, 0.6, 0.28, 0.62]
+  ]) {
+    for (let i = 0; i < count; i += 1) {
+      const x = random() * width
+      const y = height * (y0 + random() * (y1 - y0))
+      const rx = (40 + random() * 90) * scale
+      const ry = (12 + random() * 24) * scale
+      const rot = random() * 0.4
+      const g = ctx.createRadialGradient(x, y, ry * 0.15, x, y, rx)
+      if (emissive) {
+        g.addColorStop(0, 'rgba(0,0,0,0.88)')
+        g.addColorStop(1, 'rgba(0,0,0,0)')
+      } else {
+        g.addColorStop(0, `rgba(198, 208, 220, ${alpha})`)
+        g.addColorStop(1, 'rgba(198, 208, 220, 0)')
+      }
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+}
+
+function stormWindowCanvas(width, height, seed) {
+  const random = createRandom(seed)
+  const canvas = makeCanvas(width, height)
+  const ctx = canvas.getContext('2d')
+  const sky = ctx.createLinearGradient(0, 0, 0, height)
+  sky.addColorStop(0, '#2c3c56')
+  sky.addColorStop(0.36, '#41556e')
+  sky.addColorStop(0.58, '#53486e')
+  sky.addColorStop(0.72, '#3d6c76')
+  sky.addColorStop(0.84, '#2c4250')
+  sky.addColorStop(1, '#1c262e')
+  ctx.fillStyle = sky
+  ctx.fillRect(0, 0, width, height)
+
+  const horizon = ctx.createLinearGradient(0, height * 0.64, 0, height * 0.84)
+  horizon.addColorStop(0, 'rgba(70, 120, 140, 0)')
+  horizon.addColorStop(0.45, 'rgba(120, 170, 176, 0.35)')
+  horizon.addColorStop(0.72, 'rgba(190, 140, 90, 0.22)')
+  horizon.addColorStop(1, 'rgba(20, 24, 30, 0)')
+  ctx.fillStyle = horizon
+  ctx.fillRect(0, height * 0.64, width, height * 0.2)
+
+  paintStormLights(ctx, width, height, seed, false)
+  paintStormClouds(ctx, width, height, seed, false)
+
+  ctx.fillStyle = '#12181e'
+  ctx.beginPath()
+  ctx.moveTo(0, height)
+  for (let x = 0; x <= width; x += 12) {
+    ctx.lineTo(x, height * (0.78 + Math.sin(x * 0.02 + seed) * 0.04))
+  }
+  ctx.lineTo(width, height)
+  ctx.closePath()
+  ctx.fill()
+
+  ctx.strokeStyle = 'rgba(210, 224, 230, 0.2)'
+  ctx.lineWidth = 1
+  for (let i = 0; i < 28; i += 1) {
+    const x = random() * width
+    const y = random() * height * 0.72
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + 10 + random() * 26, y + 1)
+    ctx.stroke()
+  }
+  return canvas
+}
+
+function stormWindowLightsCanvas(width, height, seed) {
+  const canvas = makeCanvas(width, height)
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, width, height)
+  paintStormLights(ctx, width, height, seed, true)
+  paintStormClouds(ctx, width, height, seed, true)
+  ctx.fillStyle = '#000000'
+  ctx.beginPath()
+  ctx.moveTo(0, height)
+  for (let x = 0; x <= width; x += 12) {
+    ctx.lineTo(x, height * (0.78 + Math.sin(x * 0.02 + seed) * 0.04))
+  }
+  ctx.lineTo(width, height)
+  ctx.closePath()
+  ctx.fill()
+  return canvas
+}
+
+function glassRoughnessCanvas(size, seed) {
+  const random = createRandom(seed + 5)
+  const canvas = makeCanvas(size)
+  const ctx = canvas.getContext('2d')
+  const image = ctx.createImageData(size, size)
+  for (let y = 0; y < size; y++) {
+    const v = y / size
+    for (let x = 0; x < size; x++) {
+      const u = x / size
+      const edge = Math.min(u, 1 - u, v, 1 - v)
+      const grime = 1 - Math.min(1, edge / 0.16)
+      const lane = Math.abs(Math.sin(u * Math.PI * 14 + seed * 0.7))
+      const streak = lane > 0.92 ? (lane - 0.92) / 0.08 : 0
+      const speckle = ((x * 13 + y * 29 + seed * 7) & 255) / 255
+      const value = Math.max(0, Math.min(255, 112 + grime * 78 - streak * 62 + (speckle - 0.5) * 10))
+      const p = (y * size + x) * 4
+      image.data[p] = value
+      image.data[p + 1] = value
+      image.data[p + 2] = value
+      image.data[p + 3] = 255
+    }
+  }
+  ctx.putImageData(image, 0, 0)
+  for (let i = 0; i < 5; i += 1) {
+    const x = random() * size
+    const y = random() * size
+    const rx = 10 + random() * 28
+    ctx.fillStyle = `rgba(214,214,214,${0.32 + random() * 0.28})`
+    ctx.beginPath()
+    ctx.ellipse(x, y, rx, rx * 0.32, random() * Math.PI, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  return canvas
+}
+
+function glassRainHeightCanvas(size, seed) {
+  const canvas = makeCanvas(size)
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = 'rgb(128,128,128)'
+  ctx.fillRect(0, 0, size, size)
+  const random = createRandom(seed + 29)
+  ctx.strokeStyle = 'rgb(214,214,214)'
+  ctx.lineWidth = 2
+  for (let i = 0; i < 16; i += 1) {
+    const x = random() * size
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x + (random() - 0.5) * 12, size)
+    ctx.stroke()
+  }
+  ctx.fillStyle = 'rgb(236,236,236)'
+  for (let i = 0; i < 12; i += 1) {
+    const x = random() * size
+    const y = random() * size
+    ctx.beginPath()
+    ctx.ellipse(x, y, 1.4, 3 + random() * 7, 0.15, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  return canvas
+}
+
+// Level 3 carriage glass. Flicker stays in this pane shader. It never writes
+// wall, trim, or scene lighting. `aBayPhase` keeps neighbouring windows apart.
+export function stormWindowMaterial({ seed = 7 } = {}) {
+  const key = `storm-window:${seed}`
+  const colour = cachedCanvas(key, () => stormWindowCanvas(512, 256, seed))
+  const lights = cachedCanvas(`${key}:e`, () => stormWindowLightsCanvas(512, 256, seed))
+  const rough = cachedCanvas(`${key}:r`, () => glassRoughnessCanvas(256, seed))
+  const rainHeight = cachedCanvas('storm-window-rain-h', () => glassRainHeightCanvas(256, 7))
+  const rainNormal = cachedCanvas('storm-window-rain-n', () => normalFromCanvas(rainHeight, 2.2))
+  const material = new THREE.MeshStandardMaterial({
+    map: toTexture(key, colour, [1, 1]),
+    emissiveMap: toTexture(`${key}:e`, lights, [1, 1]),
+    roughnessMap: toTexture(`${key}:r`, rough, [1, 1], { srgb: false }),
+    normalMap: toTexture('storm-window-rain-n', rainNormal, [1, 1], { srgb: false }),
+    roughness: 1,
+    metalness: 0.12,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.52,
+    envMapIntensity: 0.5
+  })
+  material.normalScale.set(0.28, 0.62)
+  material.customProgramCacheKey = () => 'storm-window-glass-rain'
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uStormTime = { value: 0 }
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aBayPhase;\nvarying float vBayPhase;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBayPhase = aBayPhase;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uStormTime;\nvarying float vBayPhase;')
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        float lane = abs(fract(vRoughnessMapUv.x * 8.0 + vBayPhase * 5.1) - 0.5);
+        float onStreak = smoothstep(0.05, 0.0, lane);
+        float fall = fract(vRoughnessMapUv.y * 2.5 - uStormTime * 0.06 + vBayPhase * 2.7);
+        float bead = smoothstep(0.16, 0.0, abs(fall - 0.42));
+        roughnessFactor = mix(roughnessFactor, max(0.18, roughnessFactor * 0.62), onStreak * 0.75);
+        float paneEdge = min(min(vRoughnessMapUv.x, 1.0 - vRoughnessMapUv.x), min(vRoughnessMapUv.y, 1.0 - vRoughnessMapUv.y));
+        roughnessFactor = mix(min(1.0, roughnessFactor + 0.22), roughnessFactor, smoothstep(0.0, 0.16, paneEdge));`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        float laneN = abs(fract(vRoughnessMapUv.x * 8.0 + vBayPhase * 5.1) - 0.5);
+        float onStreakN = smoothstep(0.05, 0.0, laneN);
+        float fallN = fract(vRoughnessMapUv.y * 2.5 - uStormTime * 0.06 + vBayPhase * 2.7);
+        float beadN = smoothstep(0.16, 0.0, abs(fallN - 0.42));
+        normal.x += onStreakN * 0.07;
+        normal.y += beadN * onStreakN * 0.16;
+        normal = normalize(normal);`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        float wobble = sin(uStormTime * (1.7 + vBayPhase * 2.8) + vBayPhase * 17.0);
+        float twitch = sin(uStormTime * (6.4 + vBayPhase * 4.1) + vBayPhase * 2.6);
+        float flicker = clamp(0.82 + 0.2 * wobble + 0.28 * twitch * step(0.72, fract(wobble)), 0.5, 1.45);
+        float cycle = 7.4 + vBayPhase * 4.2;
+        float boltU = fract((uStormTime + vBayPhase * 13.0) / cycle);
+        float strike = exp(-pow((boltU - 0.08) * 26.0, 2.0));
+        float echo = exp(-pow((boltU - 0.13) * 40.0, 2.0)) * 0.35;
+        float flash = clamp(strike + echo, 0.0, 1.0);
+        float column = fract(vEmissiveMapUv.x * 2.0 + vBayPhase * 5.7);
+        float boltX = mix(0.22, 0.78, fract(vBayPhase * 3.1));
+        float band = exp(-pow((column - boltX) * 8.0, 2.0));
+        float sky = smoothstep(0.22, 0.42, vEmissiveMapUv.y);
+        vec3 boltCol = mix(vec3(0.5, 0.88, 0.96), vec3(0.62, 0.4, 0.92), step(0.55, fract(vBayPhase * 2.3)));
+        vec3 cityLights = totalEmissiveRadiance;
+        totalEmissiveRadiance = cityLights * flicker + cityLights * flash * 1.15 + boltCol * flash * band * sky * 0.8;`)
+    material.userData.stormShader = shader
+  }
+  return material
 }
 
 export function nightViewMaterial({ repeat = [1, 1], seed = 91, emissiveIntensity = 0.9 } = {}) {

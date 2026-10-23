@@ -356,7 +356,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   const walkTravel = rootTravel(clips.walk, info.scale)
   const pointClip = firstClip(pressFbx, 'press')
   stripRootMotion(pointClip)
-  if (import.meta.env.DEV && pointClip) console.info(`[detective] press duration=${pointClip.duration.toFixed(3)}s`)
+  if (import.meta.env?.DEV && pointClip) console.info(`[detective] press duration=${pointClip.duration.toFixed(3)}s`)
 
   const rootMotionClips = [
     'run', 'walk', 'pull', 'pickup', 'jumpIdle', 'jumpRun',
@@ -530,7 +530,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   let pulling = null
   let pickingUp = null
   function logPickup(event) {
-    if (import.meta.env.DEV) console.info(`[pickup @${performance.now().toFixed(1)}ms] ${event}`)
+    if (import.meta.env?.DEV) console.info(`[pickup @${performance.now().toFixed(1)}ms] ${event}`)
   }
 
   function restorePointBase() {
