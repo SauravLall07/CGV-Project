@@ -1,20 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import * as THREE from 'three'
 import { introBeat } from '../src/story/intro-beat.js'
-import { createStoryPlayer, buildStoryTimeline, typewriterProgress, endingTimeline } from '../src/ui/story-player.js'
-import { createStoryFilm } from '../src/shaders/story-film.js'
+import { createStoryPlayer, buildStoryTimeline, typewriterProgress, endingTimeline, createRainLevelMeter } from '../src/ui/story-player.js'
+import { createStoryFilm, SHARPEN, FILM_GRAIN, FILM_RAIN, FILM_FLICKER } from '../src/shaders/story-film.js'
 import { resolveInputState } from '../src/core/input-state.js'
 
-function harness({ locked = false, failed = false, delayed = false, rain = false, resumeLater = false, whistle = false } = {}) {
+function harness({ locked = false, failed = false, delayed = false, rain = false, resumeLater = false, whistle = false, deviceRatio = 2.5 } = {}) {
   class Element extends EventTarget {
     style = {}; children = []; textContent = ''
     appendChild(child) { this.children.push(child); child.parent = this }
     remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this) }
   }
   const keys = new EventTarget(), body = new Element(), pending = [], timers = new Map()
+  keys.devicePixelRatio = deviceRatio
   let starts = [], stops = 0, completes = 0, disposals = 0, uploads = 0, renders = 0, compiled = 0, resumes = 0
-  const nodes = [], gains = [], resumeResolvers = [], canvases = [], renderOrder = [], textureOwners = []
+  const nodes = [], gains = [], resumeResolvers = [], canvases = [], renderOrder = [], textureOwners = [], compressors = [], analysers = [], images = []
   let dissolveStarts = 0, paints = 0
   function createElement(tag) {
     const element = new Element()
@@ -42,8 +44,17 @@ function harness({ locked = false, failed = false, delayed = false, rain = false
     createGain() {
       const gain = { value: 1, events: [], setValueAtTime(value, time) { this.value = value; this.events.push(['set', value, time]) },
         linearRampToValueAtTime(value, time) { this.events.push(['ramp', value, time]) }, cancelScheduledValues(time) { this.events.push(['cancel', time]) } }
-      const node = { gain, connect(target) { this.target = target }, disconnect() { this.disconnected = true } }
+      const node = { gain, targets: [], connect(target) { this.target ??= target; this.targets.push(target) }, disconnect() { this.disconnected = true } }
       gains.push(node); return node
+    },
+    createDynamicsCompressor() {
+      const node = { threshold: {}, knee: {}, ratio: {}, attack: {}, release: {},
+        connect(target) { this.target = target }, disconnect() { this.disconnected = true } }
+      compressors.push(node); return node
+    },
+    createAnalyser() {
+      const node = { fftSize: 1024, reads: [], getFloatTimeDomainData(buffer) { this.reads.push(buffer); buffer.fill(0.02) }, disconnect() { this.disconnected = true } }
+      analysers.push(node); return node
     },
     createBufferSource() {
       const node = { connect(target) { this.target = target }, disconnect() { this.disconnected = true },
@@ -51,12 +62,22 @@ function harness({ locked = false, failed = false, delayed = false, rain = false
       nodes.push(node); return node
     }
   }
-  const renderer = { autoClear: true, initTexture(texture) { uploads++; textureOwners.push(texture); texture.addEventListener('dispose', () => disposals++) }, compile() { compiled++ },
+  const viewport = new THREE.Vector4(3, 4, 1366, 768)
+  const renderer = { autoClear: true, pixelRatio: 0.625, outputColorSpace: THREE.LinearSRGBColorSpace,
+    toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2,
+    capabilities: { getMaxAnisotropy: () => 16, maxTextureSize: 16384 },
+    getPixelRatio() { return this.pixelRatio }, setPixelRatio(value) { this.pixelRatio = value; viewport.set(0, 0, 1920, 1080) },
+    getViewport(target) { return target.copy(viewport) }, setViewport(value) { viewport.copy(value) },
+    initTexture(texture) { uploads++; textureOwners.push(texture); texture.addEventListener('dispose', () => disposals++) }, compile() { compiled++ },
     getDrawingBufferSize(size) { size.set(1920, 1080) }, setRenderTarget() {}, render() { renders++; renderOrder.push(this.autoClear ? 'quad-clear' : 'quad-overlay') } }
   const player = createStoryPlayer({ beat: introBeat, renderer, film, doc: { body, createElement }, keys,
+    measureRain: true,
     onDissolve: () => { dissolveStarts++ },
     context: () => ctx, master: () => master, onComplete: () => completes++,
-    loadImage: () => delayed ? new Promise(resolve => pending.push(() => resolve({ width: 1600, height: 900 }))) : Promise.resolve({ width: 1600, height: 900 }),
+    loadImage: () => {
+      const image = { width: 1672, height: 941 }; images.push(image)
+      return delayed ? new Promise(resolve => pending.push(() => resolve(image))) : Promise.resolve(image)
+    },
     loadAudio: async url => {
       const isRain = url === introBeat.rain.url
       const isWhistle = url === introBeat.whistle.url
@@ -68,7 +89,7 @@ function harness({ locked = false, failed = false, delayed = false, rain = false
   function key(type, repeat = false) {
     const event = new Event(type, { cancelable: true }); Object.assign(event, { code: 'Enter', repeat }); keys.dispatchEvent(event)
   }
-  return { player, film, body, pending, timers, key, ctx, master, nodes, gains, resumeResolvers, canvases, renderer, renderOrder, textureOwners,
+  return { player, film, body, pending, timers, key, ctx, master, nodes, gains, resumeResolvers, canvases, renderer, renderOrder, textureOwners, compressors, analysers, images,
     get stats() { return { starts, stops, completes, disposals, uploads, renders, compiled, resumes, dissolveStarts, paints } } }
 }
 
@@ -77,6 +98,15 @@ const endStart = () => endingTimeline(introBeat, narrationTimeline()).push
 const endBeats = () => endingTimeline(introBeat, narrationTimeline())
 const finishTime = () => endBeats().complete
 const find = (node, id) => node.id === id ? node : node.children.map(child => find(child, id)).find(Boolean)
+function assertStoryRoute(gain, h) {
+  const bus = gain.target, limiter = h.compressors[0]
+  assert.equal(bus.gain.value, 1)
+  assert.equal(bus.target, limiter)
+  assert.equal(limiter.target, h.master)
+  assert.equal(h.compressors.length, 1)
+  assert.deepEqual([limiter.threshold.value, limiter.knee.value, limiter.ratio.value, limiter.attack.value, limiter.release.value], [-6, 0, 12, 0.003, 0.25])
+  return bus
+}
 
 test('shared narration switches at 1.8 with no intervening hold; final hold is 0.6', async () => {
   const timeline = buildStoryTimeline(introBeat, Array(5).fill({ duration: 8 }), true)
@@ -206,7 +236,7 @@ test('narration starts through unity gain and master only when running', async (
   const source = h.nodes[0]
   assert.equal(source.offset, 0)
   assert.equal(source.target.gain.value, 1)
-  assert.equal(source.target.target, h.master)
+  assertStoryRoute(source.target, h)
   source.onended(); h.player.update(0.1)
   assert.deepEqual(h.stats.starts, [0], 'ended callback cannot restart the line')
   h.player.cancel()
@@ -258,14 +288,16 @@ test('full viewport band removes letterbox and retains generic cover fitting', a
 
 test('fixed-layout captions retain every character while only visibility changes', async () => {
   const h = harness(); await h.player.prepare(); h.player.start(); h.player.update(introBeat.timings.opening)
-  const strip = find(h.body, 'story-captions'), caption = strip.children[1], block = caption.children[0]
+  const strip = find(h.body, 'story-captions'), caption = strip.children[0], block = caption.children[0]
   const children = [...block.children]
   assert.equal(children.map(span => span.textContent).join(''), introBeat.panels[0].caption)
   assert.ok(children.every(span => span.style.visibility === 'hidden'))
-  assert.equal(strip.style.background, '#efe4c8')
-  assert.equal(strip.style.width, 'clamp(300px, 36vw, 560px)')
-  assert.equal(caption.style.fontSize, 'clamp(16px, 1.4vw, 19px)')
-  assert.equal(strip.children[0].style.color, '#7a2a1f')
+  assert.equal(strip.style.background, undefined)
+  assert.equal(strip.style.border, undefined)
+  assert.equal(strip.children.length, 1, 'no DETECTIVE label')
+  assert.equal(strip.style.width, 'min(980px, 92vw)')
+  assert.equal(caption.style.fontSize, 'clamp(18px, 1.91vw, 26px)')
+  assert.equal(caption.style.color, '#f3ead6')
   h.player.update(4)
   assert.deepEqual(block.children, children)
   assert.ok(children.some(span => span.style.visibility === 'visible'))
@@ -303,7 +335,7 @@ test('ending pushes with whistle, ripples, settles title, holds and dissolves wi
   h.player.update(t.push)
   assert.deepEqual(h.stats.starts, ['whistle'])
   assert.equal(h.nodes[0].target.gain.value, 0.8)
-  assert.equal(h.nodes[0].target.target, h.master)
+  assertStoryRoute(h.nodes[0].target, h)
   assert.equal(u.uTitleOpacity.value, 0); assert.equal(u.uRipple.value, -1)
   h.player.update(1.2)
   assert.ok(Math.abs(u.uZoomB.value - 1.25) < 1e-9)
@@ -325,12 +357,13 @@ test('ending pushes with whistle, ripples, settles title, holds and dissolves wi
   assert.equal(resolveInputState({ gameStarted: true, story: h.player.active }), 'PLAYING')
 })
 
-test('rain loops under master at 0.5, fades in over 1.5 and out during dissolve', async () => {
+test('rain loops through the limited story bus at 1.5, fades in over 1.5 and out during dissolve', async () => {
   const h = harness({ rain: true }); await h.player.prepare(); h.player.start()
   assert.deepEqual(h.stats.starts, ['rain'])
   const rain = h.nodes[0], gain = rain.target
-  assert.equal(rain.loop, true); assert.equal(gain.target, h.master)
-  assert.deepEqual(gain.gain.events, [['set', 0, 0], ['ramp', 0.5, 1.5]])
+  assert.equal(rain.loop, true); assertStoryRoute(gain, h)
+  assert.equal(gain.targets[1], h.analysers[0], 'meter is a side branch after the boosted rain gain')
+  assert.deepEqual(gain.gain.events, [['set', 0, 0], ['ramp', 1.5, 1.5]])
   h.ctx.currentTime = endBeats().dissolve; h.player.update(endBeats().dissolve)
   assert.deepEqual(gain.gain.events.at(-1), ['ramp', 0, endBeats().dissolve + 1.5])
   h.player.update(1.501)
@@ -351,23 +384,28 @@ test('missing rain does not affect narration; skip fades rain and stops it on co
   }
 })
 
-test('comic captions use the six data corners, 4% margin, 0.3s fade and 10px slide', async () => {
+test('cinema subtitles stay centred at 7vh with no box or label on all six panels', async () => {
   const h = harness(); await h.player.prepare(); h.player.start()
   const strip = find(h.body, 'story-captions'), entries = narrationTimeline()
   let elapsed = 0
-  const corners = ['top-left', 'bottom-left', 'bottom-right', 'top-left', 'bottom-left', 'top-left']
   for (let i = 0; i < entries.length; i++) {
     h.player.update(entries[i].start - elapsed); elapsed = entries[i].start
-    assert.equal(introBeat.panels[i].corner, corners[i])
-    assert.equal(strip.style.top, corners[i].startsWith('top') ? '4%' : 'auto')
-    assert.equal(strip.style.bottom, corners[i].startsWith('bottom') ? '4%' : 'auto')
-    assert.equal(strip.style.left, corners[i].endsWith('left') ? '4%' : 'auto')
-    assert.equal(strip.style.right, corners[i].endsWith('right') ? '4%' : 'auto')
+    assert.equal(strip.style.bottom, '7vh')
+    assert.equal(strip.style.left, '50%')
+    assert.equal(strip.style.transform, 'translateX(-50%)')
+    assert.equal(strip.style.maxWidth, '980px')
+    assert.equal(strip.style.textAlign, 'center')
+    assert.equal(strip.style.background, undefined)
+    assert.equal(strip.style.border, undefined)
+    assert.equal(strip.children.length, 1)
+    const text = strip.children[0]
+    assert.equal(text.style.fontFamily, 'Georgia, serif')
+    assert.equal(text.style.lineHeight, '1.4')
+    assert.equal(text.style.textShadow, '0 0 2px #000, 0 2px 6px #000, 0 0 14px rgba(0,0,0,0.85)')
     assert.ok(Math.abs(Number(strip.style.opacity)) < 1e-8)
-    assert.match(strip.style.transform, /10/)
     h.player.update(0.301); elapsed += 0.301
     assert.equal(Number(strip.style.opacity), 1)
-    assert.equal(strip.style.transform, 'translateY(0px)')
+    assert.equal(strip.style.transform, 'translateX(-50%)')
   }
   h.player.cancel()
 })
@@ -401,5 +439,114 @@ test('dissolve overlays one quad after the normal scene and restores renderer cl
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
   assert.match(main, /onDissolve\(\) \{[\s\S]*?beginForecourtArrival\(\)/)
   assert.match(main, /if \(storyPlayer\?\.isDissolving && arrival\) updateForecourtArrival\(delta\)/)
+  h.player.cancel()
+})
+
+test('all story sounds share exactly one bus and limiter; cleanup disconnects owned audio only', async () => {
+  const h = harness({ rain: true, whistle: true }); await h.player.prepare(); h.player.start()
+  const rain = h.nodes[0], bus = assertStoryRoute(rain.target, h)
+  h.player.update(introBeat.timings.opening)
+  const narration = h.nodes.find(node => node.buffer.id === 0)
+  assert.equal(assertStoryRoute(narration.target, h), bus)
+  h.player.update(endStart() - introBeat.timings.opening)
+  const whistle = h.nodes.find(node => node.buffer.id === 'whistle')
+  assert.equal(assertStoryRoute(whistle.target, h), bus)
+  assert.equal(h.master.gain.value, 0.5)
+  h.player.cancel()
+  assert.ok(h.gains.every(node => node.disconnected))
+  assert.ok(h.compressors.every(node => node.disconnected))
+  assert.ok(h.analysers.every(node => node.disconnected))
+  assert.equal(h.master.disconnected, undefined)
+})
+
+test('rain RMS meter samples at most once per second and reuses its preallocated PCM buffer', () => {
+  const seen = [], reports = []
+  const analyser = { fftSize: 1024, getFloatTimeDomainData(buffer) { seen.push(buffer); buffer.fill(0.02) } }
+  const meter = createRainLevelMeter(analyser, line => reports.push(line))
+  meter.update(0.999); assert.equal(seen.length, 0)
+  const NativeFloat32Array = globalThis.Float32Array
+  try {
+    globalThis.Float32Array = class { constructor() { throw new Error('meter allocated a new PCM buffer') } }
+    assert.ok(Math.abs(meter.update(0.002) - 0.02) < 1e-8)
+    meter.update(0.5); assert.equal(seen.length, 1)
+    assert.ok(Math.abs(meter.update(0.5) - 0.02) < 1e-8)
+  } finally { globalThis.Float32Array = NativeFloat32Array }
+  assert.equal(seen.length, 2); assert.equal(seen[0], seen[1])
+  assert.ok(seen[0] instanceof NativeFloat32Array)
+  assert.equal(seen[0].length, 1024)
+  assert.deepEqual(reports, ['rain level rms=0.02000', 'rain level rms=0.02000'])
+})
+
+test('full device resolution and sRGB restore exactly on complete, skip, cancel and timeout', async () => {
+  for (const exit of ['complete', 'skip', 'cancel', 'timeout']) {
+    const h = harness(); await h.player.prepare()
+    const originalViewport = h.renderer.getViewport(new THREE.Vector4()).toArray()
+    assert.equal(h.renderer.getPixelRatio(), 0.625, 'title rendering is unchanged by prepare')
+    h.player.start()
+    assert.equal(h.renderer.getPixelRatio(), 2)
+    assert.equal(h.renderer.outputColorSpace, THREE.SRGBColorSpace)
+    assert.equal(h.film.material.toneMapped, false)
+    if (exit === 'complete') h.player.update(finishTime() + 0.01)
+    else if (exit === 'skip') { h.player.skip(); assert.equal(h.renderer.getPixelRatio(), 2); h.player.update(0.601) }
+    else if (exit === 'timeout') h.timers.get(90000)()
+    else h.player.cancel()
+    assert.equal(h.renderer.getPixelRatio(), 0.625)
+    assert.equal(h.renderer.outputColorSpace, THREE.LinearSRGBColorSpace)
+    assert.deepEqual(h.renderer.getViewport(new THREE.Vector4()).toArray(), originalViewport)
+    assert.equal(h.renderer.toneMapping, THREE.ACESFilmicToneMapping)
+    assert.equal(h.renderer.toneMappingExposure, 1.2)
+    assert.equal(h.renderer.autoClear, true)
+    h.player.dispose(); assert.equal(h.renderer.getPixelRatio(), 0.625)
+  }
+})
+
+test('story resolution respects DPR below two and reapplies after the renderer resize listener', async () => {
+  const h = harness({ deviceRatio: 1.5 }); await h.player.prepare(); h.player.start()
+  assert.equal(h.renderer.getPixelRatio(), 1.5)
+  h.renderer.setPixelRatio(0.5)
+  h.player.render(); assert.equal(h.renderer.getPixelRatio(), 1.5)
+  h.player.cancel()
+  assert.equal(h.renderer.getPixelRatio(), 0.625)
+})
+
+test('real main render callback bypasses composer for story quad and preserves post state', async () => {
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replaceAll('\r', '')
+  const start = main.indexOf('render(world, view) {'), end = main.indexOf('\n  },', start)
+  assert.ok(start >= 0 && end > start)
+  const method = main.slice(start, end + 4)
+  for (const enabled of [true, false]) {
+    const h = harness(); await h.player.prepare(); h.player.start()
+    let postCalls = 0
+    const post = { enabled, render() { postCalls++ } }
+    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
+    render({}, {}); assert.equal(postCalls, 0)
+    assert.equal(h.stats.renders, 1)
+    h.player.skip(); render({}, {})
+    assert.equal(postCalls, 1, 'only the live game under the dissolve uses its normal post path')
+    assert.equal(h.renderOrder.at(-1), 'quad-overlay')
+    h.player.update(0.601); render({}, {})
+    assert.equal(postCalls, 2, 'normal scene render resumes')
+    assert.equal(post.enabled, enabled)
+  }
+})
+
+test('panel textures retain original NPOT images, maximum anisotropy and source-texel sharpening', async () => {
+  const h = harness(); await h.player.prepare()
+  for (let i = 0; i < 6; i++) {
+    const texture = h.textureOwners[i + 2]
+    assert.equal(texture.image, h.images[i])
+    assert.equal(texture.image.width, 1672); assert.equal(texture.image.height, 941)
+    assert.equal(texture.colorSpace, THREE.SRGBColorSpace)
+    assert.equal(texture.minFilter, THREE.LinearFilter); assert.equal(texture.magFilter, THREE.LinearFilter)
+    assert.equal(texture.generateMipmaps, false); assert.equal(texture.anisotropy, 16)
+  }
+  assert.ok(introBeat.panels.every(panel => panel.zoom[0] === 1 && panel.zoom[1] === 1.04))
+  assert.equal(h.film.uniforms.uSharpen.value, 0.35); assert.equal(SHARPEN, 0.35)
+  assert.equal(FILM_GRAIN, 0.010); assert.equal(FILM_RAIN, 0.025); assert.equal(FILM_FLICKER, 0.010)
+  assert.equal(h.film.material.toneMapped, false)
+  assert.match(h.film.material.fragmentShader, /vec2 texel = 1.0 \/ max\(size, vec2\(1.0\)\)/)
+  assert.match(h.film.material.fragmentShader, /center \+ uSharpen \* \(center - blur\)/)
+  assert.match(h.film.material.fragmentShader, /mix\(1.0, 0.25, 1.0 - smoothstep\(0.0, 0.38, vUv.y\)\)/)
+  assert.match(h.film.material.fragmentShader, /#include <colorspace_fragment>/)
   h.player.cancel()
 })

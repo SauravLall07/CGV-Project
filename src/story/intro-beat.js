@@ -22,7 +22,7 @@ export const FALLBACK_PANEL_S = 6
 export const HARD_TIMEOUT_S = 90
 export const TYPEWRITER_FRACTION = 0.85
 export const PANEL_ZOOM_START = 1
-export const PANEL_ZOOM_END = 1.08
+export const PANEL_ZOOM_END = 1.04
 export const NEWSPAPER_S = 7.0
 export const NEWSPAPER_SPIN_S = 1.8
 export const NEWSPAPER_LEAD_S = 0.75
@@ -42,16 +42,20 @@ export const TITLE_HOLD_S = 1.5
 export const DISSOLVE_S = 1.5
 export const SKIP_DISSOLVE_S = 0.6
 export const WHISTLE_VOLUME = 0.8
-export const RAIN_VOLUME = 0.5
+export const RAIN_VOLUME = 1.5
 export const RAIN_FADE_IN_S = 1.5
 export const AUDIO_UNLOCK_WAIT_S = 2.5
 export const PREPARE_TIMEOUT_S = 8
 export const BAND_TOP = 0
 export const BAND_BOTTOM = 0
 export const CAPTION_FADE_S = 0.3
-export const CAPTION_SLIDE_PX = 10
-export const CAPTION_MARGIN = 0.04
-export const CAPTION_CORNERS = ['top-left', 'bottom-left', 'bottom-right', 'top-left', 'bottom-left', 'top-left']
+export const SUBTITLE_BOTTOM_VH = 7
+export const STORY_BUS_GAIN = 1
+export const LIMITER_THRESHOLD_DB = -6
+export const LIMITER_KNEE_DB = 0
+export const LIMITER_RATIO = 12
+export const LIMITER_ATTACK_S = 0.003
+export const LIMITER_RELEASE_S = 0.25
 
 // A narration group owns one continuous source. switchAt is measured from
 // that source's start, and begins the incoming panel's crossfade. Only the
@@ -75,7 +79,9 @@ export const introBeat = {
   },
   newspaper: { turns: NEWSPAPER_TURNS, height: NEWSPAPER_HEIGHT, push: NEWSPAPER_PUSH, shake: NEWSPAPER_SHAKE },
   ending: { zoom: END_PUSH_ZOOM, pan: END_PUSH_PAN },
-  captions: { margin: CAPTION_MARGIN, slide: CAPTION_SLIDE_PX },
+  captions: { bottomVh: SUBTITLE_BOTTOM_VH },
+  bus: { gain: STORY_BUS_GAIN, threshold: LIMITER_THRESHOLD_DB, knee: LIMITER_KNEE_DB,
+    ratio: LIMITER_RATIO, attack: LIMITER_ATTACK_S, release: LIMITER_RELEASE_S },
   whistle: { url: whistle, volume: WHISTLE_VOLUME },
   rain: { url: rain, volume: RAIN_VOLUME },
   band: { top: BAND_TOP, bottom: BAND_BOTTOM },
@@ -93,5 +99,5 @@ export const introBeat = {
       caption: "The police and the courts belong to him. No warrant will ever touch that man. So I'll do what the law can't." },
     { image: image6, audio: 4, pan: [0.014, -0.008],
       caption: "The Core travels on the Chrono Express tonight. I'm going to steal it, and bring Vane down." }
-  ].map((panel, i) => ({ ...panel, corner: CAPTION_CORNERS[i], zoom: [PANEL_ZOOM_START, PANEL_ZOOM_END] }))
+  ].map(panel => ({ ...panel, zoom: [PANEL_ZOOM_START, PANEL_ZOOM_END] }))
 }

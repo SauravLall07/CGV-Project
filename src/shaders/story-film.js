@@ -1,10 +1,11 @@
 import * as THREE from 'three'
 
-export const FILM_GRAIN = 0.018
+export const FILM_GRAIN = 0.010
 export const FILM_VIGNETTE = 0.28
-export const FILM_FLICKER = 0.015
-export const FILM_RAIN = 0.035
+export const FILM_FLICKER = 0.010
+export const FILM_RAIN = 0.025
 export const CARD_RAIN = 0.06
+export const SHARPEN = 0.35
 
 // Both images have independent cover and motion transforms, so transitions
 // remain correctly framed even when future beats use different image sizes.
@@ -13,6 +14,7 @@ export function createStoryFilm() {
     uTexA: { value: null }, uTexB: { value: null },
     uSizeA: { value: new THREE.Vector2(16, 9) },
     uSizeB: { value: new THREE.Vector2(16, 9) },
+    uSharpen: { value: SHARPEN },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uBand: { value: new THREE.Vector2(0, 1) },
     uPaper: { value: null }, uTitle: { value: null },
@@ -45,9 +47,23 @@ export function createStoryFilm() {
       uniform vec2 uBand;
       uniform float uImage, uRain;
       uniform float uZoomA, uZoomB, uMix, uTime, uFade;
+      uniform float uSharpen;
       varying vec2 vUv;
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      vec3 sharpen(sampler2D image, vec2 uv, vec2 size) {
+        vec2 texel = 1.0 / max(size, vec2(1.0));
+        vec3 center = texture2D(image, uv).rgb;
+        vec3 left = texture2D(image, uv - vec2(texel.x, 0.0)).rgb;
+        vec3 right = texture2D(image, uv + vec2(texel.x, 0.0)).rgb;
+        vec3 down = texture2D(image, uv - vec2(0.0, texel.y)).rgb;
+        vec3 up = texture2D(image, uv + vec2(0.0, texel.y)).rgb;
+        vec3 blur = (left + right + down + up) * 0.25;
+        // Clamp to the sampled neighbourhood to suppress bright/dark halos.
+        vec3 low = min(center, min(min(left, right), min(down, up)));
+        vec3 high = max(center, max(max(left, right), max(down, up)));
+        return clamp(center + uSharpen * (center - blur), low, high);
       }
       vec2 cover(vec2 uv, vec2 size, float zoom, vec2 pan) {
         float screenAspect = uResolution.x / max(uResolution.y * (uBand.y - uBand.x), 1.0);
@@ -71,9 +87,9 @@ export function createStoryFilm() {
         float ring = uRipple < 0.0 ? 0.0 : exp(-pow((radius - uRipple * 1.35) / 0.045, 2.0));
         vec2 offset = normalize(centred + 0.0001) * ring * 0.025 / vec2(aspect, 1.0);
         vec2 imageUv = vUv + offset;
-        vec3 a = texture2D(uTexA, cover(imageUv, uSizeA, uZoomA, uPanA)).rgb;
+        vec3 a = sharpen(uTexA, cover(imageUv, uSizeA, uZoomA, uPanA), uSizeA);
         vec2 bUv = cover(imageUv, uSizeB, uZoomB, uPanB);
-        vec3 b = texture2D(uTexB, bUv).rgb;
+        vec3 b = sharpen(uTexB, bUv, uSizeB);
         b.r = texture2D(uTexB, bUv + offset * 0.15).r;
         b.b = texture2D(uTexB, bUv - offset * 0.15).b;
         vec3 color = mix(a, b, clamp(uMix, 0.0, 1.0)) * uImage;
@@ -87,6 +103,9 @@ export function createStoryFilm() {
         streak *= pow(fract(rainUv.y * 5.0 + uTime * 0.8 + hash(vec2(lane, 7.0))), 8.0);
         color *= (1.0 - ${FILM_VIGNETTE} * vignette) * (1.0 + ${FILM_FLICKER} * flicker);
         color += grain * ${FILM_GRAIN} + streak * uRain;
+        // Screen-space subtitle grade. Use increasing smoothstep edges:
+        // 1-smoothstep(0,.38,y) is the defined equivalent of the desired ramp.
+        color *= mix(1.0, 0.25, 1.0 - smoothstep(0.0, 0.38, vUv.y));
         if (uPaperOpacity > 0.0) {
           float cs = cos(uPaperAngle), sn = sin(uPaperAngle);
           vec2 p = mat2(cs, -sn, sn, cs) * (centred + uShake);

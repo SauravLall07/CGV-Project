@@ -7,6 +7,24 @@ import { createTitleTexture } from '../story/title-texture.js'
 
 const log = (...args) => { if (import.meta.env?.DEV) console.log('[story]', ...args) }
 const audioLog = message => { if (import.meta.env?.DEV) console.log('[story-audio]', message) }
+export function createRainLevelMeter(analyser, report = audioLog) {
+  // One PCM workspace for this analyser's lifetime, never one per sample.
+  const samples = new Float32Array(analyser.fftSize)
+  let elapsed = 0
+  return {
+    update(delta) {
+      elapsed += Math.max(0, delta)
+      if (elapsed < 1) return
+      elapsed %= 1
+      analyser.getFloatTimeDomainData(samples)
+      let sum = 0
+      for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i]
+      const rms = Math.sqrt(sum / samples.length)
+      report(`rain level rms=${rms.toFixed(5)}`)
+      return rms
+    }
+  }
+}
 export const typewriterProgress = (elapsed, duration, fraction = 0.85) => Math.min(1, Math.max(0, elapsed / Math.max(0.001, duration * fraction)))
 export function endingTimeline(beat, panels) {
   const push = panels[panels.length - 1].end
@@ -34,6 +52,7 @@ export function buildStoryTimeline(beat, buffers, audible) {
 // asynchronous writes check its generation; late decode/image results cannot
 // resurrect a disposed owner. Dependency injection keeps lifecycle tests real.
 export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDissolve = () => {},
+  measureRain = Boolean(import.meta.env?.DEV),
   context = getContext, master = getMasterGain, doc = globalThis.document,
   keys = globalThis.window, loadImage = url => new THREE.ImageLoader().loadAsync(url),
   loadAudio = async (url, ctx, signal) => {
@@ -49,6 +68,39 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
   let newspaper = null, titleTexture = null, whistleBuffer = null, whistleSource = null, whistleGain = null
   let dissolving = false, dissolveTime = 0, dissolveDuration = 0, dissolveFrom = 0, rainFailed = false, rainFading = false
   let ending = null, pushed = false, rippled = false, titled = false
+  let storyBus = null, limiter = null, rainAnalyser = null, rainMeter = null
+  let savedRenderer = null
+  const savedViewport = new THREE.Vector4()
+  function storyResolution() {
+    if (!active || !savedRenderer) return
+    const ratio = Math.min(keys.devicePixelRatio || 1, 2)
+    if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio)
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+  }
+  function acquireRenderer() {
+    renderer.getViewport(savedViewport)
+    savedRenderer = { pixelRatio: renderer.getPixelRatio(), outputColorSpace: renderer.outputColorSpace }
+    storyResolution()
+  }
+  function releaseRenderer() {
+    if (!savedRenderer) return
+    renderer.setPixelRatio(savedRenderer.pixelRatio)
+    renderer.outputColorSpace = savedRenderer.outputColorSpace
+    renderer.setViewport(savedViewport)
+    savedRenderer = null
+  }
+  function ensureStoryBus() {
+    if (storyBus) return storyBus
+    const ctx = context()
+    if (!ctx) return null
+    storyBus = ctx.createGain(); storyBus.gain.value = beat.bus.gain
+    limiter = ctx.createDynamicsCompressor()
+    limiter.threshold.value = beat.bus.threshold; limiter.knee.value = beat.bus.knee
+    limiter.ratio.value = beat.bus.ratio; limiter.attack.value = beat.bus.attack
+    limiter.release.value = beat.bus.release
+    storyBus.connect(limiter); limiter.connect(master())
+    return storyBus
+  }
   const captionLetters = []
   // Whole text remains in normal inline flow, including invisible characters.
   // Revealing never changes wrapping, alignment or the dimensions of a line.
@@ -79,12 +131,19 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
       rainSource.disconnect(); rainSource = null
     }
     rainGain?.disconnect(); rainGain = null
+    rainAnalyser?.disconnect(); rainAnalyser = null; rainMeter = null
   }
   function startRain() {
     const ctx = context()
     if (!active || fadeTime >= 0 || rainFailed || rainFading || !rainBuffer || rainSource || ctx?.state !== 'running') return
     try {
-      rainGain = ctx.createGain(); rainGain.connect(master())
+      rainGain = ctx.createGain(); rainGain.connect(ensureStoryBus())
+      if (measureRain) {
+        rainAnalyser = ctx.createAnalyser(); rainAnalyser.fftSize = 1024
+        // Side branch measures boosted rain before the mix/limiter/master.
+        // Its output is unconnected, so it cannot double the audible route.
+        rainGain.connect(rainAnalyser); rainMeter = createRainLevelMeter(rainAnalyser)
+      }
       rainGain.gain.setValueAtTime(0, ctx.currentTime)
       rainGain.gain.linearRampToValueAtTime(beat.rain.volume, ctx.currentTime + beat.timings.rainFadeIn)
       rainSource = ctx.createBufferSource(); rainSource.buffer = rainBuffer
@@ -114,7 +173,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
     const ctx = context()
     if (ctx?.state !== 'running') { unlockAudio().then(playWhistleWhenRunning); return }
     try {
-      whistleGain = ctx.createGain(); whistleGain.gain.value = beat.whistle.volume; whistleGain.connect(master())
+      whistleGain = ctx.createGain(); whistleGain.gain.value = beat.whistle.volume; whistleGain.connect(ensureStoryBus())
       whistleSource = ctx.createBufferSource(); whistleSource.buffer = whistleBuffer
       whistleSource.connect(whistleGain); whistleSource.start()
       audioLog(`whistle start volume=${beat.whistle.volume}`)
@@ -129,7 +188,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
       // settings/master volume. Keep both node references until teardown.
       if (!narrationGain) {
         narrationGain = ctx.createGain(); narrationGain.gain.value = 1
-        narrationGain.connect(master())
+        narrationGain.connect(ensureStoryBus())
       }
       const node = ctx.createBufferSource()
       node.buffer = pending.buffer; node.connect(narrationGain)
@@ -195,6 +254,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
         texture.colorSpace = THREE.SRGBColorSpace
         texture.generateMipmaps = false
         texture.minFilter = texture.magFilter = THREE.LinearFilter
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy()
         texture.needsUpdate = true
         textures[i] = texture
         renderer.initTexture(texture)
@@ -244,15 +304,19 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
   keys.addEventListener('keydown', keydown, true)
   keys.addEventListener('keyup', keyup, true)
   keys.addEventListener('blur', blur)
+  keys.addEventListener('resize', storyResolution)
   function dispose() {
     if (disposed) return
     disposed = true; active = false; generation++
     clearTimer(timer); clearTimer(loadTimer); abort.abort(); stopAudio()
     stopRain(); rainBuffer = null; stopWhistle(); whistleBuffer = null
     narrationGain?.disconnect(); narrationGain = null
+    storyBus?.disconnect(); limiter?.disconnect(); storyBus = limiter = null
+    releaseRenderer()
     keys.removeEventListener('keydown', keydown, true)
     keys.removeEventListener('keyup', keyup, true)
     keys.removeEventListener('blur', blur)
+    keys.removeEventListener('resize', storyResolution)
     root?.removeEventListener('click', swallow)
     root?.removeEventListener('pointerdown', swallow)
     button?.removeEventListener('click', skip)
@@ -294,24 +358,25 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
   function start() {
     if (disposed || active) return
     active = true; time = 0; index = -1; enterReady = !enterHeld
+    acquireRenderer()
+    ensureStoryBus()
     timeline = buildStoryTimeline(beat, buffers, true)
     ending = endingTimeline(beat, timeline)
     audioLog(`context=${context()?.state ?? 'missing'} master=${master()?.gain?.value ?? 'missing'}`)
+    audioLog(`bus gain=${storyBus?.gain.value ?? 'missing'} master=${master()?.gain?.value ?? 'missing'}`)
     const u = film.uniforms
     u.uBand.value.set(beat.band.bottom, 1 - beat.band.top)
     root = doc.createElement('div')
     Object.assign(root.style, { position: 'fixed', inset: '0', zIndex: '11000', pointerEvents: 'auto', fontFamily: THEME.serif })
     strip = doc.createElement('div'); strip.id = 'story-captions'
-    Object.assign(strip.style, { position: 'absolute', boxSizing: 'border-box', padding: '14px 18px', width: 'clamp(300px, 36vw, 560px)', maxWidth: '92vw', background: '#efe4c8', border: '2px solid #1a1714', boxShadow: '0 4px 14px rgba(0,0,0,0.6)', textAlign: 'left' })
-    const label = doc.createElement('div'); label.textContent = 'DETECTIVE'
-    Object.assign(label.style, { color: '#7a2a1f', letterSpacing: '0.22em', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px' })
+    Object.assign(strip.style, { position: 'absolute', bottom: `${beat.captions.bottomVh}vh`, left: '50%', transform: 'translateX(-50%)', width: 'min(980px, 92vw)', maxWidth: '980px', textAlign: 'center' })
     caption = doc.createElement('div')
-    Object.assign(caption.style, { color: '#1b1712', fontFamily: '"Courier New", Courier, monospace', fontSize: 'clamp(16px, 1.4vw, 19px)', lineHeight: '1.45' })
+    Object.assign(caption.style, { color: '#f3ead6', fontFamily: 'Georgia, serif', fontSize: 'clamp(18px, 1.91vw, 26px)', lineHeight: '1.4', textShadow: '0 0 2px #000, 0 2px 6px #000, 0 0 14px rgba(0,0,0,0.85)' })
     for (const panel of beat.panels) {
       const block = doc.createElement('div'); block.style.display = 'none'
       captionLetters.push({ block, letters: makeLetters(block, panel.caption) }); caption.appendChild(block)
     }
-    strip.appendChild(label); strip.appendChild(caption); root.appendChild(strip)
+    strip.appendChild(caption); root.appendChild(strip)
     button = doc.createElement('button'); button.type = 'button'; button.textContent = 'Skip intro'
     Object.assign(button.style, { position: 'absolute', right: '24px', top: '12px', padding: '8px 14px', color: THEME.parchment, background: '#111820', border: `1px solid ${THEME.brass}`, borderRadius: '4px', font: 'inherit', cursor: 'pointer' })
     button.addEventListener('click', skip); root.appendChild(button)
@@ -326,6 +391,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
   }
   function update(delta) {
     if (!active) return
+    rainMeter?.update(delta)
     delta = Math.max(0, delta)
     // Pause the presentation clock while a panel waits for its resume,
     // bounded independently of the wall-clock hard timeout.
@@ -404,11 +470,6 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
       log('panel', index + 1, panel.image, entry.buffer?.duration ?? 'fallback')
       if (index >= 0) captionLetters.forEach((item, i) => { if (i !== index) item.block.style.display = 'none' })
       captionLetters[index].block.style.display = 'block'; revealCount = -1
-      const top = panel.corner.startsWith('top'), left = panel.corner.endsWith('left')
-      strip.style.top = top ? `${beat.captions.margin * 100}%` : 'auto'
-      strip.style.bottom = top ? 'auto' : `${beat.captions.margin * 100}%`
-      strip.style.left = left ? `${beat.captions.margin * 100}%` : 'auto'
-      strip.style.right = left ? 'auto' : `${beat.captions.margin * 100}%`
       if (entry.play) {
         stopAudio()
         if (entry.buffer) {
@@ -429,7 +490,6 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
     const captionIn = Math.min(1, local / beat.timings.captionFade)
     const captionOut = Math.min(1, Math.max(0, (entry.end - time) / beat.timings.captionFade))
     strip.style.opacity = Math.min(captionIn, captionOut)
-    strip.style.transform = `translateY(${(1 - captionIn) * beat.captions.slide * (panel.corner.startsWith('top') ? -1 : 1)}px)`
     setPanel(previous, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
     setPanel(index, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
   }
@@ -446,6 +506,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDis
     get isDissolving() { return active && dissolving },
     render() {
       if (!active) return
+      storyResolution()
       renderer.getDrawingBufferSize(size); film.uniforms.uResolution.value.copy(size)
       const autoClear = renderer.autoClear
       if (dissolving) renderer.autoClear = false
