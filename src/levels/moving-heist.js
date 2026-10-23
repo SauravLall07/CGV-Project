@@ -2357,7 +2357,7 @@ export function createMovingHeistLevel({
     const start = new THREE.Vector3(0, ROOF_Y, roof.zStart + 0.8)
     player.setPose(start, 0)
     lastRoofCheckpointZ = start.z
-    respawn.setCheckpoint(start, 0, { restore: captureCheckpointRestore() })
+    respawn.setCheckpoint(start, 0, checkpointRestoreOptions())
     camera.setYaw?.(0)
     camera.snap()
 
@@ -2432,7 +2432,7 @@ export function createMovingHeistLevel({
 
     const p = new THREE.Vector3(0, 0, spans.vault.minZ + 1.1)
     player.setPose(p, 0)
-    respawn.setCheckpoint(p, 0, { restore: captureCheckpointRestore() })
+    respawn.setCheckpoint(p, 0, checkpointRestoreOptions())
     camera.setYaw?.(0)
     camera.snap()
 
@@ -2478,11 +2478,10 @@ export function createMovingHeistLevel({
   let elapsed = 0
 
   // The level owns puzzle restoration. Transient hazards return to a known,
-  // solvable phase while durable progress captured at the checkpoint remains.
+  // solvable phase, while acquired abilities stay installed for this level run.
   function captureCheckpointRestore() {
     const saved = {
       section, bounds: { ...bounds }, lastCheckpointZ,
-      abilityState: { ...abilityState }, interfaceTaken, ghostTaken, freezeTaken, rewindTaken,
       relayLogged, relaySolved, relayInput: [...relayInput],
       hatchRepaired,
       switchDoorLatched: switchDoor.latched, exitDoorLatched: exitDoor.latched, drawbridgeLatched,
@@ -2495,11 +2494,6 @@ export function createMovingHeistLevel({
       lastCheckpointZ = saved.lastCheckpointZ
       corridorStealth.reset()
       checkpointHazards.forEach((hazard, index) => hazard.restoreSnapshot(saved.hazards[index]))
-      Object.assign(abilityState, saved.abilityState)
-      interfaceTaken = saved.interfaceTaken
-      ghostTaken = saved.ghostTaken
-      freezeTaken = saved.freezeTaken
-      rewindTaken = saved.rewindTaken
       interfaceBeacon.visible = !interfaceTaken
       ghostPickup.setCollected(ghostTaken)
       freezePickup.setCollected(freezeTaken)
@@ -2531,6 +2525,15 @@ export function createMovingHeistLevel({
       drawbridgeDown = drawbridgeLatched ? 1 : 0
       root.rotation.z = 0
       root.position.y = 0
+    }
+  }
+
+  function checkpointRestoreOptions() {
+    return {
+      restore: captureCheckpointRestore(),
+      // The shared time system restores its checkpoint snapshot after the level
+      // callback, so reapply abilities acquired since that checkpoint here.
+      afterTimeRestore: () => timeSystem.setAbilityAvailability(abilityState)
     }
   }
 
@@ -2621,7 +2624,7 @@ export function createMovingHeistLevel({
     checkpoint: {
       position: startPos,
       yaw: 0,
-      restore: captureCheckpointRestore()
+      ...checkpointRestoreOptions()
     },
     bounds,
     obstacles: activeObstacles,
@@ -2861,9 +2864,7 @@ export function createMovingHeistLevel({
         for (const z of corridorCheckpoints) {
           if (pp.z > z && z > lastCheckpointZ) {
             lastCheckpointZ = z
-            respawn.setCheckpoint(new THREE.Vector3(0, 0, z), 0, {
-              restore: captureCheckpointRestore()
-            })
+            respawn.setCheckpoint(new THREE.Vector3(0, 0, z), 0, checkpointRestoreOptions())
           }
         }
 
@@ -3015,9 +3016,7 @@ export function createMovingHeistLevel({
         for (const z of roofCheckpoints) {
           if (pp.z > z && z > lastRoofCheckpointZ && pp.y > ROOF_Y - 0.2) {
             lastRoofCheckpointZ = z
-            respawn.setCheckpoint(new THREE.Vector3(0, ROOF_Y, z), 0, {
-              restore: captureCheckpointRestore()
-            })
+            respawn.setCheckpoint(new THREE.Vector3(0, ROOF_Y, z), 0, checkpointRestoreOptions())
           }
         }
 
