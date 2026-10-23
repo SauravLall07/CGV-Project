@@ -410,10 +410,12 @@ let storyRun = 0
 function prepareIntro() {
   initAudio()
   const run = storyRun
-  const owner = createStoryPlayer({ beat: introBeat, renderer, onComplete() {
+  const owner = createStoryPlayer({ beat: introBeat, renderer, onDissolve() {
+    if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
+    beginForecourtArrival()
+  }, onComplete() {
     if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
     storyPlayer = null
-    beginForecourtArrival()
     playMusicForState(levelManager.getState())
     hud.setVisible(true)
     syncInputState()
@@ -836,7 +838,11 @@ const loop = createLoop({
   clock,
   instrumentation: renderOverlay,
   render(world, view) {
-    if (storyPlayer?.active) { storyPlayer.render(); return }
+    if (storyPlayer?.active) {
+      if (storyPlayer.isDissolving) post.render(world, view)
+      storyPlayer.render()
+      return
+    }
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
@@ -856,7 +862,11 @@ const loop = createLoop({
 
 const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
-  if (storyPlayer?.active) { storyPlayer.update(delta); return }
+  if (storyPlayer?.active) {
+    storyPlayer.update(delta)
+    if (storyPlayer?.isDissolving && arrival) updateForecourtArrival(delta)
+    return
+  }
   renderQuality.update(performance.now())
   benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /

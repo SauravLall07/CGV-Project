@@ -2,10 +2,19 @@ import * as THREE from 'three'
 import { getContext, getMasterGain } from '../core/audio.js'
 import { THEME } from './ui-theme.js'
 import { createStoryFilm, FILM_RAIN, CARD_RAIN } from '../shaders/story-film.js'
+import { createNewspaperTexture } from '../story/newspaper-texture.js'
+import { createTitleTexture } from '../story/title-texture.js'
 
 const log = (...args) => { if (import.meta.env?.DEV) console.log('[story]', ...args) }
 const audioLog = message => { if (import.meta.env?.DEV) console.log('[story-audio]', message) }
 export const typewriterProgress = (elapsed, duration, fraction = 0.85) => Math.min(1, Math.max(0, elapsed / Math.max(0.001, duration * fraction)))
+export function endingTimeline(beat, panels) {
+  const push = panels[panels.length - 1].end
+  const ripple = push + beat.timings.push
+  const title = ripple + beat.timings.ripple - beat.timings.titleSettle
+  const dissolve = ripple + beat.timings.ripple + beat.timings.titleHold
+  return { push, ripple, title, dissolve, complete: dissolve + beat.timings.dissolve }
+}
 
 export function buildStoryTimeline(beat, buffers, audible) {
   let cursor = beat.timings.opening ?? beat.timings.fadeIn
@@ -24,7 +33,7 @@ export function buildStoryTimeline(beat, buffers, audible) {
 // This owner is prepared during title loading and consumed by one run. All
 // asynchronous writes check its generation; late decode/image results cannot
 // resurrect a disposed owner. Dependency injection keeps lifecycle tests real.
-export function createStoryPlayer({ beat, renderer, onComplete = () => {},
+export function createStoryPlayer({ beat, renderer, onComplete = () => {}, onDissolve = () => {},
   context = getContext, master = getMasterGain, doc = globalThis.document,
   keys = globalThis.window, loadImage = url => new THREE.ImageLoader().loadAsync(url),
   loadAudio = async (url, ctx, signal) => {
@@ -33,10 +42,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
     return ctx.decodeAudioData(await response.arrayBuffer())
   }, film = createStoryFilm(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   let generation = 0, disposed = false, active = false, readyPromise
-  let root, caption, button, strip, opening, openingLetters, endCard, timeline, index = -1, time = 0, fadeTime = -1
-  let source = null, enterReady = false, enterHeld = false, timer, loadTimer, skipOpacity = 0
+  let root, caption, button, strip, timeline, index = -1, time = 0, fadeTime = -1
+  let source = null, enterReady = false, enterHeld = false, timer, loadTimer
   let narrationGain = null, rainSource = null, rainGain = null, rainBuffer = null
   let request = null, unlockPromise = null, phase = '', audioWait = 0, revealCount = -1
+  let newspaper = null, titleTexture = null, whistleBuffer = null, whistleSource = null, whistleGain = null
+  let dissolving = false, dissolveTime = 0, dissolveDuration = 0, dissolveFrom = 0, rainFailed = false, rainFading = false
+  let ending = null, pushed = false, rippled = false, titled = false
   const captionLetters = []
   // Whole text remains in normal inline flow, including invisible characters.
   // Revealing never changes wrapping, alignment or the dimensions of a line.
@@ -62,6 +74,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
   }
   function stopRain() {
     if (rainSource) {
+      audioLog('rain stop')
       try { rainSource.stop() } catch { /* already stopped */ }
       rainSource.disconnect(); rainSource = null
     }
@@ -69,15 +82,45 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
   }
   function startRain() {
     const ctx = context()
-    if (!active || fadeTime >= 0 || !rainBuffer || rainSource || ctx?.state !== 'running') return
+    if (!active || fadeTime >= 0 || rainFailed || rainFading || !rainBuffer || rainSource || ctx?.state !== 'running') return
     try {
       rainGain = ctx.createGain(); rainGain.connect(master())
       rainGain.gain.setValueAtTime(0, ctx.currentTime)
       rainGain.gain.linearRampToValueAtTime(beat.rain.volume, ctx.currentTime + beat.timings.rainFadeIn)
       rainSource = ctx.createBufferSource(); rainSource.buffer = rainBuffer
       rainSource.loop = true; rainSource.connect(rainGain); rainSource.start()
-    } catch (error) { stopRain(); audioLog(`rain unavailable: ${error.message}`) }
+      audioLog(`rain start context=${ctx.state} master=${master()?.gain?.value} volume=${beat.rain.volume}`)
+      audioLog(`rain loop 0..${rainBuffer.duration}`)
+      audioLog(`rain fade in ${beat.timings.rainFadeIn}s`)
+    } catch (error) { stopRain(); rainFailed = true; audioLog(`rain failed: ${error.message}`) }
   }
+  function fadeRain(seconds) {
+    if (!rainGain) return
+    const now = context().currentTime
+    rainGain.gain.cancelScheduledValues(now)
+    rainGain.gain.setValueAtTime(rainGain.gain.value, now)
+    rainGain.gain.linearRampToValueAtTime(0, now + seconds)
+    rainFading = true; audioLog(`rain fade out ${seconds}s`)
+  }
+  function stopWhistle() {
+    if (whistleSource) {
+      try { whistleSource.stop() } catch { /* already ended */ }
+      whistleSource.disconnect(); whistleSource = null
+    }
+    whistleGain?.disconnect(); whistleGain = null
+  }
+  function playWhistle() {
+    if (!active || dissolving || phase !== 'push' || !whistleBuffer || whistleSource) return
+    const ctx = context()
+    if (ctx?.state !== 'running') { unlockAudio().then(playWhistleWhenRunning); return }
+    try {
+      whistleGain = ctx.createGain(); whistleGain.gain.value = beat.whistle.volume; whistleGain.connect(master())
+      whistleSource = ctx.createBufferSource(); whistleSource.buffer = whistleBuffer
+      whistleSource.connect(whistleGain); whistleSource.start()
+      audioLog(`whistle start volume=${beat.whistle.volume}`)
+    } catch (error) { stopWhistle(); audioLog(`whistle failed: ${error.message}`) }
+  }
+  function playWhistleWhenRunning() { if (context()?.state === 'running') playWhistle() }
   function tryNarration() {
     const ctx = context(), pending = request
     if (!pending || pending.started || !active || fadeTime >= 0 || ctx?.state !== 'running') return
@@ -132,10 +175,18 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
       timeline[i] = replacement[i]; timeline[i].start += shift; timeline[i].end += shift
     }
     time = Math.max(time, start); request = null; audioWait = 0
+    ending = endingTimeline(beat, timeline)
   }
   function prepare() {
     if (readyPromise) return readyPromise
     const token = generation
+    newspaper = createNewspaperTexture(doc); titleTexture = createTitleTexture(doc)
+    renderer.initTexture(newspaper); renderer.initTexture(titleTexture)
+    // Queue ambience before the six images/five voices so a cold connection
+    // pool cannot starve it behind all the larger story downloads.
+    const rainReady = beat.rain ? loadAudio(beat.rain.url, context(), abort.signal).then(buffer => {
+      if (!disposed && token === generation) rainBuffer = buffer
+    }).catch(error => { rainFailed = true; audioLog(`rain failed decode/load: ${error.message}`) }) : Promise.resolve()
     const work = Promise.allSettled([
       ...beat.panels.map(async (panel, i) => {
         const image = await loadImage(panel.image)
@@ -152,19 +203,26 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
         const buffer = await loadAudio(url, context(), abort.signal)
         if (!disposed && token === generation) buffers[i] = buffer
       }),
-      ...(beat.rain ? [loadAudio(beat.rain.url, context(), abort.signal).then(buffer => {
-        if (!disposed && token === generation) rainBuffer = buffer
-      })] : [])
+      rainReady,
+      ...(beat.whistle ? [loadAudio(beat.whistle.url, context(), abort.signal).then(buffer => {
+        if (!disposed && token === generation) whistleBuffer = buffer
+      }).catch(error => { audioLog(`whistle failed decode/load: ${error.message}`) })] : [])
     ])
     // A stalled request cannot keep the title loading forever. Late results
     // are invalidated and their fetches aborted before warming the shader.
     readyPromise = Promise.race([work, new Promise(resolve => {
-      loadTimer = setTimer(() => { generation++; abort.abort(); resolve() }, (beat.timings.prepareTimeout ?? 8) * 1000)
+      loadTimer = setTimer(() => {
+        generation++; abort.abort()
+        if (!rainBuffer) { rainFailed = true; audioLog('rain failed: preparation timeout') }
+        resolve()
+      }, (beat.timings.prepareTimeout ?? 8) * 1000)
     })]).then(() => {
       clearTimer(loadTimer)
       if (disposed) return
       film.uniforms.uTexA.value = textures[0] || black
       film.uniforms.uTexB.value = textures[1] || black
+      film.uniforms.uPaper.value = newspaper
+      film.uniforms.uTitle.value = titleTexture
       renderer.initTexture(black)
       renderer.compile(film.scene, film.camera)
     })
@@ -190,7 +248,7 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
     if (disposed) return
     disposed = true; active = false; generation++
     clearTimer(timer); clearTimer(loadTimer); abort.abort(); stopAudio()
-    stopRain(); rainBuffer = null
+    stopRain(); rainBuffer = null; stopWhistle(); whistleBuffer = null
     narrationGain?.disconnect(); narrationGain = null
     keys.removeEventListener('keydown', keydown, true)
     keys.removeEventListener('keyup', keyup, true)
@@ -198,10 +256,11 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
     root?.removeEventListener('click', swallow)
     root?.removeEventListener('pointerdown', swallow)
     button?.removeEventListener('click', skip)
-    root?.remove(); root = caption = button = strip = opening = openingLetters = endCard = null
+    root?.remove(); root = caption = button = strip = null
     captionLetters.length = 0
     textures.forEach(texture => texture.dispose()); textures.length = 0
     buffers.length = 0; timeline = null
+    newspaper?.dispose(); titleTexture?.dispose(); newspaper = titleTexture = null
     black.dispose(); film.dispose()
   }
   function complete() {
@@ -211,40 +270,48 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
   function cancel() { if (!disposed) { log('cancel'); dispose() } }
   function skip() {
     if (!active || fadeTime >= 0) return
-    log('skip'); stopAudio(); stopRain(); skipOpacity = film.uniforms.uFade.value; fadeTime = 0
+    log('skip'); stopAudio(); stopWhistle(); fadeTime = 0
+    film.uniforms.uTitleOpacity.value = 0
+    film.uniforms.uPaperOpacity.value = 0
+    film.uniforms.uRipple.value = -1
+    film.uniforms.uImage.value = 1
+    film.uniforms.uFade.value = 1
+    // A skipped newspaper dissolves its current painting directly into the
+    // game; panel 1 supplies the underlying image once paper is hidden.
+    setPanel(Math.max(0, index), film.uniforms.uTexA, film.uniforms.uSizeA, film.uniforms.uZoomA, film.uniforms.uPanA)
+    setPanel(Math.max(0, index), film.uniforms.uTexB, film.uniforms.uSizeB, film.uniforms.uZoomB, film.uniforms.uPanB)
+    beginDissolve(beat.timings.skipDissolve)
+  }
+  function beginDissolve(seconds) {
+    const first = !dissolving
+    dissolveFrom = first ? 0 : film.uniforms.uDissolve.value
+    dissolving = true; dissolveTime = 0; dissolveDuration = seconds
+    strip.style.visibility = 'hidden'; fadeRain(seconds)
+    film.uniforms.uDissolve.value = dissolveFrom
+    log('dissolve')
+    if (first) onDissolve()
   }
   function start() {
     if (disposed || active) return
     active = true; time = 0; index = -1; enterReady = !enterHeld
     timeline = buildStoryTimeline(beat, buffers, true)
+    ending = endingTimeline(beat, timeline)
     audioLog(`context=${context()?.state ?? 'missing'} master=${master()?.gain?.value ?? 'missing'}`)
     const u = film.uniforms
     u.uBand.value.set(beat.band.bottom, 1 - beat.band.top)
     root = doc.createElement('div')
     Object.assign(root.style, { position: 'fixed', inset: '0', zIndex: '11000', pointerEvents: 'auto', fontFamily: THEME.serif })
     strip = doc.createElement('div'); strip.id = 'story-captions'
-    Object.assign(strip.style, { position: 'absolute', bottom: '0', height: `${beat.band.bottom * 100}vh`, width: '100%', boxSizing: 'border-box', padding: '8px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' })
+    Object.assign(strip.style, { position: 'absolute', boxSizing: 'border-box', padding: '14px 18px', width: 'clamp(300px, 36vw, 560px)', maxWidth: '92vw', background: '#efe4c8', border: '2px solid #1a1714', boxShadow: '0 4px 14px rgba(0,0,0,0.6)', textAlign: 'left' })
     const label = doc.createElement('div'); label.textContent = 'DETECTIVE'
-    Object.assign(label.style, { color: '#c9a44e', letterSpacing: '0.24em', fontSize: '14px', marginBottom: '10px', textShadow: '0 1px 3px #000' })
+    Object.assign(label.style, { color: '#7a2a1f', letterSpacing: '0.22em', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px' })
     caption = doc.createElement('div')
-    Object.assign(caption.style, { color: THEME.parchment, fontFamily: THEME.serif, fontSize: 'clamp(18px, 1.76vw, 24px)', lineHeight: '1.3', width: 'min(900px, 100%)', textShadow: '0 1px 3px #000' })
+    Object.assign(caption.style, { color: '#1b1712', fontFamily: '"Courier New", Courier, monospace', fontSize: 'clamp(16px, 1.4vw, 19px)', lineHeight: '1.45' })
     for (const panel of beat.panels) {
       const block = doc.createElement('div'); block.style.display = 'none'
       captionLetters.push({ block, letters: makeLetters(block, panel.caption) }); caption.appendChild(block)
     }
     strip.appendChild(label); strip.appendChild(caption); root.appendChild(strip)
-    opening = doc.createElement('div'); opening.id = 'story-opening'
-    Object.assign(opening.style, { position: 'absolute', inset: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: THEME.parchment, font: 'italic clamp(24px, 2.5vw, 34px) Georgia, serif', textAlign: 'center', padding: '24px' })
-    const openingText = doc.createElement('div')
-    openingLetters = makeLetters(openingText, beat.openingText)
-    opening.appendChild(openingText); root.appendChild(opening)
-    endCard = doc.createElement('div'); endCard.id = 'story-end-card'
-    Object.assign(endCard.style, { position: 'absolute', inset: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: '0', pointerEvents: 'none' })
-    const title = doc.createElement('h1'); title.textContent = 'CHRONO EXPRESS'
-    Object.assign(title.style, { margin: '0', fontSize: 'clamp(30px, 7.5vw, 86px)', fontWeight: '800', letterSpacing: '0.14em', color: '#f0e6cf', textShadow: '0 0 60px rgba(255, 200, 100, 0.25), 0 2px 12px rgba(0, 0, 0, 0.85), 0 0 3px rgba(255, 220, 150, 0.45)', textAlign: 'center', lineHeight: '1.05', fontFamily: 'Georgia, "Times New Roman", "Palatino Linotype", serif' })
-    const subtitle = doc.createElement('div'); subtitle.textContent = 'THE LAST HEIST'
-    Object.assign(subtitle.style, { fontSize: 'clamp(11px, 2vw, 18px)', fontWeight: '600', letterSpacing: '0.5em', color: 'rgba(176, 141, 63, 0.8)', marginTop: 'clamp(6px, 1.2vh, 16px)', textShadow: '0 1px 6px rgba(0, 0, 0, 0.7)', textTransform: 'uppercase' })
-    endCard.appendChild(title); endCard.appendChild(subtitle); root.appendChild(endCard)
     button = doc.createElement('button'); button.type = 'button'; button.textContent = 'Skip intro'
     Object.assign(button.style, { position: 'absolute', right: '24px', top: '12px', padding: '8px 14px', color: THEME.parchment, background: '#111820', border: `1px solid ${THEME.brass}`, borderRadius: '4px', font: 'inherit', cursor: 'pointer' })
     button.addEventListener('click', skip); root.appendChild(button)
@@ -268,46 +335,66 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
       if (request && !request.started) useFallback(request.line)
       delta = 0
     }
+    const u = film.uniforms
+    if (dissolving) {
+      dissolveTime += delta
+      u.uTime.value += delta
+      u.uDissolve.value = dissolveFrom + (1 - dissolveFrom) * Math.min(1, dissolveTime / dissolveDuration)
+      if (dissolveTime >= dissolveDuration) complete()
+      return
+    }
     time += delta
     if (time >= beat.timings.timeout) { complete(); return }
-    const lastEnd = timeline[timeline.length - 1].end
-    const endStart = lastEnd + beat.timings.fadeOut
-    const u = film.uniforms
-    if (fadeTime >= 0) {
-      fadeTime += delta
-      u.uFade.value = skipOpacity * Math.max(0, 1 - fadeTime / beat.timings.skipFade)
-      root.style.opacity = Math.max(0, 1 - fadeTime / beat.timings.skipFade)
-      if (fadeTime >= beat.timings.skipFade) complete()
-      return
-    }
+    if (!rainSource && !rainFailed && !rainFading && context()?.state === 'running') startRain()
     u.uTime.value = time
-    if (time >= endStart + beat.timings.endCard) { complete(); return }
-    if (time >= endStart) {
-      if (phase !== 'end') {
-        phase = 'end'; log('end card'); stopAudio()
-        if (rainGain) {
-          const now = context().currentTime
-          rainGain.gain.cancelScheduledValues(now)
-          rainGain.gain.setValueAtTime(rainGain.gain.value, now)
-          rainGain.gain.linearRampToValueAtTime(0, now + beat.timings.endCard)
-        }
-      }
-      strip.style.visibility = 'hidden'; opening.style.visibility = 'hidden'
-      const local = time - endStart
-      endCard.style.opacity = Math.min(1, local / beat.timings.endFadeIn,
-        Math.max(0, (beat.timings.endCard - local) / beat.timings.endFadeOut))
-      u.uImage.value = 0; u.uRain.value = 0; u.uFade.value = 0
+    u.uFade.value = 1
+    if (time < timeline[0].start) {
+      if (phase !== 'newspaper') { phase = 'newspaper'; log('opening'); log('newspaper') }
+      const spin = Math.min(1, Math.max(0, (time - beat.timings.newspaperLead) / beat.timings.newspaperSpin))
+      const ease = 1 - Math.pow(1 - spin, 3)
+      const stoppedAt = beat.timings.newspaperLead + beat.timings.newspaperSpin
+      const hold = Math.min(1, Math.max(0, (time - stoppedAt - beat.timings.newspaperShake) / beat.timings.newspaperHold))
+      const fade = Math.max(0, Math.min(1, (time - (beat.timings.opening - beat.timings.openingCrossfade)) / beat.timings.openingCrossfade))
+      u.uPaperScale.value = (0.015 + (beat.newspaper.height - 0.015) * ease) * (1 + (beat.newspaper.push - 1) * hold)
+      u.uPaperAngle.value = (1 - ease) * beat.newspaper.turns * Math.PI * 2
+      const shake = time >= stoppedAt && time < stoppedAt + beat.timings.newspaperShake ? beat.newspaper.shake * (1 - (time - stoppedAt) / beat.timings.newspaperShake) : 0
+      u.uShake.value.set(Math.sin(time * 180) * shake, Math.cos(time * 143) * shake)
+      u.uPaperOpacity.value = 1 - fade; u.uImage.value = fade; u.uRain.value = CARD_RAIN
+      setPanel(0, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
+      setPanel(0, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
+      strip.style.visibility = 'hidden'
       return
     }
-    if (time < timeline[0].start) {
-      if (phase !== 'opening') { phase = 'opening'; log('opening') }
-      u.uImage.value = 0; u.uFade.value = 1; u.uRain.value = CARD_RAIN
+    u.uPaperOpacity.value = 0; u.uImage.value = 1; u.uRain.value = FILM_RAIN
+    if (time >= ending.push) {
       strip.style.visibility = 'hidden'
-      reveal(openingLetters, Math.floor(openingLetters.length * Math.min(1, time / beat.timings.openingType)))
+      const last = beat.panels.length - 1
+      setPanel(last, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
+      setPanel(last, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
+      u.uMix.value = 1
+      const progress = Math.min(1, (time - ending.push) / beat.timings.push)
+      u.uZoomB.value = beat.panels[last].zoom[1] + (beat.ending.zoom - beat.panels[last].zoom[1]) * progress
+      u.uPanB.value.set(beat.panels[last].pan[0] + (beat.ending.pan[0] - beat.panels[last].pan[0]) * progress,
+        beat.panels[last].pan[1] + (beat.ending.pan[1] - beat.panels[last].pan[1]) * progress)
+      if (!pushed) { pushed = true; phase = 'push'; log('ending push'); stopAudio(); playWhistle() }
+      if (time >= ending.ripple) {
+        if (!rippled) { rippled = true; phase = 'ripple'; log('ripple') }
+        u.uRipple.value = Math.min(1, (time - ending.ripple) / beat.timings.ripple)
+      }
+      if (time >= ending.title) {
+        if (!titled) { titled = true; phase = 'title'; log('title') }
+        const settle = Math.min(1, (time - ending.title) / beat.timings.titleSettle)
+        u.uTitleOpacity.value = settle; u.uTitleDistortion.value = 1 - settle
+      }
+      if (time >= ending.dissolve) {
+        beginDissolve(beat.timings.dissolve)
+        dissolveTime = time - ending.dissolve
+        u.uDissolve.value = Math.min(1, dissolveTime / dissolveDuration)
+        if (dissolveTime >= dissolveDuration) complete()
+      }
       return
     }
     phase = 'panels'
-    opening.style.opacity = Math.max(0, 1 - (time - timeline[0].start) / beat.timings.openingCrossfade)
     strip.style.visibility = 'visible'
     let next = 0
     while (next + 1 < timeline.length && time >= timeline[next + 1].start) next++
@@ -315,8 +402,13 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
       index = next
       const entry = timeline[index], panel = beat.panels[index]
       log('panel', index + 1, panel.image, entry.buffer?.duration ?? 'fallback')
-      if (index > 0) captionLetters[index - 1].block.style.display = 'none'
+      if (index >= 0) captionLetters.forEach((item, i) => { if (i !== index) item.block.style.display = 'none' })
       captionLetters[index].block.style.display = 'block'; revealCount = -1
+      const top = panel.corner.startsWith('top'), left = panel.corner.endsWith('left')
+      strip.style.top = top ? `${beat.captions.margin * 100}%` : 'auto'
+      strip.style.bottom = top ? 'auto' : `${beat.captions.margin * 100}%`
+      strip.style.left = left ? `${beat.captions.margin * 100}%` : 'auto'
+      strip.style.right = left ? 'auto' : `${beat.captions.margin * 100}%`
       if (entry.play) {
         stopAudio()
         if (entry.buffer) {
@@ -334,10 +426,10 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
     const previous = Math.max(0, index - 1)
     const mix = index === 0 ? 1 : Math.min(1, local / beat.timings.crossfade)
     u.uMix.value = mix
-    u.uImage.value = Math.min(1, (time - timeline[0].start) / beat.timings.openingCrossfade)
-    u.uRain.value = FILM_RAIN
-    u.uFade.value = Math.max(0, Math.min(1, (endStart - time) / beat.timings.fadeOut))
-    strip.style.opacity = u.uFade.value
+    const captionIn = Math.min(1, local / beat.timings.captionFade)
+    const captionOut = Math.min(1, Math.max(0, (entry.end - time) / beat.timings.captionFade))
+    strip.style.opacity = Math.min(captionIn, captionOut)
+    strip.style.transform = `translateY(${(1 - captionIn) * beat.captions.slide * (panel.corner.startsWith('top') ? -1 : 1)}px)`
     setPanel(previous, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
     setPanel(index, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
   }
@@ -351,10 +443,14 @@ export function createStoryPlayer({ beat, renderer, onComplete = () => {},
   }
   return { prepare, start, update, skip, cancel, dispose, unlockAudio,
     get active() { return active },
+    get isDissolving() { return active && dissolving },
     render() {
       if (!active) return
       renderer.getDrawingBufferSize(size); film.uniforms.uResolution.value.copy(size)
-      renderer.setRenderTarget(null); renderer.render(film.scene, film.camera)
+      const autoClear = renderer.autoClear
+      if (dissolving) renderer.autoClear = false
+      try { renderer.setRenderTarget(null); renderer.render(film.scene, film.camera) }
+      finally { renderer.autoClear = autoClear }
     }
   }
 }

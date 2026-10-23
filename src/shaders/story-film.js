@@ -14,7 +14,12 @@ export function createStoryFilm() {
     uSizeA: { value: new THREE.Vector2(16, 9) },
     uSizeB: { value: new THREE.Vector2(16, 9) },
     uResolution: { value: new THREE.Vector2(1, 1) },
-    uBand: { value: new THREE.Vector2(0.20, 0.93) },
+    uBand: { value: new THREE.Vector2(0, 1) },
+    uPaper: { value: null }, uTitle: { value: null },
+    uPaperScale: { value: 0 }, uPaperAngle: { value: 0 }, uPaperOpacity: { value: 0 },
+    uShake: { value: new THREE.Vector2() },
+    uRipple: { value: -1 }, uTitleOpacity: { value: 0 }, uTitleDistortion: { value: 0 },
+    uDissolve: { value: 0 },
     uImage: { value: 1 }, uRain: { value: FILM_RAIN },
     uPanA: { value: new THREE.Vector2() },
     uPanB: { value: new THREE.Vector2() },
@@ -23,7 +28,7 @@ export function createStoryFilm() {
   }
   const material = new THREE.ShaderMaterial({
     name: 'story-film', uniforms, depthTest: false, depthWrite: false,
-    toneMapped: false,
+    toneMapped: false, transparent: true,
     vertexShader: `
       varying vec2 vUv;
       void main() {
@@ -32,7 +37,10 @@ export function createStoryFilm() {
       }
     `,
     fragmentShader: `
-      uniform sampler2D uTexA, uTexB;
+      uniform sampler2D uTexA, uTexB, uPaper, uTitle;
+      uniform float uPaperScale, uPaperAngle, uPaperOpacity, uRipple;
+      uniform float uTitleOpacity, uTitleDistortion, uDissolve;
+      uniform vec2 uShake;
       uniform vec2 uSizeA, uSizeB, uResolution, uPanA, uPanB;
       uniform vec2 uBand;
       uniform float uImage, uRain;
@@ -41,14 +49,14 @@ export function createStoryFilm() {
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
       }
-      vec2 cover(vec2 size, float zoom, vec2 pan) {
+      vec2 cover(vec2 uv, vec2 size, float zoom, vec2 pan) {
         float screenAspect = uResolution.x / max(uResolution.y * (uBand.y - uBand.x), 1.0);
         float imageAspect = size.x / max(size.y, 1.0);
         vec2 fit = vec2(min(1.0, screenAspect / imageAspect),
                         min(1.0, imageAspect / screenAspect));
         // Pan is limited to the available crop; no border can be exposed.
         vec2 extent = fit / max(zoom, 1.0);
-        vec2 bandUv = vec2(vUv.x, (vUv.y - uBand.x) / (uBand.y - uBand.x));
+        vec2 bandUv = vec2(uv.x, (uv.y - uBand.x) / (uBand.y - uBand.x));
         return (bandUv - 0.5) * extent + 0.5
           + clamp(pan, -(1.0 - extent) * 0.5, (1.0 - extent) * 0.5);
       }
@@ -57,8 +65,17 @@ export function createStoryFilm() {
           gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
           return;
         }
-        vec3 a = texture2D(uTexA, cover(uSizeA, uZoomA, uPanA)).rgb;
-        vec3 b = texture2D(uTexB, cover(uSizeB, uZoomB, uPanB)).rgb;
+        float aspect = uResolution.x / max(uResolution.y, 1.0);
+        vec2 centred = (vUv - 0.5) * vec2(aspect, 1.0);
+        float radius = length(centred);
+        float ring = uRipple < 0.0 ? 0.0 : exp(-pow((radius - uRipple * 1.35) / 0.045, 2.0));
+        vec2 offset = normalize(centred + 0.0001) * ring * 0.025 / vec2(aspect, 1.0);
+        vec2 imageUv = vUv + offset;
+        vec3 a = texture2D(uTexA, cover(imageUv, uSizeA, uZoomA, uPanA)).rgb;
+        vec2 bUv = cover(imageUv, uSizeB, uZoomB, uPanB);
+        vec3 b = texture2D(uTexB, bUv).rgb;
+        b.r = texture2D(uTexB, bUv + offset * 0.15).r;
+        b.b = texture2D(uTexB, bUv - offset * 0.15).b;
         vec3 color = mix(a, b, clamp(uMix, 0.0, 1.0)) * uImage;
         float grain = hash(floor(vUv * uResolution) + floor(uTime * 24.0)) - 0.5;
         float vignette = smoothstep(0.15, 0.72, length(vUv - 0.5));
@@ -70,7 +87,30 @@ export function createStoryFilm() {
         streak *= pow(fract(rainUv.y * 5.0 + uTime * 0.8 + hash(vec2(lane, 7.0))), 8.0);
         color *= (1.0 - ${FILM_VIGNETTE} * vignette) * (1.0 + ${FILM_FLICKER} * flicker);
         color += grain * ${FILM_GRAIN} + streak * uRain;
-        gl_FragColor = vec4(max(color, vec3(0.0)) * clamp(uFade, 0.0, 1.0), 1.0);
+        if (uPaperOpacity > 0.0) {
+          float cs = cos(uPaperAngle), sn = sin(uPaperAngle);
+          vec2 p = mat2(cs, -sn, sn, cs) * (centred + uShake);
+          vec2 paperUv = p / (max(uPaperScale, 0.0001) * vec2(1024.0/1400.0, 1.0)) + 0.5;
+          if (all(greaterThanEqual(paperUv, vec2(0.0))) && all(lessThanEqual(paperUv, vec2(1.0)))) {
+            color = mix(color, texture2D(uPaper, paperUv).rgb, uPaperOpacity);
+          }
+        }
+        // #38BDF8 converted to linear working colour (textures decode sRGB).
+        vec3 blue = vec3(0.0395, 0.5089, 0.9387);
+        color += blue * ring * 0.65;
+        vec2 titleUv = (vUv - 0.5) / vec2(0.94, 0.94 * aspect / 4.0) + 0.5;
+        titleUv += vec2(sin(titleUv.y * 42.0 + uTime * 8.0), cos(titleUv.x * 25.0)) * uTitleDistortion * 0.025;
+        if (uTitleOpacity > 0.0 && all(greaterThanEqual(titleUv, vec2(0.0))) && all(lessThanEqual(titleUv, vec2(1.0)))) {
+          vec4 title = texture2D(uTitle, titleUv);
+          color = mix(color, title.rgb, title.a * uTitleOpacity);
+        }
+        float dissolveNoise = hash(floor(vUv * vec2(340.0, 190.0)));
+        float threshold = uDissolve * 1.06 - 0.03;
+        float alpha = uDissolve <= 0.0 ? 1.0 : smoothstep(threshold - 0.025, threshold + 0.025, dissolveNoise);
+        if (uDissolve >= 1.0) alpha = 0.0;
+        float edge = uDissolve > 0.0 ? (1.0 - smoothstep(0.0, 0.045, abs(dissolveNoise - threshold))) : 0.0;
+        color += blue * edge * 0.7;
+        gl_FragColor = vec4(max(color, vec3(0.0)) * clamp(uFade, 0.0, 1.0), alpha);
         #include <colorspace_fragment>
       }
     `
