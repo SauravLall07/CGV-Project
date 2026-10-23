@@ -29,6 +29,8 @@ import { createMainMenu } from './ui/main-menu.js'
 import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
 import { createCredits } from './ui/credits.js'
+import { createStoryPlayer } from './ui/story-player.js'
+import { introBeat } from './story/intro-beat.js'
 import { createBoardingLevel } from './levels/boarding.js'
 import { LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
 import { loadBoardingAssets } from './environment/nature-props.js'
@@ -316,7 +318,7 @@ const levelManager = createLevelManager({
   timeSystem,
   loadingScreen,
   onEnter: (state) => {
-    playMusicForState(state)
+    if (!storyPlayer?.active) playMusicForState(state)
     // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
     // Workshop remaps its stable scene keys here so saved dev-layout overrides
     // are reapplied before the loading overlay hands control back to the player.
@@ -400,12 +402,29 @@ let elapsed = 0 // run clock, frozen while paused or in a menu
 let titleBackdrop = null // the silently-built station behind the title screen
 let titleReturnPromise = null // coalesce returns and hold New Game until its backdrop is ready
 let modelEditor = null // DEV-only live scene/model workshop (F2)
+let storyPlayer = null
+let storyRun = 0
+
+function prepareIntro() {
+  initAudio()
+  const run = storyRun
+  const owner = createStoryPlayer({ beat: introBeat, renderer, onComplete() {
+    if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
+    storyPlayer = null
+    beginForecourtArrival()
+    playMusicForState(levelManager.getState())
+    hud.setVisible(true)
+    syncInputState()
+  } })
+  storyPlayer = owner
+  return owner.prepare()
+}
 
 // Large walkthrough popups freeze gameplay and silence actions, but keep the
 // rendered scene visible behind the guide. The HUD captures Enter/Space itself
 // so those keys dismiss the guide without also triggering a gameplay action.
 hud.onTutorialStateChange((open) => {
-  const controlsEnabled = gameStarted && !paused && !open
+  const controlsEnabled = getInputState() === 'PLAYING' && !open
   keyboard.setEnabled(controlsEnabled)
   interaction.setEnabled(controlsEnabled)
   playerView.setEnabled(controlsEnabled)
@@ -467,7 +486,7 @@ const menu = createMainMenu({
 
 const pauseMenu = createPauseMenu({
   settingsMenu,
-  canPause: () => gameStarted && !credits.isOpen && !modelEditor?.isOpen(),
+  canPause: () => gameStarted && !storyPlayer?.active && !credits.isOpen && !modelEditor?.isOpen(),
   getStatus: () => ({
     level: levelManager.getState(),
     objective: hud.getObjective(),
@@ -509,6 +528,7 @@ if (import.meta.env?.DEV) {
     getContextLabel: () => levelManager.getState() ?? 'Scene',
     canOpen: () => (
       gameStarted &&
+      !storyPlayer?.active &&
       !paused &&
       !credits.isOpen &&
       !levelManager.isTransitioning() &&
@@ -538,6 +558,7 @@ if (import.meta.env?.DEV) {
 function getInputState() {
   return resolveInputState({
     gameStarted,
+    story: Boolean(storyPlayer?.active),
     creditsOpen: credits.isOpen,
     paused,
     transitioning: levelManager.isTransitioning(),
@@ -549,6 +570,7 @@ function getInputState() {
 
 function syncInputState() {
   const state = getInputState()
+  respawn.setPaused(paused || state === 'STORY')
   levelManager.setPresentationPaused(state !== 'PLAYING' && state !== 'CINEMATIC')
   const enabled = state === 'PLAYING' && !benchmark?.isHolding()
   if (!enabled) {
@@ -671,6 +693,9 @@ function startGame() {
   keyboardLock.engage()
   const devStart = devStartOptions()
   if (devStart) {
+    storyRun++
+    storyPlayer?.cancel()
+    storyPlayer = null
     // A skipped start still rebuilds through the level manager.
     if (titleBackdrop) {
       titleBackdrop.dispose()
@@ -679,11 +704,16 @@ function startGame() {
     levelManager.enter(devStart.state, { levelOptions: devStart.levelOptions })
     return
   }
+  stopLevelMusic()
+  disposeGameplayDrone()
+  storyPlayer.start()
+  hud.setVisible(false)
+  syncInputState()
+  document.exitPointerLock?.()
   if (titleBackdrop) {
     const level = titleBackdrop
     titleBackdrop = null
     levelManager.adopt('Boarding', level)
-    beginForecourtArrival()
     return
   }
   levelManager.enter('Boarding')
@@ -717,6 +747,10 @@ function devStartOptions() {
 // without a page refresh.
 async function quitToTitle() {
   if (titleReturnPromise) return titleReturnPromise
+  storyRun++
+  storyPlayer?.cancel()
+  storyPlayer = null
+  arrival = null
   gameStarted = false
   paused = false
   elapsed = 0
@@ -750,6 +784,7 @@ async function quitToTitle() {
     // unload stops the outgoing track; request title music afterwards.
     playMenuMusic()
     titleBackdrop = await buildTitleBackdrop()
+    await prepareIntro()
     menu.show()
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     veil.style.transition = 'opacity 400ms linear'
@@ -764,9 +799,11 @@ async function quitToTitle() {
 // pattern used by levelManager.enter() — see core/level-manager.js.
 requestAnimationFrame(() => requestAnimationFrame(async () => {
   try {
+    const introReady = prepareIntro()
     titleBackdrop = await startupTasks.track('backdrop', buildTitleBackdrop())
 
     await charactersReady
+    await introReady
 
     // Compile Ghost materials/lights after the Mixamo visual is attached so
     // first Ghost press does not pay that shader cost in-game.
@@ -797,6 +834,7 @@ const loop = createLoop({
   clock,
   instrumentation: renderOverlay,
   render(world, view) {
+    if (storyPlayer?.active) { storyPlayer.render(); return }
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
@@ -804,7 +842,7 @@ const loop = createLoop({
   },
 
   afterRender: (gl) => {
-    const show = gameStarted && !credits.isOpen
+    const show = gameStarted && !storyPlayer?.active && !credits.isOpen
     minimap.setVisible(show)
 
     if (show) {
@@ -816,6 +854,7 @@ const loop = createLoop({
 
 const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
+  if (storyPlayer?.active) { storyPlayer.update(delta); return }
   renderQuality.update(performance.now())
   benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /

@@ -1460,6 +1460,11 @@ function titleReturnHarness() {
   const document={body:{appendChild(node){veils.push(node)}},createElement(){return {style:{},remove(){veils.splice(veils.indexOf(this),1)}}}}
   const levelManager={unload(){calls.push('unload')},adopt(state){calls.push('adopt:'+state)},enter(state){calls.push('enter:'+state)}}
   const hud={setVisible(){},setSuspicion(){},setObjective(){},resetRunTimer(){}}
+  const introPending=[]
+  const createStoryPlayer=()=>({active:false,
+    prepare(){calls.push('story.prepare');return new Promise(resolve=>introPending.push(resolve))},
+    start(){this.active=true;calls.push('story.start')},
+    cancel(){this.active=false;calls.push('story.cancel')}})
   const deps={menu,levelManager,hud,respawn:{reset(){},resetLives(){}},timeSystem:{resetForRun(){},resetRun(){}},
     document,requestAnimationFrame:callback=>queueMicrotask(callback),setTimeout(callback,ms){delays.push(ms);queueMicrotask(callback)},
     playerView:{reset(){}},keyboardLock:{release(options){releases.push(options)},engage(){}},syncInputState(){},disposeGameplayDrone(){},
@@ -1467,22 +1472,26 @@ function titleReturnHarness() {
     buildTitleBackdrop(){calls.push('backdrop');return new Promise(resolve=>pending.push(resolve))},
     initAudio(){calls.push('initAudio')},preloadAbilitySfx:()=>null,getContext:()=>({state:'running'}),
     resumeAudio(){calls.push('resumeAudio');return Promise.resolve()},loadTrack:file=>file,
-    startLevelMusic(file){calls.push('music:'+file);return Promise.resolve()}}
+    startLevelMusic(file){calls.push('music:'+file);return Promise.resolve()},
+    stopLevelMusic(){calls.push('music.stop')},createStoryPlayer,renderer:{},introBeat:{},playMusicForState(){}}
   // Execute the actual composition-root functions with controlled dependencies;
   // importing main.js would construct WebGL and start its application loop.
   const factory=new Function('deps',`
     const {menu,levelManager,hud,respawn,timeSystem,playerView,keyboardLock,syncInputState,disposeGameplayDrone,
       devStartOptions,beginForecourtArrival,buildTitleBackdrop,initAudio,preloadAbilitySfx,getContext,resumeAudio,loadTrack,startLevelMusic,
+      stopLevelMusic,createStoryPlayer,renderer,introBeat,playMusicForState,
       document,requestAnimationFrame,setTimeout}=deps;
     const console={log(){}};
     let gameStarted=true,paused=true,elapsed=12,resetCount=2,titleBackdrop=null,titleReturnPromise=null;
+    let storyRun=0,storyPlayer=createStoryPlayer(),arrival=null;
+    ${extract('function prepareIntro() {','// Large walkthrough popups')}
     ${extract('async function playMenuMusic() {','function unlockAudio(')}
     ${extract('function unlockAudio(','// Earliest possible unlock:')}
     ${extract('function startGame() {','// Dev builds only:')}
     ${extract('async function quitToTitle() {','// Defer by two animation frames')}
     return {quitToTitle,startGame,unlockAudio,beginRun(){gameStarted=true;menu.visible=false},
       get state(){return {gameStarted,paused,elapsed,resetCount,pending:!!titleReturnPromise}}};`)
-  return Object.assign(factory(deps),{calls,menu,pending,veils,delays,releases,
+  return Object.assign(factory(deps),{calls,menu,pending,introPending,veils,delays,releases,
     async flush(){for(let i=0;i<30;i++)await Promise.resolve()}})
 }
 
@@ -1520,19 +1529,21 @@ test('Credits: completion Main Menu uses the existing dismissal once; menu credi
     assert.ok(title.calls.indexOf('unload')<title.calls.findIndex(call=>call.startsWith('music:')),'teardown cannot stop the new menu track')
     await Promise.resolve();await Promise.resolve()
     assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,1,'menu music requested without another click')
-    title.pending.shift()({});await returns.at(-1)
+    title.pending.shift()({});await title.flush()
+    assert.equal(title.calls.filter(call=>call==='story.start').length,0)
+    title.introPending.shift()();await returns.at(-1)
     title.beginRun()
     credits.open({source:'complete'});key('Enter');key('Enter');assert.equal(titleCalls,2)
     assert.equal(title.menu.visible,false,'second ending also waits behind its veil')
     await title.flush()
     await Promise.resolve();await Promise.resolve()
     assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,2)
-    title.pending.shift()({});await returns.at(-1)
+    title.pending.shift()({});await title.flush();title.introPending.shift()();await returns.at(-1)
     title.beginRun()
     credits.open({source:'complete'});key('Escape');assert.equal(credits.isOpen,true,'Escape retains dismissal grace')
     clock+=600;key('Escape');assert.equal(titleCalls,3)
     await title.flush()
-    title.pending.shift()({});await returns.at(-1)
+    title.pending.shift()({});await title.flush();title.introPending.shift()();await returns.at(-1)
     credits.open({source:'menu'});assert.equal(button.hidden,true);assert.equal(button.style.display,'none')
     clock+=600;key('Escape');assert.equal(credits.isOpen,false);assert.equal(titleCalls,3)
     assert.deepEqual(dismissals,['complete','complete','complete','menu'])
@@ -1561,11 +1572,17 @@ test('Title return: pause quit preserves fullscreen, veils construction, coalesc
   assert.equal(title.calls.some(call=>call.startsWith('adopt:')||call.startsWith('enter:')),false)
   await Promise.resolve();await Promise.resolve()
   assert.equal(title.calls.filter(call=>call.startsWith('music:')).length,1)
-  title.pending.shift()({});await first;await duplicate;await Promise.resolve()
+  assert.equal(title.calls.filter(call=>call==='story.start').length,0,'intro cannot start during backdrop rebuild')
+  title.pending.shift()({});await title.flush()
+  assert.equal(title.state.gameStarted,false,'New Game also waits for title intro preparation')
+  assert.equal(title.calls.filter(call=>call==='story.start').length,0,'intro cannot start before title preparation finishes')
+  title.introPending.shift()();await first;await duplicate;await Promise.resolve()
   assert.deepEqual(title.delays,[200,400])
   assert.equal(title.veils.length,0)
   assert.equal(title.state.gameStarted,true,'queued New Game starts after the rebuilt backdrop is owned')
   assert.equal(title.calls.filter(call=>call==='adopt:Boarding').length,1)
+  assert.equal(title.calls.filter(call=>call==='story.start').length,1,'deferred New Game starts exactly one intro')
+  assert.ok(title.calls.indexOf('menu.show')<title.calls.indexOf('story.start'),'intro starts only after title rebuild is presented')
   const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8')
   assert.match(source,/onQuit: \(\) => quitToTitle\(\)/,'pause menu still uses the same title path')
 })
