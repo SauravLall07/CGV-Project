@@ -152,6 +152,7 @@ function buildRollContent() {
     label('Additional Assets'),
     line('Story illustrations generated with ChatGPT (OpenAI)'),
     line('Narration voice generated with ElevenLabs (voice: David)'),
+    line('Rain ambience generated with ElevenLabs'),
     line('Ending background paintings — AI-generated with ChatGPT (OpenAI), edited for Chrono Express'),
     line('Physics library: cannon-es'),
     line('Built with Three.js', { size: '13px' }),

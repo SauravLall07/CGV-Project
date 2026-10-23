@@ -9,6 +9,7 @@ import line2 from '../assets/audio/story/story-intro-line-2.mp3'
 import line3 from '../assets/audio/story/story-intro-line-3.mp3'
 import line4 from '../assets/audio/story/story-intro-line-4.mp3'
 import line5 from '../assets/audio/story/story-intro-line-5.mp3'
+import rain from '../assets/audio/story/story-rain.mp3'
 
 export const INTRO_LINE2_SPLIT_S = 1.8
 export const PANEL_HOLD_S = 0.6
@@ -21,6 +22,19 @@ export const HARD_TIMEOUT_S = 90
 export const TYPEWRITER_FRACTION = 0.85
 export const PANEL_ZOOM_START = 1
 export const PANEL_ZOOM_END = 1.08
+export const OPENING_CARD_S = 5.0
+export const OPENING_TYPE_S = 1.6
+export const OPENING_CROSSFADE_S = 0.8
+export const END_CARD_S = 4.5
+export const END_CARD_FADE_IN_S = 1.0
+export const END_CARD_HOLD_S = 2.5
+export const END_CARD_FADE_OUT_S = 1.0
+export const RAIN_VOLUME = 0.35
+export const RAIN_FADE_IN_S = 1.5
+export const AUDIO_UNLOCK_WAIT_S = 2.5
+export const PREPARE_TIMEOUT_S = 8
+export const LETTERBOX_TOP = 0.07
+export const LETTERBOX_BOTTOM = 0.20
 
 // A narration group owns one continuous source. switchAt is measured from
 // that source's start, and begins the incoming panel's crossfade. Only the
@@ -32,8 +46,17 @@ export const introBeat = {
     hold: PANEL_HOLD_S, crossfade: PANEL_CROSSFADE_S,
     fadeIn: FADE_IN_S, fadeOut: FADE_OUT_S, skipFade: SKIP_FADE_S,
     fallback: FALLBACK_PANEL_S, timeout: HARD_TIMEOUT_S,
-    typewriterFraction: TYPEWRITER_FRACTION
+    typewriterFraction: TYPEWRITER_FRACTION,
+    opening: OPENING_CARD_S, openingType: OPENING_TYPE_S,
+    openingCrossfade: OPENING_CROSSFADE_S,
+    endCard: END_CARD_S, endFadeIn: END_CARD_FADE_IN_S,
+    endHold: END_CARD_HOLD_S, endFadeOut: END_CARD_FADE_OUT_S,
+    rainFadeIn: RAIN_FADE_IN_S, unlockWait: AUDIO_UNLOCK_WAIT_S,
+    prepareTimeout: PREPARE_TIMEOUT_S
   },
+  openingText: 'Some cases never close.',
+  rain: { url: rain, volume: RAIN_VOLUME },
+  band: { top: LETTERBOX_TOP, bottom: LETTERBOX_BOTTOM },
   audio: [line1, line2, line3, line4, line5],
   panels: [
     { image: image1, audio: 0, pan: [-0.012, 0.008],

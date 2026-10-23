@@ -191,6 +191,8 @@ async function playMenuMusic() {
 function unlockAudio({ menuMusic = true } = {}) {
   if (import.meta.env?.DEV) console.log('unlockAudio() called')
   initAudio()
+  // The title invokes this synchronously inside its New Game gesture.
+  storyPlayer?.unlockAudio?.()
   const preloading = preloadAbilitySfx()
   if (preloading && typeof preloading.then === 'function') {
     preloading.then(() => {
