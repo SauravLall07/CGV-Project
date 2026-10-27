@@ -17,7 +17,7 @@ function levelHarness(fps = 60) {
   const time = createTimeSystem({ scene, player, hud })
   const respawn = createRespawnSystem({ player, hud, timeSystem: time, camera: { snap() {} } })
   const interactions = new Map()
-  const level = createTimewreckLevel({ scene, player, hud, timeSystem: time, respawn,
+  const level = createTimewreckLevel({ debrisSeed: 12345, scene, player, hud, timeSystem: time, respawn,
     interaction: { register: (object, options) => { interactions.set(object.name, options); return () => interactions.delete(object.name) }, registerBlocker: () => () => {}, flashPrompt() {} },
     camera: { snap() {} }, advance() {}, startCarriage: 'relay'
   })
@@ -257,7 +257,7 @@ test('Relay: level teardown unregisters the pad and a fresh restart clears durab
     h.time.triggerGhost()
     assert.equal(h.time.getGhost().isPlaying(), false, 'disposed pad cannot summon a stationary echo')
     h.time.resetForLevel()
-    restarted = createTimewreckLevel({ scene: h.scene, player: h.player, hud: new Proxy({}, { get: () => () => {} }),
+    restarted = createTimewreckLevel({ debrisSeed: 12345, scene: h.scene, player: h.player, hud: new Proxy({}, { get: () => () => {} }),
       timeSystem: h.time, respawn: h.respawn, camera: { snap() {} }, advance() {}, startCarriage: 'relay',
       interaction: { register: () => () => {}, registerBlocker: () => () => {} }
     })

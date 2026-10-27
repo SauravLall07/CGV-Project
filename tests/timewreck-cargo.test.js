@@ -119,7 +119,7 @@ function levelHarness() {
   })
   const time = createTimeSystem({ scene, player, hud })
   const respawn = createRespawnSystem({ player, hud, timeSystem: time, camera: { snap() {} } })
-  const level = createTimewreckLevel({ scene, player, hud, timeSystem: time, respawn,
+  const level = createTimewreckLevel({ debrisSeed: 12345, scene, player, hud, timeSystem: time, respawn,
     interaction: { register: () => () => {}, registerBlocker: () => () => {}, flashPrompt() {} },
     camera: { snap() {} }, advance() {}, startCarriage: 'cargo'
   })

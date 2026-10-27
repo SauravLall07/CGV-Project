@@ -37,7 +37,7 @@ function levelHarness(start = 'mechanical', fps = 60) {
   const time = createTimeSystem({ scene, player, hud })
   const respawn = createRespawnSystem({ player, hud, timeSystem: time, camera: { snap() {} } })
   const interactions = new Map()
-  const level = createTimewreckLevel({ scene, player, hud, timeSystem: time, respawn,
+  const level = createTimewreckLevel({ debrisSeed: 12345, scene, player, hud, timeSystem: time, respawn,
     interaction: { register: (object, options) => { interactions.set(object.name, options); return () => interactions.delete(object.name) }, registerBlocker: () => () => {}, flashPrompt() {} },
     camera: { snap() {} }, advance() { advanced++ }, startCarriage: start
   })
@@ -151,6 +151,7 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
         move('z', gate.position.z + 1.4)
         waitUntil(() => gate.getObjectByName('vault-clearance-signal').material.color.getHex() === 0x42dfad)
         h.time.triggerFreeze(); move('z', gate.position.z - 1.3)
+        move('x', 0) // recharge between the straight panel lanes
         recharge()
       }
       stage = 'convergence'
@@ -163,7 +164,7 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       move('x', 0.65) // open end of the diagonal trolley
       move('z', center(stage) + 10)
       if (route === 'direct') {
-        move('x', -0.6)
+        move('x', 0.4) // dodge brown panels in the left lane, staying clear of the partition
         move('z', center(stage) + 6.2)
         const surge = h.scene.getObjectByName('convergence-electrical-surge')
         assert.ok(surge)
@@ -177,7 +178,7 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
         move('z', center(stage) + 3.4, { duck: true })
         h.time.setMode('NORMAL')
         move('z', center(stage) - 1.3, { duck: true })
-        move('x', -0.6)
+        move('x', 0.4)
       }
       // Open-floor carts past the fork — Freeze holds every direction of roll.
       h.time.triggerFreeze()
@@ -194,6 +195,7 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       waitUntil(() => trunks[0].position.x < -1)
       h.time.triggerFreeze(); move('z', center(stage) + 4.6)
       h.time.setMode('NORMAL'); move('z', center(stage) + 2.7)
+      move('x', 0) // leave the high right-hand panel's straight flight path before waiting
       repair(h, 'mechanical-rewind-shutter')
       move('z', center(stage) - 2)
       recharge(); move('x', 0)
@@ -229,8 +231,8 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       h.time.resetGhost()
       stage = 'security'
       move('z', center(stage) + 7.15)
-      move('x', -0.9); recharge()
-      h.time.triggerFreeze(); h.tick(0.23)
+      recharge(); h.time.triggerFreeze()
+      move('x', -0.9); h.tick(0.23)
       h.tick(0.62, {forward:true}); h.tick(0.5, {forward:true,right:true}); h.tick(0.7,{forward:true}); h.tick(0.05)
       check(); recharge()
       // Retry on the island in the same run: no stale Relay echo or old powers.
@@ -243,8 +245,9 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       check(); h.time.setMode('NORMAL'); move('x', 0)
       stage = 'passenger'
       move('z', center(stage) + 8.4)
-      h.tick(0.7,{forward:true,run:true,right:true}); h.tick(0.2,{forward:true,run:true})
-      h.time.triggerFreeze(); h.tick(0.3); h.tick(0.37,{left:true,run:true}); h.tick(1.6,{forward:true,run:true})
+      // Take the narrow right lane; the flying luggage makes the wall-side sprint lethal.
+      h.tick(0.14,{forward:true,run:true,right:true}); h.tick(0.76,{forward:true,run:true,jump:true})
+      h.time.triggerFreeze(); h.tick(0.3); h.tick(0.05,{left:true,run:true}); h.tick(1.6,{forward:true,run:true,jump:true})
       check(); h.time.setMode('NORMAL')
       move('z', h.scene.getObjectByName('emergency-brake').position.z + 1.5, {run:true})
       h.interactions.get('emergency-brake').onInteract()
@@ -281,7 +284,7 @@ test('N8/N9: each live event pauses, holds Freeze without taking control, and re
         manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud, timeSystem: h.time,
           respawn: h.respawn, camera: { snap() {} }, loadingScreen: { show() {}, hide() {} },
           interaction: { register: () => () => {}, registerBlocker: () => () => {}, setEnabled() {} },
-          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ ...ctx, startCarriage: spec.key }) }] })
+          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ debrisSeed: 12345, ...ctx, startCarriage: spec.key }) }] })
         manager.adopt('Timewreck', h.level)
         if (action === 'restart') {
           manager.restart()
@@ -323,7 +326,7 @@ test('N9: caught recovery and game-over restart during every vignette restore pr
         manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud, timeSystem: h.time,
           respawn: h.respawn, camera: { snap() {} }, loadingScreen: { show() {}, hide() {} },
           interaction: { register: () => () => {}, registerBlocker: () => () => {}, setEnabled() {} },
-          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ ...ctx, startCarriage: spec.key }) }] })
+          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ debrisSeed: 12345, ...ctx, startCarriage: spec.key }) }] })
         manager.adopt('Timewreck', h.level)
         h.respawn.resetLives(1)
         h.respawn.setGameOverHandler(() => { gameOvers++; manager.restart() })
@@ -464,12 +467,14 @@ test('Mechanical: Slow first bank, safe switching recess, Rewind/Freeze shutter 
       assert.equal(h.respawn.isFailing(), false, JSON.stringify({fps, pos:h.player.mesh.position, messages:h.messages}))
       assert.ok(h.player.mesh.position.z < h.center + 5)
       h.time.setMode('NORMAL'); h.tick(0.6, { forward: true })
+      h.time.triggerFreeze(); h.tick(0.375, { left: true })
+      h.time.setMode('NORMAL') // step out of the randomized right-side flight before observing the shutter
       const shutter = repair(h, 'mechanical-rewind-shutter')
       h.tick(1.25, { forward: true })
       assert.ok(h.player.mesh.position.z < h.center - 1.5)
       assert.ok(shutter.position.y > 3.5)
       assert.ok(h.time.getEnergy() > 35)
-      h.time.setMode('NORMAL'); h.tick(0.375, {left: true}); h.tick(4)
+      h.time.setMode('NORMAL'); h.tick(4)
       h.time.triggerSlow(); h.tick(2.4, { forward: true })
       assert.equal(h.respawn.isFailing(), false, JSON.stringify({fps, pos:h.player.mesh.position, messages:h.messages}))
       assert.ok(h.player.mesh.position.z < h.center - 11)
@@ -582,15 +587,15 @@ test('Passenger: warned rack, real separating floor, Freeze chase and controllab
     const h = levelHarness('passenger', fps)
     try {
       h.tick(0.1, { forward: true, run: true })
-      h.tick(0.7, { forward: true, run: true, right: true })
+      h.tick(0.14, { forward: true, run: true, right: true })
       assert.ok(h.messages.some(m => m.includes('Rack bolts')))
-      h.tick(0.2, { forward: true, run: true })
+      h.tick(0.76, { forward: true, run: true, jump: true })
       const wave = h.scene.getObjectByName('time-wave')
       const waveZ = wave.position.z
       h.time.triggerFreeze(); h.tick(0.3)
       assert.equal(wave.position.z, waveZ)
-      h.tick(0.37, { left: true, run: true })
-      h.tick(1.6, { forward: true, run: true })
+      h.tick(0.05, { left: true, run: true })
+      h.tick(1.6, { forward: true, run: true, jump: true })
       assert.ok(h.player.mesh.position.z < h.center - 3)
       assert.ok(h.player.mesh.position.y >= -0.1)
       assert.equal(h.respawn.isFailing(), false, JSON.stringify({fps, pos:h.player.mesh.position, messages:h.messages}))
@@ -813,12 +818,16 @@ test('Passenger: minimum-energy carried entry and repeated checkpoint retries ca
           minGap = Math.min(minGap, h.scene.getObjectByName('time-wave').position.z - h.player.mesh.position.z)
           minEnergy = Math.min(minEnergy, h.time.getEnergy())
         })
-        if (attempt === 2) h.tick(0.05, { right: true, run: true }) // recover a small entry misalignment
+        if (attempt === 2) {
+          h.tick(0.05, { right: true, run: true })
+          h.tick(0.05, { left: true, run: true }) // recenter before the narrow luggage clearance
+        }
         h.tick(0.1,{forward:true,run:true})
-        h.tick(0.7,{forward:true,run:true,right:true})
-        h.tick(0.2,{forward:true,run:true})
+        h.tick(0.14,{forward:true,run:true,right:true})
+        h.tick(0.76,{forward:true,run:true,jump:true})
         h.time.triggerFreeze(); h.tick(0.3)
-        h.tick(0.37,{left:true,run:true}); h.tick(1.6,{forward:true,run:true})
+        h.tick(0.05,{left:true,run:true})
+        h.tick(1.6,{forward:true,run:true,jump:true})
         assert.equal(h.respawn.isFailing(),false,JSON.stringify({fps,attempt,pos:h.player.mesh.position,energy:h.time.getEnergy(),messages:h.messages.slice(-3)}))
         assert.ok(h.player.mesh.position.z<h.center-3)
         assert.ok(h.player.mesh.position.y>=-0.1)
@@ -843,13 +852,13 @@ test('Passenger: minimum-energy carried entry and repeated checkpoint retries ca
 test('N6: rebound movement/Freeze controls navigate both seats and reach the brake from minimum energy', () => {
   const h = levelHarness('passenger')
   const target = new EventTarget(); globalThis.window = target
-  const codes = { forward: 'KeyI', right: 'KeyL', left: 'KeyJ', run: 'KeyO', freeze: 'KeyP' }
+  const codes = { forward: 'KeyI', right: 'KeyL', left: 'KeyJ', run: 'KeyO', freeze: 'KeyP', jump: 'KeyM' }
   for (const [action, code] of Object.entries(codes)) { settings.setBinding(action, 0, code); settings.setBinding(action, 1, null) }
   const keyboard = createKeyboardState()
   const key = (type, code) => { const e = new Event(type); Object.assign(e, { code, repeat: false }); target.dispatchEvent(e) }
   keyboard.onAction('freeze', () => h.time.triggerFreeze())
   const walk = (seconds, actions = []) => {
-    for (const action of ['forward', 'right', 'left', 'run']) {
+    for (const action of ['forward', 'right', 'left', 'run', 'jump']) {
       const down = actions.includes(action)
       if (down !== Boolean(keyboard.state[action])) key(down ? 'keydown' : 'keyup', codes[action])
     }
@@ -859,10 +868,10 @@ test('N6: rebound movement/Freeze controls navigate both seats and reach the bra
   try {
     h.time.resetForCheckpoint({ ...h.time.captureCheckpointState(), energy: 0 })
     walk(0.1, ['forward', 'run'])
-    walk(0.7, ['forward', 'right', 'run']); walk(0.2, ['forward', 'run'])
+    walk(0.14, ['forward', 'right', 'run']); walk(0.76, ['forward', 'run', 'jump'])
     key('keydown', 'KeyF'); assert.equal(h.time.getMode(), 'NORMAL')
     key('keydown', codes.freeze); assert.equal(h.time.getMode(), 'FREEZE')
-    walk(0.3); walk(0.37, ['left', 'run']); walk(1.6, ['forward', 'run'])
+    walk(0.3); walk(0.05, ['left', 'run']); walk(1.6, ['forward', 'run', 'jump'])
     assert.ok(h.player.mesh.position.z < h.center - 3)
     h.time.setMode('NORMAL')
     const brake = h.scene.getObjectByName('emergency-brake')
@@ -886,7 +895,7 @@ test('Batches 4/5: full rebuild disposes routes and restores fresh ability and o
     assert.equal(fork.parent.parent, null)
     assert.equal(h.interactions.has('emergency-brake'), false)
     h.time.resetForLevel()
-    const fresh = createTimewreckLevel({ scene: h.scene, player: h.player, hud: new Proxy({}, {get:()=>()=>{}}), timeSystem: h.time,
+    const fresh = createTimewreckLevel({ debrisSeed: 12345, scene: h.scene, player: h.player, hud: new Proxy({}, {get:()=>()=>{}}), timeSystem: h.time,
       respawn: h.respawn, camera: {snap(){}}, advance(){}, startCarriage: 'passenger',
       interaction: {register:()=>()=>{}, registerBlocker:()=>()=>{}} })
     try {
@@ -1000,7 +1009,7 @@ test('Finale: real level manager restart/quit cancels reveal and stale completio
         registerBlocker: () => () => {}, setEnabled(){}, flashPrompt(){}
       },
       levels: [
-        {state:'Timewreck',create: ctx => createTimewreckLevel({...ctx,startCarriage:'passenger'})},
+        {state:'Timewreck',create: ctx => createTimewreckLevel({ debrisSeed: 12345,...ctx,startCarriage:'passenger'})},
         {state:'Complete',keepPrevious:true,create: () => {completeEntries++; return {dispose(){}}}}
       ]
     })
@@ -1145,7 +1154,7 @@ test('Restart: real level manager rebuilds every L3 start and quit cancels a pen
           register:(object,options)=>{h.interactions.set(object.name,options);return()=>h.interactions.delete(object.name)},
           registerBlocker:()=>()=>{},setEnabled(){},flashPrompt(){}
         },levels:[
-          {state:'Timewreck',create:ctx=>createTimewreckLevel({...ctx,startCarriage:start})},
+          {state:'Timewreck',create:ctx=>createTimewreckLevel({ debrisSeed: 12345,...ctx,startCarriage:start})},
           {state:'Complete',create:()=>({dispose(){}})}
         ]})
       try {

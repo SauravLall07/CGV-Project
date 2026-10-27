@@ -348,6 +348,7 @@ export function createHud() {
     'camera': { title: 'DETECTED!', message: 'A security camera caught you on film!' },
     'laser': { title: 'ALARM TRIPPED!', message: 'You walked into a laser gate!' },
     'fell': { title: 'FELL!', message: 'You fell off the train!' },
+    'debris': { title: 'STRUCK BY DEBRIS!', message: 'Flying wreckage killed you!' },
     'caught': { title: 'CAUGHT!', message: 'Security caught you!' }
   }
 
