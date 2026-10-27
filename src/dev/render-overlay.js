@@ -45,6 +45,140 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
   let worldScene = null
   let minimapOff = false
 
+  let disposeSceneryInspector = () => {}
+  if (import.meta.env?.DEV) {
+    // Discover live objects on demand: no stale level registry, frame traversal,
+    // reparenting or zone overrides. Only renderable leaves are registered.
+    const originals = new Map()
+    const legacyNames = new Map([
+      ['legacy-terrain', 'terrain'], ['valley-creek', 'creek'],
+      ['legacy-pines', 'trees'], ['legacy-spruce', 'trees'],
+      ['legacy-saplings', 'trees'], ['legacy-dead-trees', 'trees'], ['legacy-broadleaf', 'trees'],
+      ['legacy-bushes', 'plants'],
+      ['legacy-logs', 'stumps/logs'], ['legacy-stumps', 'stumps/logs'],
+      ['valley-lights', 'valley-lights']
+    ])
+
+    function restoreScenery() {
+      for (const [node, visible] of originals) node.visible = visible
+      originals.clear()
+    }
+
+    function registeredScenery() {
+      const entries = new Map()
+      const state = window.levelManager?.getState?.()
+      const excluded = state === 'Timewreck' || state === 'Complete' ||
+        window.levelManager?.isTransitioning?.() || worldScene?.getObjectByName('timewreck-exterior')
+      const add = (name, node) => {
+        if (!entries.has(name)) entries.set(name, [])
+        entries.get(name).push(node)
+      }
+      if (!excluded && worldScene) {
+        for (const root of sceneryGroups(worldScene)) {
+          const valley = Boolean(root.getObjectByName('moonlit-valley-ground'))
+          const prefix = valley ? (state === 'MovingHeist' ? 'valley-' : 'platform-') : ''
+          root.traverse((node) => {
+            if (!node.isMesh && !node.isPoints && !node.isLine) return
+            if (valley) {
+              let kind
+              if (node.name === 'moonlit-valley-ground') kind = 'terrain'
+              else if (node.name.startsWith('pine-forest-')) kind = 'trees'
+              else if (node.name === 'moonlit-valley-bushes') kind = 'plants'
+              else if (node.name === 'moonlit-valley-rocks') kind = 'rocks'
+              else if (node.parent?.name === 'moonlit-mountain-ring') kind = 'mountains'
+              else if (node.parent?.name === 'moonlit-valley-rails') kind = 'rails'
+              else if (node.parent?.name === 'trackside-infrastructure') kind = 'trackside'
+              else if (node.name === 'platform-valley-mist') kind = 'mist'
+              if (kind) add(prefix + kind, node)
+              return
+            }
+            let kind = legacyNames.get(node.name)
+            if (node.name.startsWith('distant-range-')) kind = 'ranges'
+            else if (/^valley-(walls|roofs|windows|chimneys|field-posts|field-rails)$/.test(node.name)) kind = 'set-dressing'
+            else if (node.parent?.name === 'trackside-infrastructure') kind = 'trackside'
+            else if (node.name.startsWith('nature-')) {
+              if (/trunk|stump/.test(node.name)) kind = 'stumps/logs'
+            }
+            if (kind) add(kind, node)
+          })
+        }
+      }
+      const live = new Set([...entries.values()].flat())
+      for (const [node, visible] of originals) {
+        if (live.has(node)) continue
+        node.visible = visible
+        originals.delete(node)
+      }
+      return entries
+    }
+
+    function effectivelyVisible(node) {
+      for (let ancestor = node; ancestor; ancestor = ancestor.parent) {
+        if (!ancestor.visible) return false
+      }
+      return true
+    }
+
+    function sceneryRows(entries) {
+      return [...entries].map(([name, nodes]) => {
+        let meshes = 0, triangles = 0, instances = 0, points = 0, lines = 0
+        for (const node of nodes) {
+          const geometry = node.geometry
+          const count = geometry?.index?.count ?? geometry?.attributes.position?.count ?? 0
+          const range = geometry?.drawRange
+          const drawn = Math.max(0, Math.min(count - (range?.start ?? 0), range?.count ?? Infinity))
+          const copies = node.isInstancedMesh ? node.count : 1
+          if (node.isMesh) {
+            meshes += 1
+            triangles += drawn / 3 * copies
+            if (node.isInstancedMesh) instances += node.count
+          } else if (node.isPoints) points += drawn
+          else if (node.isLine) lines += 1
+        }
+        const flags = nodes.filter(node => node.visible).length
+        return { name, visible: flags === nodes.length ? 'on' : flags === 0 ? 'off' : 'mixed',
+          effectiveVisible: nodes.some(effectivelyVisible), meshes, instances, triangles, points, lines }
+      })
+    }
+
+    function listScenery() {
+      const rows = sceneryRows(registeredScenery())
+      console.table(rows)
+      console.info('[scenery] Effective visibility checks ancestors, not the camera frustum, fog or occlusion. Counts are allocated draw budgets, including hidden pieces and zero-count batches.')
+      return rows
+    }
+
+    function changeScenery(name, solo) {
+      const entries = registeredScenery()
+      const selected = entries.get(name)
+      if (!selected) {
+        console.warn(`[scenery] Unknown current-level piece: ${name}. Run devScenery.list().`)
+        return
+      }
+      const show = solo || !selected.every(node => node.visible)
+      for (const [key, nodes] of entries) {
+        if (!solo && key !== name) continue
+        for (const node of nodes) {
+          if (!originals.has(node)) originals.set(node, node.visible)
+          node.visible = key === name ? show : false
+        }
+      }
+      return listScenery()
+    }
+
+    const inspector = {
+      list: listScenery,
+      toggle(name) { return changeScenery(name, false) },
+      solo(name) { return changeScenery(name, true) },
+      reset() { restoreScenery(); return listScenery() }
+    }
+    window.devScenery = inspector
+    disposeSceneryInspector = () => {
+      restoreScenery()
+      if (window.devScenery === inspector) delete window.devScenery
+    }
+  }
+
   // Explicit loop boundaries avoid counting loading/UI rAF callbacks as game
   // frames. Keep the overlay's rolling display; benchmark exports raw samples.
   const frameTimes = new Float64Array(TIMING_WINDOW)
@@ -703,6 +837,7 @@ export function mountRenderOverlay(renderer, { player: gamePlayer, playerView, p
       return activeFrame ? { ...activeFrame } : null
     },
     dispose() {
+      disposeSceneryInspector()
       for (const target of keyTargets) target.removeEventListener('keydown', onKeyDown, true)
       if (window.devTeleport === devTeleport) delete window.devTeleport
       document.removeEventListener('visibilitychange', onVisibilityChange)

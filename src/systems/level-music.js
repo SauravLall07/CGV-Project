@@ -88,7 +88,7 @@ export class LevelMusicPlayer {
     this.gain = null
     this._disposed = false
     livePlayers += 1
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[music ${musicTs()}] LevelMusicPlayer#${this.id} CONSTRUCT livePlayers=${livePlayers} liveSources=${liveSources} url=${String(url)}`
     )
   }
@@ -134,7 +134,7 @@ export class LevelMusicPlayer {
     this.source.connect(this.gain)
     this.source.start()
     liveSources += 1
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[music ${musicTs()}] LevelMusicPlayer#${this.id} SOURCE START livePlayers=${livePlayers} liveSources=${liveSources}`
     )
   }
@@ -145,7 +145,7 @@ export class LevelMusicPlayer {
       this.source.disconnect()
       this.source = null
       liveSources = Math.max(0, liveSources - 1)
-      console.log(
+      if (import.meta.env?.DEV) console.log(
         `[music ${musicTs()}] LevelMusicPlayer#${this.id} SOURCE STOP livePlayers=${livePlayers} liveSources=${liveSources}`
       )
     }
@@ -161,7 +161,7 @@ export class LevelMusicPlayer {
     this.stop()
     this.buffer = null
     livePlayers = Math.max(0, livePlayers - 1)
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[music ${musicTs()}] LevelMusicPlayer#${this.id} DISPOSE livePlayers=${livePlayers} liveSources=${liveSources}`
     )
   }
@@ -172,7 +172,7 @@ let token = 0
 
 export function stopLevelMusic() {
   token += 1
-  console.log(
+  if (import.meta.env?.DEV) console.log(
     `[music ${musicTs()}] stopLevelMusic token=${token} active=${active ? '#' + active.id : 'none'} livePlayers=${livePlayers}`
   )
   if (active) {
@@ -183,7 +183,7 @@ export function stopLevelMusic() {
 
 export async function startLevelMusic(url, opts = {}) {
   const myToken = ++token
-  console.log(
+  if (import.meta.env?.DEV) console.log(
     `[music ${musicTs()}] startLevelMusic begin token=${myToken} url=${String(url)} prevActive=${active ? '#' + active.id : 'none'}`
   )
   if (active) {
@@ -210,7 +210,7 @@ export async function startLevelMusic(url, opts = {}) {
   }
 
   if (myToken !== token || player._disposed) {
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[music ${musicTs()}] startLevelMusic SKIP play LevelMusicPlayer#${player.id} myToken=${myToken} token=${token} disposed=${player._disposed}`
     )
     player.dispose()
@@ -220,7 +220,7 @@ export async function startLevelMusic(url, opts = {}) {
 
   const ctx = getContext()
   const buffer = player.buffer
-  console.log(
+  if (import.meta.env?.DEV) console.log(
     `[music ${musicTs()}] startLevelMusic play LevelMusicPlayer#${player.id} context=${ctx ? ctx.state : 'none'} duration=${buffer ? buffer.duration : 'none'}`
   )
   player.play(opts)

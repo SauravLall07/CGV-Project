@@ -5,7 +5,6 @@ import {
   bulkheadLamp,
   coatHooks,
   crate,
-  crateBattens,
   createKitBuilder,
   deskChair,
   filingCabinet,
@@ -201,43 +200,6 @@ function createDresser(group, colliders, name) {
     }
   }
   return d
-}
-
-// Passageway 0: the onboarding gallery behind the blast door.
-export function dressOnboardingGallery(group, colliders) {
-  const d = createDresser(group, colliders, 'onboarding')
-  const { k } = d
-  const north = wall('x', -27.38, 1)
-  const south = wall('x', -21.62, -1)
-  d.room('Passageway 0 gallery')
-
-  // The two old plain luggage boxes become stencilled crates.
-  for (const [nodeName, size] of [['onboarding-luggage-a', [1.25, 1.0, 0.72]], ['onboarding-luggage-b', [1.0, 0.8, 0.72]]]) {
-    const box = group.getObjectByName(nodeName)
-    if (!box) continue
-    box.material = k.crate
-    crateBattens(d.kit, k, at(box.position.x, 0, box.position.z), ...size)
-    d.tally('crate')
-  }
-
-  d.pipes(north, -176.6, -161.6, [[4.75, 0.16, 0.07], [4.45, 0.13, 0.045, k.copper]])
-  d.pipes(south, -176.6, -161.6, [[4.85, 0.16, 0.055]])
-  d.lantern(north, -174.5)
-  d.lantern(south, -170.5)
-  d.lantern(north, -166.5)
-  d.lantern(south, -162.8)
-  d.poster(north, -172.5, 2.4, 6)
-  d.poster(north, -164.5, 2.4, 7)
-  d.sign(north, -170.5, 3.4, 'PLATFORMS  \u2192', 1.5)
-  d.poster(south, -174.5, 2.4, 1)
-  d.notice(south, -168.6, 2.2)
-  d.poster(south, -165.2, 2.4, 3)
-
-  d.cluster(north, -175.2, 'trunks')
-  d.cluster(north, -164.6, 'crates')
-  d.cluster(south, -172.2, 'cases')
-  d.cluster(south, -163.4, 'trolley')
-  d.build()
 }
 
 // Passageway 1 beyond the arrival hall: the security-training gallery,

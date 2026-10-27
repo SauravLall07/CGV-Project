@@ -3,7 +3,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 
 // Mixamo police: Walking With Shopping Bag.fbx is the skinned mesh + walk
 // clip. Unarmed Idle Looking is animation-only (no skin) retargeted onto
-// that skeleton. Catwalk Twist is loaded but not played yet.
+// that skeleton.
 // A torch is parented to mixamorigRightHand.
 
 const MIXAMO_CM_SCALE = 0.01
@@ -17,7 +17,6 @@ const TORCH_GRIP_SCALE = 200
 const FILES = {
   walk: new URL('../assets/models/police/Walking With Shopping Bag.fbx', import.meta.url),
   idle: new URL('../assets/models/police/Unarmed Idle Looking Ver. 2.fbx', import.meta.url),
-  turn: new URL('../assets/models/police/Catwalk Twist L To Walk 180.fbx', import.meta.url),
   torch: new URL('../assets/models/props/torch/guard-torch.glb', import.meta.url)
 }
 
@@ -329,14 +328,10 @@ let loadPromise = null
 let template = null
 
 async function loadTemplate(assets) {
-  const [walkFbx, idleFbx, turnFbx, torchGltf] = await Promise.all([
+  const [walkFbx, idleFbx, torchGltf] = await Promise.all([
     assets.loadFbx(FILES.walk.href),
     assets.loadFbx(FILES.idle.href).catch((error) => {
       console.warn('[police] idle clip failed to load', error)
-      return null
-    }),
-    assets.loadFbx(FILES.turn.href).catch((error) => {
-      console.warn('[police] turn clip failed to load (unused for now)', error)
       return null
     }),
     // This GLB has no extensionsUsed/Required; preserve optional Draco support
@@ -373,16 +368,6 @@ async function loadTemplate(assets) {
     console.warn('[police] Unarmed Idle Looking clip missing — stopped guards have no idle')
   }
 
-  const turnClip = firstClip(turnFbx, 'turn')
-  if (turnClip) {
-    logRootMotion('turn', turnClip)
-    console.log(
-      `[police] clip turn: duration=${turnClip.duration.toFixed(3)}s tracks=${turnClip.tracks.length} (loaded, unused)`
-    )
-  } else {
-    console.warn('[police] Catwalk Twist clip missing — walk still works')
-  }
-
   let torchScene = null
   if (torchGltf?.scene) {
     torchScene = torchGltf.scene
@@ -396,7 +381,6 @@ async function loadTemplate(assets) {
     wrapper: info.wrapper,
     walkClip,
     idleClip,
-    turnClip,
     torchScene,
     scale: info.scale,
     worldHeight: info.worldHeight,

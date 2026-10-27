@@ -158,9 +158,9 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
   markIcon(playerIcon)
   root.add(playerIcon)
 
-  const obstacleIcons = []
+  const obstacleBatches = new Map()
+  const obstacleMatrix = new THREE.Matrix4()
   const guardIcons = []
-  let lastObstacleLogKey = null
 
   function materialForObstacle(box) {
     const kind = obstacleKind(box)
@@ -185,45 +185,36 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
   }
 
   function syncObstacles(boxes, y, clip) {
-    const incoming = boxes || []
-    const list = incoming.filter((box) => boxOverlapsClip(box, clip))
-
-    // Temporary: prove icon creation vs clip filter when entering a car.
-    const logKey = clip?.key ?? null
-    if (logKey && logKey !== lastObstacleLogKey) {
-      lastObstacleLogKey = logKey
-      const samples = incoming.slice(0, 6).map((box) => ({
-        kind: box.kind || 'wall',
-        x: +((box.minX + box.maxX) * 0.5).toFixed(2),
-        z: +((box.minZ + box.maxZ) * 0.5).toFixed(2),
-        pass: boxOverlapsClip(box, clip)
-      }))
-      console.log('[minimap-obstacles] enter', logKey, {
-        created: incoming.length,
-        afterFilter: list.length,
-        clip: {
-          minX: clip.minX, maxX: clip.maxX, minZ: +clip.minZ.toFixed(2), maxZ: +clip.maxZ.toFixed(2)
-        },
-        samples
-      })
-    }
-    if (!clip) lastObstacleLogKey = null
-    resizePool(obstacleIcons, list.length, () => {
-      const mesh = new THREE.Mesh(planeGeo, wallMat)
-      mesh.renderOrder = 1
-      return {
-        root: mesh,
-        dispose() { /* shared geo/mat */ }
+    for (const batch of obstacleBatches.values()) batch.count = 0
+    for (const box of boxes || []) {
+      if (!boxOverlapsClip(box, clip)) continue
+      const material = materialForObstacle(box)
+      let batch = obstacleBatches.get(material)
+      if (!batch || batch.count === batch.instanceMatrix.count) {
+        const next = new THREE.InstancedMesh(planeGeo, material, batch ? batch.count * 2 : 32)
+        next.count = batch?.count ?? 0
+        next.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+        next.renderOrder = 1
+        next.frustumCulled = false
+        markIcon(next)
+        if (batch) {
+          next.instanceMatrix.array.set(batch.instanceMatrix.array)
+          root.remove(batch)
+          batch.dispose()
+        }
+        root.add(next)
+        obstacleBatches.set(material, next)
+        batch = next
       }
-    })
-    for (let i = 0; i < list.length; i++) {
-      const box = list[i]
-      const mesh = obstacleIcons[i].root
       const w = Math.max(0.08, box.maxX - box.minX)
       const d = Math.max(0.08, box.maxZ - box.minZ)
-      mesh.position.set((box.minX + box.maxX) * 0.5, y, (box.minZ + box.maxZ) * 0.5)
-      mesh.scale.set(w, 1, d)
-      mesh.material = materialForObstacle(box)
+      obstacleMatrix.makeScale(w, 1, d)
+      obstacleMatrix.setPosition((box.minX + box.maxX) * 0.5, y, (box.minZ + box.maxZ) * 0.5)
+      batch.setMatrixAt(batch.count++, obstacleMatrix)
+    }
+    for (const batch of obstacleBatches.values()) {
+      batch.visible = batch.count > 0
+      if (batch.count) batch.instanceMatrix.needsUpdate = true
     }
   }
 
@@ -309,7 +300,8 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
   }
 
   function dispose() {
-    resizePool(obstacleIcons, 0, () => ({}))
+    for (const batch of obstacleBatches.values()) batch.dispose()
+    obstacleBatches.clear()
     resizePool(guardIcons, 0, () => ({}))
     scene.remove(root)
     ground.material.dispose()

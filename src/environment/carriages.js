@@ -8,6 +8,7 @@ import {
   carpetMaterial,
   metalMaterial,
   nightViewMaterial,
+  stormWindowMaterial,
   plasterMaterial,
   signMaterial,
   woodMaterial
@@ -124,18 +125,197 @@ function liftAlbedo(mat, tintHex) {
   return mat
 }
 
+// Open 8-side bead. `axis` 'z' is a rail along the carriage, 'y' a stile.
+// A full round reads the same from both walls. The old chamfer was a box lip
+// rotated in XY, so vertical stiles stayed square and the right-hand lip
+// pointed into the wall.
+function roundedRail(radius, length, axis) {
+  const geo = new THREE.CylinderGeometry(radius, radius, length, 8, 1, true)
+  if (axis === 'z') geo.rotateX(Math.PI / 2)
+  return geo
+}
+
+// View-space graze on a round bead: wood goes matte on the silhouette,
+// brass picks up a tighter highlight. Flat wall materials are left alone.
+function applyBeadWear(material, kind) {
+  const wood = kind === 'wood'
+  material.customProgramCacheKey = () => (wood ? 'l3-wood-bead-wear' : 'l3-brass-bead-wear')
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <roughnessmap_fragment>',
+      `#include <roughnessmap_fragment>
+      float graze = 1.0 - abs(normalize(vNormal).z);
+      float edge = smoothstep(${wood ? '0.28, 0.82' : '0.18, 0.7'}, graze);
+      roughnessFactor = mix(roughnessFactor, ${wood ? 'min(1.0, roughnessFactor + 0.2)' : 'roughnessFactor * 0.58'}, edge);`
+    )
+  }
+  material.normalScale.set(wood ? 1.35 : 1.65, wood ? 0.85 : 0.5)
+}
+
+// Recessed field with full-thickness rails. Origin matches BoxGeometry so the
+// existing wall placements still sit on the opening. Both faces step back, so
+// the same mesh works on the left and right walls.
+function framedPanel(thickness, height, depth) {
+  const rail = Math.min(0.07, height * 0.1)
+  const coreH = Math.max(0.04, height - rail * 2)
+  const core = new THREE.BoxGeometry(thickness * 0.62, coreH, depth * 0.996)
+  const top = new THREE.BoxGeometry(thickness, rail, depth)
+  top.translate(0, (height - rail) / 2, 0)
+  const bottom = new THREE.BoxGeometry(thickness, rail, depth)
+  bottom.translate(0, -(height - rail) / 2, 0)
+  const merged = mergeGeometries([core, top, bottom], false)
+  core.dispose()
+  top.dispose()
+  bottom.dispose()
+  return merged
+}
+
+// Cornice at the walls, a higher centre field, and two ribs along the aisle.
+// One mesh, same placement as the old flat slab. Level 3 only.
+function cofferedCeiling(length) {
+  const edge = new THREE.BoxGeometry(0.32, 0.1, length)
+  edge.translate(-WALL_X + 0.16, 0, 0)
+  const edgeR = edge.clone()
+  edgeR.translate(WALL_X * 2 - 0.32, 0, 0)
+  const field = new THREE.BoxGeometry(WALL_X * 2 - 0.56, 0.04, length)
+  field.translate(0, 0.025, 0)
+  const ribA = new THREE.BoxGeometry(0.05, 0.025, length)
+  ribA.translate(-0.9, -0.012, 0)
+  const ribB = ribA.clone()
+  ribB.translate(1.8, 0, 0)
+  const merged = mergeGeometries([edge, edgeR, field, ribA, ribB], false)
+  edge.dispose()
+  edgeR.dispose()
+  field.dispose()
+  ribA.dispose()
+  ribB.dispose()
+  return merged
+}
+
+// Flat polygon, thin in local X, tall in Y, wide in Z. Replaces a torn box.
+function irregularSheet(height, width) {
+  const shape = new THREE.Shape()
+  shape.moveTo(-width * 0.46, -height * 0.42)
+  shape.lineTo(width * 0.5, -height * 0.5)
+  shape.lineTo(width * 0.32, height * 0.12)
+  shape.lineTo(width * 0.08, height * 0.48)
+  shape.lineTo(-width * 0.4, height * 0.34)
+  shape.lineTo(-width * 0.5, -0.02)
+  shape.closePath()
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: false, steps: 1 })
+  geo.rotateY(Math.PI / 2)
+  geo.translate(-0.015, 0, 0)
+  return geo
+}
+
+function tornCeilingTile() {
+  const shape = new THREE.Shape()
+  shape.moveTo(-0.2, -0.52)
+  shape.lineTo(0.26, -0.38)
+  shape.lineTo(0.16, 0.12)
+  shape.lineTo(-0.04, 0.55)
+  shape.lineTo(-0.24, 0.18)
+  shape.closePath()
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.026, bevelEnabled: false, steps: 1 })
+  geo.rotateX(-Math.PI / 2)
+  return geo
+}
+
+function ceilingIBeam(length) {
+  const web = new THREE.BoxGeometry(length, 0.045, 0.035)
+  const flange = new THREE.BoxGeometry(length, 0.012, 0.1)
+  flange.translate(0, 0.026, 0)
+  const lower = new THREE.BoxGeometry(length, 0.012, 0.1)
+  lower.translate(0, -0.026, 0)
+  const merged = mergeGeometries([web, flange, lower], false)
+  web.dispose()
+  flange.dispose()
+  lower.dispose()
+  return merged
+}
+
+function addLuxuryCeilingRun(g, half, shared, name) {
+  const run = new THREE.Group()
+  run.name = name
+  const count = Math.max(2, Math.min(5, Math.round(half / 3.5)))
+  const reach = Math.max(2.4, half * 2 - 3.2)
+  const lip = new THREE.BoxGeometry(0.48, 0.018, 1.2)
+  lip.translate(0, 0.016, 0)
+  const tray = new THREE.BoxGeometry(0.32, 0.012, 0.9)
+  tray.translate(0, 0.004, 0)
+  const housingGeo = mergeGeometries([lip, tray], false)
+  lip.dispose()
+  tray.dispose()
+  const diffuserMat = new THREE.MeshStandardMaterial({
+    color: 0xf4e6cc,
+    emissive: 0xffc890,
+    emissiveIntensity: 0.36,
+    roughness: 0.62
+  })
+  const housings = new THREE.InstancedMesh(housingGeo, shared.brass, count)
+  const diffusers = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.008, 0.7), diffuserMat, count)
+  const dummy = new THREE.Object3D()
+  for (let i = 0; i < count; i += 1) {
+    const z = -reach / 2 + (i + 0.5) * (reach / count)
+    dummy.position.set(0, CARRIAGE_CEILING_Y - 0.042, z)
+    dummy.rotation.set(0, 0, 0)
+    dummy.scale.set(1, 1, 1)
+    dummy.updateMatrix()
+    housings.setMatrixAt(i, dummy.matrix)
+    dummy.position.y = CARRIAGE_CEILING_Y - 0.058
+    dummy.updateMatrix()
+    diffusers.setMatrixAt(i, dummy.matrix)
+  }
+  housings.instanceMatrix.needsUpdate = true
+  diffusers.instanceMatrix.needsUpdate = true
+  noCam(housings)
+  noCam(diffusers)
+  const panel = new THREE.Mesh(
+    tornCeilingTile(),
+    new THREE.MeshStandardMaterial({ color: 0x3a2c1e, roughness: 0.88, metalness: 0.06 })
+  )
+  panel.position.set(0.42, CARRIAGE_CEILING_Y - 0.04, reach * 0.18)
+  panel.rotation.z = 0.08
+  noCam(panel)
+  run.add(housings, diffusers, panel)
+  g.add(run)
+}
+
 function makeShared(damaged) {
   return {
-    steel: metalMaterial({ repeat: [3, 2], base: damaged ? 0x626870 : 0x6b7078, roughness: damaged ? 0.7 : 0.5, metalness: 0.85 }),
-    darkSteel: new THREE.MeshStandardMaterial({ color: damaged ? 0x282c34 : 0x23262c, roughness: 0.65, metalness: 0.6 }),
-    // Damaged: aged brass — brighter mid so door surrounds / frames read under storm light.
-    brass: new THREE.MeshStandardMaterial({
-      color: damaged ? 0xc4a052 : 0xb08d3f,
-      roughness: damaged ? 0.42 : 0.3,
-      metalness: damaged ? 0.88 : 0.9,
-      emissive: damaged ? 0x3a2810 : 0x000000,
-      emissiveIntensity: damaged ? 0.12 : 0
+    steel: metalMaterial({
+      repeat: [3, 2],
+      base: damaged ? 0x6a727c : 0x6b7078,
+      roughness: damaged ? 1 : 0.5,
+      metalness: 0.85,
+      seed: damaged ? 61 : 53,
+      wear: damaged ? 0.55 : 0
     }),
+    darkSteel: damaged
+      ? metalMaterial({
+        repeat: [2, 2],
+        base: 0x4a5460,
+        roughness: 1,
+        metalness: 0.72,
+        seed: 67,
+        wear: 0.8,
+        emissive: 0x141820,
+        emissiveIntensity: 0.07
+      })
+      : new THREE.MeshStandardMaterial({ color: 0x23262c, roughness: 0.65, metalness: 0.6 }),
+    // Damaged: worn brass with a small warm lift so ACES does not crush the grain.
+    brass: damaged
+      ? metalMaterial({
+        repeat: [2, 1],
+        base: 0xc4a052,
+        roughness: 1,
+        metalness: 0.82,
+        seed: 71,
+        wear: 0.75,
+        emissive: 0x3a2810,
+        emissiveIntensity: 0.1
+      })
+      : new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.3, metalness: 0.9 }),
     rivet: new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 0.5, metalness: 0.7 }),
     warmGlass: new THREE.MeshStandardMaterial({
       color: damaged ? 0xffe0b8 : 0xffe0ac,
@@ -145,6 +325,8 @@ function makeShared(damaged) {
     })
   }
 }
+
+const WRECK_WOOD_SHEEN = { clearcoat: 0.16, clearcoatRoughness: 0.5 }
 
 function wallMaterialFor(key, length, damaged) {
   const r = [Math.max(1, Math.round(length / 4)), 1]
@@ -157,7 +339,8 @@ function wallMaterialFor(key, length, damaged) {
           light: 0x6a9a90,
           dark: 0x2a4a44,
           roughness: 0.55,
-          seed: 41
+          seed: 41,
+          ...WRECK_WOOD_SHEEN
         }), 0xd2ebe6)
         : woodMaterial({ repeat: r, light: 0x8a5c33, dark: 0x452a16 })
     case 'security':
@@ -167,7 +350,8 @@ function wallMaterialFor(key, length, damaged) {
           light: 0x5f8f86,
           dark: 0x243e3a,
           roughness: 0.56,
-          seed: 43
+          seed: 43,
+          ...WRECK_WOOD_SHEEN
         }), 0xd0e8e2)
         : woodMaterial({ repeat: r, light: 0x7a4a26, dark: 0x3a2211 })
     case 'relay':
@@ -178,7 +362,8 @@ function wallMaterialFor(key, length, damaged) {
         light: 0x5f8f86,
         dark: 0x243e3a,
         roughness: 0.52,
-        seed: 47
+        seed: 47,
+        ...WRECK_WOOD_SHEEN
       }), 0xd4ebe4)
     case 'cargo':
       if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
@@ -188,7 +373,8 @@ function wallMaterialFor(key, length, damaged) {
         light: 0x5f8f86,
         dark: 0x243e3a,
         roughness: 0.52,
-        seed: 109
+        seed: 109,
+        ...WRECK_WOOD_SHEEN
       }), 0xd4ebe4)
     case 'freight':
       if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
@@ -201,7 +387,8 @@ function wallMaterialFor(key, length, damaged) {
         light: 0x5a8a80,
         dark: 0x1e3a34,
         roughness: 0.52,
-        seed: 97
+        seed: 97,
+        ...WRECK_WOOD_SHEEN
       }), 0xd2ebe4)
     case 'convergence':
       if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
@@ -211,7 +398,8 @@ function wallMaterialFor(key, length, damaged) {
         light: 0x5f8f86,
         dark: 0x243e3a,
         roughness: 0.52,
-        seed: 77
+        seed: 77,
+        ...WRECK_WOOD_SHEEN
       }), 0xd4ebe4)
     case 'vault':
       if (!damaged) return woodMaterial({ repeat: r, light: 0x6e3b1e, dark: 0x2e160a })
@@ -221,7 +409,8 @@ function wallMaterialFor(key, length, damaged) {
         light: 0x5a7a72,
         dark: 0x1c322e,
         roughness: 0.5,
-        seed: 61
+        seed: 61,
+        ...WRECK_WOOD_SHEEN
       }), 0xd8ebe4)
     case 'cab':
       // L3 Room 8: deep teal luxury panels (locomotive / emergency-brake car).
@@ -231,7 +420,8 @@ function wallMaterialFor(key, length, damaged) {
           light: 0x5a8a80,
           dark: 0x1e3a34,
           roughness: 0.5,
-          seed: 151
+          seed: 151,
+          ...WRECK_WOOD_SHEEN
         }), 0xd2ebe4)
         : metalMaterial({ repeat: r, base: 0x2e3339, roughness: 0.62, metalness: 0.78 })
     default:
@@ -247,7 +437,8 @@ function createWreckDoorMaterials() {
   if (wreckDoorMatsCache) return wreckDoorMatsCache
   wreckDoorMatsCache = {
     panel: liftAlbedo(woodMaterial({
-      repeat: [1, 2], light: 0x4a6e66, dark: 0x1e342e, roughness: 0.55, seed: 91
+      repeat: [1, 2], light: 0x4a6e66, dark: 0x1e342e, roughness: 0.55, seed: 91,
+      ...WRECK_WOOD_SHEEN
     }), 0xc8e0d8),
     glass: new THREE.MeshStandardMaterial({
       color: 0xa8c8d8,
@@ -384,7 +575,8 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
       light: 0x8a6440,
       dark: 0x3a2414,
       roughness: 0.46,
-      seed: 19
+      seed: 19,
+      planks: true
     }), 0xf0dcc4)
   } else if (key === 'vault' && damaged) {
     // Room 1: dark reflective plank aisle (collision/floor mesh unchanged).
@@ -393,7 +585,8 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
       light: 0x7a5234,
       dark: 0x2e1a10,
       roughness: 0.42,
-      seed: 67
+      seed: 67,
+      planks: true
     }), 0xead2b6)
   } else if (key === 'convergence' && damaged) {
     // Room 2: warm plank deck (same mesh/collision — visual only).
@@ -402,7 +595,8 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
       light: 0x8a6440,
       dark: 0x3a2414,
       roughness: 0.44,
-      seed: 79
+      seed: 79,
+      planks: true
     }), 0xf0dcc4)
   } else if (key === 'mechanical' && damaged) {
     // Room 3: dark polished wood aisle under floating trunks.
@@ -411,7 +605,8 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
       light: 0x7a5234,
       dark: 0x2e1a10,
       roughness: 0.44,
-      seed: 101
+      seed: 101,
+      planks: true
     }), 0xead2b6)
   } else if (key === 'cargo' && damaged) {
     // Room 4: dark wood under the track/walkway overlay.
@@ -420,7 +615,8 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
       light: 0x7a5234,
       dark: 0x2e1a10,
       roughness: 0.44,
-      seed: 111
+      seed: 111,
+      planks: true
     }), 0xead2b6)
   } else if (key === 'relay' && damaged) {
     // Room 5: dark polished plank aisle under the dash-door run.
@@ -429,7 +625,8 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
       light: 0x7a5234,
       dark: 0x2e1a10,
       roughness: 0.42,
-      seed: 121
+      seed: 121,
+      planks: true
     }), 0xead2b6)
   } else if (key === 'security' && damaged) {
     // Room 6: dark polished wood under / around the freeze-tile gap.
@@ -438,7 +635,8 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
       light: 0x7a5234,
       dark: 0x2e1a10,
       roughness: 0.42,
-      seed: 131
+      seed: 131,
+      planks: true
     }), 0xead2b6)
   } else if (key === 'cab' && damaged) {
     // Room 8: dark polished plank deck toward the emergency brake.
@@ -447,7 +645,8 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
       light: 0x7a5234,
       dark: 0x2e1a10,
       roughness: 0.42,
-      seed: 153
+      seed: 153,
+      planks: true
     }), 0xead2b6)
   } else if (['passenger', 'security', 'relay', 'cargo', 'mechanical', 'convergence', 'freight', 'vault'].includes(key) && !damaged) {
     floorMat = woodMaterial({ repeat: [2, Math.round(length / 2)], light: 0x6b4526, dark: 0x2e1a0c })
@@ -537,7 +736,14 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
     ceilingMat = wallMat
   }
   if (hasCeiling) {
-    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.1, length), ceilingMat)
+    const coffer = damaged && (
+      key === 'vault' || key === 'convergence' || key === 'mechanical' || key === 'cargo'
+      || key === 'relay' || key === 'security' || key === 'passenger' || key === 'cab'
+    )
+    const ceiling = new THREE.Mesh(
+      coffer ? cofferedCeiling(length) : new THREE.BoxGeometry(WALL_X * 2, 0.1, length),
+      ceilingMat
+    )
     ceiling.name = `ceiling-${key}`
     ceiling.position.y = CARRIAGE_CEILING_Y
     g.add(ceiling)
@@ -563,14 +769,34 @@ function nearSite(sites, z, side, span = 1.35) {
   return sites.some((c) => Math.abs(z - c.z) < span && c.side === side)
 }
 
-// Level-3 passenger/cab: wall bands + pillars leave real openings so the
-// storm and exterior wreckage read through the windows. Frames only — glass
-// is gone. Player collision still uses carriage-bounds, not these meshes.
+// Pier centres between the canonical Level 3 bays, including both end piers.
+// Decorative meshes that used a damage-site Z were landing on the glass.
+function standardPierCenters(half) {
+  const paneD = 2.49
+  const centers = []
+  let cursor = -half
+  for (let z = -half + 2.4; z <= half - 2.4 + 0.01; z += 3.4) {
+    const edge = z - paneD / 2
+    if (edge - cursor > 0.2) centers.push((cursor + edge) / 2)
+    cursor = z + paneD / 2
+  }
+  if (half - cursor > 0.2) centers.push((cursor + half) / 2)
+  return centers
+}
+
+// Level-3 wall: lower and upper bands plus piers leave window openings.
+// Glass is recessed in those openings with a brass surround. Collision
+// still uses carriage-bounds, not these meshes.
 function addBlownViewports(g, half, key, shared) {
   const wallMat = wallMaterialFor(key, half * 2, true)
-  const paneH = key === 'cab' ? 0.92 : 1.12
-  const paneD = key === 'cab' ? 1.48 : 1.68
-  const paneY = key === 'cab' ? 1.58 : 1.48
+  // Cab and door lights stay the smaller openings. Standard glass is ~27%
+  // larger in both directions (1.46 × 2.14 m). Piers stay about 0.9 m.
+  const cab = key === 'cab'
+  const paneH = cab ? 0.92 : 1.66
+  const paneD = cab ? 1.48 : 2.49
+  const paneY = cab ? 1.58 : 1.64
+  const glassFillH = cab ? 0.78 : 0.88
+  const glassFillD = cab ? 0.74 : 0.86
   const zs = []
   if (key === 'cab') {
     zs.push(0.6)
@@ -582,69 +808,201 @@ function addBlownViewports(g, half, key, shared) {
   const lintelY = paneY + paneH / 2
   const lowerH = Math.max(0.2, sillY)
   const upperH = Math.max(0.2, CARRIAGE_CEILING_Y - lintelY)
-  // Subtle cyan time-leak on glass shards — keep opacity/emissive low (not neon).
-  const shardMat = new THREE.MeshStandardMaterial({
-    color: 0x4a5560,
-    emissive: 0x38bdf8,
-    emissiveIntensity: 0.12,
-    roughness: 0.08,
-    metalness: 0.18,
-    transparent: true,
-    opacity: 0.09,
-    depthWrite: false
-  })
-  const shardCount = zs.length * 2
-  const shards = new THREE.InstancedMesh(new THREE.BoxGeometry(0.016, 0.14, 0.12), shardMat, shardCount)
   const dummy = new THREE.Object3D()
-  let shardI = 0
 
   for (const s of [-1, 1]) {
     const x = s * WALL_X
-    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.12, lowerH, half * 2), wallMat)
+    const lower = new THREE.Mesh(framedPanel(0.12, lowerH, half * 2), wallMat)
     lower.name = `wall-band-${key}-lower`
     lower.position.set(x, lowerH / 2, 0)
     lower.receiveShadow = true
     g.add(lower)
-    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.12, upperH, half * 2), wallMat)
+    const upper = new THREE.Mesh(framedPanel(0.12, upperH, half * 2), wallMat)
     upper.name = `wall-band-${key}-upper`
     upper.position.set(x, lintelY + upperH / 2, 0)
     upper.receiveShadow = true
     g.add(upper)
 
+  }
+  const piers = []
+  for (const s of [-1, 1]) {
     let cursor = -half
     for (const z of zs) {
       const a = z - paneD / 2
       const span = a - cursor
-      if (span > 0.06) {
-        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.12, paneH, span), wallMat)
-        pillar.position.set(x, paneY, cursor + span / 2)
-        pillar.receiveShadow = true
-        g.add(pillar)
-      }
-      const frame = new THREE.Mesh(
-        new THREE.BoxGeometry(0.05, paneH + 0.1, paneD + 0.12),
-        shared.brass
-      )
-      frame.position.set(s * (WALL_X - 0.01), paneY, z)
-      g.add(frame)
-      dummy.position.set(s * (WALL_X - 0.02), paneY - 0.28, z + paneD * 0.28)
-      dummy.rotation.set(0.2, 0, s * 0.55)
-      dummy.updateMatrix()
-      shards.setMatrixAt(shardI++, dummy.matrix)
+      if (span > 0.06) piers.push({ x: s * WALL_X, z: cursor + span / 2, span })
       cursor = z + paneD / 2
     }
     const tail = half - cursor
-    if (tail > 0.06) {
-      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.12, paneH, tail), wallMat)
-      pillar.position.set(x, paneY, cursor + tail / 2)
-      pillar.receiveShadow = true
-      g.add(pillar)
-    }
+    if (tail > 0.06) piers.push({ x: s * WALL_X, z: cursor + tail / 2, span: tail })
   }
-  shards.count = shardI
-  shards.instanceMatrix.needsUpdate = true
-  noCam(shards)
-  g.add(shards)
+  if (piers.length) {
+    const pierMesh = new THREE.InstancedMesh(framedPanel(0.12, paneH, 1), wallMat, piers.length)
+    pierMesh.name = `wall-piers-${key}`
+    pierMesh.receiveShadow = true
+    piers.forEach((pier, i) => {
+      dummy.position.set(pier.x, paneY, pier.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(1, 1, pier.span)
+      dummy.updateMatrix()
+      pierMesh.setMatrixAt(i, dummy.matrix)
+    })
+    pierMesh.instanceMatrix.needsUpdate = true
+    g.add(pierMesh)
+  }
+
+  // Nested reveal: wood casing, brass bevel, dark seal, then glass set
+  // back in the opening. Damage is hashed per bay so cars do not repeat.
+  const openings = []
+  const salt = key.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
+  for (const s of [-1, 1]) {
+    zs.forEach((z, i) => {
+      const h = Math.abs(Math.sin((salt + i * 19 + s * 11) * 12.9898) * 43758.5453) % 1
+      const kind = h < 0.48 ? 0 : h < 0.74 ? 1 : h < 0.9 ? 2 : 3
+      openings.push({ s, z, kind, h })
+    })
+  }
+  if (!openings.length) return
+  const glassMat = stormWindowMaterial({ seed: 11 + salt })
+  const sealMat = new THREE.MeshStandardMaterial({ color: 0x161412, roughness: 0.92, metalness: 0.04 })
+  const crackMat = new THREE.MeshStandardMaterial({
+    color: 0xc5d0d8, roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0.45, depthWrite: false
+  })
+  const n = openings.length
+  const glass = new THREE.InstancedMesh(new THREE.BoxGeometry(0.012, paneH * glassFillH, paneD * glassFillD), glassMat, n)
+  glass.name = `wreck-window-glass-${key}`
+  const phases = new Float32Array(n)
+  const woodTrim = wallMat.clone()
+  const brassTrim = shared.brass.clone()
+  applyBeadWear(woodTrim, 'wood')
+  applyBeadWear(brassTrim, 'brass')
+  const railR = cab ? 0.02 : 0.028
+  const stileR = cab ? 0.016 : 0.022
+  const beadR = cab ? 0.008 : 0.011
+  const brassSpanZ = paneD * (glassFillD * 0.5 + 0.04)
+  const brassSpanY = paneH * (glassFillH * 0.5 + 0.035)
+  const woodH = new THREE.InstancedMesh(roundedRail(railR, paneD + stileR * 0.7, 'z'), woodTrim, n * 2)
+  const woodV = new THREE.InstancedMesh(roundedRail(stileR, paneH + railR * 0.7, 'y'), woodTrim, n * 2)
+  const brassH = new THREE.InstancedMesh(roundedRail(beadR, brassSpanZ * 2 + beadR * 0.7, 'z'), brassTrim, n * 2)
+  const brassV = new THREE.InstancedMesh(roundedRail(beadR, brassSpanY * 2 + beadR * 0.7, 'y'), brassTrim, n * 2)
+  const sealH = new THREE.InstancedMesh(new THREE.BoxGeometry(0.022, 0.016, paneD * glassFillD), sealMat, n * 2)
+  const sealV = new THREE.InstancedMesh(new THREE.BoxGeometry(0.022, paneH * glassFillH, 0.016), sealMat, n * 2)
+  const cracks = new THREE.InstancedMesh(new THREE.BoxGeometry(0.008, paneH * 0.55, 0.01), crackMat, n * 2)
+  const splinters = new THREE.InstancedMesh(new THREE.BoxGeometry(0.03, 0.36, 0.04), shared.darkSteel, n)
+  woodH.name = `wreck-window-casing-${key}`
+  sealH.name = `wreck-window-seal-${key}`
+  cracks.name = `wreck-window-crack-${key}`
+  let woodHI = 0
+  let woodVI = 0
+  let brassHI = 0
+  let brassVI = 0
+  let crackI = 0
+  const hide = () => {
+    dummy.position.set(0, -30, 0)
+    dummy.rotation.set(0, 0, 0)
+    dummy.scale.set(0.001, 0.001, 0.001)
+    dummy.updateMatrix()
+  }
+  openings.forEach((open, index) => {
+    const { s, z, kind, h } = open
+    phases[index] = (h * 0.71 + (s < 0 ? 0.13 : 0.47) + index * 0.09) % 1
+    const glassX = s * (WALL_X + 0.03)
+    const sealX = s * (WALL_X - 0.005)
+    const brassX = s * (WALL_X - 0.05)
+    const woodX = s * (WALL_X - 0.085)
+    const corner = h > 0.6 ? 1 : -1
+    dummy.rotation.set(0, 0, 0)
+    dummy.scale.set(1, 1, 1)
+    // Kind 2 used to shrink the pane to 0.38 × 0.34 and drop one stile.
+    // That left a full wall opening with a small bright rectangle, which
+    // read as a different window size. Damage stays on the cracks and splinter.
+    dummy.position.set(glassX, paneY, z)
+    dummy.updateMatrix()
+    glass.setMatrixAt(index, dummy.matrix)
+
+    dummy.scale.set(1, 1, 1)
+    dummy.rotation.set(0, 0, 0)
+    for (const edge of [-1, 1]) {
+      dummy.position.set(sealX, paneY + edge * paneH * glassFillH * 0.5, z)
+      dummy.updateMatrix()
+      sealH.setMatrixAt(index * 2 + (edge < 0 ? 0 : 1), dummy.matrix)
+      dummy.position.set(sealX, paneY, z + edge * paneD * glassFillD * 0.5)
+      dummy.updateMatrix()
+      sealV.setMatrixAt(index * 2 + (edge < 0 ? 0 : 1), dummy.matrix)
+    }
+
+    for (const edge of [-1, 1]) {
+      const bent = kind === 3 && edge === corner
+      dummy.scale.set(1, 1, 1)
+      dummy.rotation.set(0, 0, bent ? s * 0.22 : 0)
+      dummy.position.set(edge < 0 ? s * (WALL_X - 0.13) : woodX, paneY + edge * paneH * 0.5, z)
+      if (edge < 0) dummy.scale.set(1.55, 0.62, 1)
+      dummy.updateMatrix()
+      woodH.setMatrixAt(woodHI++, dummy.matrix)
+      dummy.scale.set(1, 1, 1)
+      dummy.position.set(brassX, paneY + edge * paneH * (glassFillH * 0.5 + 0.035), z)
+      dummy.rotation.set(0, 0, bent ? s * 0.28 : 0)
+      dummy.updateMatrix()
+      brassH.setMatrixAt(brassHI++, dummy.matrix)
+
+      dummy.rotation.set(bent ? s * 0.55 : 0, 0, bent ? s * 0.18 : 0)
+      dummy.position.set(woodX + (bent ? -s * 0.03 : 0), paneY + (bent ? 0.08 : 0), z + edge * paneD * 0.5)
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      woodV.setMatrixAt(woodVI++, dummy.matrix)
+      dummy.scale.set(1, 1, 1)
+      dummy.position.set(brassX + (bent ? -s * 0.02 : 0), paneY, z + edge * paneD * (glassFillD * 0.5 + 0.04))
+      dummy.updateMatrix()
+      brassV.setMatrixAt(brassVI++, dummy.matrix)
+      dummy.rotation.set(0, 0, 0)
+    }
+
+    if (kind === 1 || kind === 2) {
+      for (const k of [0, 1]) {
+        dummy.position.set(s * (WALL_X - 0.02), paneY + (k ? 0.08 : -0.05), z + (k ? 0.12 : -0.08))
+        dummy.rotation.set(0, 0, 0.4 + k * 0.7 + h)
+        dummy.scale.set(1, 0.7 + h * 0.4, 1)
+        dummy.updateMatrix()
+        cracks.setMatrixAt(crackI++, dummy.matrix)
+      }
+    }
+    if (kind === 2 || kind === 3) {
+      dummy.position.set(woodX - s * 0.02, paneY + paneH * 0.18, z + corner * paneD * 0.46)
+      dummy.rotation.set(s * 0.8, 0.2, s * (0.4 + h))
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      splinters.setMatrixAt(index, dummy.matrix)
+    } else {
+      hide()
+      splinters.setMatrixAt(index, dummy.matrix)
+    }
+  })
+  while (crackI < cracks.count) {
+    hide()
+    cracks.setMatrixAt(crackI++, dummy.matrix)
+  }
+  while (brassHI < brassH.count) {
+    hide()
+    brassH.setMatrixAt(brassHI++, dummy.matrix)
+  }
+  while (brassVI < brassV.count) {
+    hide()
+    brassV.setMatrixAt(brassVI++, dummy.matrix)
+  }
+  glass.geometry.setAttribute('aBayPhase', new THREE.InstancedBufferAttribute(phases, 1))
+  glass.onBeforeRender = () => {
+    const time = performance.now() * 0.001
+    const scroll = (time * 0.062) % 1
+    if (glassMat.map) glassMat.map.offset.x = scroll
+    if (glassMat.emissiveMap) glassMat.emissiveMap.offset.x = scroll
+    const shader = glassMat.userData.stormShader
+    if (shader) shader.uniforms.uStormTime.value = time
+  }
+  for (const mesh of [glass, woodH, woodV, brassH, brassV, sealH, sealV, cracks, splinters]) {
+    mesh.instanceMatrix.needsUpdate = true
+    noCam(mesh)
+    g.add(mesh)
+  }
 }
 
 function addWreckage(g, half, shared, fx, key) {
@@ -664,26 +1022,34 @@ function addWreckage(g, half, shared, fx, key) {
 
   // Torn lining hinged off the wall at the ceiling joint — still wall-aligned.
   // On cars with blown viewports, hang it inside the opening instead of filling it.
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, openView ? 0.82 : 1.45, openView ? 0.7 : 1.45), panelMat, n), n, (d, i) => {
+  g.add(scatterInstances(new THREE.InstancedMesh(irregularSheet(openView ? 0.82 : 1.45, openView ? 0.7 : 1.45), panelMat, n), n, (d, i) => {
     const c = sites[i]
-    d.position.set(c.side * (WALL_X - (openView ? 0.48 : 0.06)), openView ? 2.08 : 1.45, c.z)
+    // The -Z left-wall site used to sit on the first window centre, so that
+    // pane was covered and read as a much smaller window. Park the sheet on
+    // the end pier, clear of the glass.
+    const panelZ = openView ? c.z + (c.z < 0 ? -1.7 : 1.7) : c.z
+    d.position.set(c.side * (WALL_X - (openView ? 0.48 : 0.06)), openView ? 2.08 : 1.45, panelZ)
     d.rotation.set(0, 0, c.side * (openView ? 0.18 : 0.14))
+    d.scale.set(1, 0.86 + (i % 3) * 0.1, 0.78 + (i % 2) * 0.18)
   }))
 
-  // Ceiling tile still attached at the wall-roof corner, sagging inward a little.
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.03, 1.15), panelMat, n), n, (d, i) => {
+  // Torn ceiling piece still attached at the wall-roof corner.
+  g.add(scatterInstances(new THREE.InstancedMesh(tornCeilingTile(), panelMat, n), n, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * 1.2, CARRIAGE_CEILING_Y - 0.06, c.z)
-    d.rotation.set(0, 0, c.side * 0.22)
+    d.rotation.set(0.04 * c.side, 0.15 * (i % 2 ? 1 : -1), c.side * 0.22)
+    d.scale.set(0.85 + (i % 2) * 0.2, 1, 0.8 + (i % 3) * 0.12)
   }))
 
-  g.add(scatterInstances(new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 1.35), shared.steel, n), n, (d, i) => {
+  const pipe = new THREE.CylinderGeometry(0.032, 0.032, 1.35, 6)
+  pipe.rotateX(Math.PI / 2)
+  g.add(scatterInstances(new THREE.InstancedMesh(pipe, shared.steel, n), n, (d, i) => {
     const c = sites[i]
     d.position.set(c.side * (WALL_X - 0.16), CARRIAGE_CEILING_Y - 0.12, c.z)
     d.rotation.set(0, 0, c.side * 0.05)
   }))
 
-  const ribGeo = new THREE.BoxGeometry(WALL_X * 2 - 0.55, 0.08, 0.12)
+  const ribGeo = ceilingIBeam(WALL_X * 2 - 0.55)
   for (const c of sites) {
     const rib = new THREE.Mesh(ribGeo, shared.steel)
     rib.position.set(0, CARRIAGE_CEILING_Y - 0.02, c.z)
@@ -813,10 +1179,10 @@ function dressDamagedCargo(g, half, shared, fx) {
 }
 
 // Low-poly antique clock face (decorative only — no gameplay).
-function addCargoAntiqueClock(g, x, y, z, facing = 1) {
+function addCargoAntiqueClock(g, x, y, z, facing = 1, brass = null) {
   const clock = new THREE.Group()
   clock.name = 'cargo-antique-clock'
-  const brass = new THREE.MeshStandardMaterial({
+  const rimMat = brass ?? new THREE.MeshStandardMaterial({
     color: 0xc4a052, roughness: 0.42, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.12
   })
   const face = new THREE.Mesh(
@@ -824,16 +1190,16 @@ function addCargoAntiqueClock(g, x, y, z, facing = 1) {
     new THREE.MeshStandardMaterial({ color: 0xf2ebe0, roughness: 0.55, metalness: 0.02 })
   )
   face.position.z = 0.02
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.035, 6, 20), brass)
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.035, 6, 20), rimMat)
   const cyan = new THREE.Mesh(
     new THREE.TorusGeometry(0.38, 0.018, 6, 20),
     new THREE.MeshStandardMaterial({
       color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.85, roughness: 0.35
     })
   )
-  const handH = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.16, 0.01), brass)
+  const handH = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.16, 0.01), rimMat)
   handH.position.set(0, 0.06, 0.03)
-  const handM = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.22, 0.01), brass)
+  const handM = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.22, 0.01), rimMat)
   handM.position.set(0.04, 0.08, 0.03)
   handM.rotation.z = -0.7
   clock.add(face, rim, cyan, handH, handM)
@@ -848,15 +1214,7 @@ function addCargoAntiqueClock(g, x, y, z, facing = 1) {
 function dressDamagedCargoLuxury(g, half, shared, fx) {
   addBlownViewports(g, half, 'cargo', shared)
 
-  const strip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
-    new THREE.MeshStandardMaterial({
-      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
-    })
-  )
-  strip.name = 'cargo-ceiling-strip'
-  strip.position.y = CARRIAGE_CEILING_Y - 0.06
-  g.add(strip)
+  addLuxuryCeilingRun(g, half, shared, 'cargo-ceiling-strip')
 
   const rupture = new THREE.Mesh(
     new THREE.BoxGeometry(0.22, 0.04, half * 0.85),
@@ -871,7 +1229,7 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
   for (const s of [-1, 1]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
     rail.name = 'cargo-wall-rail'
-    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    rail.position.set(s * (WALL_X - 0.22), 0.68, 0)
     noCam(rail)
     g.add(rail)
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
@@ -930,8 +1288,8 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
   })
 
   // Wall clock + faint second clock deeper in the rupture (cheap geometry).
-  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, -half * 0.15, 1)
-  addCargoAntiqueClock(g, WALL_X + 0.55, 1.85, half * 0.35, -1)
+  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, -half * 0.15, 1, shared.brass)
+  addCargoAntiqueClock(g, WALL_X + 0.55, 1.85, half * 0.35, -1, shared.brass)
 
   // Sparse floating luggage outside the hull (storm read — not walkable).
   const floatN = 6
@@ -983,15 +1341,7 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
 function dressDamagedSecurity(g, half, shared, fx) {
   addBlownViewports(g, half, 'security', shared)
 
-  const strip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
-    new THREE.MeshStandardMaterial({
-      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
-    })
-  )
-  strip.name = 'security-ceiling-strip'
-  strip.position.y = CARRIAGE_CEILING_Y - 0.06
-  g.add(strip)
+  addLuxuryCeilingRun(g, half, shared, 'security-ceiling-strip')
 
   const rupture = new THREE.Mesh(
     new THREE.BoxGeometry(0.22, 0.04, half * 0.9),
@@ -1009,7 +1359,7 @@ function dressDamagedSecurity(g, half, shared, fx) {
   for (const s of [-1, 1]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
     rail.name = 'security-wall-rail'
-    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    rail.position.set(s * (WALL_X - 0.22), 0.68, 0)
     noCam(rail)
     g.add(rail)
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
@@ -1024,16 +1374,18 @@ function dressDamagedSecurity(g, half, shared, fx) {
     g.add(cyan)
   }
 
-  // Luxury benches at intact ends — centre clear for freeze tiles. Decorative.
+  // Benches sit on the end piers. The old ±(half-3.2) centres landed on the
+  // first and last panes and hid part of the glass. Centre stays clear.
+  const piers = standardPierCenters(half)
   addLuxuryWallBenches(g, {
     namePrefix: 'security-bench',
-    zs: [-half + 3.2, half - 3.2],
+    zs: [piers[0], piers[piers.length - 1]],
     wallX: WALL_X,
     wreckChance: 0.32
   })
 
-  // Antique clock on the approach side (reuse Room 4 helper).
-  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, half * 0.55, 1)
+  // Clock on an interior pier. half*0.55 sat inside the forward-left pane.
+  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, piers[piers.length - 2], 1, shared.brass)
 
   // A few static floating panels in the exterior void (not walkable).
   const panelWood = liftAlbedo(woodMaterial({
@@ -1057,7 +1409,7 @@ function dressDamagedSecurity(g, half, shared, fx) {
   const glassMat = new THREE.MeshStandardMaterial({
     color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 1.35, roughness: 0.35
   })
-  for (const z of [-half + 4.2, half - 4.2]) {
+  for (const z of [piers[1], piers[Math.max(1, piers.length - 3)]]) {
     for (const s of [-1, 1]) {
       const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 8), glassMat)
       shade.name = 'security-sconce'
@@ -1074,7 +1426,7 @@ function dressDamagedSecurity(g, half, shared, fx) {
   for (const c of damageSites(half)) {
     const tear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.1, 0.7), cyanTear)
     tear.name = 'security-chrono-tear'
-    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z)
+    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z + (c.z < 0 ? -1.7 : 1.7))
     tear.rotation.z = c.side * 0.1
     noCam(tear)
     g.add(tear)
@@ -1128,7 +1480,7 @@ function dressDamagedPassenger(g, half, shared, fx) {
   for (const s of [-1, 1]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
     rail.name = 'passenger-wall-rail'
-    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    rail.position.set(s * (WALL_X - 0.22), 0.68, 0)
     noCam(rail)
     g.add(rail)
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
@@ -1230,7 +1582,7 @@ function dressDamagedPassenger(g, half, shared, fx) {
   for (const c of sites) {
     const tear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.2, 0.75), cyanTear)
     tear.name = 'passenger-chrono-tear'
-    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z)
+    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z + (c.z < 0 ? -1.7 : 1.7))
     tear.rotation.z = c.side * 0.12
     noCam(tear)
     g.add(tear)
@@ -1333,17 +1685,7 @@ function dressPassenger(g, half, shared, damaged, fx) {
   addBlownViewports(g, half, 'passenger', shared)
   addWreckedSeatBays(g, half)
 
-  const strip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.4, 0.05, half * 2 - 2),
-    new THREE.MeshStandardMaterial({
-      color: 0xffe2b8,
-      emissive: 0xffb060,
-      emissiveIntensity: 1.15
-    })
-  )
-  strip.name = 'passenger-ceiling-strip'
-  strip.position.y = CARRIAGE_CEILING_Y - 0.06
-  g.add(strip)
+  addLuxuryCeilingRun(g, half, shared, 'passenger-ceiling-strip')
   // Passenger identity: warmer aisle fills against violet storm veils/rupture.
   for (const z of [-half * 0.5, half * 0.5]) {
     const l = new THREE.PointLight(0xffb888, 9.0, 6.8, 2)
@@ -1833,15 +2175,7 @@ function dressRelay(g, half, shared, damaged, fx) {
 function dressDamagedRelayLuxury(g, half, shared, fx) {
   addBlownViewports(g, half, 'relay', shared)
 
-  const strip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
-    new THREE.MeshStandardMaterial({
-      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
-    })
-  )
-  strip.name = 'relay-ceiling-strip'
-  strip.position.y = CARRIAGE_CEILING_Y - 0.06
-  g.add(strip)
+  addLuxuryCeilingRun(g, half, shared, 'relay-ceiling-strip')
 
   const rupture = new THREE.Mesh(
     new THREE.BoxGeometry(0.22, 0.04, half * 0.95),
@@ -1859,7 +2193,7 @@ function dressDamagedRelayLuxury(g, half, shared, fx) {
   for (const s of [-1, 1]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
     rail.name = 'relay-wall-rail'
-    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    rail.position.set(s * (WALL_X - 0.22), 0.68, 0)
     noCam(rail)
     g.add(rail)
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
@@ -1897,7 +2231,7 @@ function dressDamagedRelayLuxury(g, half, shared, fx) {
   })
 
   // Antique clock on the approach wall (reuse Room 4 helper).
-  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, half * 0.55, 1)
+  addCargoAntiqueClock(g, -(WALL_X - 0.2), 2.05, half * 0.55, 1, shared.brass)
 
   // Sparse floating luggage in the exterior void (static, non-interactive).
   const trunkWood = liftAlbedo(woodMaterial({
@@ -1938,7 +2272,7 @@ function dressDamagedRelayLuxury(g, half, shared, fx) {
   for (const c of damageSites(half)) {
     const tear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.1, 0.7), cyanTear)
     tear.name = 'relay-chrono-tear'
-    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z)
+    tear.position.set(c.side * (WALL_X - 0.45), 1.4, c.z + (c.z < 0 ? -1.7 : 1.7))
     tear.rotation.z = c.side * 0.1
     noCam(tear)
     g.add(tear)
@@ -2138,22 +2472,14 @@ function dressMechanical(g, half, shared, damaged, fx) {
 function dressDamagedMechanicalLuxury(g, half, shared, fx) {
   addBlownViewports(g, half, 'mechanical', shared)
 
-  const strip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
-    new THREE.MeshStandardMaterial({
-      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
-    })
-  )
-  strip.name = 'mechanical-ceiling-strip'
-  strip.position.y = CARRIAGE_CEILING_Y - 0.06
-  g.add(strip)
+  addLuxuryCeilingRun(g, half, shared, 'mechanical-ceiling-strip')
 
   addMechanicalReference(g, { wallX: WALL_X, brass: shared.brass, darkSteel: shared.darkSteel })
 
   for (const s of [-1, 1]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
     rail.name = 'mechanical-wall-rail'
-    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    rail.position.set(s * (WALL_X - 0.22), 0.68, 0)
     noCam(rail)
     g.add(rail)
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
@@ -2214,15 +2540,7 @@ function addConvergenceFlickerLights(g, half, fx) {
 function dressDamagedConvergence(g, half, shared, fx) {
   addBlownViewports(g, half, 'convergence', shared)
 
-  const strip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.05, half * 2 - 2.5),
-    new THREE.MeshStandardMaterial({
-      color: 0xffe2b8, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35
-    })
-  )
-  strip.name = 'convergence-ceiling-strip'
-  strip.position.y = CARRIAGE_CEILING_Y - 0.06
-  g.add(strip)
+  addLuxuryCeilingRun(g, half, shared, 'convergence-ceiling-strip')
 
   // Violet accent band — temporal rupture cue (emissive mesh, not a PointLight).
   const rupture = new THREE.Mesh(
@@ -2239,7 +2557,7 @@ function dressDamagedConvergence(g, half, shared, fx) {
   for (const s of [-1, 1]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 3), shared.brass)
     rail.name = 'convergence-wall-rail'
-    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    rail.position.set(s * (WALL_X - 0.22), 0.68, 0)
     noCam(rail)
     g.add(rail)
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 2), shared.brass)
@@ -2626,17 +2944,7 @@ function dressVault(g, half, shared, damaged, fx) {
 
   if (damaged) {
     // Warm amber aisle fill (retune of existing strip + PointLight — no new lights).
-    const strip = new THREE.Mesh(
-      new THREE.BoxGeometry(0.35, 0.05, half * 2 - 2),
-      new THREE.MeshStandardMaterial({
-        color: 0xffe2b8,
-        emissive: 0xffb060,
-        emissiveIntensity: 1.15
-      })
-    )
-    strip.name = 'vault-ceiling-strip'
-    strip.position.y = CARRIAGE_CEILING_Y - 0.06
-    g.add(strip)
+    addLuxuryCeilingRun(g, half, shared, 'vault-ceiling-strip')
     // Short violet accent over the temporal fracture end (same mesh budget).
     const ruptureStrip = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.04, 2.4),
@@ -2663,7 +2971,7 @@ function dressVault(g, half, shared, damaged, fx) {
         shared.brass
       )
       rail.name = 'vault-wall-rail'
-      rail.position.set(s * (WALL_X - 0.2), 1.05, 0)
+      rail.position.set(s * (WALL_X - 0.2), 0.68, 0)
       noCam(rail)
       g.add(rail)
       const edge = new THREE.Mesh(
@@ -2733,7 +3041,7 @@ function dressDamagedCabLuxury(g, half, shared, fx) {
   for (const s of [-1, 1]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, half * 2 - 1.2), shared.brass)
     rail.name = 'cab-wall-rail'
-    rail.position.set(s * (WALL_X - 0.22), 1.05, 0)
+    rail.position.set(s * (WALL_X - 0.22), 0.68, 0)
     noCam(rail)
     g.add(rail)
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, half * 2 - 0.8), shared.brass)
@@ -2839,8 +3147,8 @@ function dressDamagedCabLuxury(g, half, shared, fx) {
       d.rotation.set(0.1 * s, 0.5 * s, s * 0.4)
     }
   ))
-  addCargoAntiqueClock(g, -(WALL_X + 1.65), 1.35, half * 0.15, -1)
-  addCargoAntiqueClock(g, WALL_X + 1.7, 0.95, -half * 0.35, 1)
+  addCargoAntiqueClock(g, -(WALL_X + 1.65), 1.35, half * 0.15, -1, shared.brass)
+  addCargoAntiqueClock(g, WALL_X + 1.7, 0.95, -half * 0.35, 1, shared.brass)
 
   // Wall-hugging seat scraps (keep |x| high).
   const seatFrag = new THREE.MeshStandardMaterial({

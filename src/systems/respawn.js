@@ -52,11 +52,12 @@ export function createRespawnSystem({
     hud?.setLives?.(lives, DEFAULT_LIVES)
   }
 
-  function setCheckpoint(position, yaw = 0, { restore = () => {} } = {}) {
+  function setCheckpoint(position, yaw = 0, { restore = () => {}, afterTimeRestore = () => {} } = {}) {
     checkpoint = {
       position: new THREE.Vector3().copy(position),
       yaw,
       restore,
+      afterTimeRestore,
       timeState: timeSystem?.captureCheckpointState?.()
     }
   }
@@ -80,6 +81,12 @@ export function createRespawnSystem({
       timeSystem?.resetForCheckpoint?.(checkpoint.timeState)
     } catch (error) {
       console.error('respawn: time checkpoint cleanup failed after player was restored', error)
+    }
+
+    try {
+      checkpoint.afterTimeRestore?.()
+    } catch (error) {
+      console.error('respawn: level time cleanup failed after player was restored', error)
     }
 
     // Restore the camera after the level callback has restored moving geometry

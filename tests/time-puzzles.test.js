@@ -201,9 +201,9 @@ test('Mechanical: machines spring on approach, REWIND parks them again, and they
   delete globalThis.window
 })
 
-test('Level 2 checkpoints restore collectible abilities and the active section repeatedly', () => {
+test('Level 2 checkpoints keep collected abilities while restoring the active section', () => {
   installCanvasStub()
-  const { scene, player, hud, time, tick } = setup()
+  const { scene, player, hud, messages, time, tick } = setup()
   const interactions = new Map()
   const camera = { snap() {}, setYaw() {} }
   const respawn = createRespawnSystem({ player, hud, camera, timeSystem: time })
@@ -227,9 +227,10 @@ test('Level 2 checkpoints restore collectible abilities and the active section r
     acquire.onInteract()
     assert.equal(time.getAbilityAvailability().SLOW, true)
     respawn.respawn()
-    assert.equal(time.getAbilityAvailability().SLOW, false)
+    assert.equal(time.getAbilityAvailability().SLOW, true)
+    const messagesAfterSlow = messages.length
     acquire.onInteract()
-    assert.equal(time.getAbilityAvailability().SLOW, true, 'restored pickup must be collectible again')
+    assert.equal(messages.length, messagesAfterSlow, 'collected interface must not unlock again')
 
     // Crossing into the relay car saves the acquired interface in a new checkpoint.
     const relay = level.getCarriageVolumes().find((volume) => volume.key === 'relay')
@@ -240,9 +241,10 @@ test('Level 2 checkpoints restore collectible abilities and the active section r
     interactions.get('Install Echo Synchronizer').onInteract()
     assert.equal(time.getAbilityAvailability().GHOST, true)
     respawn.respawn()
-    assert.equal(time.getAbilityAvailability().GHOST, false)
-    interactions.get('Install Echo Synchronizer').onInteract()
     assert.equal(time.getAbilityAvailability().GHOST, true)
+    const messagesAfterGhost = messages.length
+    interactions.get('Install Echo Synchronizer').onInteract()
+    assert.equal(messages.length, messagesAfterGhost, 'collected synchronizer must not unlock again')
 
     // Exercise a section change, then restore an earlier checkpoint's collision set.
     interactions.get('Drop into the forward Vault car').onInteract()
@@ -256,10 +258,56 @@ test('Level 2 checkpoints restore collectible abilities and the active section r
     respawn.respawn()
     assert.deepEqual(level.bounds, initialBounds)
     assert.deepEqual(level.obstacles, initialObstacles)
-    assert.equal(time.getAbilityAvailability().SLOW, false)
+    assert.equal(time.getAbilityAvailability().SLOW, true)
+    assert.equal(time.getAbilityAvailability().GHOST, true)
     assert.ok(scene.getObjectByName('mechanical-rail-crate-0').position.x > 1, 'machines restore to their parked positions')
     respawn.respawn()
     assert.deepEqual(level.bounds, initialBounds)
+  } finally {
+    respawn.dispose()
+    level.dispose()
+    time.dispose()
+    delete globalThis.document
+    delete globalThis.window
+  }
+})
+
+test('Level 2 Freeze and Rewind pickups survive respawning at an older checkpoint', () => {
+  installCanvasStub()
+  const { scene, player, hud, messages, time } = setup()
+  const interactions = new Map()
+  const camera = { snap() {}, setYaw() {} }
+  const respawn = createRespawnSystem({ player, hud, camera, timeSystem: time })
+  const level = createMovingHeistLevel({
+    scene, player, hud, timeSystem: time, camera, respawn, advance() {}, startAt: 'cargo',
+    interaction: {
+      register(_object, options) {
+        interactions.set(options.prompt, options)
+        return () => {}
+      },
+      registerBlocker: () => () => {}, flashPrompt() {}
+    }
+  })
+  try {
+    const initial = level.checkpoint
+    respawn.setCheckpoint(initial.position, initial.yaw, initial)
+    interactions.get('Install Cryo Phase module').onInteract()
+    assert.equal(time.getAbilityAvailability().FREEZE, true)
+    respawn.respawn()
+    assert.equal(time.getAbilityAvailability().FREEZE, true)
+    assert.equal(time.isStrainEnabled(), true)
+    const messagesAfterFreeze = messages.length
+    interactions.get('Install Cryo Phase module').onInteract()
+    assert.equal(messages.length, messagesAfterFreeze, 'collected Cryo module must not unlock again')
+
+    interactions.get('Install Rollback module').onInteract()
+    assert.equal(time.getAbilityAvailability().REWIND, true)
+    respawn.respawn()
+    assert.equal(time.getAbilityAvailability().FREEZE, true)
+    assert.equal(time.getAbilityAvailability().REWIND, true)
+    const messagesAfterRewind = messages.length
+    interactions.get('Install Rollback module').onInteract()
+    assert.equal(messages.length, messagesAfterRewind, 'collected Rollback module must not unlock again')
   } finally {
     respawn.dispose()
     level.dispose()

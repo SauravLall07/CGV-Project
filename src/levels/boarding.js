@@ -19,6 +19,7 @@ import {
 import { createTrain } from '../entities/train.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createMoonlitValley } from '../environment/moonlit-valley.js'
+import { createPlatformSurroundings } from '../environment/platform-surroundings.js'
 import { getBoardingAssets } from '../environment/nature-props.js'
 import { createSkyDome } from '../environment/sky-dome.js'
 import { captureSkyEnvironment } from '../environment/sky-environment.js'
@@ -225,7 +226,8 @@ export function createBoardingLevel({
   // Runs whenever the visible set changes; see boarding-zones.js.
   const floodIntensity = lights.spotLights.map((spot) => spot.intensity)
   function onZoneChange(zone) {
-    if (import.meta.env.DEV && isBoardingCinematic) logBoarding('zone', zone.name)
+    if (import.meta.env?.DEV && isBoardingCinematic) logBoarding('zone', zone.name)
+    if (zone.name !== 'plaza') ensureSkyEnvironment()
     const onPlatform = zone.name === 'platform'
     // Leaving the platform restores the established look immediately, including
     // direct dev teleports to the forecourt. Entry blends over one real second.
@@ -290,6 +292,7 @@ export function createBoardingLevel({
   }
   const outdoorEnv = createOutdoorEnvironment({
     mode: 'station',
+    trimLegacyScenery: true,
     stationSpotLights: lights.spotLights,
     // Darker than the sky's purple horizon tint, so the mountain fades out
     // instead of picking up the afterglow.
@@ -305,8 +308,8 @@ export function createBoardingLevel({
     fogMax: 0.88,
     terrainAmbient: 0.88,
     vegAmbient: 0.64,
-    // Same clock as the sky, so valley-light twinkle and the lake follow
-    // Slow/Freeze/Rewind. The lake also shares the sky colour uniforms.
+    // Same clock as the sky, so valley lights and creek water follow
+    // Slow/Freeze/Rewind. The creek also shares the sky colour uniforms.
     skyTime: sky.timeUniform,
     skyUniforms: sky.uniforms,
     nature: getBoardingAssets()
@@ -317,12 +320,15 @@ export function createBoardingLevel({
   const platformValley = createMoonlitValley({
     static: true, speed: 0, valleySide: 1, offsetX: 7, offsetY: 0.8,
     chunkCount: 3, centerZ: 0, omitHillSide: true, rails: false, poles: false,
-    fogColor: 0x1f3d63, moonDirection: PLATFORM_MOON_DIRECTION
+    fogColor: 0x1f3d63, moonDirection: PLATFORM_MOON_DIRECTION,
+    staticGroundColor: 0x849482
   })
   const platformBackdrop = platformValley.group
   platformBackdrop.visible = false
+  const surroundings = createPlatformSurroundings(platformValley, sky.timeUniform)
+  surroundings.group.visible = false
 
-  // Two low sheets, with procedural alpha and soft edges. No texture, lights,
+  // Far sheet, with procedural alpha and soft edges. No texture, lights,
   // collision or per-frame geometry uploads; the shared sky clock drifts noise.
   const mistMaterial = new THREE.ShaderMaterial({
     uniforms: THREE.UniformsUtils.merge([
@@ -370,7 +376,9 @@ export function createBoardingLevel({
   // UniformsUtils.merge clones uniforms; restore this clock's shared identity.
   mistMaterial.uniforms.uTime = sky.timeUniform
   const mistGeometry = new THREE.PlaneGeometry(1, 1)
-  for (const [x, y, z, width, length] of [[65, 1.0, 0, 100, 260], [145, 2.4, 20, 180, 300]]) {
+  // Remove only the near floating blob formerly centred at world (65,1,0).
+  // Retain the distant sheet and the separate end fog banks unchanged.
+  for (const [x, y, z, width, length] of [[145, 2.4, 20, 180, 300]]) {
     const mist = new THREE.Mesh(mistGeometry, mistMaterial)
     mist.name = 'platform-valley-mist'
     mist.rotation.x = -Math.PI / 2
@@ -382,26 +390,27 @@ export function createBoardingLevel({
     mist.userData.noInteractionBlocker = true
     platformBackdrop.add(mist)
   }
-  platformBackdrop.userData.drawCalls = platformValley.stats.drawCalls + 2
-  platformBackdrop.userData.triangles = platformValley.stats.triangles + 4
-  if (import.meta.env.DEV) console.info('[boarding platform backdrop]', {
+  platformBackdrop.userData.drawCalls = platformValley.stats.drawCalls + 1
+  platformBackdrop.userData.triangles = platformValley.stats.triangles + 2
+  if (import.meta.env?.DEV) console.info('[boarding platform backdrop]', {
     drawCalls: platformBackdrop.userData.drawCalls,
     triangles: platformBackdrop.userData.triangles,
-    terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 2
+    terrainX: [13, 907], terrainZ: [-160, 320], chunks: 3, mistDrawCalls: 1
   })
 
   scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights)
+  scene.add(surroundings.group)
 
-  // Capture each look once. Retain the original environment map everywhere
-  // outside the platform; no per-frame capture or forecourt reflection change.
+  // The plaza uses no environment map. Capture these once when leaving it.
   let skyTarget = null
   let platformSkyTarget = null
-  if (renderer) {
+  function ensureSkyEnvironment() {
+    if (!renderer || skyTarget) return
+    sky.setPreset('boarding')
     skyTarget = captureSkyEnvironment(renderer, sky.mesh)
     sky.setPreset('boarding-platform')
     platformSkyTarget = captureSkyEnvironment(renderer, sky.mesh)
     sky.setPreset('boarding')
-    scene.environment = skyTarget.texture
     scene.environmentIntensity = 0.4
   }
 
@@ -733,7 +742,9 @@ export function createBoardingLevel({
   // Native waypoint patrols preserve detection, scanning and distractions.
   const platformPatrols = [
     { id: 'platform-A', points: [[-3.2, -16], [3.65, -16]], speed: 1.25, waitTime: 2, yaw: Math.PI / 2 },
-    { id: 'platform-B', points: [[-3.2, -8], [-3.2, -24]], speed: 1.1, waitTime: 4, yaw: Math.PI },
+    // The hall's north wall crosses x=-3.2 at z=-21.75. Stay north of
+    // its face; the nearest bench/tree edges remain 0.62/0.65 m away.
+    { id: 'platform-B', points: [[-3.2, -8], [-3.2, -20.4]], speed: 1.1, waitTime: 4, yaw: Math.PI },
     { id: 'platform-C', points: [[3, -4], [3, 16], [-3, 16], [-3, -4]], speed: 1.3, waitTime: 2, yaw: 0 },
     { id: 'platform-D', points: [[3.65, 16], [3.65, -4]], speed: 1.15, waitTime: 4, yaw: Math.PI },
     { id: 'platform-E', points: [[0, 30]], speed: 1.2, waitTime: 0, yaw: Math.PI },
@@ -785,7 +796,8 @@ export function createBoardingLevel({
     sentry.group.rotation.y = sentry.facing
   }
 
-  if (import.meta.env.DEV) {
+  if (import.meta.env?.DEV && new URLSearchParams(window.location.search).has('checkCover')) {
+    // Opt-in geometry audit: its two 0.1 m flood fills must not run on every boot.
     // Test the sheltered face of EVERY opaque piece against all routine guard
     // route positions. An isolated prop cannot hide someone on its exposed face.
     // Conservatively aim each guard directly at the probe (superset of its FOV).
@@ -950,10 +962,10 @@ export function createBoardingLevel({
   let boardingStartedAt = 0
   let boardingOverlayObserver = null
   function logBoarding(event, detail) {
-    if (import.meta.env.DEV) console.info(`[boarding +${((performance.now() - boardingStartedAt) / 1000).toFixed(3)}s @${performance.now().toFixed(0)}ms] ${event}`, detail)
+    if (import.meta.env?.DEV) console.info(`[boarding +${((performance.now() - boardingStartedAt) / 1000).toFixed(3)}s @${performance.now().toFixed(0)}ms] ${event}`, detail)
   }
   function watchBoardingOverlays() {
-    if (!import.meta.env.DEV) return
+    if (!import.meta.env?.DEV) return
     const previous = new WeakMap()
     const report = node => {
       if (!(node instanceof HTMLElement) || (node !== veil && !/loading|overlay|caught|transition/i.test(node.id))) return
@@ -993,7 +1005,7 @@ export function createBoardingLevel({
   function beginBoardingPhase(phase) {
     boardingPhase = phase
     cinematicTimer = 0
-    if (import.meta.env.DEV) logBoarding('phase', phase)
+    if (import.meta.env?.DEV) logBoarding('phase', phase)
   }
 
   function startBoardingWalk() {
@@ -1037,9 +1049,9 @@ export function createBoardingLevel({
       if (isBoardingCinematic || respawn.isFailing()) return
       isBoardingCinematic = true
       boardingStartedAt = performance.now()
-      if (import.meta.env.DEV) watchBoardingOverlays()
+      if (import.meta.env?.DEV) watchBoardingOverlays()
       applyForecourtFill(BOARDING_PLATFORM_ANCHOR)
-      if (import.meta.env.DEV) logBoarding('platform lock', { zone: zones.zone?.name, train: train.visible, platform: platform.visible, background: scene.background?.getHexString() })
+      if (import.meta.env?.DEV) logBoarding('platform lock', { zone: zones.zone?.name, train: train.visible, platform: platform.visible, background: scene.background?.getHexString() })
       hideBoardingCues()
       beginBoardingPhase('returning')
       boardingReturn = player.returnInteractionPull?.(true)
@@ -1147,7 +1159,7 @@ export function createBoardingLevel({
   zones.addRegion('train', train, stationSteam)
   zones.addRegion('landing', landing.group)
   zones.addRegion('outdoor', outdoorEnv.group)
-  zones.addRegion('platform-backdrop', platformBackdrop)
+  zones.addRegion('platform-backdrop', platformBackdrop, surroundings.group)
 
   // Sources stay hidden. These slots are the only point lights and guard
   // torches the shader ever sees, and the count does not change at runtime.
@@ -1194,6 +1206,7 @@ export function createBoardingLevel({
 
   function arriveInside() {
     movementSounds.reset()
+    warmTrain()
     enteredStation = true
     playStationAnnouncement()
     player.setPose(passage1CheckpointPos, Math.PI / 2)
@@ -1238,16 +1251,19 @@ export function createBoardingLevel({
     }
   })
 
-  // Compile and render the open vestibule while the level loading overlay owns
-  // the screen; nothing new is constructed or uploaded during the walk-in.
-  const savedFog = scene.fog, savedEnvironment = scene.environment
-  try {
-    scene.fog = platformFog
-    scene.environment = platformSkyTarget?.texture ?? savedEnvironment
-    warmBoardingVisuals(renderer, scene)
-  } finally {
-    scene.fog = savedFog
-    scene.environment = savedEnvironment
+  // The train is hidden from the plaza. Prepare it under the station-entry
+  // fade instead of making every launch wait for an unseen vestibule.
+  function warmTrain() {
+    ensureSkyEnvironment()
+    const savedFog = scene.fog, savedEnvironment = scene.environment
+    try {
+      scene.fog = platformFog
+      scene.environment = platformSkyTarget?.texture ?? savedEnvironment
+      warmBoardingVisuals(renderer, scene)
+    } finally {
+      scene.fog = savedFog
+      scene.environment = savedEnvironment
+    }
   }
 
   return {
@@ -1425,7 +1441,7 @@ export function createBoardingLevel({
         torchPool.update(BOARDING_PLATFORM_ANCHOR, delta)
 
         if (boardingPhase === 'departing' && cinematicTimer >= BOARDING_DEPART_SECONDS) {
-          if (import.meta.env.DEV) logBoarding('departure complete; advance/loading may begin', { trainZ: train.position.z })
+          if (import.meta.env?.DEV) logBoarding('departure complete; advance/loading may begin', { trainZ: train.position.z })
           isBoardingCinematic = false
           advance()
         }
@@ -1461,6 +1477,7 @@ export function createBoardingLevel({
       stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()
+      surroundings.dispose()
       platformValley.dispose()
       sky.dispose()
       if (skyTarget) {
@@ -1474,6 +1491,7 @@ export function createBoardingLevel({
       platformSkyTarget?.dispose()
       platformSkyTarget = null
       scene.remove(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights, lightPools, lampPools)
+      scene.remove(surroundings.group)
       disposeObject([station, hallDressing, train, stationSteam, landing.group, ...lights, lightPools, lampPools])
     }
   }

@@ -89,7 +89,7 @@ const renderQuality = (() => {
   }
 })()
 let benchmark = null
-const benchTarget = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('bench') : null
+const benchTarget = import.meta.env?.DEV ? new URLSearchParams(window.location.search).get('bench') : null
 const scene = createScene()
 setScene(scene) // lets display settings recompile materials on a shadow toggle
 const { camera } = createCamera()
@@ -109,6 +109,7 @@ const policeReady = startupTasks.track('police', preloadPoliceVisual(assets))
 // Ghost Mixamo load starts after createTimeSystem() below; charactersReady
 // is assigned there so the menu waits for player, police, and ghost visuals.
 let charactersReady = Promise.all([detectiveReady, policeReady])
+let startupPrepared = false
 
 const minimap = createMinimap({
   scene,
@@ -142,6 +143,7 @@ const LEVEL_TRACKS = {
   Boarding: { file: '../assets/audio/music/level1-constance.mp3', loop: true },
   MovingHeist: { file: '../assets/audio/music/level2-mistake-the-getaway.mp3', loop: true },
   Timewreck: { file: '../assets/audio/music/level3-final-count.mp3', loop: true },
+  Ending: null, // Silent epilogue; stop both the sampled track and gameplay drone.
   Complete: { file: '../assets/audio/music/victory-theme.mp3', loop: false }
 }
 
@@ -152,7 +154,7 @@ function ensureGameplayDrone() {
   if (!getContext()) return null
   musicSystem = new MusicSystem()
   musicSystem.setTimeDilation(1)
-  if (import.meta.env.DEV) window.musicSystem = musicSystem
+  if (import.meta.env?.DEV) window.musicSystem = musicSystem
   return musicSystem
 }
 
@@ -160,12 +162,12 @@ function disposeGameplayDrone() {
   if (!musicSystem) return
   musicSystem.dispose()
   musicSystem = null
-  if (import.meta.env.DEV) window.musicSystem = null
+  if (import.meta.env?.DEV) window.musicSystem = null
 }
 
 function playMusicForState(state) {
   const spec = LEVEL_TRACKS[state]
-  console.log(
+  if (import.meta.env?.DEV) console.log(
     `[music ${new Date().toISOString()} t=${performance.now().toFixed(1)}] playMusicForState("${state}") drone=${musicSystem ? '#' + musicSystem.id : 'none'} spec=${spec ? spec.file : 'none'}`
   )
   if (!spec) {
@@ -180,40 +182,40 @@ function playMusicForState(state) {
 }
 
 async function playMenuMusic() {
-  console.log('playMenuMusic called')
+  if (import.meta.env?.DEV) console.log('playMenuMusic called')
   await startLevelMusic(loadTrack('../assets/audio/music/menu-theme.mp3'), { loop: true })
-  console.log('playMenuMusic: startLevelMusic() resolved')
+  if (import.meta.env?.DEV) console.log('playMenuMusic: startLevelMusic() resolved')
 }
 
-function unlockAudio() {
-  console.log('unlockAudio() called')
+function unlockAudio({ menuMusic = true } = {}) {
+  if (import.meta.env?.DEV) console.log('unlockAudio() called')
   initAudio()
   const preloading = preloadAbilitySfx()
   if (preloading && typeof preloading.then === 'function') {
     preloading.then(() => {
-      console.log('[ability-sfx] unlockAudio preload settled before/during menu')
+      if (import.meta.env?.DEV) console.log('[ability-sfx] unlockAudio preload settled before/during menu')
     })
   }
   const ctx = getContext()
-  console.log('unlockAudio context before resume: ' + (ctx ? ctx.state : 'none'))
+  if (import.meta.env?.DEV) console.log('unlockAudio context before resume: ' + (ctx ? ctx.state : 'none'))
   const unlocking = resumeAudio()
-  console.log('unlockAudio resumeAudio() returned:', unlocking)
+  if (import.meta.env?.DEV) console.log('unlockAudio resumeAudio() returned:', unlocking)
 
   const startMenu = async () => {
-    console.log('startMenu called, gameStarted: ' + gameStarted)
-    if (gameStarted) return
+    if (import.meta.env?.DEV) console.log('startMenu called, gameStarted: ' + gameStarted)
+    if (gameStarted || !menuMusic) return
     await playMenuMusic()
   }
 
   const runStartMenu = () => {
-    console.log('unlockAudio: calling startMenu()')
+    if (import.meta.env?.DEV) console.log('unlockAudio: calling startMenu()')
     const started = startMenu()
     if (started && typeof started.then === 'function') {
       return started.then(() => {
-        console.log('unlockAudio: startMenu() finished')
+        if (import.meta.env?.DEV) console.log('unlockAudio: startMenu() finished')
       })
     }
-    console.log('unlockAudio: startMenu() finished')
+    if (import.meta.env?.DEV) console.log('unlockAudio: startMenu() finished')
   }
 
   if (unlocking && typeof unlocking.then === 'function') unlocking.then(runStartMenu)
@@ -235,10 +237,10 @@ for (const type of FIRST_GESTURES) {
 }
 
 canvas.addEventListener('click', () => {
-  console.log('Canvas clicked, attempting audio resume')
+  if (import.meta.env?.DEV) console.log('Canvas clicked, attempting audio resume')
   unlockAudio()
 })
-console.log('Audio click listener attached to: ' + canvas.tagName)
+if (import.meta.env?.DEV) console.log('Audio click listener attached to: ' + canvas.tagName)
 
 const interaction = createInteractionSystem({ camera, input: keyboard,
   onTap: ({ gesture }) => {
@@ -321,10 +323,11 @@ const levelManager = createLevelManager({
     // are reapplied before the loading overlay hands control back to the player.
     modelEditor?.sceneChanged?.()
     if (state === 'Complete') showCompleteCredits()
+    else if (state === 'Ending') hud.setVisible(false)
     else timeSystem.warmGhost(renderer, camera)
     // Start the next module after presentation, never alongside boot FBXs.
     // Prefetch failure is optional; enter() will retry under the loading screen.
-    const next = state === 'Boarding' ? 'MovingHeist' : state === 'MovingHeist' ? 'Timewreck' : null
+    const next = state === 'Boarding' ? 'MovingHeist' : state === 'MovingHeist' ? 'Timewreck' : state === 'Timewreck' ? 'Ending' : null
     if (next) requestAnimationFrame(() => requestAnimationFrame(() => {
       if (levelManager.getState() === state) levelManager.prefetch(next)
     }))
@@ -336,11 +339,19 @@ const levelManager = createLevelManager({
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
+    { state: 'Ending', load: () => import('./levels/ending.js')
+      .then(({ createEndingLevel, prefetchEndingPaintings }) => {
+        // Paintings prefetch during Timewreck, but cannot hold the transition hostage.
+        prefetchEndingPaintings().catch(error => {
+          if (import.meta.env?.DEV) console.warn('Ending painting prefetch failed; using bounded in-level loading', error)
+        })
+        return ctx => createEndingLevel({ ...ctx, renderCamera: camera, post })
+      }) },
     { state: 'Complete', create: createCompleteLevel, keepPrevious: true }
   ]
 })
 let renderOverlay = null
-if (import.meta.env.DEV) {
+if (import.meta.env?.DEV) {
   window.levelManager = levelManager
   window.musicSystem = musicSystem
   window.renderer = renderer
@@ -388,6 +399,7 @@ let arrival = null
 let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
 let titleBackdrop = null // the silently-built station behind the title screen
+let titleReturnPromise = null // coalesce returns and hold New Game until its backdrop is ready
 let modelEditor = null // DEV-only live scene/model workshop (F2)
 
 // Large walkthrough popups freeze gameplay and silence actions, but keep the
@@ -488,7 +500,7 @@ const pauseMenu = createPauseMenu({
 // This is deliberately DEV-only. Phase 2 edits the live Three.js scene, pauses
 // gameplay while open, and can persist transforms, names, materials, lights and
 // camera bookmarks to .model-workshop/layout.json through the Vite dev server.
-if (import.meta.env.DEV) {
+if (import.meta.env?.DEV) {
   modelEditor = createModelEditor({
     scene,
     camera,
@@ -642,6 +654,10 @@ function updateForecourtArrival(delta) {
 }
 
 function startGame() {
+  if (titleReturnPromise) {
+    titleReturnPromise.then(startGame)
+    return
+  }
   respawn.reset()
   timeSystem.resetForRun()
   gameStarted = true
@@ -680,12 +696,13 @@ function startGame() {
 //   mechanical, convergence,   roof run or in the Vault), with every ability
 //   roof, vault                and door from the earlier cars done
 function devStartOptions() {
-  if (!import.meta.env.DEV) return null
+  if (!import.meta.env?.DEV) return null
   if (benchTarget === 'platform') return { state: 'Boarding' }
   const target = new URLSearchParams(window.location.search).get('start')?.toLowerCase()
   if (!target) return null
   if (target === 'level2') return { state: 'MovingHeist' }
   if (target === 'level3') return { state: 'Timewreck' }
+  if (target === 'ending') return { state: 'Ending' }
   if (['level3-convergence', 'level3-mechanical', 'level3-passenger'].includes(target)) return { state: 'Timewreck', levelOptions: { startCarriage: target.slice(7) } }
   if (target === 'level3-security') return { state: 'Timewreck', levelOptions: { startCarriage: 'security' } }
   if (target === 'level3-relay') return { state: 'Timewreck', levelOptions: { startCarriage: 'relay' } }
@@ -700,14 +717,14 @@ function devStartOptions() {
 // so the player lands back on the same live station shot they started from
 // without a page refresh.
 async function quitToTitle() {
+  if (titleReturnPromise) return titleReturnPromise
   gameStarted = false
   paused = false
   elapsed = 0
   resetCount = 0
 
-  levelManager.unload()
   syncInputState()
-  keyboardLock.release()
+  keyboardLock.release({ exitFullscreen: false })
 
   // Quitting mid-run from first person left the player figure hidden; the
   // title screen's cinematic shot needs it back.
@@ -717,10 +734,30 @@ async function quitToTitle() {
   hud.setObjective('')
   hud.resetRunTimer()
 
-  titleBackdrop = await buildTitleBackdrop()
-  disposeGameplayDrone()
-  menu.show()
-  unlockAudio()
+  // Keep audio unlock in the dismissal gesture, before the asynchronous fade.
+  unlockAudio({ menuMusic: false })
+  const veil = document.createElement('div')
+  Object.assign(veil.style, { position: 'fixed', inset: '0', zIndex: '10000',
+    background: '#000', opacity: '0', transition: 'opacity 200ms linear', pointerEvents: 'auto' })
+  document.body.appendChild(veil)
+  titleReturnPromise = (async () => {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    veil.style.opacity = '1'
+    await new Promise(resolve => setTimeout(resolve, 200))
+    // Let the opaque veil paint before synchronous scene disposal/construction.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    levelManager.unload()
+    disposeGameplayDrone()
+    // unload stops the outgoing track; request title music afterwards.
+    playMenuMusic()
+    titleBackdrop = await buildTitleBackdrop()
+    menu.show()
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    veil.style.transition = 'opacity 400ms linear'
+    veil.style.opacity = '0'
+    await new Promise(resolve => setTimeout(resolve, 400))
+  })().finally(() => { veil.remove(); titleReturnPromise = null })
+  return titleReturnPromise
 }
 
 // Defer by two animation frames: the first paints the loading screen,
@@ -732,15 +769,18 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
 
     await charactersReady
 
+    menu.show()
+    menu.updateCinematicCamera(0)
+    titleBackdrop.updateAtmosphere?.(0, camera.position)
     // Compile Ghost materials/lights after the Mixamo visual is attached so
     // first Ghost press does not pay that shader cost in-game.
     timeSystem.warmGhost(renderer, camera)
+    startupPrepared = true
 
     // Keep the existing extra frame before revealing the title scene.
     requestAnimationFrame(() => {
       startupTasks.complete('presentation')
       loadingScreen.hide()
-      menu.show()
       if (benchTarget) {
         menu.hide()
         startGame()
@@ -761,6 +801,9 @@ const loop = createLoop({
   clock,
   instrumentation: renderOverlay,
   render(world, view) {
+    // The opaque loader covers boot. Avoid uploading/compiling partial scenes
+    // while character loads and lighting setup are still changing.
+    if (!startupPrepared) return
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
@@ -780,6 +823,7 @@ const loop = createLoop({
 
 const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
+  if (!startupPrepared) return
   renderQuality.update(performance.now())
   benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /
@@ -824,7 +868,7 @@ loop.add((delta) => {
     return
   }
 
-  const heistComplete = levelManager.getState() === 'Complete'
+  const heistComplete = levelManager.getState() === 'Complete' || levelManager.getState() === 'Ending'
   if (!heistComplete) elapsed += delta
 
   hud.updateRunTimer({

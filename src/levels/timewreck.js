@@ -8,6 +8,8 @@ import { createWreckVisibility, installWreckVisibility } from '../environment/wr
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { createParticleField, createChronoMoteField } from '../environment/particles.js'
 import { createTimewreckExterior } from '../environment/timewreck-exterior.js'
+import { createSkyDome } from '../environment/sky-dome.js'
+import { captureSkyEnvironment } from '../environment/sky-environment.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createSecurityLaserMaterial } from '../shaders/security-laser.js'
 import { bindingLabel, settings } from '../core/settings.js'
@@ -57,7 +59,8 @@ import {
 
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
 const NIGHT_COLOR = new THREE.Color(0x0d1218)
-const DAWN_COLOR = new THREE.Color(0x2c3a56)
+const BRAKE_HANDOFF_SECONDS = 1
+const BRAKE_FADE_SECONDS = 0.5
 const FINALE_FREEZE_COLOR = new THREE.Color(0x1a3358)
 const FOG_COOL = new THREE.Color(0x121a28)
 const FOG_STORM = new THREE.Color(0x1a1430)
@@ -173,7 +176,8 @@ function createEmergencyBrake() {
 }
 
 export function createTimewreckLevel({
-  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic, startCarriage = null
+  scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic, startCarriage = null,
+  renderer = null
 }) {
   // Level 3 is the "unstable" end of the scale — the shaders read this.
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.8)
@@ -201,6 +205,25 @@ export function createTimewreckLevel({
   scene.background = new THREE.Color().copy(NIGHT_COLOR)
   // Cool storm fog — contrasts warm amber carriage fill; range kept for readability.
   scene.fog = new THREE.Fog(0x121a28, 38, 185)
+
+  // One capture of the timewreck sky preset. The dome is not added to the
+  // scene, so background, fog, and lights stay as they are. Glitch and gain
+  // are eased on this instance only so brass reads storm colour, not tear bands.
+  let stormEnvTarget = null
+  const savedEnvironment = scene.environment ?? null
+  const savedEnvironmentIntensity = scene.environmentIntensity ?? 1
+  if (renderer) {
+    const stormSky = createSkyDome('timewreck')
+    try {
+      stormSky.uniforms.uGlitch.value = 0.28
+      stormSky.uniforms.uSkyGain.value = 0.045
+      stormEnvTarget = captureSkyEnvironment(renderer, stormSky.mesh)
+      scene.environment = stormEnvTarget.texture
+      scene.environmentIntensity = 0.34
+    } finally {
+      stormSky.dispose()
+    }
+  }
 
   // Damaged PBR surfaces are very dark; short-range emergency points leave most
   // of each car on ambient alone, which ACES tone mapping crushes to near-black.
@@ -290,7 +313,7 @@ export function createTimewreckLevel({
   const vaultGlowMat = new THREE.MeshBasicMaterial({
     color: 0xff2a2a,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.14,
     blending: THREE.AdditiveBlending,
     depthWrite: false
   })
@@ -300,7 +323,7 @@ export function createTimewreckLevel({
     const group = new THREE.Group()
     group.name = 'vault-security-gate'
     group.position.set(0, 0, z)
-    const laserMat = createSecurityLaserMaterial({ beamCount: 1 })
+    const laserMat = createSecurityLaserMaterial({ beamCount: 1, boost: 1.45 })
     if (laserMat.customUniforms) laserMat.customUniforms.uScanSpeed.value = 5.2
     for (const side of [-1, 1]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.4, 0.2), vaultPostMat)
@@ -339,7 +362,7 @@ export function createTimewreckLevel({
       })
       return { mesh, glow, baseY, emitters }
     })
-    const wash = new THREE.PointLight(0xff3344, 1.2, 5.5, 2)
+    const wash = new THREE.PointLight(0xff3344, 0.42, 5.5, 2)
     wash.position.set(0, 1.3, 0)
     group.add(wash)
     group.traverse((node) => { node.userData.noCameraCollision = true })
@@ -2211,7 +2234,7 @@ export function createTimewreckLevel({
   // Slow runs the world at 0.2x; meshes copy rigid-body pose each tick.
   unregisters.push(timeSystem.register(chunkGroup, {
     onUpdate(scaledDelta) {
-      if (braking) scaledDelta *= Math.max(0, 1 - brakeT / 2.5)
+      if (braking || brakeComplete) scaledDelta *= brakeMotionScale()
       const burstSim = failBurstT >= 0 && !failBurstSettled
       const stormActive = breakupT >= 0 && breakupT < DEBRIS_STORM_S
       if (breakupT < 0 && !burstSim) return
@@ -2509,6 +2532,11 @@ export function createTimewreckLevel({
   let brakeComplete = false
   let disposed = false
   let brakeT = 0
+  function brakeMotionScale() {
+    return brakeComplete ? 0 : braking ? Math.max(0, 1 - brakeT / BRAKE_HANDOFF_SECONDS) : 1
+  }
+  let brakeVeil = null
+  function removeBrakeVeil() { brakeVeil?.remove(); brakeVeil = null }
 
   const bridge = new THREE.Group()
   bridge.name = 'broken-bridge-ahead'
@@ -2551,46 +2579,6 @@ export function createTimewreckLevel({
   trackWarning.userData.noCameraCollision = true
   root.add(trackWarning)
 
-  // Celebratory exit aperture — decorative only; opens during the brake cinematic.
-  const exitPath = new THREE.Group()
-  exitPath.name = 'cab-exit-path'
-  exitPath.visible = false
-  exitPath.position.set(0, 0, spans.cab.minZ + 0.35)
-  const exitDoorMat = new THREE.MeshStandardMaterial({
-    color: 0x3a5c56, roughness: 0.5, metalness: 0.35, emissive: 0x1a2e2a, emissiveIntensity: 0.2
-  })
-  const exitBrassMat = new THREE.MeshStandardMaterial({
-    color: 0xc4a052, roughness: 0.4, metalness: 0.88, emissive: 0x3a2810, emissiveIntensity: 0.2
-  })
-  const exitLeft = new THREE.Group()
-  const exitRight = new THREE.Group()
-  for (const [side, leaf] of [[-1, exitLeft], [1, exitRight]]) {
-    leaf.position.set(side * 0.55, 1.4, 0)
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.6, 0.12), exitDoorMat)
-    panel.position.x = side * 0.52
-    panel.userData.noCameraCollision = true
-    leaf.add(panel)
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.65, 0.14), exitBrassMat)
-    trim.position.x = side * 0.05
-    trim.userData.noCameraCollision = true
-    leaf.add(trim)
-    exitPath.add(leaf)
-  }
-  const exitGlow = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.2, 2.8),
-    new THREE.MeshStandardMaterial({
-      color: 0xffe2b0, emissive: 0xffc27a, emissiveIntensity: 0,
-      transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide
-    })
-  )
-  exitGlow.position.set(0, 1.4, -0.2)
-  exitGlow.userData.noCameraCollision = true
-  exitPath.add(exitGlow)
-  const exitLight = new THREE.PointLight(0xffd9a0, 0, 8, 2)
-  exitLight.position.set(0, 1.6, -0.8)
-  exitPath.add(exitLight)
-  root.add(exitPath)
-
   unregisters.push(interaction.register(brake, {
     prompt: 'Pull the emergency brake',
     onInteract: () => {
@@ -2604,7 +2592,10 @@ export function createTimewreckLevel({
       timeSystem.setAbilityAvailability({})
       interaction.flashPrompt('The Chrono Express grinds to a halt…', 3000)
       hud.setObjective('The train stops on the bridge. You made it.')
-      exitPath.visible = true
+      brakeVeil = document.createElement('div')
+      Object.assign(brakeVeil.style, { position: 'fixed', inset: '0', background: '#000',
+        zIndex: '60', opacity: '0', pointerEvents: 'none' })
+      document.body.appendChild(brakeVeil)
       hud.showCinematicSkip?.(finishBraking)
     }
   }))
@@ -2703,7 +2694,7 @@ export function createTimewreckLevel({
 
   const feedback = createWreckFeedback({ root, spans, player, timeSystem, unregisters,
     cue: kind => wreckAudio.debris(kind),
-    playbackScale: () => braking ? Math.max(0, 1 - brakeT / 2.5) : 1
+    playbackScale: brakeMotionScale
   })
 
   // Capture the collapse at each checkpoint, then restore moving hazards to a
@@ -2800,12 +2791,7 @@ export function createTimewreckLevel({
       brakeComplete = false
       hud.hideCinematicSkip?.()
       brakeT = 0
-      exitPath.visible = false
-      exitLeft.rotation.y = 0
-      exitRight.rotation.y = 0
-      exitGlow.material.opacity = 0
-      exitGlow.material.emissiveIntensity = 0
-      exitLight.intensity = 0
+      removeBrakeVeil()
       carriageShake.reset()
       stormDebris.reset()
       lampMotion.reset()
@@ -2897,11 +2883,15 @@ export function createTimewreckLevel({
       if (mode === 'SLOW') motionScale = 0.2
       else if (mode === 'FREEZE') motionScale = 0
       else if (mode === 'REWIND') motionScale = -1.25
-      const envDt = (braking ? Math.max(0, 1 - brakeT / 2.5) : motionScale) * delta
+      // Integrate the one-second linear deceleration exactly across frame boundaries.
+      const stopStart = Math.min(BRAKE_HANDOFF_SECONDS, brakeT)
+      const stopEnd = Math.min(BRAKE_HANDOFF_SECONDS, brakeT + delta)
+      const brakeDelta = (stopEnd - stopStart) * (1 - (stopStart + stopEnd) / (2 * BRAKE_HANDOFF_SECONDS))
+      const envDt = brakeComplete ? 0 : braking ? brakeDelta : motionScale * delta
       // Visual storm ramp Vault→Cab; Freeze / brake still zero or ease as before.
       const stormProgress = stormProgressAlongTrain(player.mesh.position.z, spans)
-      const exteriorScale = braking
-        ? Math.max(0, 1 - brakeT / 2.5)
+      const exteriorScale = brakeComplete ? 0 : braking
+        ? delta > 0 ? brakeDelta / delta : brakeMotionScale()
         : mode === 'FREEZE' ? 0
           : resumeBoost * (mode === 'SLOW' ? 0.2 : 1) *
             (1 + stormProgress * STORM_PROGRESS.exteriorSpeedBoost)
@@ -3105,49 +3095,12 @@ export function createTimewreckLevel({
         sparks.material.opacity = 0.4 + resumeWarm * 0.45
       }
 
-      // --- Brake pulled: celebratory stop — heavy shake, exit path opens ---
+      // The Ending owns the exterior stop; retain only the lever and hand-off.
       if (braking) {
         brakeT += delta
         lever.rotation.x = -0.4 + Math.min(1, brakeT / 0.4) * 1.1
-        // Early punch that settles into a fading rumble (celebratory, not subtle).
-        const punch = Math.exp(-brakeT * 1.55)
-        const rumble = Math.max(0, 1 - brakeT / 2.8)
-        const shakeAmp = punch * 0.055 + rumble * 0.022
-        root.rotation.z =
-          Math.sin(brakeT * 34) * shakeAmp +
-          Math.sin(brakeT * 51) * shakeAmp * 0.45
-        root.position.y =
-          Math.abs(Math.sin(brakeT * 28)) * shakeAmp * 0.85 +
-          Math.sin(brakeT * 47) * shakeAmp * 0.35
-        root.position.x = Math.sin(brakeT * 39) * shakeAmp * 0.4
-
-        camera.showWreckStop?.(new THREE.Vector3(0, 0, spans.cab.center), brakeT)
-        // Doors swing open and warm light floods the escape path.
-        const open = Math.min(1, brakeT / 1.15)
-        const eased = open * open * (3 - 2 * open)
-        exitLeft.rotation.y = -eased * 1.35
-        exitRight.rotation.y = eased * 1.35
-        exitGlow.material.opacity = 0.15 + eased * 0.55
-        exitGlow.material.emissiveIntensity = eased * 2.4
-        exitLight.intensity = eased * 22
-        exitDoorMat.emissiveIntensity = 0.2 + eased * 0.55
-        exitBrassMat.emissiveIntensity = 0.2 + eased * 0.9
-
-        if (wave.visible) {
-          const s = Math.max(0, 1 - brakeT * 0.9)
-          wave.scale.set(1, s, 1)
-          waveLight.intensity = 14 * s
-          waveMat.customUniforms.uIntensity.value = 1.15 * s
-          if (s <= 0.01) { wave.visible = false; waveLight.intensity = 0 }
-        }
-
-        // Night gives way to first light as the train settles on the bridge.
-        const dawn = Math.min(1, Math.max(0, (brakeT - 1.6) / 2.2))
-        scene.background.lerpColors(NIGHT_COLOR, DAWN_COLOR, dawn)
-        scene.fog.color.copy(scene.background)
-        scene.fog.far = 40 + dawn * 70
-
-        if (brakeT > 4.8) {
+        brakeVeil.style.opacity = String(THREE.MathUtils.clamp((brakeT - BRAKE_HANDOFF_SECONDS) / BRAKE_FADE_SECONDS, 0, 1))
+        if (brakeT >= BRAKE_HANDOFF_SECONDS + BRAKE_FADE_SECONDS - 1e-9) {
           finishBraking()
         }
         return
@@ -3408,6 +3361,7 @@ export function createTimewreckLevel({
 
     dispose() {
       disposed = true
+      removeBrakeVeil()
       feedback.stop()
       spatial.dispose(slabSupports)
       for (let i = slabSupports.length - 1; i >= 0; i--) if (connector.supports.includes(slabSupports[i])) slabSupports.splice(i, 1)
@@ -3432,6 +3386,14 @@ export function createTimewreckLevel({
       // come out of the scene here or it survives every level teardown.
       outdoorEnv.dispose()
       wreckExterior.dispose()
+      if (stormEnvTarget) {
+        if (scene.environment === stormEnvTarget.texture) {
+          scene.environment = savedEnvironment
+          scene.environmentIntensity = savedEnvironmentIntensity
+        }
+        stormEnvTarget.dispose()
+        stormEnvTarget = null
+      }
       scene.remove(outdoorEnv.group, wreckExterior.group, root)
       disposeObject(root)
     }

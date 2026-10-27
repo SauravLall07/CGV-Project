@@ -79,10 +79,26 @@ export function createTimeGhost() {
   ring.position.y = 0.03
   group.add(ring)
 
-  // Floating scanline / temporal beacon indicator
-  const beaconLight = new THREE.PointLight(0x00f0ff, 3, 4)
-  beaconLight.position.y = 1.2
-  group.add(beaconLight)
+  // Unlit beacon. A real PointLight parented here is hidden with the echo and
+  // reappears on summon, which changes NUM_POINT_LIGHTS. Timewreck's pool is
+  // fixed at 12 so that count stays stable; an extra light rebuilds every
+  // lit carriage program at the moment the release plate opens the door.
+  const beaconGeo = new THREE.SphereGeometry(0.11, 10, 8)
+  const beaconMat = new THREE.MeshBasicMaterial({
+    color: 0x7ef0ff,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false
+  })
+  const beacon = new THREE.Mesh(beaconGeo, beaconMat)
+  beacon.name = 'time-ghost-beacon'
+  beacon.position.y = 1.2
+  beacon.castShadow = false
+  beacon.receiveShadow = false
+  beacon.userData.noCameraCollision = true
+  group.add(beacon)
 
   let visual = null
   let trajectory = []
@@ -101,8 +117,7 @@ export function createTimeGhost() {
     rightLeg.visible = visible
   }
 
-  // Separate FBX load + mixer from the player so materials and animation
-  // state never leak between them. Textures may be shared read-only.
+  // Shared source assets, with independent skeletons, materials and mixers.
   async function loadVisual(assets) {
     if (visual) return visual
     try {
@@ -145,15 +160,21 @@ export function createTimeGhost() {
     }
   }
 
-  // Programs for these emissive/transparent materials (and the beacon light)
-  // compile on first draw. The mesh exists from boot, but visible=false skips
-  // it — so the hitch lands on the first Ghost press unless we compile now.
+  // Programs for these emissive/transparent materials compile on first draw.
+  // The mesh exists from boot, but visible=false skips it — so the hitch lands
+  // on the first Ghost press unless we compile now. The beacon is unlit, so
+  // showing the echo does not change the scene light count.
   function warm(renderer, scene, camera) {
     if (!renderer || !camera) return
     const previous = group.visible
     group.visible = true
-    renderer.compile(scene, camera)
-    group.visible = previous
+    try {
+      // Compile only the echo, using the world's lights/environment. Compiling
+      // the world also prepares every hidden room and stalls startup/transitions.
+      renderer.compile(group, camera, scene)
+    } finally {
+      group.visible = previous
+    }
   }
 
   function stop() {
@@ -187,7 +208,9 @@ export function createTimeGhost() {
     ring.rotation.y += delta * 2.5
     const pulse = 0.5 + Math.sin(elapsed * 8) * 0.25
     ringMat.opacity = pulse
-    beaconLight.intensity = 2.5 + Math.sin(elapsed * 12) * 1.0
+    const beaconPulse = 0.55 + Math.sin(elapsed * 12) * 0.2
+    beaconMat.opacity = beaconPulse
+    beacon.scale.setScalar(0.85 + beaconPulse * 0.35)
 
     if (!isPlaying || trajectory.length < 2) {
       visual?.update(delta)

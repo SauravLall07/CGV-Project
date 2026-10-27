@@ -49,6 +49,88 @@ function marker(parent, z, halfZ, material) {
   return batch(parent, 'hazard-footprint-brackets', material, parts)
 }
 
+function steamPuffTexture() {
+  const size = 64
+  const data = new Uint8Array(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (x + 0.5) / size - 0.5
+      const dy = (y + 0.5) / size - 0.5
+      const blob = Math.hypot(dx / 0.46, dy / 0.36)
+      const wobble = Math.sin(x * 0.45) * 0.04 + Math.cos(y * 0.38) * 0.04
+      const falloff = Math.max(0, 1 - blob + wobble)
+      const alpha = falloff * falloff * (0.55 + 0.45 * falloff)
+      const i = (y * size + x) * 4
+      data[i] = 214
+      data[i + 1] = 220
+      data[i + 2] = 224
+      data[i + 3] = Math.round(alpha * 255)
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.wrapS = THREE.ClampToEdgeWrapping
+  texture.wrapT = THREE.ClampToEdgeWrapping
+  texture.generateMipmaps = false
+  texture.minFilter = THREE.LinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.needsUpdate = true
+  return texture
+}
+
+function steamPuffMaterial(map) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uMap: { value: map },
+      uStrength: { value: 0.2 }
+    },
+    vertexShader: /* glsl */ `
+      attribute float aLife;
+      attribute float aLayer;
+      varying vec2 vUv;
+      varying float vLife;
+      varying float vLayer;
+      void main() {
+        vUv = uv;
+        vLife = aLife;
+        vLayer = aLayer;
+        vec4 localCenter = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        vec4 viewCenter = modelViewMatrix * localCenter;
+        // Keep the puff in the view plane. A pure flow-aligned streak is
+        // only a few centimetres tall from the aisle camera and disappears.
+        vec3 flow = (modelViewMatrix * vec4(1.0, 0.12, 0.0, 0.0)).xyz;
+        flow.z = 0.0;
+        float fl = length(flow);
+        flow = fl > 0.001 ? flow / fl : vec3(1.0, 0.0, 0.0);
+        vec3 wing = vec3(-flow.y, flow.x, 0.0);
+        float sx = length(instanceMatrix[0].xyz);
+        float sy = length(instanceMatrix[1].xyz);
+        vec3 offset = flow * position.x * sx + wing * position.y * sy;
+        gl_Position = projectionMatrix * (viewCenter + vec4(offset, 0.0));
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uMap;
+      uniform float uStrength;
+      varying vec2 vUv;
+      varying float vLife;
+      varying float vLayer;
+      void main() {
+        float sprite = texture2D(uMap, vUv).a;
+        float fade = smoothstep(0.0, 0.04, vLife) * (1.0 - smoothstep(0.9, 1.0, vLife));
+        float alpha = sprite * fade * uStrength * mix(0.62, 1.0, vLayer);
+        if (alpha < 0.02) discard;
+        vec3 col = mix(vec3(0.7, 0.75, 0.78), vec3(0.9, 0.93, 0.94), vLayer);
+        gl_FragColor = vec4(col, alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    transparent: true,
+    depthWrite: false
+  })
+}
+
 // Tracks both player travel and hazard travel between checks. The main loop caps
 // delta at 100 ms; <=20 ms sampling also catches a fast crossing of a thin jet.
 // Pose teleports used by respawn/dev starts test the destination only.
@@ -100,13 +182,19 @@ export function createExpansionHazards({ root, spans, player, timeSystem, unregi
   const signal = batch(vent, 'steam-clearance-signal', amber.clone(), [box(0.65, 0.08, 0.08, 0, 0, 0)])
   signal.position.set(-1.7, 2.65, 0)
   marker(vent, 0, STEAM.halfZ, amber)
-  const positions = new Float32Array(128 * 3)
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.25, 0), 2.9)
-  const mist = new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xdbe4dd, size: 0.22,
-    transparent: true, opacity: 0.5, depthWrite: false }))
-  mist.name = 'timed-steam-jet'; vent.add(mist)
+  const STEAM_PUFFS = 72
+  const steamMap = steamPuffTexture()
+  const steamLife = new Float32Array(STEAM_PUFFS)
+  const steamLayer = new Float32Array(STEAM_PUFFS)
+  const puffGeo = new THREE.PlaneGeometry(1, 1)
+  puffGeo.setAttribute('aLife', new THREE.InstancedBufferAttribute(steamLife, 1))
+  puffGeo.setAttribute('aLayer', new THREE.InstancedBufferAttribute(steamLayer, 1))
+  const mist = new THREE.InstancedMesh(puffGeo, steamPuffMaterial(steamMap), STEAM_PUFFS)
+  mist.name = 'timed-steam-jet'
+  mist.frustumCulled = false
+  mist.renderOrder = 2
+  vent.add(mist)
+  const puff = new THREE.Object3D()
 
   const previous = player.mesh.position.clone()
   let freightClock = 0, steamClock = STEAM.warnAt
@@ -123,14 +211,34 @@ export function createExpansionHazards({ root, spans, player, timeSystem, unregi
     needle.rotation.z = stage === 'active' ? -0.9 : stage === 'warning' ? 0 : 0.9
     valve.rotation.z = steamClock * 0.45
     mist.visible = stage !== 'clear'
-    mist.material.opacity = stage === 'active' ? 0.62 : 0.16
-    for (let i = 0; i < 128; i++) {
-      const u = ((i * 0.61803398875 + steamClock * 1.5) % 1 + 1) % 1
-      positions[i * 3] = -2.42 + u * (stage === 'active' ? 4.84 : 0.4)
-      positions[i * 3 + 1] = STEAM.minY + ((i * 0.754877666) % 1) * (STEAM.maxY - STEAM.minY)
-      positions[i * 3 + 2] = (((i * 0.569840291) % 1) * 2 - 1) * STEAM.halfZ
+    const active = stage === 'active'
+    mist.material.uniforms.uStrength.value = active ? 0.82 : 0.36
+    const reach = active ? 4.6 : 0.42
+    for (let i = 0; i < STEAM_PUFFS; i++) {
+      const core = i < 30
+      steamLayer[i] = core ? 1 : 0
+      const seed = (i * 0.173 + 0.11) % 1
+      const u = ((seed + i * 0.019 + steamClock * (active ? 0.95 : 0.32)) % 1 + 1) % 1
+      steamLife[i] = u
+      const along = core ? u * (0.28 + 0.72 * u) : u
+      const cone = (core ? 0.4 : 1) * (0.08 + along * along * (active ? 1 : 0.22))
+      const turb = Math.sin(along * 10.5 + seed * 24 + steamClock * 2.6)
+      const turb2 = Math.cos(along * 6.4 + seed * 15 - steamClock * 1.8)
+      puff.position.set(
+        -2.16 + along * reach + turb * cone * 0.1,
+        1.16 + along * (active ? 0.62 : 0.18) + turb * cone * 0.36,
+        turb2 * STEAM.halfZ * cone * 1.05
+      )
+      const length = (core ? 0.7 : 0.95) + along * (active ? 1.05 : 0.22)
+      const girth = (core ? 0.42 : 0.58) + along * cone * (active ? 0.85 : 0.16)
+      puff.scale.set(length, girth, 1)
+      puff.rotation.set(0, 0, 0)
+      puff.updateMatrix()
+      mist.setMatrixAt(i, puff.matrix)
     }
-    geometry.attributes.position.needsUpdate = true
+    mist.instanceMatrix.needsUpdate = true
+    mist.geometry.attributes.aLife.needsUpdate = true
+    mist.geometry.attributes.aLayer.needsUpdate = true
   }
   unregisters.push(timeSystem.register(load, {
     onUpdate(dt) { if (freightStarted) { freightClock += dt; applyFreight() } },
