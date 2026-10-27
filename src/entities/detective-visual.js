@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
 
 // Mixamo detective: Idle.fbx is the skinned mesh; the other FBXs are
 // animation-only clips retargeted onto that skeleton by track/bone name.
@@ -42,7 +43,7 @@ const ONE_SHOTS = new Set(['cast', 'throw', 'salute'])
 const THROW_RELEASE_TIME = 24 / 30
 
 function firstClip(fbx, name) {
-  const clip = fbx?.animations?.[0]
+  const clip = fbx?.animations?.[0]?.clone()
   if (!clip) return null
   clip.name = name
   return clip
@@ -304,31 +305,50 @@ function prepareModel(model) {
   }
 }
 
+const sources = new WeakMap()
+
+function loadSource(assets) {
+  if (!sources.has(assets)) {
+    const ready = Promise.all(Object.entries(FILES).map(async ([name, url]) =>
+      [name, name === 'idle' ? await assets.loadFbx(url.href) : await loadOptionalFbx(assets, url.href)]
+    )).then(entries => {
+      const files = Object.fromEntries(entries)
+      return { files, info: prepareModel(files.idle) }
+    }).catch(error => {
+      sources.delete(assets)
+      throw error
+    })
+    sources.set(assets, ready)
+  }
+  return sources.get(assets)
+}
+
 // `crouchSpeed` is the player's crouched ground speed (m/s) and
 // `crouchSettleTime` how long player.js takes to settle into or out of the
 // crouch (s). Both come from player.js so the clips follow its tuning.
 export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettleTime = 0 } = {}) {
-  const [
-    idleFbx, runFbx, jumpIdleFbx, jumpRunFbx, castFbx,
-    standToCrouchFbx, crouchIdleFbx, crouchWalkFbx, crouchToStandFbx, throwFbx, walkFbx, pressFbx, pullFbx, pickupFbx
-  ] = await Promise.all([
-    assets.loadFbx(FILES.idle.href),
-    loadOptionalFbx(assets, FILES.run.href),
-    loadOptionalFbx(assets, FILES.jumpIdle.href),
-    loadOptionalFbx(assets, FILES.jumpRun.href),
-    loadOptionalFbx(assets, FILES.cast.href),
-    loadOptionalFbx(assets, FILES.standToCrouch.href),
-    loadOptionalFbx(assets, FILES.crouchIdle.href),
-    loadOptionalFbx(assets, FILES.crouchWalk.href),
-    loadOptionalFbx(assets, FILES.crouchToStand.href),
-    loadOptionalFbx(assets, FILES.throw.href),
-    loadOptionalFbx(assets, FILES.walk.href),
-    loadOptionalFbx(assets, FILES.press.href),
-    loadOptionalFbx(assets, FILES.pull.href),
-    loadOptionalFbx(assets, FILES.pickup.href)
-  ])
-
-  const info = prepareModel(idleFbx)
+  const source = await loadSource(assets)
+  const { run: runFbx, jumpIdle: jumpIdleFbx, jumpRun: jumpRunFbx, cast: castFbx,
+    standToCrouch: standToCrouchFbx, crouchIdle: crouchIdleFbx, crouchWalk: crouchWalkFbx,
+    crouchToStand: crouchToStandFbx, throw: throwFbx, walk: walkFbx, press: pressFbx,
+    pull: pullFbx, pickup: pickupFbx, salute: saluteFbx } = source.files
+  const wrapper = cloneSkinned(source.info.wrapper)
+  wrapper.traverse(node => {
+    if (!node.isMesh) return
+    // Each visual owns its geometry/materials so ghost teardown cannot dispose
+    // the player's resources. Textures are read-only shared source assets.
+    node.geometry = node.geometry.clone()
+    const materials = Array.isArray(node.material) ? node.material : [node.material]
+    const cloned = materials.map(material => {
+      for (const value of Object.values(material)) {
+        if (value?.isTexture) value.userData.sharedTexture = true
+      }
+      return material.clone()
+    })
+    node.material = Array.isArray(node.material) ? cloned : cloned[0]
+  })
+  const info = { ...source.info, wrapper }
+  const idleFbx = wrapper.children[0]
   if (import.meta.env?.DEV) console.log(
     `[detective] scale=${info.scale} rawHeight=${info.rawHeight.toFixed(1)} ` +
     `worldHeight=${info.worldHeight.toFixed(2)}m feetY=${info.wrapper.position.y.toFixed(3)} ` +
@@ -351,7 +371,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     crouchWalk: firstClip(crouchWalkFbx, 'crouchWalk'),
     crouchToStand: firstClip(crouchToStandFbx, 'crouchToStand'),
     throw: firstClip(throwFbx, 'throw'),
-    salute: firstClip(await loadOptionalFbx(assets, FILES.salute.href), 'salute')
+    salute: firstClip(saluteFbx, 'salute')
   }
 
   const crouchWalkTravel = rootTravel(clips.crouchWalk, info.scale)

@@ -109,6 +109,7 @@ const policeReady = startupTasks.track('police', preloadPoliceVisual(assets))
 // Ghost Mixamo load starts after createTimeSystem() below; charactersReady
 // is assigned there so the menu waits for player, police, and ghost visuals.
 let charactersReady = Promise.all([detectiveReady, policeReady])
+let startupPrepared = false
 
 const minimap = createMinimap({
   scene,
@@ -768,15 +769,18 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
 
     await charactersReady
 
+    menu.show()
+    menu.updateCinematicCamera(0)
+    titleBackdrop.updateAtmosphere?.(0, camera.position)
     // Compile Ghost materials/lights after the Mixamo visual is attached so
     // first Ghost press does not pay that shader cost in-game.
     timeSystem.warmGhost(renderer, camera)
+    startupPrepared = true
 
     // Keep the existing extra frame before revealing the title scene.
     requestAnimationFrame(() => {
       startupTasks.complete('presentation')
       loadingScreen.hide()
-      menu.show()
       if (benchTarget) {
         menu.hide()
         startGame()
@@ -797,6 +801,9 @@ const loop = createLoop({
   clock,
   instrumentation: renderOverlay,
   render(world, view) {
+    // The opaque loader covers boot. Avoid uploading/compiling partial scenes
+    // while character loads and lighting setup are still changing.
+    if (!startupPrepared) return
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
@@ -816,6 +823,7 @@ const loop = createLoop({
 
 const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
+  if (!startupPrepared) return
   renderQuality.update(performance.now())
   benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /
