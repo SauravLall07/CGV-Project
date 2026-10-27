@@ -96,6 +96,17 @@ export const OPTION_DEFS = [
     type: 'toggle'
   },
   {
+    id: 'minimapRange',
+    label: 'Minimap Range',
+    hint: 'Map width in metres. Lower shows larger detail; higher shows more surroundings.',
+    group: 'Display',
+    type: 'slider',
+    min: 10,
+    max: 40,
+    step: 2,
+    format: v => `${v} m`
+  },
+  {
     id: 'captureShortcuts',
     label: 'Capture Browser Shortcuts',
     hint: 'Plays fullscreen so Ctrl+W, Ctrl+T and Ctrl+Tab reach the game instead of the browser. Esc still pauses.',
@@ -177,6 +188,7 @@ export const DEFAULT_OPTIONS = {
   shadowQuality: 'medium',
   grassDensity: 'medium',
   showStats: false,
+  minimapRange: 16,
   captureShortcuts: true,
   mouseSensitivity: 1,
   invertY: false,

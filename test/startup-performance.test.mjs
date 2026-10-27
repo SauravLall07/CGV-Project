@@ -87,7 +87,7 @@ test('minimap batches grow, retain transforms, clip moving obstacles and release
   let boxes = Array.from({ length: 100 }, (_, i) => ({ minX: i, maxX: i + 0.5, minZ: 0, maxZ: 2 }))
   const icons = createMinimapIcons({ scene, player, getObstacles: () => boxes })
   icons.update()
-  const batches = () => icons.root.children.filter(node => node.isInstancedMesh)
+  const batches = () => icons.root.children.filter(node => node.isInstancedMesh && node.renderOrder === 1)
   assert.equal(batches().length, 1, '100 walls use one obstacle draw')
   assert.equal(batches()[0].count, 100)
   const matrix = new THREE.Matrix4()

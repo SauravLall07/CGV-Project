@@ -113,14 +113,15 @@ let startupPrepared = false
 
 const minimap = createMinimap({
   scene,
-  hudRoot: hud.root,
+  hudRoot: hud.minimapRoot,
   mainCamera: camera,
   player,
   // levelManager is created below; these are only called from the render loop.
   getObstacles: () => levelManager.obstacles,
   getGuards: () => levelManager.guards,
   getLevelState: () => levelManager.getState(),
-  getCarriageVolumes: () => levelManager.carriageVolumes
+  getCarriageVolumes: () => levelManager.carriageVolumes,
+  getRange: () => settings.get('minimapRange')
 })
 
 const keyboard = createKeyboardState()
@@ -811,7 +812,7 @@ const loop = createLoop({
   },
 
   afterRender: (gl) => {
-    const show = gameStarted && !credits.isOpen
+    const show = gameStarted && !credits.isOpen && levelManager.minimapVisible
     minimap.setVisible(show)
 
     if (show) {

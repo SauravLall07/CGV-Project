@@ -212,7 +212,7 @@ export function listCarriageWallBoxes(volume) {
     boxes.push({ kind: 'wall', minX: doorMax, maxX, minZ: z0, maxZ: z1 })
   }
 
-  const zStroke = Math.max(MINIMAP_BULKHEAD_THICK, (maxZ - minZ) * 0.04)
+  const zStroke = MINIMAP_BULKHEAD_THICK
   addBulkheadBoxes(minZ, minZ + zStroke, Boolean(volume.sealedMin))
   addBulkheadBoxes(maxZ - zStroke, maxZ, Boolean(volume.sealedMax))
   return boxes
