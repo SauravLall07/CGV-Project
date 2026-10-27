@@ -65,6 +65,7 @@ export function createStaircase({
     tread.position.set(cx, lowY + height / 2, cz)
     tread.rotation.y = yaw
     tread.receiveShadow = true
+    tread.userData.minimapFloor = true
     group.add(tread)
 
     for (const side of [-1, 1]) {

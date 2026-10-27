@@ -277,6 +277,9 @@ export function createLevelManager({
     getState: () => currentState,
     isTransitioning: () => transitioning,
     isCinematic: () => Boolean(current?.isCinematic),
+    get minimapVisible() {
+      return Boolean(current && currentState !== 'Ending' && current.minimapVisible !== false)
+    },
     get bounds() {
       return current && current.bounds ? current.bounds : null
     },

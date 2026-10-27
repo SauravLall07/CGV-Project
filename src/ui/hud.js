@@ -11,6 +11,41 @@ import { createCinematicSkip } from './cinematic-skip.js'
 export function createHud() {
   const root = document.createElement('div')
   root.id = 'hud'
+  const layoutStyle = document.createElement('style')
+  layoutStyle.textContent = `
+    #hud { container-type: size; --hud-gap: clamp(8px, 1.4cqw, 18px); }
+    #hud .hud-layout {
+      position: absolute; inset: var(--hud-gap); display: grid;
+      grid-template-columns: minmax(0, 1fr) clamp(140px, 19cqw, 220px);
+      gap: var(--hud-gap); align-items: start;
+    }
+    #hud .hud-main, #hud .hud-navigation { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    #hud .hud-header { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 12px; align-items: start; }
+    #hud .hud-status { display: flex; gap: 8px; align-items: start; flex-wrap: wrap; }
+    #hud .hud-layout .hud-flow { position: static; transform: none; margin: 0; box-sizing: border-box; min-width: 0; }
+    #hud .hud-objective { width: 100%; max-width: none; overflow-wrap: anywhere; }
+    #hud .hud-briefing { width: min(400px, 100%); max-width: 100%; }
+    #hud .hud-toast { align-self: center; max-width: 100%; }
+    #hud .hud-stats { align-self: start; }
+    #hud .hud-suspicion { width: 100%; }
+    #hud #minimap-frame {
+      width: 100%; height: auto; aspect-ratio: 1;
+      max-height: min(48cqh, max(96px, calc(100cqh - 210px)));
+    }
+    #hud #minimap-frame[data-environment="train"] { height: clamp(180px, 40cqh, 280px); aspect-ratio: auto; }
+    @container (max-width: 960px) {
+      #hud .hud-header { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+      #hud .hud-objective { font-size: 12px; padding: 6px 10px !important; }
+    }
+    @container (max-width: 520px) {
+      #hud .hud-layout { grid-template-columns: minmax(0, 1fr) min(128px, 36cqw); gap: 8px; }
+      #hud .hud-status { gap: 6px; }
+      #hud .hud-briefing { padding: 8px !important; }
+      #hud .hud-briefing div { font-size: 11px !important; }
+      #hud .hud-suspicion { padding: 8px !important; }
+    }
+  `
+  root.appendChild(layoutStyle)
   const cinematicSkip = createCinematicSkip(root)
   Object.assign(root.style, {
     position: 'fixed',
@@ -213,6 +248,7 @@ export function createHud() {
 
   // Top-Right Suspicion / Alert Meter
   const suspicionContainer = document.createElement('div')
+  suspicionContainer.id = 'suspicion-meter'
   Object.assign(suspicionContainer.style, {
     position: 'absolute',
     top: '18px',
@@ -226,8 +262,7 @@ export function createHud() {
     border: '1px solid rgba(245, 158, 11, 0.3)',
     borderRadius: '6px',
     backdropFilter: 'blur(6px)',
-    opacity: '0',
-    transform: 'translateY(-10px)',
+    opacity: '1',
     transition: 'opacity 200ms ease, transform 200ms ease'
   })
 
@@ -235,7 +270,7 @@ export function createHud() {
   Object.assign(suspicionLabelRow.style, {
     display: 'flex',
     justifyContent: 'space-between',
-    width: '140px',
+    width: '100%',
     fontSize: '11px',
     fontWeight: '700',
     letterSpacing: '0.8px',
@@ -250,7 +285,7 @@ export function createHud() {
 
   const suspicionTrack = document.createElement('div')
   Object.assign(suspicionTrack.style, {
-    width: '140px',
+    width: '100%',
     height: '6px',
     background: 'rgba(255, 255, 255, 0.1)',
     borderRadius: '3px',
@@ -615,6 +650,9 @@ export function createHud() {
     left: '50%',
     transform: 'translateX(-50%)',
     display: 'flex',
+    width: '380px',
+    maxWidth: 'calc(100cqw - 2 * var(--hud-gap))',
+    boxSizing: 'border-box',
     flexDirection: 'column',
     alignItems: 'center',
     gap: '8px',
@@ -652,7 +690,7 @@ export function createHud() {
     background: 'rgba(255, 255, 255, 0.1)',
     borderRadius: '3px',
     overflow: 'hidden',
-    minWidth: '160px'
+    minWidth: '0'
   })
 
   const energyBarFill = document.createElement('div')
@@ -693,7 +731,7 @@ export function createHud() {
     background: 'rgba(255, 255, 255, 0.1)',
     borderRadius: '3px',
     overflow: 'hidden',
-    minWidth: '160px'
+    minWidth: '0'
   })
 
   const strainBarFill = document.createElement('div')
@@ -711,6 +749,7 @@ export function createHud() {
   const abilitySlots = document.createElement('div')
   Object.assign(abilitySlots.style, {
     display: 'flex',
+    width: '100%',
     gap: '8px',
     marginTop: '2px'
   })
@@ -735,7 +774,8 @@ export function createHud() {
       background: 'rgba(255, 255, 255, 0.05)',
       border: '1px solid rgba(255, 255, 255, 0.15)',
       borderRadius: '6px',
-      minWidth: '58px',
+      minWidth: '0',
+      flex: '1',
       transition: 'all 180ms ease'
     })
 
@@ -822,7 +862,33 @@ export function createHud() {
   })
   stats.textContent = '-- FPS'
 
-  root.append(objective, toast, briefing, suspicionContainer, timeDeck, runTimer, stats)
+  // Shared flow reserves real space for each panel, including wrapped objectives.
+  const layout = document.createElement('div')
+  layout.className = 'hud-layout'
+  const main = document.createElement('div')
+  main.className = 'hud-main'
+  const header = document.createElement('div')
+  header.className = 'hud-header'
+  const status = document.createElement('div')
+  status.className = 'hud-status'
+  const navigation = document.createElement('div')
+  navigation.className = 'hud-navigation'
+  const minimapRoot = document.createElement('div')
+  for (const [element, name] of [
+    [livesContainer, 'lives'], [runTimer, 'timer'], [objective, 'objective'],
+    [toast, 'toast'], [briefing, 'briefing'], [stats, 'stats'], [suspicionContainer, 'suspicion']
+  ]) {
+    element.className = `hud-flow hud-${name}`
+    for (const property of ['position', 'top', 'left', 'right', 'transform', 'max-width']) {
+      element.style.removeProperty(property)
+    }
+  }
+  status.append(livesContainer, runTimer)
+  header.append(status, objective)
+  main.append(header, stats, toast, briefing)
+  navigation.append(suspicionContainer, minimapRoot)
+  layout.append(main, navigation)
+  root.append(layout, timeDeck)
   document.body.appendChild(root)
 
   // Re-label the ability slots when the player rebinds a time ability.
@@ -976,24 +1042,16 @@ export function createHud() {
     suspicionFill.style.width = `${clamped}%`
     suspicionPct.textContent = `${clamped}%`
 
-    if (clamped > 0) {
-      suspicionContainer.style.opacity = '1'
-      suspicionContainer.style.transform = 'translateY(0)'
-
-      if (clamped > 60) {
-        suspicionLabelRow.style.color = '#ef4444'
-        suspicionContainer.style.borderColor = 'rgba(239, 68, 68, 0.6)'
-        suspicionFill.style.background = 'linear-gradient(90deg, #f97316, #ef4444)'
-        suspicionFill.style.boxShadow = '0 0 10px rgba(239, 68, 68, 0.9)'
-      } else {
-        suspicionLabelRow.style.color = '#f59e0b'
-        suspicionContainer.style.borderColor = 'rgba(245, 158, 11, 0.3)'
-        suspicionFill.style.background = 'linear-gradient(90deg, #f59e0b, #ef4444)'
-        suspicionFill.style.boxShadow = '0 0 8px rgba(245, 158, 11, 0.8)'
-      }
+    if (clamped > 60) {
+      suspicionLabelRow.style.color = '#ef4444'
+      suspicionContainer.style.borderColor = 'rgba(239, 68, 68, 0.6)'
+      suspicionFill.style.background = 'linear-gradient(90deg, #f97316, #ef4444)'
+      suspicionFill.style.boxShadow = '0 0 10px rgba(239, 68, 68, 0.9)'
     } else {
-      suspicionContainer.style.opacity = '0'
-      suspicionContainer.style.transform = 'translateY(-10px)'
+      suspicionLabelRow.style.color = '#f59e0b'
+      suspicionContainer.style.borderColor = 'rgba(245, 158, 11, 0.3)'
+      suspicionFill.style.background = 'linear-gradient(90deg, #f59e0b, #ef4444)'
+      suspicionFill.style.boxShadow = '0 0 8px rgba(245, 158, 11, 0.8)'
     }
   }
 
@@ -1132,6 +1190,7 @@ export function createHud() {
   // main.js having to mirror the same values a second time.
   return {
     root,
+    minimapRoot,
     showCinematicSkip: cinematicSkip.show,
     hideCinematicSkip: cinematicSkip.hide,
     setObjective,
