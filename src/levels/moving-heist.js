@@ -27,6 +27,7 @@ import { createSkyDome } from '../environment/sky-dome.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
+import { createMovingHeistAudio } from '../systems/moving-heist-audio.js'
 
 // Level 2 — "The Moving Heist".
 //
@@ -308,6 +309,7 @@ export function createMovingHeistLevel({
   startAt = null,
   post = null
 }) {
+  const audio = createMovingHeistAudio(player)
   post?.setGrade({ warmth: 0 })
 
   const powerPickups = []
@@ -706,6 +708,7 @@ export function createMovingHeistLevel({
     onInteract: () => {
       if (interfaceTaken) return
       interfaceTaken = true
+      audio.pickup()
       interfaceBeacon.visible = false
       unlockAbility('SLOW', 'CHRONO LINK ESTABLISHED — SLOW unlocked')
       interaction.flashPrompt('Temporal Maintenance Interface linked to the train\'s Chrono Core.')
@@ -901,6 +904,7 @@ export function createMovingHeistLevel({
         return
       }
       ghostTaken = true
+      audio.pickup()
       ghostPickup.collect()
       unlockAbility('GHOST', 'ECHO SYNCHRONIZER INSTALLED — TIME GHOST unlocked')
       hud.setObjective('Route Control — the route board only turns while the operator platform is held')
@@ -1159,11 +1163,13 @@ export function createMovingHeistLevel({
           return
         }
         relayInput.push(i)
+        audio.switch()
         if (relayInput.length < RELAY_COUNT) {
           hud.showToast(`RELAY ${slot.label} THROWN — ${relayInput.length} / ${RELAY_COUNT}`, 1100)
           return
         }
         relaySolved = true
+        audio.mechanism()
         hud.showToast('ROUTE SET — forward door unlocked', 2600)
         hud.setObjective('Proceed to Cargo and acquire the next Chrono module')
       }
@@ -1208,6 +1214,7 @@ export function createMovingHeistLevel({
     }
   }
   applyRouteDoor()
+  audio.trackMotion('relay-door', doorLeaves[0])
 
   const lintel = new THREE.Mesh(
     new THREE.BoxGeometry(doorFace * 2, CARRIAGE_CEILING_Y - DOOR_H, 0.24),
@@ -1300,6 +1307,7 @@ export function createMovingHeistLevel({
         return
       }
       freezeTaken = true
+      audio.pickup()
       freezePickup.collect()
       unlockAbility('FREEZE', 'CRYO PHASE MODULE INSTALLED — FREEZE unlocked')
       // Freeze is the module that heats the interface, so the strain meter
@@ -1332,6 +1340,7 @@ export function createMovingHeistLevel({
   // and FREEZE stops all of them together, and a checkpoint restores its clock.
   function registerCargoHazard(object, apply) {
     const state = { t: 0 }
+    audio.trackMotion(object.name || `cargo-${object.id}`, object)
     apply(0)
     unregisters.push(registerHazard(object, {
       onUpdate(scaledDelta) { state.t += scaledDelta; apply(state.t) },
@@ -1601,6 +1610,7 @@ export function createMovingHeistLevel({
         return
       }
       rewindTaken = true
+      audio.pickup()
       rewindPickup.collect()
       unlockAbility('REWIND', 'ROLLBACK MODULE INSTALLED — REWIND unlocked')
       hud.setObjective('Cross Mechanical — REWIND each machine open, then move before it springs again')
@@ -1635,10 +1645,12 @@ export function createMovingHeistLevel({
     const total = delay + duration
     const m = { z, s: -1, p: 0, outlines, moving: false }
     function set(s) {
+      const wasMoving = m.moving
       m.s = s
       const k = s < delay ? 0 : Math.min(1, (s - delay) / duration)
       m.p = k * k * (3 - 2 * k)
       m.moving = m.p > 0 && m.p < 1
+      if (m.moving && !wasMoving) audio.mechanism()
       apply(m.p)
     }
     set(-1)
@@ -1840,6 +1852,7 @@ export function createMovingHeistLevel({
   addSlideDoor(12.4, [5.6, 13.5], 0.5, 0.6)
 
   const { hatchCover, ladder } = env.parts.convergence
+  audio.trackMotion('convergence-hatch', hatchCover)
   let hatchBroken = false
   let hatchRepaired = false
   let hatchOpen = 1
@@ -1874,6 +1887,7 @@ export function createMovingHeistLevel({
         interaction.flashPrompt('The hatch motor failed shut — REWIND it to the open state.')
         return
       }
+      audio.impact()
       enterRoof()
     }
   }))
@@ -1991,6 +2005,7 @@ export function createMovingHeistLevel({
     root.add(lamp)
     const station = { pos, held: false }
     station.update = (held) => {
+      if (held && !station.held) audio.switch()
       station.held = held
       plate.position.y = held ? 0.055 : 0.08
       lever.rotation.x = held ? 0.8 : -0.6
@@ -2020,6 +2035,7 @@ export function createMovingHeistLevel({
       }
     }
     door.apply()
+    audio.trackMotion(`convergence-door-${localZ}`, leaves[0].leaf)
     return door
   }
 
@@ -2333,6 +2349,8 @@ export function createMovingHeistLevel({
   const drawbridgeSupport = roofSupport()
   let drawbridgeDown = 0
   let drawbridgeLatched = false
+  let drawbridgeWasHeld = false
+  audio.trackMotion('roof-drawbridge', drawbridge)
 
   // Decor crates on the decks, clear of the obstacles; they collide.
   for (const [f, x] of [[7.4, -1.9], [15.8 + 1.2, 1.9], [26.6, -1.9]]) {
@@ -2383,6 +2401,7 @@ export function createMovingHeistLevel({
         return
       }
       zipRide = 0
+      audio.mechanism()
     }
   }))
 
@@ -2410,6 +2429,7 @@ export function createMovingHeistLevel({
     onInteract: () => {
       if (taken) return
       taken = true
+      audio.pickup()
       beginCinematic?.()
       interaction.flashPrompt('Chrono Core secured!')
       hud.setObjective('TEMPORAL CONTAINMENT LOST — the train is destabilising')
@@ -2426,6 +2446,7 @@ export function createMovingHeistLevel({
   ]
 
   function enterVault() {
+    audio.impact()
     section = 'vault'
     setBounds(env.vaultBounds)
     useObstacles(vaultObstacles)
@@ -2635,6 +2656,7 @@ export function createMovingHeistLevel({
     get isCinematic() { return taken },
 
     update(delta) {
+      audio.update(delta, section === 'roof' ? 'metal' : 'wood')
       sky.update(delta, timeSystem)
       const targetSceneryMultiplier = timeSystem.getUniforms().uTimeScale.value
       if (targetSceneryMultiplier !== sceneryTarget) {
@@ -2710,6 +2732,7 @@ export function createMovingHeistLevel({
       // is at the front and the hold ends when the platform is clear.
       if (platformHeld && !routeEverEngaged) {
         routeEverEngaged = true
+        audio.switch()
         hud.showBriefing?.([
           'Operator hold engaged — the route system is live.',
           'The route board over the front door has turned its plates. It turns back the moment the platform is clear.'
@@ -2730,6 +2753,7 @@ export function createMovingHeistLevel({
         routeReadT += delta
         if (routeReadT >= ROUTE_READ_SECONDS) {
           relayLogged = true
+          audio.switch()
           hud.showToast('ROUTING ORDER LOGGED — relays latched open. Throw them in order, I to IV.', 3400)
           hud.setObjective('Route Control — throw relays A–D in the order shown: I, II, III, IV')
         }
@@ -3058,6 +3082,7 @@ export function createMovingHeistLevel({
           if (k >= 1) {
             zipRide = -1
             setBounds(env.roofBounds)
+            audio.impact()
             player.setPose(new THREE.Vector3(ZIP_X - 0.15, ROOF_Y, zipTo), 0)
           }
         } else if (trolley.position.z !== zipFrom && pp.z < zipFrom) {
@@ -3068,6 +3093,8 @@ export function createMovingHeistLevel({
         // the player is across.
         const plateHeld =
           ghost.isOccupying(bridgePlatePos, 0.56) || playerOnPad(bridgePlatePos, 0.56)
+        if (plateHeld && !drawbridgeWasHeld) audio.switch()
+        drawbridgeWasHeld = plateHeld
         bridgePlate.position.y = plateHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
         if (!drawbridgeLatched && pp.z > V0 + 0.6 && pp.y > ROOF_Y - 0.2) drawbridgeLatched = true
         const bridgeTarget = plateHeld || drawbridgeLatched ? 1 : 0
@@ -3078,6 +3105,7 @@ export function createMovingHeistLevel({
     },
 
     dispose() {
+      audio.dispose()
       post?.resetGrade()
       if (scene.onBeforeRender === cullBeforeRender) scene.onBeforeRender = previousBeforeRender
       if (scene.onAfterRender === cullAfterRender) scene.onAfterRender = previousAfterRender
