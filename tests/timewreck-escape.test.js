@@ -13,6 +13,16 @@ import { createRespawnSystem } from '../src/systems/respawn.js'
 import { securityCrossingLayout } from '../src/levels/timewreck-security.js'
 import { WRECK_VIGNETTES } from '../src/levels/timewreck-feedback.js'
 
+// The brake hand-off now owns a DOM veil; keep the existing canvas shim.
+const canvasDocument = globalThis.document
+globalThis.document = { ...canvasDocument,
+  body: { appendChild(node) { node.parentNode = this }, removeChild(node) { node.parentNode = null } },
+  createElement(tag) {
+    if (tag === 'canvas') return canvasDocument.createElement(tag)
+    return { style: {}, remove() { this.parentNode?.removeChild(this) } }
+  }
+}
+
 function levelHarness(start = 'mechanical', fps = 60) {
   globalThis.window = { devicePixelRatio: 1, innerWidth: 1280 }
   let advanced = 0
@@ -239,7 +249,9 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       move('z', h.scene.getObjectByName('emergency-brake').position.z + 1.5, {run:true})
       h.interactions.get('emergency-brake').onInteract()
       assert.equal(h.level.isCinematic,true)
-      h.tick(4.9)
+      h.tick(1.49)
+      assert.equal(h.advanced,0,'hand-off waits for the complete fade')
+      h.tick(0.02)
       assert.equal(h.advanced,1)
     } finally { h.dispose() }
   }
@@ -565,7 +577,7 @@ test('Convergence: four open-floor runaway carts move in all directions and Slow
   } finally { h.dispose() }
 })
 
-test('Passenger: warned rack, real separating floor, Freeze chase and controllable sprint reach brake', () => {
+test('Passenger: warned rack, real separating floor, Freeze chase and controllable sprint reach brake', t => {
   for (const fps of [30, 60, 144]) {
     const h = levelHarness('passenger', fps)
     try {
@@ -591,9 +603,10 @@ test('Passenger: warned rack, real separating floor, Freeze chase and controllab
       assert.equal(h.level.isCinematic, false, 'player owns the entire sprint')
       h.interactions.get('emergency-brake').onInteract()
       assert.equal(h.level.isCinematic, true)
-      h.tick(2.7)
+      h.tick(1.2)
       const scenery = h.scene.getObjectByName('trackside-infrastructure')
       const stopped = scenery.position.z
+      t.diagnostic(`Brake stop at ${fps} FPS: trackside z=${stopped}; stopped before the 1.5s hand-off`)
       h.tick(0.8)
       assert.equal(scenery.position.z, stopped, 'main scenery actually stops')
       assert.ok(h.scene.getObjectByName('broken-bridge-ahead'))
@@ -955,7 +968,7 @@ test('Finale: native skip completes once; natural completion and checkpoint reco
       startFinale(h)
       const skip = h.skipFinale
       if (finish === 'skip') skip()
-      else if (finish === 'automatic') h.tick(4.9)
+      else if (finish === 'automatic') h.tick(1.51)
       else { h.respawn.cancel(); h.respawn.respawn() }
       assert.equal(h.skipFinale, null)
       assert.equal(h.level.isCinematic, false)

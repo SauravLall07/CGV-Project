@@ -19,6 +19,7 @@ import {
 
 // Level-manager states rendered as something a player would recognise.
 const LEVEL_NAMES = {
+  Ending: 'Epilogue',
   Boarding: 'Level 1 — Boarding the Express',
   MovingHeist: 'Level 2 — The Moving Heist',
   Timewreck: 'Level 3 — Timewreck',
