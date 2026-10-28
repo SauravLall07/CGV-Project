@@ -295,7 +295,6 @@ keyboard.onAction('ghost', () => triggerTimeAbilityOutsideBoarding(() => timeSys
 
 keyboard.onAction('restart', () => {
   if (gameStarted && !credits.isOpen) {
-    respawn.resetLives()
     levelManager.restart()
   }
 })
@@ -386,19 +385,6 @@ if (import.meta.env?.DEV) {
     })
   }
 }
-
-// Disabled: running out of lives on Level 2 must not send the player back to
-// Level 1. With no game-over handler, the respawn system keeps using the
-// current checkpoint after every failure.
-// respawn.setGameOverHandler(() => {
-//   elapsed = 0
-//   resetCount = 0
-//   timeSystem.resetRun?.()
-//   playerView.reset()
-//   hud.setSuspicion(0)
-//   respawn.resetLives()
-//   levelManager.enter('Boarding')
-// })
 
 // ---------------------------------------------------------------
 // Main Menu
@@ -583,8 +569,6 @@ const pauseMenu = createPauseMenu({
     maxEnergy: timeSystem.getMaxEnergy(),
     suspicion: hud.getSuspicion(),
     timeMode: timeSystem.getMode(),
-    lives: respawn.getLives(),
-    maxLives: respawn.getMaxLives(),
     resets: resetCount
   }),
   onPause: () => setPaused(true),
@@ -592,7 +576,6 @@ const pauseMenu = createPauseMenu({
   onRestart: () => {
     resetCount = 0
     elapsed = 0
-    respawn.resetLives()
     timeSystem.resetRun?.()
     levelManager.restart()
     setPaused(false)
@@ -777,7 +760,6 @@ function startGame() {
   paused = false
   elapsed = 0
   resetCount = 0
-  respawn.resetLives()
   timeSystem.resetRun?.()
   playerView.reset() // every run opens in third person
   hud.resetRunTimer()

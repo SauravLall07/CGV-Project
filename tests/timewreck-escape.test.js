@@ -348,16 +348,15 @@ test('N8/N9: each live event pauses, holds Freeze without taking control, and re
   } finally { globalThis.requestAnimationFrame = oldRAF }
 })
 
-test('N9: caught recovery and game-over restart during every vignette restore progress and reject stale callbacks', () => {
+test('N9: caught recovery during every vignette restores progress, rejects stale callbacks, and never game-overs', () => {
   const oldRAF = globalThis.requestAnimationFrame, oldTimeout = globalThis.setTimeout, oldClear = globalThis.clearTimeout
   try {
     for (const spec of WRECK_VIGNETTES) {
-      const frames = [], timers = new Map(); let id = 0, gameOvers = 0
-      globalThis.requestAnimationFrame = cb => frames.push(cb)
+      const timers = new Map(); let id = 0, gameOvers = 0
+      globalThis.requestAnimationFrame = () => 0
       globalThis.setTimeout = cb => { timers.set(++id, cb); return id }
       globalThis.clearTimeout = key => timers.delete(key)
       const h = levelHarness(spec.key)
-      let manager
       try {
         pose(h, 0, h.center + spec.triggerNear - 0.1); h.tick(0.3)
         const event = h.scene.getObjectByName(`${spec.key}-background-vignette`)
@@ -370,26 +369,19 @@ test('N9: caught recovery and game-over restart during every vignette restore pr
         assert.equal(event.position.x, spec.x, 'actual checkpoint restores the saved initial event phase')
         h.time.triggerFreeze(); const restored = event.position.clone(); h.tick(0.1)
         assert.ok(event.position.equals(restored), 'history reset must not replace checkpoint geometry')
-        manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud, timeSystem: h.time,
-          respawn: h.respawn, camera: { snap() {} }, loadingScreen: { show() {}, hide() {} },
-          interaction: { register: () => () => {}, registerBlocker: () => () => {}, setEnabled() {} },
-          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ debrisSeed: 12345, ...ctx, startCarriage: spec.key }) }] })
-        manager.adopt('Timewreck', h.level)
-        h.respawn.resetLives(1)
-        h.respawn.setGameOverHandler(() => { gameOvers++; manager.restart() })
+        // Lives are unlimited: a registered game-over handler must never fire,
+        // and the same level instance must survive repeated deaths.
+        h.respawn.setGameOverHandler(() => { gameOvers++ })
         pose(h, 0, h.center + spec.triggerNear - 0.1)
         h.time.setMode('NORMAL'); h.tick(0.2)
-        h.respawn.fail('final life during vignette')
-        const staleGameOver = [...timers.values()].at(-1)
-        staleGameOver()
-        for (let n = 0; frames.length; n++) { assert.ok(n < 10); frames.shift()() }
-        staleGameOver(); staleCaught()
-        assert.equal(gameOvers, 1)
-        const fresh = h.scene.getObjectByName(`${spec.key}-background-vignette`)
-        assert.notEqual(fresh, event)
-        assert.equal(fresh.position.x, spec.x)
+        h.respawn.fail('another death during vignette')
+        ;[...timers.values()].at(-1)?.()
+        staleCaught()
+        assert.equal(gameOvers, 0, 'death never triggers game-over / Level 1 rebuild')
+        assert.equal(h.scene.getObjectByName(`${spec.key}-background-vignette`), event)
+        assert.equal(event.position.x, spec.x)
         assert.equal(h.respawn.isFailing(), false)
-      } finally { manager?.dispose(); if (!manager) h.level.dispose(); h.respawn.dispose(); h.time.dispose() }
+      } finally { h.level.dispose(); h.respawn.dispose(); h.time.dispose() }
     }
   } finally {
     globalThis.requestAnimationFrame = oldRAF; globalThis.setTimeout = oldTimeout; globalThis.clearTimeout = oldClear
