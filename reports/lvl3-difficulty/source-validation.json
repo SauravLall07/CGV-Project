@@ -1,0 +1,20 @@
+{
+  "profiledSourceHashes": {
+    "src/levels/timewreck-flying-panels.js": "f67a4455047b30e00af24711dc662c3d8fa931c24af595b9e8e6d6309a23022b",
+    "src/levels/timewreck-spatial.js": "ca6aecc45e3b2a70db696f7e559003eaa9a56ad08b5bbdc12721cc64237e3309",
+    "src/levels/timewreck-routes.js": "6f037fcc9ea6d0af11fab8c53e3007b54f0ebc461bd0d277030abd98283f5498",
+    "src/levels/timewreck.js": "5ce815d40aacd54c9ea43a3c9c677357e3f52f1e2c3d0ae463a0d4dfd15f4e98",
+    "src/environment/passenger-guidance.js": "0f84fc69ea1d2a0f5bacea26dd53b264ad2f28fa99d6a5381aeb70d0e654a3a0"
+  },
+  "deliveredSourceHashes": {
+    "src/levels/timewreck-flying-panels.js": "f67a4455047b30e00af24711dc662c3d8fa931c24af595b9e8e6d6309a23022b",
+    "src/levels/timewreck-spatial.js": "ca6aecc45e3b2a70db696f7e559003eaa9a56ad08b5bbdc12721cc64237e3309",
+    "src/levels/timewreck-routes.js": "6f037fcc9ea6d0af11fab8c53e3007b54f0ebc461bd0d277030abd98283f5498",
+    "src/levels/timewreck.js": "be37e720eb25d38747b1b77a361f088550deeffeb76137fa9cdebcbb8f5645ad",
+    "src/environment/passenger-guidance.js": "0f84fc69ea1d2a0f5bacea26dd53b264ad2f28fa99d6a5381aeb70d0e654a3a0"
+  },
+  "changedAfterProfile": [
+    "src/levels/timewreck.js"
+  ],
+  "note": "Only the Passenger exit toast/objective priority changed after profiling; it does not execute at the measured checkpoints. Geometry, schedules, collision and rendering are the measured versions."
+}
