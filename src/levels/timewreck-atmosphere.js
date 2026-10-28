@@ -4,6 +4,7 @@ import { CARRIAGE_CEILING_Y } from '../environment/carriages.js'
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { createWreckPanelGeometry } from '../environment/wreck-geometry.js'
+import { roofMissingAt } from '../environment/wreck-damage.js'
 
 // ---------------------------------------------------------------------------
 // Level 3 atmospheric motion — five independent systems.
@@ -417,7 +418,9 @@ export function createGrabHandles(root, spans, config = GRAB_HANDLES) {
     if (!span) continue
     for (let z = span.minZ + 1.8; z < span.maxZ - 1.8; z += config.spacing) {
       for (const side of [-1, 1]) {
+        if (roofMissingAt(key,side*config.sideX,z-span.center,0.45)) continue
         const handle = buildGrabHandle(brassMat, strapMat)
+        handle.userData.wreckCar = key
         handle.position.set(side * config.sideX, config.hangY, z)
         // Rest pose: hang straight down; pivot at mount.
         handle.rotation.z = side * 0.08

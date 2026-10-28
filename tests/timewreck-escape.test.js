@@ -83,6 +83,34 @@ test('L3 atmosphere holds through ordinary Freeze and resumes without jumping to
   } finally { h.dispose() }
 })
 
+test('torn wreck ownership: rear cutoff retires world hazards, retains Passenger, and checkpoint restores them', () => {
+  const h=levelHarness('passenger')
+  try {
+    const root=h.scene.getObjectByName('train-interior-wrecked')
+    const cargo=root.getObjectByName('cargo-loop-door')
+    const mechanical=root.getObjectByName('runaway-pistons')
+    const fork=root.getObjectByName('convergence-route-fork')
+    const relay=root.getObjectByName('carriage-relay')
+    const passenger=root.getObjectByName('carriage-passenger')
+    const originalParent=cargo.parent
+    h.tick(1.3)
+    for(const node of [cargo,mechanical,fork,relay])assert.equal(node.visible,false,node.name)
+    assert.equal(passenger.visible,true)
+    assert.deepEqual(h.level.getCarriageVolumes().map(v=>v.key).sort(),['cab','passenger'])
+    assert.equal(cargo.parent,originalParent,'registered motion stays in world coordinates')
+    h.level.checkpoint.restore()
+    assert.equal(h.level.getCarriageVolumes().length,8)
+    for(const node of [cargo,mechanical,fork,relay])assert.equal(node.visible,true,node.name)
+    assert.equal(root.getObjectByName('sky-dome'),undefined,'sky is scene-owned')
+    const sky=h.scene.getObjectByName('sky-dome')
+    h.time.setMode('NORMAL');h.tick(0.1)
+    const clock=sky.material.uniforms.uTime.value
+    h.time.triggerFreeze();h.tick(0.1)
+    assert.equal(sky.material.uniforms.uTime.value,clock)
+  } finally {h.dispose()}
+  assert.equal(h.scene.getObjectByName('sky-dome'),undefined)
+})
+
 test('N7: live approach/depleted repair, three falls/retries, Mechanical checkpoint and steam remain safe', () => {
   for (const fps of [30, 60, 144, [1/144, 1/30, 0.1, 1/60]]) {
     const h = levelHarness('convergence', fps)

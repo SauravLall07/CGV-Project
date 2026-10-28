@@ -121,6 +121,8 @@ const minimap = createMinimap({
   getGuards: () => levelManager.guards,
   getLevelState: () => levelManager.getState(),
   getCarriageVolumes: () => levelManager.carriageVolumes,
+  getVoids: () => levelManager.voids,
+  getSupports: () => levelManager.supports,
   getRange: () => settings.get('minimapRange')
 })
 
@@ -339,7 +341,7 @@ const levelManager = createLevelManager({
     { state: 'Boarding', create: ctx => createBoardingLevel({ ...ctx, renderCamera: camera }) },
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
-    { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
+    { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(({createTimewreckLevel}) => ctx => createTimewreckLevel({...ctx,post})) },
     { state: 'Ending', load: () => import('./levels/ending.js')
       .then(({ createEndingLevel, prefetchEndingPaintings }) => {
         // Paintings prefetch during Timewreck, but cannot hold the transition hostage.

@@ -45,6 +45,24 @@ function visibleInWorld(node) {
   return true
 }
 
+// Work from the collision/support contract, never decorative horizontal faces.
+export function wreckMinimapFloors(volumes, voids = [], supports = []) {
+  let floors = volumes.map(v => ({...v}))
+  for (const hole of voids) {
+    if (hole.enabled === false) continue
+    floors = floors.flatMap(v => {
+      const a = Math.max(v.minX,hole.minX), b = Math.min(v.maxX,hole.maxX)
+      const c = Math.max(v.minZ,hole.minZ), d = Math.min(v.maxZ,hole.maxZ)
+      if (a >= b || c >= d) return [v]
+      return [{...v,maxX:a},{...v,minX:b},{...v,minX:a,maxX:b,maxZ:c},{...v,minX:a,maxX:b,minZ:d}]
+        .filter(v => v.maxX-v.minX > 0.001 && v.maxZ-v.minZ > 0.001)
+    })
+  }
+  return floors.concat(supports.filter(s => s.enabled !== false && s.minX<s.maxX && s.minZ<s.maxZ &&
+    volumes.some(v => s.maxZ>v.minZ && s.minZ<v.maxZ && s.maxX>v.minX && s.minX<v.maxX) &&
+    voids.some(v => v.enabled !== false && s.maxX>v.minX && s.minX<v.maxX && s.maxZ>v.minZ && s.minZ<v.maxZ)))
+}
+
 export function createMinimap({
   scene,
   hudRoot,
@@ -54,6 +72,8 @@ export function createMinimap({
   getGuards,
   getLevelState,
   getCarriageVolumes,
+  getVoids,
+  getSupports,
   getRange = () => DEFAULT_RANGE
 }) {
   // Main view stays on the default world layer. Icons live on MINIMAP_LAYER
@@ -155,9 +175,10 @@ export function createMinimap({
         stationFloors = collectMinimapFloors(root)
       }
     }
-    const floorVolumes = nearby ?? stationFloors.filter(f =>
+    let floorVolumes = nearby ?? stationFloors.filter(f =>
       Math.abs(f.y - p.y) < 1.5 && visibleInWorld(f.source) &&
       f.maxX >= clip.minX && f.minX <= clip.maxX && f.maxZ >= clip.minZ && f.minZ <= clip.maxZ)
+    if (state === 'Timewreck' && nearby) floorVolumes = wreckMinimapFloors(nearby,getVoids?.() ?? [],getSupports?.() ?? [])
     heading.textContent = volume ? volume.key.replaceAll('-', ' ').toUpperCase() : 'STATION'
     orientation.textContent = carriageMode ? 'FRONT ↑' : 'N ↑'
     scale.style.width = `${width * 5 / range}px`

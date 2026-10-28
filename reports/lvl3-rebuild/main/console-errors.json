@@ -1,0 +1,5 @@
+[
+  "Failed to load resource: the server responded with a status of 404 (Not Found)",
+  "Error: [level-music] initialize AudioContext before loading music\n    at loadBuffer (http://127.0.0.1:5175/src/systems/level-music.js:53:35)\n    at LevelMusicPlayer.load (http://127.0.0.1:5175/src/systems/level-music.js:99:26)\n    at startLevelMusic (http://127.0.0.1:5175/src/systems/level-music.js:195:18)\n    at playMusicForState (http://127.0.0.1:5175/src/main.js?t=1793187155585:184:3)\n    at onEnter (http://127.0.0.1:5175/src/main.js?t=1793187155585:323:5)\n    at build (http://127.0.0.1:5175/src/core/level-manager.js:105:18)\n    at construct (http://127.0.0.1:5175/src/core/level-manager.js:175:11)",
+  "Failed to load resource: the server responded with a status of 404 (Not Found)"
+]

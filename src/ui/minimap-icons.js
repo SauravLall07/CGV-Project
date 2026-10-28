@@ -29,6 +29,7 @@ const ICON_Y = {
 const COLOR = {
   ground: 0x233246,
   wall: 0x91a4b9,
+  boundary: 0x547076,
   crate: 0xb45309,
   seat: 0x4a5c74,
   locker: 0x64748b,
@@ -97,6 +98,7 @@ function yawFromWorldForward(object, fallbackYaw) {
 }
 
 function obstacleKind(box) {
+  if (box.kind === 'boundary') return 'boundary'
   if (box.kind === 'crate' || box.kind === 'trunk' || box.type === 'crate') return 'crate'
   if (box.kind === 'seat') return 'seat'
   if (box.kind === 'locker' || box.kind === 'relaybox') return 'locker'
@@ -126,6 +128,7 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
   root.add(grid)
 
   const wallMat = unlit(COLOR.wall)
+  const boundaryMat = unlit(COLOR.boundary)
   const crateMat = unlit(COLOR.crate)
   const seatMat = unlit(COLOR.seat)
   const lockerMat = unlit(COLOR.locker)
@@ -185,6 +188,7 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
 
   function materialForObstacle(box) {
     const kind = obstacleKind(box)
+    if (kind === 'boundary') return boundaryMat
     if (kind === 'crate') return crateMat
     if (kind === 'seat') return seatMat
     if (kind === 'locker') return lockerMat
@@ -350,6 +354,7 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
     outlineMat.dispose()
     playerMat.dispose()
     wallMat.dispose()
+    boundaryMat.dispose()
     crateMat.dispose()
     seatMat.dispose()
     lockerMat.dispose()

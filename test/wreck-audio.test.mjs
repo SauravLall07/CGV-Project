@@ -4,6 +4,30 @@ import { createWreckAudio } from '../src/systems/wreck-audio.js'
 import { initAudio, getMasterGain } from '../src/core/audio.js'
 import { settings } from '../src/core/settings.js'
 
+test('exposure wind uses one quiet master-routed voice, holds in stasis, pauses and releases its buffer graph', () => {
+  const nodes=[], sources=[]
+  const parameter=()=>({value:0,setTargetAtTime(v){this.target=v}})
+  const node=()=>{
+    const n={gain:parameter(),frequency:parameter(),connect(target){this.destination=target;return target},disconnect(){this.disconnected=true},start(){},stop(){this.stopped=true}}
+    nodes.push(n);return n
+  }
+  const ctx={state:'running',currentTime:0,sampleRate:100,createGain:node,createBiquadFilter:node,
+    createBufferSource(){const n=node();sources.push(n);return n},createBuffer:()=>({getChannelData:()=>new Float32Array(100)})}
+  const master={},sound=createWreckAudio({context:()=>ctx,output:()=>master})
+  sound.exposure(1)
+  const count=nodes.length
+  for(let i=0;i<30;i++)sound.exposure(0.5)
+  assert.equal(nodes.length,count);assert.equal(sources.length,1)
+  const bus=nodes[0],wind=sources[0],gain=wind.destination.destination
+  assert.equal(bus.destination,master);assert.equal(gain.gain.target,0.006)
+  sound.exposure(1,true);assert.equal(gain.gain.target,0.0003)
+  sound.setPaused(true);assert.equal(bus.gain.value,0)
+  sound.setPaused(false);assert.equal(bus.gain.value,1)
+  sound.exposure(0);assert.equal(gain.gain.value,0)
+  sound.dispose();assert.ok(wind.stopped);assert.ok(nodes.every(n=>n.disconnected))
+  sound.exposure(1);assert.equal(nodes.length,count)
+})
+
 test('Wreck audio: silent before unlock; real master/mute, hush, pause, settling and disposal ownership', () => {
   const nodes = [], sources = []
   const parameter = () => ({ value: 0,

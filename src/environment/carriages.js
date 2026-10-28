@@ -4,6 +4,8 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { addMechanicalReference } from './mechanical-reference.js'
 import { refineWreckLandmark } from './wreck-landmarks.js'
 import { addCargoWreckBenchmark } from './cargo-wreck-benchmark.js'
+import { WRECK_DAMAGE, retainedWallRuns } from './wreck-damage.js'
+import { tornRoofGeometry, addTornStructure, removeUnsupportedFixtures } from './wreck-structure.js'
 import { addLuxuryWallBenches, addLuxuryPassengerBays } from './luxury-seats.js'
 import {
   carpetMaterial,
@@ -743,16 +745,22 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
   } else {
     ceilingMat = wallMat
   }
+  if (damaged && WRECK_DAMAGE[key]) {
+    // Torn roof UVs are in metres, independent of carriage/segment length.
+    for (const map of [ceilingMat.map,ceilingMat.normalMap,ceilingMat.roughnessMap]) map?.repeat.set(1,1)
+  }
   if (hasCeiling) {
     const coffer = damaged && (
       key === 'vault' || key === 'convergence' || key === 'mechanical' || key === 'cargo'
       || key === 'relay' || key === 'security' || key === 'passenger' || key === 'cab'
     )
     const ceiling = new THREE.Mesh(
-      coffer ? cofferedCeiling(length) : new THREE.BoxGeometry(WALL_X * 2, 0.1, length),
+      damaged && WRECK_DAMAGE[key] ? tornRoofGeometry(key, length)
+        : coffer ? cofferedCeiling(length) : new THREE.BoxGeometry(WALL_X * 2, 0.1, length),
       ceilingMat
     )
     ceiling.name = `ceiling-${key}`
+    ceiling.userData.wreckShell = true
     ceiling.position.y = CARRIAGE_CEILING_Y
     g.add(ceiling)
   }
@@ -797,6 +805,8 @@ function standardPierCenters(half) {
 // still uses carriage-bounds, not these meshes.
 function addBlownViewports(g, half, key, shared) {
   const wallMat = wallMaterialFor(key, half * 2, true)
+  const cut = WRECK_DAMAGE[key]
+  const runs = (side, a, b) => cut ? retainedWallRuns(key, side, a, b) : [[a,b]]
   // Cab and door lights stay the smaller openings. Standard glass is ~27%
   // larger in both directions (1.46 × 2.14 m). Piers stay about 0.9 m.
   const cab = key === 'cab'
@@ -822,14 +832,18 @@ function addBlownViewports(g, half, key, shared) {
     const x = s * WALL_X
     const lower = new THREE.Mesh(framedPanel(0.12, lowerH, half * 2), wallMat)
     lower.name = `wall-band-${key}-lower`
+    lower.userData.wreckShell = true
     lower.position.set(x, lowerH / 2, 0)
     lower.receiveShadow = true
     g.add(lower)
-    const upper = new THREE.Mesh(framedPanel(0.12, upperH, half * 2), wallMat)
-    upper.name = `wall-band-${key}-upper`
-    upper.position.set(x, lintelY + upperH / 2, 0)
-    upper.receiveShadow = true
-    g.add(upper)
+    for (const [a,b] of runs(s,-half,half)) {
+      const upper = new THREE.Mesh(framedPanel(0.12, upperH, b-a), wallMat)
+      upper.name = `wall-band-${key}-upper`
+      upper.position.set(x, lintelY + upperH / 2, (a+b)/2)
+      upper.userData.wreckShell = true
+      upper.receiveShadow = true
+      g.add(upper)
+    }
 
   }
   const piers = []
@@ -838,15 +852,18 @@ function addBlownViewports(g, half, key, shared) {
     for (const z of zs) {
       const a = z - paneD / 2
       const span = a - cursor
-      if (span > 0.06) piers.push({ x: s * WALL_X, z: cursor + span / 2, span })
+      if (span > 0.06) for (const [a,b] of runs(s,cursor,cursor+span))
+        piers.push({ x: s * WALL_X, z: (a+b)/2, span: b-a })
       cursor = z + paneD / 2
     }
     const tail = half - cursor
-    if (tail > 0.06) piers.push({ x: s * WALL_X, z: cursor + tail / 2, span: tail })
+    if (tail > 0.06) for (const [a,b] of runs(s,cursor,half))
+      piers.push({ x: s * WALL_X, z: (a+b)/2, span: b-a })
   }
   if (piers.length) {
     const pierMesh = new THREE.InstancedMesh(framedPanel(0.12, paneH, 1), wallMat, piers.length)
     pierMesh.name = `wall-piers-${key}`
+    pierMesh.userData.wreckShell = true
     pierMesh.receiveShadow = true
     piers.forEach((pier, i) => {
       dummy.position.set(pier.x, paneY, pier.z)
@@ -865,6 +882,7 @@ function addBlownViewports(g, half, key, shared) {
   const salt = key.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
   for (const s of [-1, 1]) {
     zs.forEach((z, i) => {
+      if (cut && s === cut.side && z + paneD/2 + 0.1 > cut.minZ && z - paneD/2 - 0.1 < cut.maxZ) return
       const h = Math.abs(Math.sin((salt + i * 19 + s * 11) * 12.9898) * 43758.5453) % 1
       const kind = h < 0.48 ? 0 : h < 0.74 ? 1 : h < 0.9 ? 2 : 3
       openings.push({ s, z, kind, h })
@@ -999,7 +1017,7 @@ function addBlownViewports(g, half, key, shared) {
   }
   glass.geometry.setAttribute('aBayPhase', new THREE.InstancedBufferAttribute(phases, 1))
   glass.onBeforeRender = () => {
-    const time = performance.now() * 0.001
+    const time = g.userData.wreckClock || 0
     const scroll = (time * 0.062) % 1
     if (glassMat.map) glassMat.map.offset.x = scroll
     if (glassMat.emissiveMap) glassMat.emissiveMap.offset.x = scroll
@@ -1009,6 +1027,7 @@ function addBlownViewports(g, half, key, shared) {
   for (const mesh of [glass, woodH, woodV, brassH, brassV, sealH, sealV, cracks, splinters]) {
     mesh.instanceMatrix.needsUpdate = true
     noCam(mesh)
+    mesh.userData.wreckShell = true
     g.add(mesh)
   }
 }
@@ -3653,6 +3672,10 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     if (damaged) {
       addWreckage(group, half, shared, fx, cfg.key)
       refineWreckLandmark(group, cfg.key, half, WALL_X)
+      if (WRECK_DAMAGE[cfg.key]) {
+        removeUnsupportedFixtures(group, cfg.key)
+        addTornStructure(group, cfg.key, half, shared)
+      }
     }
 
     cursor += cfg.length
@@ -3672,6 +3695,8 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     root.add(cab.group)
     carriages.cab = cab.group
     spans.cab = { minZ: cabCenter - cab.half, maxZ: cabCenter + cab.half, center: cabCenter }
+    removeUnsupportedFixtures(cab.group, 'cab')
+    addTornStructure(cab.group, 'cab', cab.half, shared)
   }
 
   // Base exposure so no corner falls to pure black between the point lights.
@@ -3710,6 +3735,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   // Emergency lighting flickers and severed cables spark; Level 2's steady
   // interior lighting makes this a no-op, so levels can call it unconditionally.
   let elapsed = 0
+  const carriageGroups = Object.values(carriages)
   function passengerLightWorldZ(entry) {
     return (entry.light.parent?.position.z || 0) + entry.light.position.z
   }
@@ -3718,6 +3744,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     if (!damaged) return
     if (delta === 0) return
     elapsed += delta
+    for (const carriage of carriageGroups) carriage.userData.wreckClock = elapsed
     const t = elapsed
     for (const entry of fx.lights) {
       if (entry.dead) {
