@@ -2111,12 +2111,12 @@ export function createMovingHeistLevel({
     const parkedX = -(deckW + 0.6)
     addRewindMachine({
       z: panel.position.z, handle: panel, activeIn: 'roof',
-      triggerFrom: roofZ(ROOF_RUN.shell[0] - 0.2), triggerTo: roofZ(b), delay: 0.25, duration: 0.7,
+      triggerFrom: roofZ(ROOF_RUN.shell[0] - 0.2), triggerTo: roofZ(b), delay: 0.05, duration: 0.4,
       outlines: [outline],
       apply(p) {
         panel.position.x = parkedX * p
         // Only a panel that is (nearly) home can be stood on.
-        placeSupport(support, panel.position.x, deckW / 2, roofZ(a), roofZ(b), p < 0.35)
+        placeSupport(support, panel.position.x, deckW / 2, roofZ(a), roofZ(b), p < 0.15)
       }
     })
   }
