@@ -1,8 +1,11 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { addMechanicalReference } from './mechanical-reference.js'
 import { refineWreckLandmark } from './wreck-landmarks.js'
 import { addCargoWreckBenchmark } from './cargo-wreck-benchmark.js'
+import { WRECK_DAMAGE, retainedWallRuns } from './wreck-damage.js'
+import { tornRoofGeometry, addTornStructure, removeUnsupportedFixtures } from './wreck-structure.js'
 import { addLuxuryWallBenches, addLuxuryPassengerBays } from './luxury-seats.js'
 import {
   carpetMaterial,
@@ -282,7 +285,7 @@ function addLuxuryCeilingRun(g, half, shared, name) {
 }
 
 function makeShared(damaged) {
-  return {
+  const materials = {
     steel: metalMaterial({
       repeat: [3, 2],
       base: damaged ? 0x6a727c : 0x6b7078,
@@ -324,6 +327,13 @@ function makeShared(damaged) {
       roughness: 0.25
     })
   }
+  if (damaged) {
+    // Keep the grime maps; brass should catch a tighter highlight than steel.
+    materials.steel.roughness = 0.9
+    materials.darkSteel.roughness = 0.94
+    materials.brass.roughness = 0.75
+  }
+  return materials
 }
 
 const WRECK_WOOD_SHEEN = { clearcoat: 0.16, clearcoatRoughness: 0.5 }
@@ -735,16 +745,22 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
   } else {
     ceilingMat = wallMat
   }
+  if (damaged && WRECK_DAMAGE[key]) {
+    // Torn roof UVs are in metres, independent of carriage/segment length.
+    for (const map of [ceilingMat.map,ceilingMat.normalMap,ceilingMat.roughnessMap]) map?.repeat.set(1,1)
+  }
   if (hasCeiling) {
     const coffer = damaged && (
       key === 'vault' || key === 'convergence' || key === 'mechanical' || key === 'cargo'
       || key === 'relay' || key === 'security' || key === 'passenger' || key === 'cab'
     )
     const ceiling = new THREE.Mesh(
-      coffer ? cofferedCeiling(length) : new THREE.BoxGeometry(WALL_X * 2, 0.1, length),
+      damaged && WRECK_DAMAGE[key] ? tornRoofGeometry(key, length)
+        : coffer ? cofferedCeiling(length) : new THREE.BoxGeometry(WALL_X * 2, 0.1, length),
       ceilingMat
     )
     ceiling.name = `ceiling-${key}`
+    ceiling.userData.wreckShell = true
     ceiling.position.y = CARRIAGE_CEILING_Y
     g.add(ceiling)
   }
@@ -789,6 +805,8 @@ function standardPierCenters(half) {
 // still uses carriage-bounds, not these meshes.
 function addBlownViewports(g, half, key, shared) {
   const wallMat = wallMaterialFor(key, half * 2, true)
+  const cut = WRECK_DAMAGE[key]
+  const runs = (side, a, b) => cut ? retainedWallRuns(key, side, a, b) : [[a,b]]
   // Cab and door lights stay the smaller openings. Standard glass is ~27%
   // larger in both directions (1.46 × 2.14 m). Piers stay about 0.9 m.
   const cab = key === 'cab'
@@ -814,14 +832,18 @@ function addBlownViewports(g, half, key, shared) {
     const x = s * WALL_X
     const lower = new THREE.Mesh(framedPanel(0.12, lowerH, half * 2), wallMat)
     lower.name = `wall-band-${key}-lower`
+    lower.userData.wreckShell = true
     lower.position.set(x, lowerH / 2, 0)
     lower.receiveShadow = true
     g.add(lower)
-    const upper = new THREE.Mesh(framedPanel(0.12, upperH, half * 2), wallMat)
-    upper.name = `wall-band-${key}-upper`
-    upper.position.set(x, lintelY + upperH / 2, 0)
-    upper.receiveShadow = true
-    g.add(upper)
+    for (const [a,b] of runs(s,-half,half)) {
+      const upper = new THREE.Mesh(framedPanel(0.12, upperH, b-a), wallMat)
+      upper.name = `wall-band-${key}-upper`
+      upper.position.set(x, lintelY + upperH / 2, (a+b)/2)
+      upper.userData.wreckShell = true
+      upper.receiveShadow = true
+      g.add(upper)
+    }
 
   }
   const piers = []
@@ -830,15 +852,18 @@ function addBlownViewports(g, half, key, shared) {
     for (const z of zs) {
       const a = z - paneD / 2
       const span = a - cursor
-      if (span > 0.06) piers.push({ x: s * WALL_X, z: cursor + span / 2, span })
+      if (span > 0.06) for (const [a,b] of runs(s,cursor,cursor+span))
+        piers.push({ x: s * WALL_X, z: (a+b)/2, span: b-a })
       cursor = z + paneD / 2
     }
     const tail = half - cursor
-    if (tail > 0.06) piers.push({ x: s * WALL_X, z: cursor + tail / 2, span: tail })
+    if (tail > 0.06) for (const [a,b] of runs(s,cursor,half))
+      piers.push({ x: s * WALL_X, z: (a+b)/2, span: b-a })
   }
   if (piers.length) {
     const pierMesh = new THREE.InstancedMesh(framedPanel(0.12, paneH, 1), wallMat, piers.length)
     pierMesh.name = `wall-piers-${key}`
+    pierMesh.userData.wreckShell = true
     pierMesh.receiveShadow = true
     piers.forEach((pier, i) => {
       dummy.position.set(pier.x, paneY, pier.z)
@@ -857,6 +882,7 @@ function addBlownViewports(g, half, key, shared) {
   const salt = key.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
   for (const s of [-1, 1]) {
     zs.forEach((z, i) => {
+      if (cut && s === cut.side && z + paneD/2 + 0.1 > cut.minZ && z - paneD/2 - 0.1 < cut.maxZ) return
       const h = Math.abs(Math.sin((salt + i * 19 + s * 11) * 12.9898) * 43758.5453) % 1
       const kind = h < 0.48 ? 0 : h < 0.74 ? 1 : h < 0.9 ? 2 : 3
       openings.push({ s, z, kind, h })
@@ -991,7 +1017,7 @@ function addBlownViewports(g, half, key, shared) {
   }
   glass.geometry.setAttribute('aBayPhase', new THREE.InstancedBufferAttribute(phases, 1))
   glass.onBeforeRender = () => {
-    const time = performance.now() * 0.001
+    const time = g.userData.wreckClock || 0
     const scroll = (time * 0.062) % 1
     if (glassMat.map) glassMat.map.offset.x = scroll
     if (glassMat.emissiveMap) glassMat.emissiveMap.offset.x = scroll
@@ -1001,6 +1027,7 @@ function addBlownViewports(g, half, key, shared) {
   for (const mesh of [glass, woodH, woodV, brassH, brassV, sealH, sealV, cracks, splinters]) {
     mesh.instanceMatrix.needsUpdate = true
     noCam(mesh)
+    mesh.userData.wreckShell = true
     g.add(mesh)
   }
 }
@@ -1082,6 +1109,7 @@ function addWreckage(g, half, shared, fx, key) {
 function addLight(g, fx, light, damaged) {
   g.add(light)
   if (!damaged) return
+  light.userData.wreckAtmosphereLamp = true
   light.intensity *= 1.45
   light.distance *= 1.35
   const i = fx.lights.length
@@ -1252,8 +1280,8 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
     spots.push([-(WALL_X - 0.5), 0.42, z, 0])
     spots.push([WALL_X - 0.5, 0.42, z, 1])
   }
-  const bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(0.72, 0.55, 0.95), trunkWood, spots.length)
-  const lids = new THREE.InstancedMesh(new THREE.BoxGeometry(0.74, 0.12, 0.97), trunkLeather, spots.length)
+  const bodies = new THREE.InstancedMesh(new RoundedBoxGeometry(0.72, 0.55, 0.95, 1, 0.035), trunkWood, spots.length)
+  const lids = new THREE.InstancedMesh(new RoundedBoxGeometry(0.74, 0.12, 0.97, 1, 0.025), trunkLeather, spots.length)
   const bands = new THREE.InstancedMesh(new THREE.BoxGeometry(0.76, 0.04, 0.99), shared.brass, spots.length)
   bodies.name = 'cargo-luggage-bodies'
   const dummy = new THREE.Object3D()
@@ -1293,7 +1321,7 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
 
   // Sparse floating luggage outside the hull (storm read — not walkable).
   const floatN = 6
-  const floatBody = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.4, 0.75), trunkWood, floatN)
+  const floatBody = new THREE.InstancedMesh(new RoundedBoxGeometry(0.55, 0.4, 0.75, 1, 0.025), trunkWood, floatN)
   floatBody.name = 'cargo-float-luggage'
   for (let i = 0; i < floatN; i++) {
     const s = i % 2 ? 1 : -1
@@ -3644,6 +3672,10 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     if (damaged) {
       addWreckage(group, half, shared, fx, cfg.key)
       refineWreckLandmark(group, cfg.key, half, WALL_X)
+      if (WRECK_DAMAGE[cfg.key]) {
+        removeUnsupportedFixtures(group, cfg.key)
+        addTornStructure(group, cfg.key, half, shared)
+      }
     }
 
     cursor += cfg.length
@@ -3663,6 +3695,8 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     root.add(cab.group)
     carriages.cab = cab.group
     spans.cab = { minZ: cabCenter - cab.half, maxZ: cabCenter + cab.half, center: cabCenter }
+    removeUnsupportedFixtures(cab.group, 'cab')
+    addTornStructure(cab.group, 'cab', cab.half, shared)
   }
 
   // Base exposure so no corner falls to pure black between the point lights.
@@ -3701,6 +3735,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   // Emergency lighting flickers and severed cables spark; Level 2's steady
   // interior lighting makes this a no-op, so levels can call it unconditionally.
   let elapsed = 0
+  const carriageGroups = Object.values(carriages)
   function passengerLightWorldZ(entry) {
     return (entry.light.parent?.position.z || 0) + entry.light.position.z
   }
@@ -3709,6 +3744,7 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
     if (!damaged) return
     if (delta === 0) return
     elapsed += delta
+    for (const carriage of carriageGroups) carriage.userData.wreckClock = elapsed
     const t = elapsed
     for (const entry of fx.lights) {
       if (entry.dead) {
@@ -3731,10 +3767,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
         const b = Math.sin(t * 2.7 + seed * 1.4)
         const c = Math.sin(t * 0.83 + seed)
         mul = 0.42 + 0.58 * Math.abs(a * b)
-        if (c > 0.78) mul *= 0.12
+        mul *= 1 - THREE.MathUtils.smoothstep(c, 0.7, 0.9) * 0.88
       } else if (entry.pattern === 1) {
         const drop = Math.sin(t * 0.55 + seed) * Math.sin(t * 1.21 + seed * 2)
-        mul = drop > 0.84 ? 0.08 : drop > 0.62 ? 0.38 : 0.88 + 0.12 * Math.sin(t * 4.2 + seed)
+        mul = (0.92 + 0.08 * Math.sin(t * 3.2 + seed)) *
+          (1 - THREE.MathUtils.smoothstep(drop, 0.52, 0.9) * 0.85)
       } else if (entry.pattern === 2) {
         mul = 0.55 + 0.45 * Math.abs(Math.sin(t * 8.4 + seed) * Math.sin(t * 3.05 + seed))
       } else {
@@ -3744,12 +3781,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
       // Convergence is the second car on the Timewreck run (after the Vault).
       // Extra irregular electrical flicker on its existing lamps only.
       if (entry.car === 'convergence') {
-        const buzz = Math.sin(t * 23 + seed * 4) * Math.sin(t * 9.4 + seed)
+        const buzz = Math.sin(t * 7 + seed * 4) * Math.sin(t * 3.4 + seed)
         const stutter = Math.sin(t * 1.7 + seed * 1.6)
-        let dip = 0.9 + 0.1 * buzz
-        if (stutter > 0.62 && buzz > 0.1) dip = 0.58
-        else if (stutter > 0.38) dip = 0.74
-        mul = Math.max(0.55, mul * dip)
+        const dip = 0.94 + 0.06 * buzz -
+          THREE.MathUtils.smoothstep(stutter, 0.3, 0.85) * 0.14
+        mul = Math.max(0.65, mul * dip)
       }
       entry.light.intensity = entry.base * mul
     }

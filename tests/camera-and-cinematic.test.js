@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { createPlayerView } from '../src/cameras/player-view.js'
+import { createThirdPersonCamera } from '../src/cameras/third-person-camera.js'
 import { createCinematicSkip } from '../src/ui/cinematic-skip.js'
 
 function installDocument() {
@@ -21,6 +22,38 @@ function installDocument() {
   globalThis.document = doc
   return { doc, restore() {globalThis.document=previous} }
 }
+
+test('wreck camera ignores decorative groups, holds brief clearances and still snaps before solid walls', () => {
+  for (const fps of [30, 60, 144]) {
+    const { doc, restore } = installDocument()
+    const canvas = doc.createElement('canvas')
+    const camera = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 100)
+    const view = createThirdPersonCamera(camera, canvas)
+    const player = new THREE.Group(), scene = new THREE.Scene(), decoration = new THREE.Group()
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 0.1), new THREE.MeshBasicMaterial())
+    wall.position.set(0, 1.5, -1)
+    decoration.userData.noCameraCollision = true
+    decoration.add(wall); scene.add(decoration)
+    const tick = () => { scene.updateMatrixWorld(true); view.update(1 / fps, player, scene, { stabilizeCollision: true }) }
+    try {
+      view.setPitch(0); tick()
+      const free = view.getDistance()
+      assert.ok(free > 2, 'decorative children do not pull the camera in')
+      decoration.userData.noCameraCollision = false
+      tick()
+      const blocked = view.getDistance()
+      assert.ok(blocked < 1, 'a real wall retracts the camera immediately')
+      decoration.userData.noCameraCollision = true
+      for (let i = 0; i < Math.floor(fps * 0.08); i++) tick()
+      assert.equal(view.getDistance(), blocked, 'brief openings do not pump the camera')
+      for (let i = 0; i < fps; i++) tick()
+      assert.ok(view.getDistance() > free - 0.2, 'sustained clearance releases smoothly')
+      decoration.userData.noCameraCollision = false
+      tick()
+      assert.equal(view.getDistance(), blocked)
+    } finally { view.dispose(); wall.geometry.dispose(); wall.material.dispose(); restore() }
+  }
+})
 
 test('Skip control: native button focus, single activation, hide and disposal discard handlers', () => {
   const {doc,restore} = installDocument()

@@ -11,6 +11,7 @@ export function createWreckAudio({ context = getContext, output = getSfxGain } =
   let paused = false
   let disposed = false
   let debrisVoice = null
+  let wind = null
   const voices = new Set()
   function connect() {
     const ctx = context(), master = output()
@@ -34,18 +35,40 @@ export function createWreckAudio({ context = getContext, output = getSfxGain } =
     return voice
   }
   function clear() {
-    for (const { source, gain } of voices) {
+    for (const { source, gain, filter } of voices) {
       source.onended = null
       try { source.stop() } catch { /* already ended */ }
       source.disconnect(); gain.disconnect()
+      filter?.disconnect()
     }
     voices.clear()
     bed?.disconnect(); bed = null
     brakeVoice = null; settled = false
     debrisVoice = null
+    wind = null
     bus?.disconnect(); bus = null
   }
   return {
+    exposure(amount, stasis = false) {
+      const ctx = amount > 0 ? connect() : null
+      if (!ctx || paused) {
+        if (wind) wind.gain.gain.value = 0
+        return
+      }
+      if (!wind) {
+        const source = ctx.createBufferSource(), gain = ctx.createGain(), filter = ctx.createBiquadFilter()
+        const buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate)
+        const data = buffer.getChannelData(0)
+        let seed = 7143
+        for (let i=0;i<data.length;i++) { seed=(Math.imul(seed,1664525)+1013904223)>>>0; data[i]=seed/2147483648-1 }
+        source.buffer = buffer; source.loop = true
+        filter.type = 'lowpass'; filter.frequency.value = 380
+        gain.gain.value = 0
+        source.connect(filter).connect(gain).connect(bus); source.start()
+        wind = {source,gain,filter}; voices.add(wind)
+      }
+      wind.gain.gain.setTargetAtTime(stasis ? 0.0003 : 0.012*Math.min(1,amount), ctx.currentTime, 0.12)
+    },
     debris(kind) {
       const ctx = connect()
       if (!ctx || paused || (debrisVoice && voices.has(debrisVoice))) return
