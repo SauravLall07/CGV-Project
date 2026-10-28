@@ -194,8 +194,11 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       assert.equal(trunks.length, 3)
       waitUntil(() => trunks[0].position.x < -1)
       h.time.triggerFreeze(); move('z', center(stage) + 4.6)
-      h.time.setMode('NORMAL'); move('z', center(stage) + 2.7)
-      move('x', 0) // leave the high right-hand panel's straight flight path before waiting
+      h.time.setMode('NORMAL'); move('z', center(stage) + 2.7, { duck: true })
+      move('x', 0, { duck: true }) // crouch below the denser high right-hand stream before waiting
+      h.tick(1 / fps)
+      if (h.player.isCrouching()) h.tick(1 / fps, { duck: true })
+      h.tick(1 / fps)
       repair(h, 'mechanical-rewind-shutter')
       move('z', center(stage) - 2)
       recharge(); move('x', 0)

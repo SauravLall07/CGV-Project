@@ -31,6 +31,8 @@ export function createDebrisCollision(player, meshes) {
       for (let node = piece.mesh; node; node = node.parent) visible &&= node.visible
       piece.mesh.updateWorldMatrix(true, false)
       piece.mesh.matrixWorld.decompose(position, rotation, scale)
+      visible &&= piece.mesh.scale.lengthSq() > 0
+      visible &&= !piece.mesh.material.transparent || piece.mesh.material.opacity > 0
       if (enabled && visible && !hit) {
         // Sample both bodies' travel so fast debris cannot tunnel between frames.
         const sweep = piece.visible && !teleported

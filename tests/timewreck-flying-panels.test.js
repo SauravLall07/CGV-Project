@@ -28,14 +28,14 @@ function harness(fps = 60, seed = 12345) {
     dispose() { unregisters.forEach(fn => fn()); time.dispose(); disposeObject(root) } }
 }
 
-test('first two escape cars have three obstacles, later cars have four; each launch varies and flies straight', () => {
+test('first two escape cars have six obstacles, later cars have eight; each launch varies and flies towards the player', () => {
   const h = harness()
   try {
     const sizes = new Set(), speeds = new Set(), origins = new Set(), directions = new Set()
     for (const key of keys) {
       h.panels.reset(); h.enter(key)
       const meshes = h.panels.group.children.filter(m => m.name.startsWith(`${key}-flying-brown-panel`))
-      assert.equal(meshes.length, ['vault', 'convergence'].includes(key) ? 3 : 4, key)
+      assert.equal(meshes.length, ['vault', 'convergence'].includes(key) ? 6 : 8, key)
       const firstLaunches = new Map(), flightSizes = new Set()
       let previous = meshes.map(m => ({ visible: m.visible, position: m.position.clone() }))
       for (let t = 0; t < 40; t += 0.05) {
@@ -43,6 +43,11 @@ test('first two escape cars have three obstacles, later cars have four; each lau
         meshes.forEach((mesh, i) => {
           const last = previous[i]
           if (mesh.visible) {
+            const { minZ, maxZ } = h.spans[key]
+            if (!last.visible) assert.ok(mesh.position.z < minZ, 'new debris enters from beyond the far end')
+            if (mesh.position.z >= minZ && mesh.position.z <= maxZ) {
+              assert.equal(mesh.material.opacity, 1, 'lethal debris stays fully visible inside the carriage')
+            }
             sizes.add(mesh.scale.toArray().join(','))
             flightSizes.add(mesh.scale.toArray().join(','))
             const dz = mesh.position.z - last.position.z
@@ -53,7 +58,8 @@ test('first two escape cars have three obstacles, later cars have four; each lau
               directions.add(Math.sign(dz))
               if (!firstLaunches.has(i)) firstLaunches.set(i, t)
             } else if (!last.visible) origins.add(mesh.position.toArray().join(','))
-          }
+          } else if (last.visible) assert.ok(last.position.z > h.spans[key].maxZ,
+            'debris exits the carriage before disappearing')
         })
         previous = meshes.map(m => ({ visible: m.visible, position: m.position.clone() }))
       }
@@ -64,7 +70,24 @@ test('first two escape cars have three obstacles, later cars have four; each lau
       assert.equal(h.failures.length, 0, 'the centre leaves room to dodge')
     }
     assert.ok(sizes.size > 30 && speeds.size > 20 && origins.size > 30)
-    assert.deepEqual([...directions].sort(), [-1, 1], 'flights can originate at either end')
+    assert.deepEqual([...directions], [1], 'all flights approach from ahead of the player running in -Z')
+  } finally { h.dispose() }
+})
+
+test('oncoming wreckage fades in beyond the far end before entering the carriage', () => {
+  const h = harness()
+  try {
+    const mesh = h.enter('vault'), { minZ } = h.spans.vault
+    assert.ok(mesh.position.z < minZ)
+    assert.equal(mesh.material.opacity, 0)
+    h.tick(0.3)
+    assert.ok(mesh.material.opacity > 0 && mesh.material.opacity < 1)
+    assert.ok(mesh.position.z < minZ, 'the warning fades in at its distant source')
+    h.tick(0.6)
+    assert.equal(mesh.material.opacity, 1)
+    const z = mesh.position.z
+    h.tick(0.1)
+    assert.ok(mesh.position.z > z, 'flight advances towards the approaching player')
   } finally { h.dispose() }
 })
 
@@ -76,7 +99,7 @@ test('every randomized obstacle is lethal, including scaled crates and beams, at
         const meshes = h.panels.group.children.filter(m => m.name.startsWith(`${key}-flying-brown-panel`))
         for (const mesh of meshes) {
           h.panels.reset(); h.enter(key)
-          for (let i = 0; !mesh.visible; i++) { assert.ok(i < 100); h.tick(0.1) }
+          for (let i = 0; !mesh.visible || mesh.material.opacity === 0; i++) { assert.ok(i < 100); h.tick(0.1) }
           h.player.mesh.position.copy(mesh.position); h.player.mesh.position.y -= 0.4
           const before = h.failures.length
           h.panels.update()
@@ -92,7 +115,7 @@ test('small fragments vary by carriage, move with time controls and never kill o
   const matrix = new THREE.Matrix4(), position = new THREE.Vector3(), scrapLayouts = new Set()
   try {
     for (const key of keys) {
-      h.panels.reset(); h.time.resetForCheckpoint(); h.enter(key); h.tick(1.2)
+      h.panels.reset(); h.time.resetForCheckpoint(); h.enter(key); h.tick(2.2)
       const scrap = h.root.getObjectByName(`${key}-flying-small-debris`)
       assert.equal(scrap.count, 6)
       scrapLayouts.add(Array.from(scrap.instanceMatrix.array).join(','))
@@ -120,7 +143,8 @@ test('small fragments vary by carriage, move with time controls and never kill o
 
 function poses(h) {
   return h.panels.group.children.filter(m => !m.isInstancedMesh).map(m => ({
-    visible: m.visible, position: m.position.toArray(), scale: m.scale.toArray(), color: m.material.color.getHex()
+    visible: m.visible, position: m.position.toArray(), scale: m.scale.toArray(), color: m.material.color.getHex(),
+    opacity: m.material.opacity
   }))
 }
 
@@ -139,6 +163,7 @@ test('seeded random flights replay exactly through Rewind and retry; a new seed 
       assert.equal(pose.color, saved[i].color)
       assert.deepEqual(pose.scale, saved[i].scale)
       assert.equal(pose.visible, saved[i].visible)
+      assert.ok(Math.abs(pose.opacity - saved[i].opacity) < 1e-6)
       pose.position.forEach((value, axis) => assert.ok(Math.abs(value - saved[i].position[axis]) < 1e-6))
     })
     h.panels.reset(); h.time.resetForCheckpoint(); h.enter('vault')

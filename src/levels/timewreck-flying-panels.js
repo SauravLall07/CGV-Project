@@ -3,6 +3,7 @@ import { createDebrisCollision } from './timewreck-debris.js'
 
 const WARNING = 0.9
 const RECOVERY = 3
+const RUN_IN = 4
 const SHAPES = [[0.85, 0.1, 1.45], [0.24, 0.22, 1.5], [0.72, 0.55, 0.72]]
 const COLORS = [0x543316, 0x704a26, 0x3f2b20, 0x8b6139]
 
@@ -23,20 +24,20 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
   const geometry = new THREE.BoxGeometry(1, 1, 1)
   let enabled = true
   const panels = Object.entries(spans).flatMap(([key, span], carIndex) =>
-    Array.from({ length: key === 'vault' || key === 'convergence' ? 3 : 4 }, (_, index) => {
-    const id = carIndex * 4 + index
+    Array.from({ length: key === 'vault' || key === 'convergence' ? 6 : 8 }, (_, index) => {
+    const id = carIndex * 8 + index
     const random = randomSource(seed ^ Math.imul(id + 1, 0x9e3779b1))
     const material = new THREE.MeshStandardMaterial({
       color: 0x543316, roughness: 0.82, metalness: 0.28,
-      emissive: 0x321306, emissiveIntensity: 0.18
+      emissive: 0x321306, emissiveIntensity: 0.18, transparent: true
     })
     const mesh = new THREE.Mesh(geometry, material)
     mesh.name = `${key}-flying-brown-panel${index ? `-${index + 1}` : ''}`
     mesh.userData.noCameraCollision = true
     group.add(mesh)
     return { mesh, span, id, index, clock: -1, checkedCycle: -1,
-      delay: index === 0 ? 0 : index * 1.3 + random() * 0.6,
-      period: WARNING + (span.maxZ - span.minZ - 1.8) / 4.5 + RECOVERY }
+      delay: index === 0 ? 0 : index * 0.65 + random() * 0.3,
+      period: WARNING + (span.maxZ - span.minZ + RUN_IN * 2) / 4.5 + RECOVERY }
   }))
   const collision = createDebrisCollision(player, panels.map(p => p.mesh))
   const scrapGeometry = new THREE.BoxGeometry(0.18, 0.04, 0.42)
@@ -49,7 +50,7 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
     mesh.userData.noCameraCollision = true
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.4, (span.minZ + span.maxZ) / 2),
-      (span.maxZ - span.minZ) / 2 + 4)
+      (span.maxZ - span.minZ) / 2 + RUN_IN + 1)
     const random = randomSource(seed ^ Math.imul(owner.id + 17, 0x85ebca6b))
     const flights = Array.from({ length: mesh.count }, (_, i) => {
       mesh.setColorAt(i, new THREE.Color(random() < 0.5 ? 0xc4a052 : COLORS[Math.floor(random() * COLORS.length)]))
@@ -63,14 +64,14 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
 
   function applyScraps() {
     for (const { mesh, owner, flights } of scraps) {
-      const t = Math.max(0, owner.clock), distance = owner.span.maxZ - owner.span.minZ - 2
+      const t = Math.max(0, owner.clock), distance = owner.span.maxZ - owner.span.minZ + RUN_IN * 2
       mesh.visible = owner.clock >= 0
       for (let i = 0; i < mesh.count; i++) {
         const flight = flights[i]
-        scrapPose.position.set(flight.x, flight.y,
-          owner.span.minZ + 1 + ((t * flight.speed + flight.offset * distance) % distance))
+        const travel = (Math.max(0, t - flight.offset * 2) * flight.speed) % distance
+        scrapPose.position.set(flight.x, flight.y, owner.span.minZ - RUN_IN + travel)
         scrapPose.rotation.set(t * flight.spin, t * 1.3 + i, t * 0.7)
-        scrapPose.scale.copy(flight.scale)
+        scrapPose.scale.copy(flight.scale).multiplyScalar(Math.min(1, travel / RUN_IN, (distance - travel) / RUN_IN))
         scrapPose.updateMatrix(); mesh.setMatrixAt(i, scrapPose.matrix)
       }
       mesh.instanceMatrix.needsUpdate = true
@@ -92,19 +93,21 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
       // High right-side flights leave room beneath the maintenance roof.
       panel.y = right ? 2.3 + random() * 0.25 : 0.65 + random() * 0.85
       panel.speed = 4.5 + random() * 5
-      panel.direction = random() < 0.3 ? -1 : 1
-      const inset = 0.8 + random() * Math.min(3, (panel.span.maxZ - panel.span.minZ) * 0.15)
-      panel.startZ = panel.direction === 1 ? panel.span.minZ + inset : panel.span.maxZ - inset
-      panel.endZ = panel.direction === 1 ? panel.span.maxZ - 1 : panel.span.minZ + 1
-      panel.duration = Math.abs(panel.endZ - panel.startZ) / panel.speed
+      // The player runs in -Z: all wreckage enters from ahead and passes in +Z.
+      panel.startZ = panel.span.minZ - RUN_IN
+      panel.endZ = panel.span.maxZ + RUN_IN
+      panel.duration = (panel.endZ - panel.startZ) / panel.speed
       collision.reset(panel.mesh)
       panel.checkedCycle = cycle
     }
     const phase = Math.max(0, elapsed) % panel.period
     const travel = THREE.MathUtils.clamp(phase - WARNING, 0, panel.duration)
-    const z = panel.startZ + panel.direction * travel * panel.speed
+    const z = panel.startZ + travel * panel.speed
     panel.mesh.visible = elapsed >= 0 && phase < WARNING + panel.duration
     panel.mesh.position.set(panel.x, panel.y, z)
+    // Fade recycling outside the carriage, keeping the entire lethal crossing solid.
+    panel.mesh.material.opacity = Math.min(1, phase / WARNING,
+      Math.max(0, (panel.endZ - z) / RUN_IN))
     panel.mesh.rotation.set(0.35 + travel * 1.4, travel * 0.65, 0.18 + travel * 0.5)
     panel.mesh.material.emissiveIntensity = phase < WARNING
       ? 0.35 + Math.abs(Math.sin(phase * 18)) * 1.2 : 0.18

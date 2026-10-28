@@ -64,6 +64,12 @@ test('hidden, disabled and recycled debris cannot create phantom swept hits', ()
     h.root.visible = true; h.mesh.visible = false
     assert.equal(h.collision.update(), false)
     h.mesh.visible = true
+    h.mesh.scale.setScalar(0)
+    assert.equal(h.collision.update(), false, 'a fragment waiting at zero scale cannot kill')
+    h.mesh.scale.setScalar(1)
+    h.mesh.material.transparent = true; h.mesh.material.opacity = 0
+    assert.equal(h.collision.update(), false, 'fully faded wreckage cannot kill')
+    h.mesh.material.opacity = 1
     assert.equal(h.collision.update(false), false, 'pause, failure and braking can disable hits')
     h.mesh.position.z = 3; h.collision.update()
     h.mesh.position.z = -3; h.collision.reset(h.mesh)
@@ -103,6 +109,7 @@ test('real passenger panels and luggage kill once, splinters stay harmless, and 
       h.level.update(0)
       assert.equal(h.respawn.getLives(), 3, 'small splinter is decorative')
       piece.visible = true
+      piece.scale.setScalar(1)
       piece.position.copy(h.player.mesh.position); piece.position.y += 1
       h.level.update(0)
       assert.equal(h.respawn.getLives(), 2, name)
@@ -117,6 +124,27 @@ test('real passenger panels and luggage kill once, splinters stay harmless, and 
   }
 })
 
+test('passenger storm debris enters from ahead, grows outside the car and travels towards the player', () => {
+  const h = levelHarness()
+  try {
+    const span = h.level.getCarriageVolumes().find(v => v.key === 'passenger')
+    const group = h.scene.getObjectByName('thrown-debris')
+    h.player.mesh.position.set(0, 10, span.maxZ - 1.5)
+    h.level.update(0)
+    assert.ok(group.visible)
+    assert.ok(group.children.every(m => m.position.z < span.minZ && m.scale.x === 0),
+      'waiting debris stays hidden beyond the far end')
+    h.time.update(0.1)
+    const moving = group.children.find(m => m.scale.x > 0)
+    assert.ok(moving)
+    assert.ok(moving.position.z < span.minZ)
+    assert.ok(moving.scale.x < 1, 'a new fragment grows into view outside the carriage')
+    const z = moving.position.z
+    h.time.update(0.1)
+    assert.ok(moving.position.z > z, 'passenger wreckage also flies in +Z')
+  } finally { h.dispose() }
+})
+
 test('real L3 wires brown-panel death and safe checkpoint resets into every carriage', () => {
   const h = levelHarness()
   try {
@@ -128,6 +156,7 @@ test('real L3 wires brown-panel death and safe checkpoint resets into every carr
       h.level.update(0)
       const mesh = h.scene.getObjectByName(`${key}-flying-brown-panel`)
       assert.ok(mesh.visible, `${key}: a real flight is armed on entry`)
+      mesh.material.opacity = 1
       mesh.position.copy(h.player.mesh.position); mesh.position.y += 1
       h.level.update(0)
       assert.equal(h.respawn.getLives(), 2, key)
