@@ -67,7 +67,7 @@ export function createLevelThreeSfx() {
       const ctx = getContext()
       if (!ctx) return
       const train = loops.get('train'), laser = loops.get('laser')
-      const trainLevel = paused || stopped ? 0 : moving ? 0.12 : 0.035
+      const trainLevel = paused || stopped ? 0 : moving ? 0.20 : 0.055
       if (train) train.gain.gain.setTargetAtTime(trainLevel, ctx.currentTime, 0.12)
       const proximity = Math.max(0, 1 - Math.max(0, laserDistance - 1.3) / 9)
       if (laser) laser.gain.gain.setTargetAtTime(paused || stopped ? 0 : 0.15 * proximity, ctx.currentTime, 0.1)
@@ -76,12 +76,12 @@ export function createLevelThreeSfx() {
     laserHit() { oneShot('contact', 0.2) },
     lethalFlight(distance, speed) {
       const ctx = getContext()
-      if (!ctx || paused || disposed || distance > 11 || speed < 0.1) return
+      if (!ctx || paused || disposed || distance > 12 || speed < 0.1) return
       // Multiple lethal panels can arrive together; keep the mix bounded.
-      if (ctx.currentTime - lastWhoosh < 0.24) return
+      if (ctx.currentTime - lastWhoosh < 0.13) return
       lastWhoosh = ctx.currentTime
       const falloff = Math.max(0, 1 - distance / 12)
-      oneShot('whoosh', (0.13 + 0.18 * falloff) * falloff, Math.min(1.5, Math.max(0.65, speed / 7)))
+      oneShot('whoosh', (0.14 + 0.17 * falloff) * falloff, Math.min(1.5, Math.max(0.65, speed / 7)))
     },
     setPaused(value) {
       paused = !!value

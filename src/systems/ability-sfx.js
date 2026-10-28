@@ -84,7 +84,7 @@ function playShot(kind) {
   // Rewind is intentionally a little quieter than the other Chrono cues.
   if (kind === 'REWIND') {
     const rewindGain = ctx.createGain()
-    rewindGain.gain.value = 0.86
+    rewindGain.gain.value = 0.68
     source.connect(rewindGain).connect(out)
     source.onended = () => { try { source.disconnect(); rewindGain.disconnect() } catch {} }
   } else {

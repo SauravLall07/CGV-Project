@@ -280,7 +280,7 @@ export function createTimewreckLevel({
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
 
   let failCooldown = 0
-  const LEVEL_OBJECTIVE = 'Stay ahead of the purple time wave — escape to the locomotive'
+  const LEVEL_OBJECTIVE = 'Escape the wreck and reach the locomotive'
   const COLLAPSE_HINT = `Freeze the marked floor with ${bindingLabel(settings.getBinding('freeze'))}, then sprint across its centre`
   const COLLAPSE_HINT_S = 4.6
   let collapseHintHoldUntil = -1
@@ -2465,11 +2465,14 @@ export function createTimewreckLevel({
   // ============================================================
   // PURSUING TIME WAVE — full escape, then the final sprint and brake
   // ============================================================
+  // Temporarily disable the pursuing purple time wave without altering other hazards.
+  const ENABLE_TIME_WAVE = false
   const waveMat = createChronoFieldMaterial({
     baseColor: 0x2a0a3a, glowColor: 0xa855f7, opacity: 0.6, doubleSided: true, depthWrite: false
   })
   const wave = new THREE.Mesh(new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2, CARRIAGE_CEILING_Y), waveMat)
   wave.name = 'time-wave'
+  wave.visible = ENABLE_TIME_WAVE
   wave.position.y = CARRIAGE_CEILING_Y / 2
   wave.rotation.y = Math.PI // Face the escape route so Fresnel leaves the purple bands visible.
   // Keep the follow camera on the player's side of the visible field.
@@ -2592,20 +2595,20 @@ export function createTimewreckLevel({
   const PUZZLE_WAVE_LEAD = 5.5
   const initialZ = ['convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger'].includes(startCarriage)
     ? spans[startCarriage].maxZ - (startCarriage === 'mechanical' ? 2.5 : 1.5) : spans.vault.center + 3
-  const sprintObjective = () => `Sprint to the locomotive (${bindingLabel(settings.getBinding('run'))}) — pull the emergency brake!`
+  const sprintObjective = () => `Reach the locomotive (${bindingLabel(settings.getBinding('run'))}) — pull the emergency brake!`
 
   let depleted = false
   let waveZ = initialZ + PUZZLE_WAVE_LEAD
   wave.position.z = waveZ
   waveLight.position.z = waveZ
-  waveLight.intensity = 12
+  waveLight.intensity = ENABLE_TIME_WAVE ? 12 : 0
   let braking = false
   let brakeComplete = false
   let disposed = false
   let brakeT = 0
   unregisters.push(timeSystem.register(wave, {
     onUpdate(scaledDelta) {
-      if (depleted || braking || brakeComplete || respawn.isFailing()) return
+      if (!ENABLE_TIME_WAVE || depleted || braking || brakeComplete || respawn.isFailing()) return
       let speed = PURSUIT_SPEED
       if (player.mesh.position.z >= spans.vault.minZ) speed = FIRST_CARRIAGE_SPEED
       else if (player.mesh.position.z >= spans.convergence.minZ) speed = SECOND_CARRIAGE_SPEED
@@ -2963,9 +2966,9 @@ export function createTimewreckLevel({
       waveZ = checkpointZ + (depleted ? WAVE_LEAD : PUZZLE_WAVE_LEAD)
       wave.position.z = waveZ
       wave.scale.set(1, 1, 1)
-      wave.visible = true
+      wave.visible = ENABLE_TIME_WAVE
       waveLight.position.z = waveZ
-      waveLight.intensity = 12
+      waveLight.intensity = ENABLE_TIME_WAVE ? 12 : 0
       retiredWreck.apply(saved.retired)
     }
   }
@@ -3095,15 +3098,16 @@ export function createTimewreckLevel({
       connector.update(!braking && !respawn.isFailing())
       feedback.update(!braking && !brakeComplete && !respawn.isFailing())
       flyingPanels.update(!braking && !brakeComplete && !respawn.isFailing())
-      // Only collision-enabled passenger pieces get the flight sample. The
-      // small splinter meshes are decorative, never dangerous.
+      // All airborne passenger debris (including the smaller decorative
+      // splinters) may produce a passing whoosh. Each fragment triggers at most
+      // once per flight; the sound controller limits overlapping voices.
       if (!braking && !brakeComplete && mode !== 'REWIND') {
-        for (const c of [...chunks.filter((_, i) => i % 3 !== 1), ...burstDebris]) {
+        for (const c of [...chunks, ...burstDebris]) {
           if (!c.mesh.visible || c.whooshPlayed || !c.body) continue
           const velocity = c.body.velocity
           const speed = Math.hypot(velocity.x, velocity.y, velocity.z)
           const distance = c.mesh.position.distanceTo(pp)
-          if (speed > 2 && distance < 8) {
+          if (speed > 2 && distance < 10) {
             c.whooshPlayed = true
             levelThreeSfx.lethalFlight(distance, speed)
           }
@@ -3176,7 +3180,7 @@ export function createTimewreckLevel({
       waveMat.customUniforms.uIntensity.value = depleted
         ? (finaleFreeze ? 1.55 + Math.sin(elapsed * 2.2) * 0.12 : 1.12 + Math.sin(elapsed * 5.5) * 0.12) + resumeWave
         : 1.0
-      waveMat.customUniforms.uOpacity.value = finaleFreeze ? 0.92 : 0.6
+      waveMat.customUniforms.uOpacity.value = ENABLE_TIME_WAVE ? (finaleFreeze ? 0.92 : 0.6) : 0
       wave.scale.set(finaleFreeze ? 1.14 : 1, finaleFreeze ? 1.18 : 1, 1)
       walkwayGlow.intensity = walkwayActive
         ? slabSettle * (mode === 'FREEZE' ? 5.5 : 2.4)
@@ -3366,7 +3370,7 @@ export function createTimewreckLevel({
       hint('security-island', pp.z, spans.security.center + 0.8,
         `Safe island: release Freeze and recharge; assess the right-hand path. ${bindingLabel(settings.getBinding('freeze'))} settles it. Paired brass bars mark takeoff and landing: ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across the break.`, 6000)
       hint('passenger', pp.z, spans.passenger.maxZ,
-        `Keep right of the falling rack, clear of the luggage by the wall. Large wreckage is lethal: ${bindingLabel(settings.getBinding('jump'))} jump low panels. ${bindingLabel(settings.getBinding('freeze'))} holds debris AND the wave; frozen wreckage still kills on contact.`, 6500)
+        `Keep right of the falling rack, clear of the luggage by the wall. Large wreckage is lethal: ${bindingLabel(settings.getBinding('jump'))} jump low panels. ${bindingLabel(settings.getBinding('freeze'))} holds debris; frozen wreckage still kills on contact.`, 6500)
       if (pp.z < collapseMinZ - 0.25 && !braking && !brakeComplete && !hintsShown.has('passenger-exit')) {
         // The floor instruction has served its purpose once the player lands.
         collapseHintHoldUntil = -1
@@ -3505,27 +3509,27 @@ export function createTimewreckLevel({
         depleted = true
         timeSystem.setAbilityAvailability({ SLOW: false, REWIND: false, GHOST: false })
         lastCheckpointZ = -Infinity // no further checkpoints past here
-        wave.visible = true
+        wave.visible = ENABLE_TIME_WAVE
         respawn.setCheckpoint(new THREE.Vector3(0, 0, DEPLETE_Z), Math.PI, {
           restore: captureCheckpointRestore(DEPLETE_Z)
         })
-        showLevelToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
+        showLevelToast('CHRONO CORE DEPLETED — only FREEZE remains. Reach the locomotive!', 3800)
         hud.setObjective(sprintObjective())
       }
 
       if (!brakeComplete && !respawn.isFailing()) {
         // The registered clock drives puzzle pursuit; the finale uses sprint speed.
         const holding = mode === 'FREEZE'
-        if (depleted && !holding) waveZ -= WAVE_SPEED * delta
+        if (ENABLE_TIME_WAVE && depleted && !holding) waveZ -= WAVE_SPEED * delta
         wave.position.z = waveZ
         waveLight.position.z = finaleFreeze ? THREE.MathUtils.lerp(waveZ, pp.z, 0.32) : waveZ
         waveLight.distance = finaleFreeze ? 22 : 8
         waveLight.color.setHex(finaleFreeze ? 0xbfdbfe : 0xa855f7)
-        waveLight.intensity = finaleFreeze
+        waveLight.intensity = !ENABLE_TIME_WAVE ? 0 : finaleFreeze
           ? 26 + Math.sin(elapsed * 2.3) * 2
           : 13 + Math.sin(elapsed * 9) * 3 + resumeWarm * 10
 
-        if (waveZ <= pp.z + 0.35 && failCooldown <= 0) {
+        if (ENABLE_TIME_WAVE && waveZ <= pp.z + 0.35 && failCooldown <= 0) {
           failSoft('Time caught up with you!')
         }
       }

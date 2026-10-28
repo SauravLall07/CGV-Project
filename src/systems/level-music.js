@@ -122,12 +122,13 @@ export class LevelMusicPlayer {
     const master = getMusicGain()
 
     this.gain = ctx.createGain()
-    // Keep both Level 1 and Level 2 music at 10% of their original loudness.
-    // Music Volume still controls 0–100% of the reduced ceiling; SFX is unaffected.
+    // Level 3 needs a quieter mix than Levels 1 and 2.
+    // This is a per-track cap; the Music and Master sliders still apply normally.
     const trackName = String(this.url)
-    const quietLevelTrack = trackName.includes('level1-constance') ||
-      trackName.includes('level2-mistake-the-getaway')
-    this.gain.gain.value = volume * (quietLevelTrack ? 0.1 : 1)
+    const trackScale = trackName.includes('level3-final-count') ? 0.06 :
+      (trackName.includes('level1-constance') ||
+       trackName.includes('level2-mistake-the-getaway')) ? 0.1 : 1
+    this.gain.gain.value = volume * trackScale
     this.gain.connect(master)
 
     this.source = ctx.createBufferSource()
