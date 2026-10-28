@@ -26,6 +26,7 @@ const buffers = {
 
 let bus = null
 let preloadPromise = null
+const pending = new Set()
 
 function getBus() {
   const ctx = getContext()
@@ -40,10 +41,8 @@ function getBus() {
 }
 
 function decodeAudioData(ctx, data) {
-  return new Promise((resolve, reject) => {
-    const result = ctx.decodeAudioData(data, resolve, reject)
-    if (result && typeof result.then === 'function') result.then(resolve, reject)
-  })
+  // Modern promise form avoids resolving the same decode both via callbacks and a promise.
+  return ctx.decodeAudioData(data)
 }
 
 async function loadBuffer(kind) {
@@ -51,42 +50,26 @@ async function loadBuffer(kind) {
   const ctx = getContext()
   if (!ctx) return null
   const url = SFX_FILES[kind]
-  const label = `ability-sfx:decode:${kind}`
-  console.time(label)
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`[ability-sfx] failed to fetch ${url} (${response.status})`)
   }
   const data = await response.arrayBuffer()
   buffers[kind] = await decodeAudioData(ctx, data)
-  console.timeEnd(label)
-  console.log(
-    `[ability-sfx] preloaded ${kind} duration=${buffers[kind].duration.toFixed(3)}s channels=${buffers[kind].numberOfChannels} bytes=${data.byteLength}`
-  )
   return buffers[kind]
 }
 
 export function preloadAbilitySfx() {
   const ctx = getContext()
-  if (!ctx) {
-    console.warn('[ability-sfx] preload skipped — no AudioContext yet')
-    return Promise.resolve()
-  }
+  if (!ctx) return Promise.resolve()
   if (preloadPromise) return preloadPromise
-  console.log('[ability-sfx] preload start')
-  preloadPromise = Promise.all(Object.keys(SFX_FILES).map((kind) => loadBuffer(kind)))
-    .then((loaded) => {
-      const ready = Object.keys(SFX_FILES).filter((kind) => buffers[kind])
-      const missing = Object.keys(SFX_FILES).filter((kind) => !buffers[kind])
-      console.log(
-        `[ability-sfx] preload finished ready=[${ready.join(', ')}] missing=[${missing.join(', ') || 'none'}] count=${loaded.filter(Boolean).length}/4`
-      )
+  preloadPromise = Promise.allSettled(Object.keys(SFX_FILES).map((kind) => loadBuffer(kind)))
+    .then((results) => {
+      for (const [index, result] of results.entries()) {
+        if (result.status === 'rejected') console.warn('[ability-sfx] Could not load', Object.keys(SFX_FILES)[index], result.reason)
+      }
     })
-    .catch((err) => {
-      preloadPromise = null
-      const ready = Object.keys(SFX_FILES).filter((kind) => buffers[kind])
-      console.error('[ability-sfx] preload failed', err, 'ready so far', ready)
-    })
+    .finally(() => { preloadPromise = null })
   return preloadPromise
 }
 
@@ -106,20 +89,23 @@ function playShot(kind) {
 }
 
 export function playAbilitySfx(kind) {
-  if (!SFX_FILES[kind]) return
-  const timed = kind === 'GHOST'
-  if (timed) console.time('ability-sfx:GHOST')
-
+  if (!Object.prototype.hasOwnProperty.call(SFX_FILES, kind)) return
   if (buffers[kind]) {
-    console.log(`[ability-sfx] ${kind} cache HIT duration=${buffers[kind].duration.toFixed(3)}s`)
+    const ctx = getContext()
+    if (ctx?.state === 'suspended') { void ctx.resume().then(() => playShot(kind)).catch(console.warn); return }
     playShot(kind)
-    if (timed) console.timeEnd('ability-sfx:GHOST')
     return
   }
-
-  console.warn(`[ability-sfx] ${kind} cache MISS — decoding lazily (this can hitch)`)
-  preloadAbilitySfx().then(() => {
+  // Never lose the first activation while a clip is still loading. Loading is
+  // independent for each ability, so a failed file cannot block the other three.
+  if (pending.has(kind)) return
+  pending.add(kind)
+  const ctx = getContext()
+  if (!ctx) { pending.delete(kind); return }
+  loadBuffer(kind).then(() => {
+    if (ctx.state === 'suspended') return ctx.resume().then(() => playShot(kind))
     playShot(kind)
-    if (timed) console.timeEnd('ability-sfx:GHOST')
-  })
+  }).catch((error) => {
+    console.warn(`[ability-sfx] ${kind} could not play`, error)
+  }).finally(() => pending.delete(kind))
 }

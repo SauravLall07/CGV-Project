@@ -27,6 +27,8 @@ import { createSkyDome } from '../environment/sky-dome.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
+import { createLevelOneMovementSfx } from '../systems/player-interaction-sfx.js'
+import { createLevelTwoAudio } from '../systems/level-two-sfx.js'
 
 // Level 2 — "The Moving Heist".
 //
@@ -336,6 +338,8 @@ export function createMovingHeistLevel({
   let sceneryFrom = 1
   let sceneryEaseTime = 0.3
   const { root, spans, roof } = env
+  const movementAudio = createLevelOneMovementSfx(player)
+  const carriageAudio = createLevelTwoAudio(player, spans)
 
   scene.add(sky.mesh, outdoorEnv.group, root)
   // Night sky. Fog matches the horizon so the hills don't drop to black
@@ -498,6 +502,7 @@ export function createMovingHeistLevel({
   function unlockAbility(id, toastText) {
     if (abilityState[id]) return
     abilityState[id] = true
+    if (toastText) carriageAudio.pickup()
     timeSystem?.setAbilityAvailability?.(abilityState)
     hud?.setChronoVisible?.(true)
     if (toastText) hud?.showToast?.(toastText, 3000)
@@ -860,6 +865,7 @@ export function createMovingHeistLevel({
     }
   }
   applySteam()
+  for (const bank of steamBanks) carriageAudio.addSteam(new THREE.Vector3(0, 1.1, bank.z))
   unregisters.push(registerHazard(steamGroup, {
     onUpdate(scaledDelta) {
       steamT += scaledDelta
@@ -2649,6 +2655,8 @@ export function createMovingHeistLevel({
       sceneryMultiplier = sceneryFrom + (sceneryTarget - sceneryFrom) * sceneryEase
       outdoorEnv.update(delta * sceneryMultiplier)
       env.update(delta)
+      movementAudio.update(delta)
+      carriageAudio.update(delta, targetSceneryMultiplier, scanBeam.getWorldPosition(new THREE.Vector3()), {scanT, slideX: scanBeam.position.x, banks: steamBanks})
       corridorStealth.update(delta)
       lightPool.update(player.mesh.position, delta)
       elapsed += delta
@@ -3086,6 +3094,8 @@ export function createMovingHeistLevel({
       outdoorEnv.dispose()
       sky.dispose()
       corridorStealth.dispose()
+      movementAudio.dispose()
+      carriageAudio.dispose()
       scene.remove(sky.mesh, outdoorEnv.group, root)
       disposeObject(root)
     }
