@@ -66,59 +66,6 @@ const JUMP_SUSPICION_MULT = 2.0
 const DISTRACTION_RADIUS = 9.0
 const DISTRACTION_STOP_DISTANCE = 1.5
 
-// Vision fan: the guard's real field of view painted on the floor. The torch
-// cone is only a beam, far narrower than what he actually sees, so the fan
-// shows the detection angle and range, each ray cut short where cover would
-// hide a crouched body. Bright at the rim so its edge reads at a glance.
-const FAN_RAYS = 21
-const FAN_REFRESH = 1 / 20
-const FAN_RIM = 0.14
-// Fans further from the player than this are not worth re-tracing.
-const FAN_REFRESH_RANGE = 30
-
-function createVisionFan() {
-  // Vertex 0 is the guard. Each ray adds three: where the fill fades out,
-  // the inner edge of the rim (same place, opaque) and the outer edge.
-  const count = 1 + FAN_RAYS * 3
-  const positions = new Float32Array(count * 3)
-  const colours = new Float32Array(count * 4).fill(1)
-  colours[3] = 0.5
-  for (let i = 0; i < FAN_RAYS; i++) {
-    colours[(1 + i * 3) * 4 + 3] = 0.14
-    colours[(2 + i * 3) * 4 + 3] = 0.9
-    colours[(3 + i * 3) * 4 + 3] = 0.45
-  }
-  const index = []
-  for (let i = 0; i < FAN_RAYS - 1; i++) {
-    const a = 1 + i * 3
-    const b = a + 3
-    index.push(0, a, b)
-    index.push(a + 1, a + 2, b + 2, a + 1, b + 2, b + 1)
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.BufferAttribute(colours, 4))
-  geometry.setIndex(index)
-  const material = new THREE.MeshBasicMaterial({
-    color: 0xfacc15,
-    vertexColors: true,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2
-  })
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.name = 'vision-fan'
-  mesh.position.y = 0.025
-  mesh.renderOrder = 2
-  mesh.frustumCulled = false
-  mesh.userData.noCameraCollision = true
-  mesh.userData.noInteractionBlocker = true
-  return { mesh, material, positions, radii: new Float32Array(FAN_RAYS).fill(GUARD_VISION_DISTANCE) }
-}
-
 // A patrolling guard that makes almost no headway for this long (a trolley
 // parked across the aisle) gives up on that waypoint and turns back.
 const GUARD_PATROL_BLOCKED_SECONDS = 0.5
@@ -299,14 +246,11 @@ export function createStealthSystem({
     coneGeo.rotateX(-Math.PI / 2)
     coneGeo.translate(0, 0, distance / 2)
 
-    // Outer faces only. Double-sided, the cone washed the whole screen in its
-    // colour whenever the camera stood inside it — which is exactly when the
-    // player most needs to see. From outside it reads the same.
     const coneMat = new THREE.MeshBasicMaterial({
       color: 0xfacc15,
       transparent: true,
-      opacity: 0.3,
-      side: THREE.FrontSide,
+      opacity: 0.22,
+      side: THREE.DoubleSide,
       depthWrite: false
     })
 
@@ -337,8 +281,6 @@ export function createStealthSystem({
     const { mesh: visionCone, coneMat } = createVisionConeMesh(GUARD_VISION_DISTANCE, Math.PI / 3.2)
     visionCone.position.set(0, GUARD_FALLBACK_LIGHT_Y, 0)
     group.add(visionCone)
-    const visionFan = createVisionFan()
-    group.add(visionFan.mesh)
 
     // Suspicion status beacon indicator above guard hat
     const statusBeacon = new THREE.Mesh(
@@ -404,8 +346,6 @@ export function createStealthSystem({
       coneMat,
       visionCone,
       coneDistance: GUARD_VISION_DISTANCE,
-      visionFan,
-      fanTimer: Math.random() * FAN_REFRESH,
       statusBeacon,
       investigateMark,
       alertMark,
@@ -1056,63 +996,6 @@ export function createStealthSystem({
     return true
   }
 
-  // Re-trace the fan a few times a second: one ray per spoke from the torch
-  // down to a crouched body's height at the edge of his sight. Reshaping it
-  // each frame from the stored radii keeps it glued to his turning head.
-  const fanEye = new THREE.Vector3()
-  const fanTarget = new THREE.Vector3()
-  const fanDir = new THREE.Vector3()
-  function updateVisionFan(guard, delta) {
-    const fan = guard.visionFan
-    fan.material.color.copy(guard.coneMat.color)
-    const alert = guard.state === 'ALERT'
-    const range = alert ? GUARD_ALERT_VISION_DISTANCE : GUARD_VISION_DISTANCE
-    const half = Math.acos(alert ? GUARD_ALERT_FOV_DOT : GUARD_FOV_DOT)
-    const origin = guard.group.position
-
-    guard.fanTimer -= delta
-    const near = !player?.mesh || player.mesh.position.distanceTo(origin) < FAN_REFRESH_RANGE
-    if (guard.fanTimer <= 0 && near) {
-      guard.fanTimer = FAN_REFRESH
-      guardLightOrigin(guard, fanEye)
-      for (let i = 0; i < FAN_RAYS; i++) {
-        const angle = guard.facing - half + (i / (FAN_RAYS - 1)) * half * 2
-        fanTarget.set(
-          origin.x + Math.sin(angle) * range,
-          origin.y + PLAYER_CROUCH_DETECTION_HEIGHT,
-          origin.z + Math.cos(angle) * range
-        )
-        fanDir.subVectors(fanTarget, fanEye)
-        const length = fanDir.length()
-        raycaster.set(fanEye, fanDir.divideScalar(length))
-        raycaster.far = length
-        let hit = length
-        for (const h of sightHits(guardBlockers(guard, fanEye), false)) {
-          if (h.distance < hit) hit = h.distance
-        }
-        fan.radii[i] = Math.max(0.3, range * hit / length)
-      }
-    }
-
-    // Spokes in the guard's own frame: he faces local +Z.
-    const p = fan.positions
-    for (let i = 0; i < FAN_RAYS; i++) {
-      const local = -half + (i / (FAN_RAYS - 1)) * half * 2
-      const sin = Math.sin(local)
-      const cos = Math.cos(local)
-      const outer = fan.radii[i]
-      const inner = Math.max(0, outer - FAN_RIM)
-      const v = (1 + i * 3) * 3
-      p[v] = sin * inner
-      p[v + 2] = cos * inner
-      p[v + 3] = sin * inner
-      p[v + 5] = cos * inner
-      p[v + 6] = sin * outer
-      p[v + 8] = cos * outer
-    }
-    fan.mesh.geometry.attributes.position.needsUpdate = true
-  }
-
   // How much faster suspicion should climb while the player is seen, based
   // on how loud/visible their current gait is.
   function movementSuspicionMultiplier() {
@@ -1497,7 +1380,6 @@ export function createStealthSystem({
         if (hit.distance < coneHitDist) coneHitDist = hit.distance
       }
       guard.visionCone.scale.setScalar(THREE.MathUtils.clamp(coneHitDist / guard.coneDistance, 0.05, 1))
-      updateVisionFan(guard, delta)
 
       // While the chrono field is up, the shield ring pulses hard — that is
       // the moment the player needs to understand this guard is exempt.

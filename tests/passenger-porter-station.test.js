@@ -284,33 +284,6 @@ test('Stealth: a guard checking a noise by the wall stands facing the wall', () 
   stealth.dispose()
 })
 
-test('Stealth: the floor fan shows his real field of view, cut short by cover', () => {
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 0.2), new THREE.MeshBasicMaterial())
-  wall.position.set(0, 1.5, 3)
-  wall.updateMatrixWorld(true)
-  const scene = new THREE.Scene()
-  const player = createPlayer()
-  player.setPose(new THREE.Vector3(0, 0, -5))
-  const stealth = createStealthSystem({ scene, player, hud: hudStub(), collidables: [wall], respawn: { fail() {} } })
-  const guard = stealth.addGuard({ waypoints: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0.01)] })
-  guard.facing = 0
-  guard.group.rotation.y = 0
-  for (let i = 0; i < 10; i++) stealth.update(1 / 60)
-  const fan = guard.group.getObjectByName('vision-fan')
-  assert.ok(fan, 'every guard paints his sight on the floor')
-  const positions = fan.geometry.attributes.position
-  const rays = (positions.count - 1) / 3
-  const outer = (i) => new THREE.Vector3().fromBufferAttribute(positions, 3 + i * 3)
-  // The outermost spokes sit on the detection angle, not the torch beam's.
-  const edge = outer(0)
-  assert.ok(Math.abs(Math.abs(Math.atan2(edge.x, edge.z)) - Math.acos(0.52)) < 0.02)
-  // Straight ahead the wall stops it; out at the side it runs the full range.
-  const ahead = outer((rays - 1) / 2)
-  assert.ok(ahead.length() < 3.2, `the wall cuts the fan short (${ahead.length().toFixed(2)})`)
-  assert.ok(edge.length() > 7, 'past the wall it reaches his full sight')
-  stealth.dispose()
-})
-
 test('Stealth: a noise only draws guards within its hearing radius', () => {
   const { stealth, guard } = makeStealth({
     waypoints: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0.01)]
