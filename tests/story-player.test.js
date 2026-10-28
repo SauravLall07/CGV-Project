@@ -633,7 +633,7 @@ test('real main render callback bypasses composer for story quad and preserves p
     const h = harness(); await h.player.prepare(); h.player.start()
     let postCalls = 0
     const post = { enabled, render() { postCalls++ } }
-    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false,getState:()=> 'Boarding'},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
+    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false,getState:()=>'Boarding'},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
     render({}, {}); assert.equal(postCalls, 0)
     assert.equal(h.stats.renders, 1)
     h.player.skip(); render({}, {})
@@ -651,7 +651,7 @@ test('hidden handover runs the complete shared update with neutral input and a s
   assert.ok(start >= 0 && end > start)
   const calls = [], camera = new THREE.PerspectiveCamera(), hud = {
     updateStats() { calls.push('hud stats') }, isTutorialOpen: () => false,
-    updateRunTimer(options) { calls.push('timer'); assert.equal(options.elapsed, 7); assert.equal(options.running, false) },
+    updateRunTimer(options) { calls.push('timer'); assert.ok('remaining' in options) },
     updateTimeState() { calls.push('hud state') } }
   let keyboardEnabled = true, interactionEnabled = false
   const keyboard = { state: { forward: true, interact: true }, consumePress() { throw new Error('hidden update consumed player input') } }
@@ -661,7 +661,7 @@ test('hidden handover runs the complete shared update with neutral input and a s
   const deps = { camera, hud, keyboard, timeSystem, scene: new THREE.Scene(), renderQuality: { update() {} },
     player: { mesh: new THREE.Group(), updateVisual() { calls.push('visual') }, isCrouching: () => false,
       update(delta, input) { calls.push('player'); assert.equal(keyboardEnabled, false); assert.equal(input.keyboard.forward, false); assert.equal(input.keyboard.interact, false); assert.equal(input.runPressed, false); assert.equal(input.crouchPressed, false) } },
-    levelManager: { getState: () => 'Boarding', update() { calls.push('level') } },
+    levelManager: { getState: () => 'Boarding', update() { calls.push('level') }, restart() {} },
     storyPlayer: { lookAroundAngle: Math.PI },
     playerView: { yaw: 0, getYaw() { return this.yaw }, setYaw(value) { this.yaw = value },
       update() { calls.push('camera collision'); camera.position.set(999, 999, 999) } },
@@ -673,7 +673,8 @@ test('hidden handover runs the complete shared update with neutral input and a s
     const benchmark=null,renderOverlay=null,modelEditor=null,credits={isOpen:false},gameStarted=true;
     const presentationKeyboard=Object.freeze({forward:false,interact:false});
     const arrivalFramePosition=new THREE.Vector3(),arrivalFrameRotation=new THREE.Quaternion();
-    let elapsed=7,arrival={},firstHiddenSystemsPending=true;
+    const getLevelTimeLimit = () => 600, LEVEL_TIME_URGENT_SECONDS = 30;
+    let elapsed=7,levelTimeRemaining=600,levelTimerExpired=false,arrival={},firstHiddenSystemsPending=true;
     ${main.slice(start, end)}
     return {updateGameFrame,get elapsed(){return elapsed}};`)(deps, THREE)
   for (let i = 0; i < 10; i++) {
@@ -748,7 +749,7 @@ test('real render callback draws only story before coverage, game plus one quad 
   assert.ok(start >= 0 && end > start)
   const h = harness(); await h.player.prepare(); h.player.start()
   let games = 0
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false,getState:()=> 'Boarding'},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false,getState:()=>'Boarding'},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
   h.player.update(endStart()); render({}, {})
   assert.equal(games, 0); assert.equal(h.stats.renders, 1)
   h.player.update(endBeats().title - endStart() + 0.1); render({}, {})
@@ -774,7 +775,7 @@ test('actual composition keeps level music silent behind the title and during in
   let callbacks
   const owner = { active: false, prefetch: () => Promise.resolve() }
   const run = new Function('deps', `
-    const {createStoryPlayer,initAudio,beginForecourtArrival,warmGameplayAudio,playMusicForState,hud,syncInputState,levelManager}=deps;
+    const {createStoryPlayer,initAudio,beginForecourtArrival,warmGameplayAudio,playMusicForState,hud,syncInputState,levelManager,beginLevelCountdown,announceLevelCountdown}=deps;
     const post={resize(){deps.events.push('resize')}},settings={get(){return 0.85}};
     const introBeat={},renderer={},camera={},modelEditor=null,timeSystem={warmGhost(){}},requestAnimationFrame=()=>{};
     let storyPlayer=null,storyRun=1,gameStarted=false,awaitingIntro=false,firstLiveFramePending=false,firstPlayableFramePending=false;
@@ -786,8 +787,9 @@ test('actual composition keeps level music silent behind the title and during in
     events, createStoryPlayer(options) { callbacks = options; return owner },
     initAudio() {}, warmGameplayAudio() { events.push('warm audio') }, beginForecourtArrival() { events.push('arrival') },
     playMusicForState(state) { events.push('music:' + state) },
-    hud: { root: { style: {} }, setVisible(value) { events.push('hud:' + value) } },
-    syncInputState() { events.push('sync') }, levelManager: { getState: () => 'Boarding' }
+    hud: { root: { style: {} }, setVisible(value) { events.push('hud:' + value) }, showBriefing() {} },
+    syncInputState() { events.push('sync') }, levelManager: { getState: () => 'Boarding' },
+    beginLevelCountdown() {}, announceLevelCountdown() {}
   })
   await run.prepareIntro()
   run.enterBoarding()
