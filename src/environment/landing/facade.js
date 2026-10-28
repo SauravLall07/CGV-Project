@@ -317,7 +317,7 @@ export function buildFacade(parent, materials, stats) {
     }, stats)
   }
 
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.6, 0.78), materials.sign)
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.78 * 2172 / 372, 0.78), materials.sign)
   sign.rotateY(-Math.PI / 2)
   sign.position.set(FACADE_X - 3.58, 4.15, canopyZ)
   sign.name = 'landing-sign'

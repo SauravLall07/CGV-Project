@@ -215,7 +215,7 @@ const STREET_CARS = [
 // Sawhorses just inside the street, behind the bollards: two across the
 // road, one on each pavement. The sign hangs on the first, the warning
 // lantern sits on the second.
-const BARRICADE_TEXT = 'STATION CLOSED - BY ORDER OF CHRONO RAIL CO.'
+const BARRICADE_TEXT = 'STATION CLOSED - BY ORDER OF VANE RAIL CO.'
 const BARRICADES = [
   { x: 7.35, y: 0.045, z: 12.65, yaw: Math.PI / 2 + 0.05, length: 2.0, sign: true },
   { x: 7.0, y: 0.045, z: 14.6, yaw: Math.PI / 2 - 0.08, length: 2.0, lantern: true },
