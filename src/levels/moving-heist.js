@@ -413,6 +413,23 @@ export function createMovingHeistLevel({
     return obj
   }
 
+  // Ability consoles (makeConsole) stand in the middle of the aisle. A
+  // collider padded to arm's length stops the player walking into the
+  // cabinet, so the press animation reaches the screen instead of the body
+  // ending up inside it.
+  const CONSOLE_DEPTH = 0.34
+  const CONSOLE_REACH = 0.14
+  function addAbilityConsole(obj, z, width) {
+    addProp(obj, z, 0)
+    corridorObstacles.push({
+      minX: -width / 2 - CONSOLE_REACH,
+      maxX: width / 2 + CONSOLE_REACH,
+      minZ: z - CONSOLE_DEPTH / 2 - CONSOLE_REACH,
+      maxZ: z + CONSOLE_DEPTH / 2 + CONSOLE_REACH
+    })
+    return obj
+  }
+
   function addStaticBarrier({ z, x, width = 0.68, depth = 0.9, height = 0.95, color, target = corridorObstacles }) {
     const prop = makeBarrierProp({ width, depth, height, color })
     addProp(prop, z, x)
@@ -699,11 +716,14 @@ export function createMovingHeistLevel({
   interfaceBeacon.add(interfaceLight)
 
   chronoInterface.add(interfaceBeacon)
-  addProp(chronoInterface, spans.security.minZ + 3.0, 0)
+  addAbilityConsole(chronoInterface, spans.security.minZ + 3.0, 0.56)
 
   let interfaceTaken = false
   unregisters.push(interaction.register(chronoInterface, {
     prompt: 'Acquire Chrono Interface',
+    // The console's origin is on the floor, which would otherwise pick the
+    // floor-level pickup clip and bend the player into the cabinet.
+    gesture: 'press',
     onInteract: () => {
       if (interfaceTaken) return
       interfaceTaken = true
@@ -885,11 +905,12 @@ export function createMovingHeistLevel({
   powerPickups.push(ghostPickup)
   const ghostModule = ghostPickup.group
   ghostModule.name = 'ghost-module'
-  addProp(ghostModule, spans.relay.minZ + 2.2, 0)
+  addAbilityConsole(ghostModule, spans.relay.minZ + 2.2, 0.52)
 
   let ghostTaken = false
   unregisters.push(interaction.register(ghostModule, {
     prompt: 'Install Echo Synchronizer',
+    gesture: 'press',
     onInteract: () => {
       if (ghostTaken) return
       if (!abilityState.SLOW) {
@@ -1278,11 +1299,12 @@ export function createMovingHeistLevel({
 
   const freezeModule = freezePickup.group
   freezeModule.name = 'freeze-module'
-  addProp(freezeModule, spans.cargo.minZ + 3.0, 0)
+  addAbilityConsole(freezeModule, spans.cargo.minZ + 3.0, 0.5)
 
   let freezeTaken = false
   unregisters.push(interaction.register(freezeModule, {
     prompt: 'Install Cryo Phase module',
+    gesture: 'press',
     onInteract: () => {
       if (freezeTaken) return
       if (!relaySolved) {
@@ -1585,11 +1607,12 @@ export function createMovingHeistLevel({
   powerPickups.push(rewindPickup)
   const rewindModule = rewindPickup.group
   rewindModule.name = 'rewind-module'
-  addProp(rewindModule, spans.mechanical.minZ + 3.0, 0)
+  addAbilityConsole(rewindModule, spans.mechanical.minZ + 3.0, 0.5)
 
   let rewindTaken = false
   unregisters.push(interaction.register(rewindModule, {
     prompt: 'Install Rollback module',
+    gesture: 'press',
     onInteract: () => {
       if (rewindTaken) return
       if (!abilityState.FREEZE) {
