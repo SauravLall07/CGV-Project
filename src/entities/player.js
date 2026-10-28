@@ -239,6 +239,14 @@ export function createPlayer() {
   let jumpStarted = false
   let timingJump = false
   let jumpAirborneTime = 0
+  // Thrown by a hazard: ballistic flight with no control until setPose().
+  let launched = false
+  // Fallen below the floor inside a void: committed to the fall, so drifting
+  // back over solid floor must not snap the player up onto it.
+  let voidDrop = false
+  // Last grounded walking velocity, carried off ledges that keep momentum.
+  let walkVelocityX = 0
+  let walkVelocityZ = 0
 
   // Movement flags, lifted out of update()'s locals so the stealth system can
   // read the player's current gait (crouch/run/jump) to scale detectability —
@@ -464,8 +472,10 @@ export function createPlayer() {
     visual?.setScriptedWalking(false)
     visual?.cancelThrow()
     group.position.copy(position)
+    group.rotation.x = 0
     group.rotation.y = yaw
     facing = yaw
+    launched = false
 
     groundY = position.y
     verticalVelocity = 0
@@ -473,6 +483,9 @@ export function createPlayer() {
     airVelocityZ = 0
     airborne = false
     wasJumpHeld = false
+    voidDrop = false
+    walkVelocityX = 0
+    walkVelocityZ = 0
 
     crouchAmount = 0
     crouchToggled = false
@@ -480,8 +493,28 @@ export function createPlayer() {
     resetPose()
   }
 
-  function inVoid(x, z, voids) {
-    if (!voids) return false
+  // A hazard hit hard enough to throw the player. They fly on a ballistic arc,
+  // facing back toward the hit and tipping over backwards, ignoring input,
+  // walls and level bounds. Nothing lands them: the level fails the run once
+  // they have fallen far enough, and the respawn's setPose() ends the flight.
+  function knockback(vx, vy, vz) {
+    launched = true
+    airborne = true
+    verticalVelocity = vy
+    airVelocityX = vx
+    airVelocityZ = vz
+    crouchToggled = false
+    cancelScriptedWalk()
+    facing = Math.atan2(-vx, -vz)
+    // Yaw first, so rotation.x tips the body relative to where it faces.
+    group.rotation.order = 'YXZ'
+    group.rotation.y = facing
+  }
+
+  // The void containing (x, z), or null. A void with `keepMomentum` is a
+  // ledge: walking off it carries the player's stride out into the fall.
+  function voidAt(x, z, voids) {
+    if (!voids) return null
 
     for (const v of voids) {
       if (
@@ -490,11 +523,15 @@ export function createPlayer() {
         z > v.minZ &&
         z < v.maxZ
       ) {
-        return true
+        return v
       }
     }
 
-    return false
+    return null
+  }
+
+  function inVoid(x, z, voids) {
+    return voidAt(x, z, voids) !== null
   }
 
   function supportTopAt(x, y, z, supports) {
@@ -544,6 +581,18 @@ export function createPlayer() {
       running = false
       crouching = false
       visual?.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false })
+      return
+    }
+    if (launched) {
+      moving = false
+      running = false
+      crouching = false
+      verticalVelocity -= GRAVITY * delta
+      group.position.x += airVelocityX * delta
+      group.position.y += verticalVelocity * delta
+      group.position.z += airVelocityZ * delta
+      group.rotation.x = Math.max(-1.35, group.rotation.x - delta * 3.4)
+      visual?.setLocomotion({ moving: false, airborne: true, crouching: false, jumpStarted: false })
       return
     }
     const sin = Math.sin(cameraYaw)
@@ -655,6 +704,9 @@ export function createPlayer() {
         turnToward(airVelocityX, airVelocityZ, delta)
       }
 
+      const overVoid = inVoid(group.position.x, group.position.z, voids)
+      if (overVoid && group.position.y < groundY - 0.12) voidDrop = true
+
       const landing = supportTopAt(group.position.x, group.position.y, group.position.z, supports)
       if (verticalVelocity <= 0 && landing != null) {
         group.position.y = landing
@@ -663,7 +715,8 @@ export function createPlayer() {
         airVelocityX = 0
         airVelocityZ = 0
         airborne = false
-      } else if (!inVoid(group.position.x, group.position.z, voids) && group.position.y <= groundY) {
+        voidDrop = false
+      } else if (!voidDrop && !overVoid && group.position.y <= groundY) {
         group.position.y = groundY
         verticalVelocity = 0
         airVelocityX = 0
@@ -688,6 +741,8 @@ export function createPlayer() {
       else if (running) movementMultiplier = RUN_MULTIPLIER
 
       const distance = MOVE_SPEED * movementMultiplier * delta
+      walkVelocityX = dx * MOVE_SPEED * movementMultiplier
+      walkVelocityZ = dz * MOVE_SPEED * movementMultiplier
 
       movePlanar(dx * distance, dz * distance)
 
@@ -702,18 +757,21 @@ export function createPlayer() {
       stridePhase += distance * STRIDE_FREQUENCY
     } else {
       stridePhase *= Math.max(0, 1 - delta * 10)
+      walkVelocityX = 0
+      walkVelocityZ = 0
     }
 
     if (!airborne) {
       const top = supportTopAt(group.position.x, group.position.y, group.position.z, supports)
+      const ledge = top == null ? voidAt(group.position.x, group.position.z, voids) : null
       if (top != null) {
         group.position.y = top
         groundY = top
-      } else if (inVoid(group.position.x, group.position.z, voids)) {
+      } else if (ledge) {
         airborne = true
         verticalVelocity = 0
-        airVelocityX = 0
-        airVelocityZ = 0
+        airVelocityX = ledge.keepMomentum ? walkVelocityX : 0
+        airVelocityZ = ledge.keepMomentum ? walkVelocityZ : 0
       }
     }
 
@@ -834,6 +892,7 @@ export function createPlayer() {
     mesh: group,
     update,
     setPose,
+    knockback,
     loadVisual,
     updateVisual,
     playCast,
