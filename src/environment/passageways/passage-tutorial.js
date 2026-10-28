@@ -822,11 +822,11 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
   // exterior station, with the existing dark green tiled wainscot below.
   retile(group, [
     [floorMat, k.concrete, 3],
-    [wallMat, k.stationStone, 2.05],
+    [wallMat, k.facadeStone, 2.05],
     [ceilingMat, k.ceiling, 3]
   ])
   dressWalls(group, {
-    walls: [k.stationStone],
+    walls: [k.facadeStone],
     finish: 'tile',
     name: 'tutorial-wall-dressing',
     clear: [{ minX: worldX(-83.5) - 0.7, maxX: worldX(-83.5) + 0.7, minZ: -28, maxZ: -27 }]
