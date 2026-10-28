@@ -386,7 +386,9 @@ function createApproachCorridor() {
 
   // Brass pendants. Only some keep a real light (see boarding-lighting.js);
   // the rest glow and paint a pool on the floor.
-  for (let x = -48; x <= -8; x += 8) {
+  // Keep the first pendant at its adjusted position, and shift the second
+  // clear of the wall. Each pendant and its point light share an x coordinate.
+  for (const x of [-45.5, -37.5, -32, -24, -16, -8]) {
     pendantLamp(kit, k, at(x, ROOF_Y - 0.11, APPROACH_CENTER_Z), 1.45)
 
     const lamp = new THREE.PointLight(0xffc98a, 18, 11, 2)
