@@ -236,13 +236,10 @@ export function createMainMenu({ camera, player, renderer, settingsMenu, unlockA
     if (unlockAudio) unlockAudio()
     isTransitioning = true
 
-    // Fade menu out after a brief beat
-    setTimeout(() => {
-      hide()
-      if (onStartCallback) {
-        setTimeout(() => onStartCallback(), 650)
-      }
-    }, 120)
+    // Prepared gameplay starts in this gesture; the existing opacity
+    // transition must not add 770 ms before the first intro frame.
+    hide()
+    onStartCallback?.()
   }
 
   newGameBtn.addEventListener('click', handleStart)
