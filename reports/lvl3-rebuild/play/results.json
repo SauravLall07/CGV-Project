@@ -1,0 +1,149 @@
+{
+  "errors": [],
+  "events": [
+    {
+      "name": "cargo-held-approach",
+      "position": [
+        0,
+        0,
+        -2.5
+      ]
+    },
+    {
+      "name": "cargo-first-person",
+      "position": [
+        0,
+        0,
+        -2.5
+      ]
+    },
+    {
+      "name": "cargo-real-gangway-crossed",
+      "position": [
+        1.151623559807799e-15,
+        0.1,
+        -11.903720000000027
+      ]
+    },
+    {
+      "name": "cargo-real-loop-crossed",
+      "position": [
+        1.9010241249036394e-15,
+        0.1,
+        -18.023040000000012
+      ]
+    },
+    {
+      "name": "security-held-decks",
+      "position": [
+        -0.7999999999999999,
+        0,
+        -48.5
+      ]
+    },
+    {
+      "name": "security-real-island",
+      "position": [
+        0.3788884255942207,
+        0,
+        -56.74568842559425
+      ]
+    },
+    {
+      "name": "security-real-jump-exit",
+      "position": [
+        0.3788884255942207,
+        0,
+        -64.4399444255943
+      ]
+    },
+    {
+      "name": "pause",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "ghost-active",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "ghost-cancelled",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "restart",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "quality-high",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "quality-balanced",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "quality-performance",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "quality-auto",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "aspect-4-3",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "aspect-portrait",
+      "position": [
+        0,
+        0,
+        67.5
+      ]
+    },
+    {
+      "name": "ending-transition",
+      "position": [
+        0,
+        0,
+        7.6
+      ]
+    }
+  ]
+}

@@ -53,7 +53,7 @@ export function createWreckVisibility({ root, carriages, spans, wallX, ceilingY,
   for (const [key, carriage] of Object.entries(carriages)) {
     carriage.traverse(node => {
       if (!ordinaryMesh(node)) return
-      if (node.userData.wreckOccluder && node.geometry.type === 'BoxGeometry') {
+      if (node.userData.wreckOccluder && !node.userData.wreckTorn && !node.userData.wreckShell && node.geometry.type === 'BoxGeometry') {
         occluders.push({ node, key, inverse: new THREE.Matrix4(), eye: new THREE.Vector3(),
           face: 0, sign: 1, bounds: new THREE.Box3() })
       } else if (!node.castShadow) candidates.push(node)
@@ -93,7 +93,7 @@ export function createWreckVisibility({ root, carriages, spans, wallX, ceilingY,
       panel.active = false
       const node = panel.node
       const mat = node.material
-      if (panel.key !== key || !ordinaryMesh(node) || !visibleInTree(node, root) ||
+      if (panel.key !== key || node.userData.wreckTorn || node.userData.wreckShell || !ordinaryMesh(node) || !visibleInTree(node, root) ||
         !node.layers.test(camera.layers) || mat.transparent || mat.opacity !== 1 ||
         mat.alphaTest || mat.alphaMap || mat.alphaHash || mat.clippingPlanes?.length ||
         !mat.visible || !mat.depthWrite || !mat.depthTest || !mat.colorWrite ||

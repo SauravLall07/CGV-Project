@@ -124,6 +124,8 @@ const minimap = createMinimap({
   getGuards: () => levelManager.guards,
   getLevelState: () => levelManager.getState(),
   getCarriageVolumes: () => levelManager.carriageVolumes,
+  getVoids: () => levelManager.voids,
+  getSupports: () => levelManager.supports,
   getRange: () => settings.get('minimapRange')
 })
 
@@ -350,7 +352,7 @@ const levelManager = createLevelManager({
     } },
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
-    { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
+    { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(({createTimewreckLevel}) => ctx => createTimewreckLevel({...ctx,post})) },
     { state: 'Ending', load: () => import('./levels/ending.js')
       .then(({ createEndingLevel, prefetchEndingPaintings }) => {
         // Paintings prefetch during Timewreck, but cannot hold the transition hostage.
@@ -1007,7 +1009,7 @@ const loop = createLoop({
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
-    post.render(world, view)
+    post.render(world, view, { antialias: levelManager.getState() === 'Timewreck' })
   },
 
   afterRender: (gl) => {
@@ -1187,7 +1189,8 @@ function updateGameFrame(delta, presentation = false) {
   const lookAngle = presentation ? storyPlayer?.lookAroundAngle || 0 : 0
   if (lookAngle) playerView.setYaw(arrivalYaw + lookAngle)
   playerView.update(delta, player.mesh, scene, {
-    crouching: player.isCrouching()
+    crouching: player.isCrouching(),
+    stabilizeCollision: levelManager.getState() === 'Timewreck'
   })
   if (lookAngle) playerView.setYaw(arrivalYaw)
   if (presentation && arrival) {

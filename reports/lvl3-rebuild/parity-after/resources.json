@@ -1,0 +1,128 @@
+[
+  {
+    "level": "Timewreck",
+    "memory": {
+      "geometries": 827,
+      "textures": 118
+    },
+    "skyDomes": 1,
+    "roots": [
+      "player",
+      "time-ghost",
+      "",
+      "",
+      "",
+      "model-editor-colliders",
+      "outdoor-environment",
+      "timewreck-exterior",
+      "train-interior-wrecked",
+      "sky-dome",
+      "",
+      ""
+    ]
+  },
+  {
+    "level": "Ending",
+    "memory": {
+      "geometries": 174,
+      "textures": 57
+    },
+    "skyDomes": 0,
+    "roots": [
+      "player",
+      "time-ghost",
+      "",
+      "",
+      "",
+      "model-editor-colliders",
+      "ending-plate-sphere",
+      "ending-gorge",
+      "ending-core-effects",
+      "WORLD_ALIGN"
+    ]
+  },
+  {
+    "level": "Timewreck",
+    "memory": {
+      "geometries": 1003,
+      "textures": 126
+    },
+    "skyDomes": 1,
+    "roots": [
+      "player",
+      "time-ghost",
+      "",
+      "",
+      "",
+      "model-editor-colliders",
+      "outdoor-environment",
+      "timewreck-exterior",
+      "train-interior-wrecked",
+      "sky-dome",
+      "",
+      ""
+    ]
+  },
+  {
+    "level": "Ending",
+    "memory": {
+      "geometries": 174,
+      "textures": 57
+    },
+    "skyDomes": 0,
+    "roots": [
+      "player",
+      "time-ghost",
+      "",
+      "",
+      "",
+      "model-editor-colliders",
+      "ending-plate-sphere",
+      "ending-gorge",
+      "ending-core-effects",
+      "WORLD_ALIGN"
+    ]
+  },
+  {
+    "level": "Timewreck",
+    "memory": {
+      "geometries": 1003,
+      "textures": 126
+    },
+    "skyDomes": 1,
+    "roots": [
+      "player",
+      "time-ghost",
+      "",
+      "",
+      "",
+      "model-editor-colliders",
+      "outdoor-environment",
+      "timewreck-exterior",
+      "train-interior-wrecked",
+      "sky-dome",
+      "",
+      ""
+    ]
+  },
+  {
+    "level": "Ending",
+    "memory": {
+      "geometries": 174,
+      "textures": 57
+    },
+    "skyDomes": 0,
+    "roots": [
+      "player",
+      "time-ghost",
+      "",
+      "",
+      "",
+      "model-editor-colliders",
+      "ending-plate-sphere",
+      "ending-gorge",
+      "ending-core-effects",
+      "WORLD_ALIGN"
+    ]
+  }
+]

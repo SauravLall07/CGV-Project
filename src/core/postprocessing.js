@@ -3,6 +3,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js'
 import { settings } from './settings.js'
 
 // Global finish for every level. The scene is drawn into a floating-point
@@ -14,8 +16,8 @@ import { settings } from './settings.js'
 // it once in that final pass, so highlights are not crushed before they glow.
 // UnrealBloomPass halves whatever size it is given, so it is handed half the
 // drawing buffer and the first mip is a quarter of the screen. Only the first
-// three mips are blurred. There is no FXAA pass: another full-resolution
-// resolve would spend the fill-rate the MSAA target was using.
+// three mips are blurred. Timewreck opts into FXAA after the output transform;
+// the other levels retain their existing rendering path.
 
 // OutputPass is a RawShaderMaterial, so Three never injects
 // linearToOutputTexel. The stock output shader encodes with sRGBTransferOETF
@@ -91,6 +93,8 @@ export function createPostProcessing(renderer) {
   // the clock face stay under it so they cannot fog the frame.
   const bloomPass = new UnrealBloomPass(size.clone(), 0.14, 0.18, 1.35)
   const outputPass = new OutputPass()
+  const antialiasPass = new ShaderPass(FXAAShader)
+  antialiasPass.enabled = false
 
   // The pass halves its input. Handing it half the buffer makes the blur
   // chain a quarter of the screen. The last two mips are tiny and unused.
@@ -120,6 +124,7 @@ export function createPostProcessing(renderer) {
   composer.addPass(renderPass)
   composer.addPass(bloomPass)
   composer.addPass(outputPass)
+  composer.addPass(antialiasPass)
 
   let enabled = true
   let gpu = null
@@ -133,6 +138,9 @@ export function createPostProcessing(renderer) {
     renderer.getSize(size)
     composer.setPixelRatio(renderer.getPixelRatio())
     const width = Math.max(1, size.x), height = Math.max(1, size.y)
+    antialiasPass.uniforms.resolution.value.set(
+      1 / Math.max(1, Math.floor(width * renderer.getPixelRatio())),
+      1 / Math.max(1, Math.floor(height * renderer.getPixelRatio())))
     // setPixelRatio already resizes at the cached logical size. Avoid a
     // second render-target resize/allocation on every Auto tier change.
     if (width !== logicalWidth || height !== logicalHeight) {
@@ -145,7 +153,8 @@ export function createPostProcessing(renderer) {
     }
   }
 
-  function render(scene, camera) {
+  function render(scene, camera, { antialias = false } = {}) {
+    antialiasPass.enabled = antialias
     if (!enabled) {
       renderer.render(scene, camera)
       return
@@ -165,6 +174,11 @@ export function createPostProcessing(renderer) {
   outputPass.render = function outputTimed(...args) {
     gpu?.begin('final')
     outputRender(...args)
+    if (!antialiasPass.enabled) gpu?.endIf('final')
+  }
+  const antialiasRender = antialiasPass.render.bind(antialiasPass)
+  antialiasPass.render = function antialiasTimed(...args) {
+    antialiasRender(...args)
     gpu?.endIf('final')
   }
 
@@ -182,6 +196,7 @@ export function createPostProcessing(renderer) {
     window.removeEventListener('resize', resize)
     bloomPass.dispose()
     outputPass.dispose()
+    antialiasPass.dispose()
     composer.dispose()
   }
 

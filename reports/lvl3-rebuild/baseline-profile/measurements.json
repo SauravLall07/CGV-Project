@@ -1,0 +1,8048 @@
+{
+  "cargo": {
+    "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "viewport": [
+      1280,
+      720
+    ],
+    "pixelRatio": 1,
+    "exposure": 1.15,
+    "resources": {
+      "geometries": 1120,
+      "textures": 108,
+      "programs": 40
+    },
+    "render": {
+      "frame": 2626,
+      "calls": 634,
+      "triangles": 159260,
+      "points": 646,
+      "lines": 624
+    },
+    "samples": [
+      {
+        "frameId": 115,
+        "timestampMs": 50957.8,
+        "frameMs": 83.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26.90000000037253,
+        "drawCpuMs": 28.90000000037253,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 116,
+        "timestampMs": 51057.8,
+        "frameMs": 100,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.699999999254942,
+        "drawCpuMs": 27.5,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 117,
+        "timestampMs": 51091.1,
+        "frameMs": 33.299999999995634,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26.40000000037253,
+        "drawCpuMs": 28.799999998882413,
+        "minimapCpuMs": 0.900000000372529,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 118,
+        "timestampMs": 51124.7,
+        "frameMs": 33.599999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.300000000745058,
+        "drawCpuMs": 24.09999999962747,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 119,
+        "timestampMs": 51141.3,
+        "frameMs": 16.60000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26,
+        "drawCpuMs": 28.299999998882413,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 120,
+        "timestampMs": 51174.7,
+        "frameMs": 33.39999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 18.699999999254942,
+        "drawCpuMs": 20.40000000037253,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 121,
+        "timestampMs": 51241.1,
+        "frameMs": 66.40000000000146,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 19.699999999254942,
+        "drawCpuMs": 21.600000001490116,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 122,
+        "timestampMs": 51274.4,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.100000001490116,
+        "drawCpuMs": 27.40000000037253,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 123,
+        "timestampMs": 51324.5,
+        "frameMs": 50.099999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 19.5,
+        "drawCpuMs": 20.90000000037253,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 124,
+        "timestampMs": 51374.5,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.59999999962747,
+        "drawCpuMs": 25.199999999254942,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 125,
+        "timestampMs": 51424.6,
+        "frameMs": 50.099999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.699999999254942,
+        "drawCpuMs": 22.399999998509884,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 126,
+        "timestampMs": 51491.1,
+        "frameMs": 66.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.299999998882413,
+        "drawCpuMs": 25.100000001490116,
+        "minimapCpuMs": 0.7000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 127,
+        "timestampMs": 51541.1,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.699999999254942,
+        "drawCpuMs": 25,
+        "minimapCpuMs": 0.7999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 128,
+        "timestampMs": 51574.4,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 35.69999999925494,
+        "drawCpuMs": 39.70000000111759,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 129,
+        "timestampMs": 51624.5,
+        "frameMs": 50.099999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.300000000745058,
+        "drawCpuMs": 24,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 130,
+        "timestampMs": 51657.8,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22,
+        "drawCpuMs": 24.600000001490116,
+        "minimapCpuMs": 0.6999999992549419,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 131,
+        "timestampMs": 51707.8,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21,
+        "drawCpuMs": 23.200000001117587,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 132,
+        "timestampMs": 51774.4,
+        "frameMs": 66.59999999999854,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.100000001490116,
+        "drawCpuMs": 22.600000001490116,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 133,
+        "timestampMs": 51841.1,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.40000000037253,
+        "drawCpuMs": 25.799999998882413,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 134,
+        "timestampMs": 51874.6,
+        "frameMs": 33.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20,
+        "drawCpuMs": 22.799999998882413,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 135,
+        "timestampMs": 51941.1,
+        "frameMs": 66.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.800000000745058,
+        "drawCpuMs": 23.199999999254942,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 136,
+        "timestampMs": 51991.3,
+        "frameMs": 50.200000000004366,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.40000000037253,
+        "drawCpuMs": 23.300000000745058,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 137,
+        "timestampMs": 52057.7,
+        "frameMs": 66.39999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.300000000745058,
+        "drawCpuMs": 24.399999998509884,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 138,
+        "timestampMs": 52107.8,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.100000001490116,
+        "drawCpuMs": 23.90000000037253,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 139,
+        "timestampMs": 52158,
+        "frameMs": 50.19999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 29.90000000037253,
+        "drawCpuMs": 31.90000000037253,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 140,
+        "timestampMs": 52207.8,
+        "frameMs": 49.80000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.800000000745058,
+        "drawCpuMs": 24.90000000037253,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 141,
+        "timestampMs": 52257.7,
+        "frameMs": 49.89999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.300000000745058,
+        "drawCpuMs": 26.700000001117587,
+        "minimapCpuMs": 0.7000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 142,
+        "timestampMs": 52307.9,
+        "frameMs": 50.200000000004366,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.09999999962747,
+        "drawCpuMs": 22.90000000037253,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 143,
+        "timestampMs": 52357.7,
+        "frameMs": 49.799999999995634,
+        "updateCpuMs": 0.09999999962747097,
+        "sceneCpuMs": 24.5,
+        "drawCpuMs": 26.09999999962747,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 144,
+        "timestampMs": 52391.1,
+        "frameMs": 33.400000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.40000000037253,
+        "drawCpuMs": 26.09999999962747,
+        "minimapCpuMs": 0.900000000372529,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 145,
+        "timestampMs": 52441.1,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.199999999254942,
+        "drawCpuMs": 26.399999998509884,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 146,
+        "timestampMs": 52507.7,
+        "frameMs": 66.59999999999854,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26.800000000745058,
+        "drawCpuMs": 29.40000000037253,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 147,
+        "timestampMs": 52541.1,
+        "frameMs": 33.400000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.100000001490116,
+        "drawCpuMs": 26.700000001117587,
+        "minimapCpuMs": 0.6000000014901161,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 148,
+        "timestampMs": 52607.8,
+        "frameMs": 66.70000000000437,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.59999999962747,
+        "drawCpuMs": 23.09999999962747,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 149,
+        "timestampMs": 52657.7,
+        "frameMs": 49.89999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22,
+        "drawCpuMs": 24.100000001490116,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 150,
+        "timestampMs": 52707.8,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.800000000745058,
+        "drawCpuMs": 23.699999999254942,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 151,
+        "timestampMs": 52757.7,
+        "frameMs": 49.89999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.899999998509884,
+        "drawCpuMs": 26.700000001117587,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 152,
+        "timestampMs": 52807.7,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.5,
+        "drawCpuMs": 23.800000000745058,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 153,
+        "timestampMs": 52841.1,
+        "frameMs": 33.400000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.799999998882413,
+        "drawCpuMs": 25.800000000745058,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 154,
+        "timestampMs": 52891.1,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26.300000000745058,
+        "drawCpuMs": 29.399999998509884,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 155,
+        "timestampMs": 52957.8,
+        "frameMs": 66.70000000000437,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.700000001117587,
+        "drawCpuMs": 25.300000000745058,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 156,
+        "timestampMs": 53007.8,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.90000000037253,
+        "drawCpuMs": 29.799999998882413,
+        "minimapCpuMs": 1.299999998882413,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 157,
+        "timestampMs": 53057.7,
+        "frameMs": 49.89999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26.59999999962747,
+        "drawCpuMs": 28.40000000037253,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 158,
+        "timestampMs": 53141.2,
+        "frameMs": 83.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.800000000745058,
+        "drawCpuMs": 28.399999998509884,
+        "minimapCpuMs": 0.6999999992549419,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 159,
+        "timestampMs": 53191.1,
+        "frameMs": 49.900000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.59999999962747,
+        "drawCpuMs": 23.90000000037253,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 160,
+        "timestampMs": 53224.4,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.5,
+        "drawCpuMs": 27.5,
+        "minimapCpuMs": 0.6999999992549419,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 161,
+        "timestampMs": 53274.5,
+        "frameMs": 50.099999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.300000000745058,
+        "drawCpuMs": 24.299999998882413,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 162,
+        "timestampMs": 53341.2,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.600000001490116,
+        "drawCpuMs": 22.59999999962747,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 163,
+        "timestampMs": 53374.4,
+        "frameMs": 33.200000000004366,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.40000000037253,
+        "drawCpuMs": 23.5,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 164,
+        "timestampMs": 53441.2,
+        "frameMs": 66.79999999999563,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26.40000000037253,
+        "drawCpuMs": 28.90000000037253,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 165,
+        "timestampMs": 53474.5,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 36.40000000037253,
+        "drawCpuMs": 38.90000000037253,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 166,
+        "timestampMs": 53524.5,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.199999999254942,
+        "drawCpuMs": 24.5,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 167,
+        "timestampMs": 53591,
+        "frameMs": 66.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.799999998882413,
+        "drawCpuMs": 25,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 168,
+        "timestampMs": 53641.1,
+        "frameMs": 50.099999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.299999998882413,
+        "drawCpuMs": 24.300000000745058,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 169,
+        "timestampMs": 53674.4,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.59999999962747,
+        "drawCpuMs": 26.40000000037253,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 170,
+        "timestampMs": 53724.4,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.199999999254942,
+        "drawCpuMs": 23.700000001117587,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 171,
+        "timestampMs": 53774.4,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.40000000037253,
+        "drawCpuMs": 23.600000001490116,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 172,
+        "timestampMs": 53807.8,
+        "frameMs": 33.400000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.199999999254942,
+        "drawCpuMs": 24.100000001490116,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 173,
+        "timestampMs": 53857.7,
+        "frameMs": 49.89999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 28.200000001117587,
+        "drawCpuMs": 29.800000000745058,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 174,
+        "timestampMs": 53907.7,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 31.699999999254942,
+        "drawCpuMs": 33.69999999925494,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 175,
+        "timestampMs": 53958,
+        "frameMs": 50.30000000000291,
+        "updateCpuMs": 0.09999999962747097,
+        "sceneCpuMs": 25.899999998509884,
+        "drawCpuMs": 28.800000000745058,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 176,
+        "timestampMs": 54007.7,
+        "frameMs": 49.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.09999999962747,
+        "drawCpuMs": 26.100000001490116,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 177,
+        "timestampMs": 54057.8,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 29.800000000745058,
+        "drawCpuMs": 32.40000000037253,
+        "minimapCpuMs": 0.6000000014901161,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 178,
+        "timestampMs": 54124.5,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26.699999999254942,
+        "drawCpuMs": 28.899999998509884,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 179,
+        "timestampMs": 54191.2,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.90000000037253,
+        "drawCpuMs": 25.699999999254942,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 180,
+        "timestampMs": 54241.1,
+        "frameMs": 49.900000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 27.200000001117587,
+        "drawCpuMs": 29.800000000745058,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 181,
+        "timestampMs": 54291.2,
+        "frameMs": 50.099999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.799999998882413,
+        "drawCpuMs": 26,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 182,
+        "timestampMs": 54341.1,
+        "frameMs": 49.900000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.699999999254942,
+        "drawCpuMs": 25.699999999254942,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 183,
+        "timestampMs": 54391.2,
+        "frameMs": 50.099999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24,
+        "drawCpuMs": 25.899999998509884,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 184,
+        "timestampMs": 54441.2,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23,
+        "drawCpuMs": 25.09999999962747,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 185,
+        "timestampMs": 54491.1,
+        "frameMs": 49.900000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.90000000037253,
+        "drawCpuMs": 25.800000000745058,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 186,
+        "timestampMs": 54541.1,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.800000000745058,
+        "drawCpuMs": 27,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 187,
+        "timestampMs": 54591.2,
+        "frameMs": 50.099999999998545,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 27.800000000745058,
+        "drawCpuMs": 29.5,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 188,
+        "timestampMs": 54641.2,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.5,
+        "drawCpuMs": 23,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 189,
+        "timestampMs": 54707.8,
+        "frameMs": 66.60000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.300000000745058,
+        "drawCpuMs": 23.5,
+        "minimapCpuMs": 0.6999999992549419,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 190,
+        "timestampMs": 54774.6,
+        "frameMs": 66.79999999999563,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.90000000037253,
+        "drawCpuMs": 24.5,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 191,
+        "timestampMs": 54824.5,
+        "frameMs": 49.900000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.5,
+        "drawCpuMs": 22.199999999254942,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 192,
+        "timestampMs": 54857.8,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.40000000037253,
+        "drawCpuMs": 26.09999999962747,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 193,
+        "timestampMs": 54924.4,
+        "frameMs": 66.59999999999854,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.90000000037253,
+        "drawCpuMs": 26.800000000745058,
+        "minimapCpuMs": 0.900000000372529,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 194,
+        "timestampMs": 54974.4,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.300000000745058,
+        "drawCpuMs": 26.90000000037253,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 195,
+        "timestampMs": 55041.1,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0.10000000149011612,
+        "sceneCpuMs": 29.09999999962747,
+        "drawCpuMs": 32.29999999888241,
+        "minimapCpuMs": 1.099999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 196,
+        "timestampMs": 55091,
+        "frameMs": 49.900000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 29.40000000037253,
+        "drawCpuMs": 31.199999999254942,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 197,
+        "timestampMs": 55141.2,
+        "frameMs": 50.19999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.90000000037253,
+        "drawCpuMs": 27.899999998509884,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      },
+      {
+        "frameId": 198,
+        "timestampMs": 55174.4,
+        "frameMs": 33.200000000004366,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24,
+        "drawCpuMs": 26,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 634,
+        "triangles": 159260
+      }
+    ],
+    "gpuSamples": [
+      {
+        "queryId": 566,
+        "frameId": 114,
+        "completedFrameId": 115,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 575,
+        "frameId": 115,
+        "completedFrameId": 116,
+        "label": "minimap",
+        "ms": 0.060208
+      },
+      {
+        "queryId": 574,
+        "frameId": 115,
+        "completedFrameId": 116,
+        "label": "final",
+        "ms": 1.720677
+      },
+      {
+        "queryId": 573,
+        "frameId": 115,
+        "completedFrameId": 116,
+        "label": "bloom",
+        "ms": 0.777968
+      },
+      {
+        "queryId": 572,
+        "frameId": 115,
+        "completedFrameId": 116,
+        "label": "scene",
+        "ms": 6.553177
+      },
+      {
+        "queryId": 571,
+        "frameId": 115,
+        "completedFrameId": 116,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 570,
+        "frameId": 114,
+        "completedFrameId": 116,
+        "label": "minimap",
+        "ms": 0.057656
+      },
+      {
+        "queryId": 569,
+        "frameId": 114,
+        "completedFrameId": 116,
+        "label": "final",
+        "ms": 1.247864
+      },
+      {
+        "queryId": 568,
+        "frameId": 114,
+        "completedFrameId": 116,
+        "label": "bloom",
+        "ms": 0.553125
+      },
+      {
+        "queryId": 567,
+        "frameId": 114,
+        "completedFrameId": 116,
+        "label": "scene",
+        "ms": 7.318802
+      },
+      {
+        "queryId": 565,
+        "frameId": 113,
+        "completedFrameId": 116,
+        "label": "minimap",
+        "ms": 0.057708
+      },
+      {
+        "queryId": 564,
+        "frameId": 113,
+        "completedFrameId": 116,
+        "label": "final",
+        "ms": 1.61401
+      },
+      {
+        "queryId": 563,
+        "frameId": 113,
+        "completedFrameId": 116,
+        "label": "bloom",
+        "ms": 0.57401
+      },
+      {
+        "queryId": 562,
+        "frameId": 113,
+        "completedFrameId": 116,
+        "label": "scene",
+        "ms": 5.25
+      },
+      {
+        "queryId": 561,
+        "frameId": 113,
+        "completedFrameId": 116,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 560,
+        "frameId": 112,
+        "completedFrameId": 116,
+        "label": "minimap",
+        "ms": 0.055677
+      },
+      {
+        "queryId": 559,
+        "frameId": 112,
+        "completedFrameId": 116,
+        "label": "final",
+        "ms": 1.294635
+      },
+      {
+        "queryId": 558,
+        "frameId": 112,
+        "completedFrameId": 116,
+        "label": "bloom",
+        "ms": 0.66125
+      },
+      {
+        "queryId": 557,
+        "frameId": 112,
+        "completedFrameId": 116,
+        "label": "scene",
+        "ms": 5.125207
+      },
+      {
+        "queryId": 576,
+        "frameId": 116,
+        "completedFrameId": 117,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 581,
+        "frameId": 117,
+        "completedFrameId": 118,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 580,
+        "frameId": 116,
+        "completedFrameId": 118,
+        "label": "minimap",
+        "ms": 0.05677
+      },
+      {
+        "queryId": 579,
+        "frameId": 116,
+        "completedFrameId": 118,
+        "label": "final",
+        "ms": 1.566145
+      },
+      {
+        "queryId": 578,
+        "frameId": 116,
+        "completedFrameId": 118,
+        "label": "bloom",
+        "ms": 0.649739
+      },
+      {
+        "queryId": 577,
+        "frameId": 116,
+        "completedFrameId": 118,
+        "label": "scene",
+        "ms": 6.05026
+      },
+      {
+        "queryId": 585,
+        "frameId": 117,
+        "completedFrameId": 119,
+        "label": "minimap",
+        "ms": 0.057447
+      },
+      {
+        "queryId": 584,
+        "frameId": 117,
+        "completedFrameId": 119,
+        "label": "final",
+        "ms": 1.400729
+      },
+      {
+        "queryId": 583,
+        "frameId": 117,
+        "completedFrameId": 119,
+        "label": "bloom",
+        "ms": 0.581927
+      },
+      {
+        "queryId": 582,
+        "frameId": 117,
+        "completedFrameId": 119,
+        "label": "scene",
+        "ms": 17.516978
+      },
+      {
+        "queryId": 586,
+        "frameId": 118,
+        "completedFrameId": 120,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 591,
+        "frameId": 119,
+        "completedFrameId": 121,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 590,
+        "frameId": 118,
+        "completedFrameId": 121,
+        "label": "minimap",
+        "ms": 0.064531
+      },
+      {
+        "queryId": 589,
+        "frameId": 118,
+        "completedFrameId": 121,
+        "label": "final",
+        "ms": 1.555937
+      },
+      {
+        "queryId": 588,
+        "frameId": 118,
+        "completedFrameId": 121,
+        "label": "bloom",
+        "ms": 0.5825
+      },
+      {
+        "queryId": 587,
+        "frameId": 118,
+        "completedFrameId": 121,
+        "label": "scene",
+        "ms": 26.204374
+      },
+      {
+        "queryId": 596,
+        "frameId": 120,
+        "completedFrameId": 122,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 595,
+        "frameId": 119,
+        "completedFrameId": 122,
+        "label": "minimap",
+        "ms": 0.057083
+      },
+      {
+        "queryId": 594,
+        "frameId": 119,
+        "completedFrameId": 122,
+        "label": "final",
+        "ms": 1.212291
+      },
+      {
+        "queryId": 593,
+        "frameId": 119,
+        "completedFrameId": 122,
+        "label": "bloom",
+        "ms": 0.613437
+      },
+      {
+        "queryId": 592,
+        "frameId": 119,
+        "completedFrameId": 122,
+        "label": "scene",
+        "ms": 5.424686
+      },
+      {
+        "queryId": 601,
+        "frameId": 121,
+        "completedFrameId": 123,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 600,
+        "frameId": 120,
+        "completedFrameId": 123,
+        "label": "minimap",
+        "ms": 0.053697
+      },
+      {
+        "queryId": 599,
+        "frameId": 120,
+        "completedFrameId": 123,
+        "label": "final",
+        "ms": 1.305468
+      },
+      {
+        "queryId": 598,
+        "frameId": 120,
+        "completedFrameId": 123,
+        "label": "bloom",
+        "ms": 0.504687
+      },
+      {
+        "queryId": 597,
+        "frameId": 120,
+        "completedFrameId": 123,
+        "label": "scene",
+        "ms": 5.083176
+      },
+      {
+        "queryId": 606,
+        "frameId": 122,
+        "completedFrameId": 124,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 605,
+        "frameId": 121,
+        "completedFrameId": 124,
+        "label": "minimap",
+        "ms": 0.05302
+      },
+      {
+        "queryId": 604,
+        "frameId": 121,
+        "completedFrameId": 124,
+        "label": "final",
+        "ms": 1.321406
+      },
+      {
+        "queryId": 603,
+        "frameId": 121,
+        "completedFrameId": 124,
+        "label": "bloom",
+        "ms": 0.515468
+      },
+      {
+        "queryId": 602,
+        "frameId": 121,
+        "completedFrameId": 124,
+        "label": "scene",
+        "ms": 13.171457
+      },
+      {
+        "queryId": 608,
+        "frameId": 122,
+        "completedFrameId": 125,
+        "label": "bloom",
+        "ms": 0.56125
+      },
+      {
+        "queryId": 607,
+        "frameId": 122,
+        "completedFrameId": 125,
+        "label": "scene",
+        "ms": 6.994686
+      },
+      {
+        "queryId": 616,
+        "frameId": 124,
+        "completedFrameId": 126,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 615,
+        "frameId": 123,
+        "completedFrameId": 126,
+        "label": "minimap",
+        "ms": 0.05901
+      },
+      {
+        "queryId": 614,
+        "frameId": 123,
+        "completedFrameId": 126,
+        "label": "final",
+        "ms": 1.461093
+      },
+      {
+        "queryId": 613,
+        "frameId": 123,
+        "completedFrameId": 126,
+        "label": "bloom",
+        "ms": 0.572343
+      },
+      {
+        "queryId": 612,
+        "frameId": 123,
+        "completedFrameId": 126,
+        "label": "scene",
+        "ms": 24.46276
+      },
+      {
+        "queryId": 611,
+        "frameId": 123,
+        "completedFrameId": 126,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 610,
+        "frameId": 122,
+        "completedFrameId": 126,
+        "label": "minimap",
+        "ms": 0.053229
+      },
+      {
+        "queryId": 609,
+        "frameId": 122,
+        "completedFrameId": 126,
+        "label": "final",
+        "ms": 1.254062
+      },
+      {
+        "queryId": 621,
+        "frameId": 125,
+        "completedFrameId": 127,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 620,
+        "frameId": 124,
+        "completedFrameId": 127,
+        "label": "minimap",
+        "ms": 0.054322
+      },
+      {
+        "queryId": 619,
+        "frameId": 124,
+        "completedFrameId": 127,
+        "label": "final",
+        "ms": 1.432604
+      },
+      {
+        "queryId": 618,
+        "frameId": 124,
+        "completedFrameId": 127,
+        "label": "bloom",
+        "ms": 0.51625
+      },
+      {
+        "queryId": 617,
+        "frameId": 124,
+        "completedFrameId": 127,
+        "label": "scene",
+        "ms": 6.136614
+      },
+      {
+        "queryId": 626,
+        "frameId": 126,
+        "completedFrameId": 128,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 625,
+        "frameId": 125,
+        "completedFrameId": 128,
+        "label": "minimap",
+        "ms": 0.056041
+      },
+      {
+        "queryId": 624,
+        "frameId": 125,
+        "completedFrameId": 128,
+        "label": "final",
+        "ms": 1.172656
+      },
+      {
+        "queryId": 623,
+        "frameId": 125,
+        "completedFrameId": 128,
+        "label": "bloom",
+        "ms": 0.590468
+      },
+      {
+        "queryId": 622,
+        "frameId": 125,
+        "completedFrameId": 128,
+        "label": "scene",
+        "ms": 5.043645
+      },
+      {
+        "queryId": 631,
+        "frameId": 127,
+        "completedFrameId": 129,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 630,
+        "frameId": 126,
+        "completedFrameId": 129,
+        "label": "minimap",
+        "ms": 0.058177
+      },
+      {
+        "queryId": 629,
+        "frameId": 126,
+        "completedFrameId": 129,
+        "label": "final",
+        "ms": 1.117812
+      },
+      {
+        "queryId": 628,
+        "frameId": 126,
+        "completedFrameId": 129,
+        "label": "bloom",
+        "ms": 0.558281
+      },
+      {
+        "queryId": 627,
+        "frameId": 126,
+        "completedFrameId": 129,
+        "label": "scene",
+        "ms": 5.431249
+      },
+      {
+        "queryId": 636,
+        "frameId": 128,
+        "completedFrameId": 130,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 635,
+        "frameId": 127,
+        "completedFrameId": 130,
+        "label": "minimap",
+        "ms": 0.050104
+      },
+      {
+        "queryId": 634,
+        "frameId": 127,
+        "completedFrameId": 130,
+        "label": "final",
+        "ms": 1.18802
+      },
+      {
+        "queryId": 633,
+        "frameId": 127,
+        "completedFrameId": 130,
+        "label": "bloom",
+        "ms": 0.488645
+      },
+      {
+        "queryId": 632,
+        "frameId": 127,
+        "completedFrameId": 130,
+        "label": "scene",
+        "ms": 4.851822
+      },
+      {
+        "queryId": 641,
+        "frameId": 129,
+        "completedFrameId": 131,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 640,
+        "frameId": 128,
+        "completedFrameId": 131,
+        "label": "minimap",
+        "ms": 0.0575
+      },
+      {
+        "queryId": 639,
+        "frameId": 128,
+        "completedFrameId": 131,
+        "label": "final",
+        "ms": 1.346041
+      },
+      {
+        "queryId": 638,
+        "frameId": 128,
+        "completedFrameId": 131,
+        "label": "bloom",
+        "ms": 0.49
+      },
+      {
+        "queryId": 637,
+        "frameId": 128,
+        "completedFrameId": 131,
+        "label": "scene",
+        "ms": 4.62479
+      },
+      {
+        "queryId": 646,
+        "frameId": 130,
+        "completedFrameId": 132,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 645,
+        "frameId": 129,
+        "completedFrameId": 132,
+        "label": "minimap",
+        "ms": 0.056614
+      },
+      {
+        "queryId": 644,
+        "frameId": 129,
+        "completedFrameId": 132,
+        "label": "final",
+        "ms": 1.337968
+      },
+      {
+        "queryId": 643,
+        "frameId": 129,
+        "completedFrameId": 132,
+        "label": "bloom",
+        "ms": 0.529062
+      },
+      {
+        "queryId": 642,
+        "frameId": 129,
+        "completedFrameId": 132,
+        "label": "scene",
+        "ms": 4.705729
+      },
+      {
+        "queryId": 651,
+        "frameId": 131,
+        "completedFrameId": 133,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 650,
+        "frameId": 130,
+        "completedFrameId": 133,
+        "label": "minimap",
+        "ms": 0.053697
+      },
+      {
+        "queryId": 649,
+        "frameId": 130,
+        "completedFrameId": 133,
+        "label": "final",
+        "ms": 1.4675
+      },
+      {
+        "queryId": 648,
+        "frameId": 130,
+        "completedFrameId": 133,
+        "label": "bloom",
+        "ms": 0.583072
+      },
+      {
+        "queryId": 647,
+        "frameId": 130,
+        "completedFrameId": 133,
+        "label": "scene",
+        "ms": 30.863541
+      },
+      {
+        "queryId": 656,
+        "frameId": 132,
+        "completedFrameId": 134,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 655,
+        "frameId": 131,
+        "completedFrameId": 134,
+        "label": "minimap",
+        "ms": 0.049479
+      },
+      {
+        "queryId": 654,
+        "frameId": 131,
+        "completedFrameId": 134,
+        "label": "final",
+        "ms": 1.209166
+      },
+      {
+        "queryId": 653,
+        "frameId": 131,
+        "completedFrameId": 134,
+        "label": "bloom",
+        "ms": 0.491562
+      },
+      {
+        "queryId": 652,
+        "frameId": 131,
+        "completedFrameId": 134,
+        "label": "scene",
+        "ms": 4.944478
+      },
+      {
+        "queryId": 661,
+        "frameId": 133,
+        "completedFrameId": 135,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 660,
+        "frameId": 132,
+        "completedFrameId": 135,
+        "label": "minimap",
+        "ms": 0.052291
+      },
+      {
+        "queryId": 659,
+        "frameId": 132,
+        "completedFrameId": 135,
+        "label": "final",
+        "ms": 1.198645
+      },
+      {
+        "queryId": 658,
+        "frameId": 132,
+        "completedFrameId": 135,
+        "label": "bloom",
+        "ms": 0.546718
+      },
+      {
+        "queryId": 657,
+        "frameId": 132,
+        "completedFrameId": 135,
+        "label": "scene",
+        "ms": 4.794999
+      },
+      {
+        "queryId": 666,
+        "frameId": 134,
+        "completedFrameId": 136,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 665,
+        "frameId": 133,
+        "completedFrameId": 136,
+        "label": "minimap",
+        "ms": 0.076613
+      },
+      {
+        "queryId": 664,
+        "frameId": 133,
+        "completedFrameId": 136,
+        "label": "final",
+        "ms": 1.393281
+      },
+      {
+        "queryId": 663,
+        "frameId": 133,
+        "completedFrameId": 136,
+        "label": "bloom",
+        "ms": 0.535312
+      },
+      {
+        "queryId": 662,
+        "frameId": 133,
+        "completedFrameId": 136,
+        "label": "scene",
+        "ms": 5.148906
+      },
+      {
+        "queryId": 671,
+        "frameId": 135,
+        "completedFrameId": 137,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 670,
+        "frameId": 134,
+        "completedFrameId": 137,
+        "label": "minimap",
+        "ms": 0.056666
+      },
+      {
+        "queryId": 669,
+        "frameId": 134,
+        "completedFrameId": 137,
+        "label": "final",
+        "ms": 1.415364
+      },
+      {
+        "queryId": 668,
+        "frameId": 134,
+        "completedFrameId": 137,
+        "label": "bloom",
+        "ms": 0.551822
+      },
+      {
+        "queryId": 667,
+        "frameId": 134,
+        "completedFrameId": 137,
+        "label": "scene",
+        "ms": 23.978697
+      },
+      {
+        "queryId": 676,
+        "frameId": 136,
+        "completedFrameId": 138,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 675,
+        "frameId": 135,
+        "completedFrameId": 138,
+        "label": "minimap",
+        "ms": 0.05677
+      },
+      {
+        "queryId": 674,
+        "frameId": 135,
+        "completedFrameId": 138,
+        "label": "final",
+        "ms": 1.702239
+      },
+      {
+        "queryId": 673,
+        "frameId": 135,
+        "completedFrameId": 138,
+        "label": "bloom",
+        "ms": 0.58151
+      },
+      {
+        "queryId": 672,
+        "frameId": 135,
+        "completedFrameId": 138,
+        "label": "scene",
+        "ms": 5.321093
+      },
+      {
+        "queryId": 681,
+        "frameId": 137,
+        "completedFrameId": 139,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 680,
+        "frameId": 136,
+        "completedFrameId": 139,
+        "label": "minimap",
+        "ms": 0.058854
+      },
+      {
+        "queryId": 679,
+        "frameId": 136,
+        "completedFrameId": 139,
+        "label": "final",
+        "ms": 1.575937
+      },
+      {
+        "queryId": 678,
+        "frameId": 136,
+        "completedFrameId": 139,
+        "label": "bloom",
+        "ms": 0.682708
+      },
+      {
+        "queryId": 677,
+        "frameId": 136,
+        "completedFrameId": 139,
+        "label": "scene",
+        "ms": 5.171561
+      },
+      {
+        "queryId": 686,
+        "frameId": 138,
+        "completedFrameId": 140,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 685,
+        "frameId": 137,
+        "completedFrameId": 140,
+        "label": "minimap",
+        "ms": 0.058854
+      },
+      {
+        "queryId": 684,
+        "frameId": 137,
+        "completedFrameId": 140,
+        "label": "final",
+        "ms": 1.485
+      },
+      {
+        "queryId": 683,
+        "frameId": 137,
+        "completedFrameId": 140,
+        "label": "bloom",
+        "ms": 0.566197
+      },
+      {
+        "queryId": 682,
+        "frameId": 137,
+        "completedFrameId": 140,
+        "label": "scene",
+        "ms": 5.205833
+      },
+      {
+        "queryId": 691,
+        "frameId": 139,
+        "completedFrameId": 141,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 690,
+        "frameId": 138,
+        "completedFrameId": 141,
+        "label": "minimap",
+        "ms": 0.056302
+      },
+      {
+        "queryId": 689,
+        "frameId": 138,
+        "completedFrameId": 141,
+        "label": "final",
+        "ms": 1.524531
+      },
+      {
+        "queryId": 688,
+        "frameId": 138,
+        "completedFrameId": 141,
+        "label": "bloom",
+        "ms": 0.627812
+      },
+      {
+        "queryId": 687,
+        "frameId": 138,
+        "completedFrameId": 141,
+        "label": "scene",
+        "ms": 5.269947
+      },
+      {
+        "queryId": 696,
+        "frameId": 140,
+        "completedFrameId": 142,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 695,
+        "frameId": 139,
+        "completedFrameId": 142,
+        "label": "minimap",
+        "ms": 0.055052
+      },
+      {
+        "queryId": 694,
+        "frameId": 139,
+        "completedFrameId": 142,
+        "label": "final",
+        "ms": 1.22625
+      },
+      {
+        "queryId": 693,
+        "frameId": 139,
+        "completedFrameId": 142,
+        "label": "bloom",
+        "ms": 0.64276
+      },
+      {
+        "queryId": 692,
+        "frameId": 139,
+        "completedFrameId": 142,
+        "label": "scene",
+        "ms": 5.092239
+      },
+      {
+        "queryId": 701,
+        "frameId": 141,
+        "completedFrameId": 143,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 700,
+        "frameId": 140,
+        "completedFrameId": 143,
+        "label": "minimap",
+        "ms": 0.069374
+      },
+      {
+        "queryId": 699,
+        "frameId": 140,
+        "completedFrameId": 143,
+        "label": "final",
+        "ms": 1.993906
+      },
+      {
+        "queryId": 698,
+        "frameId": 140,
+        "completedFrameId": 143,
+        "label": "bloom",
+        "ms": 0.547812
+      },
+      {
+        "queryId": 697,
+        "frameId": 140,
+        "completedFrameId": 143,
+        "label": "scene",
+        "ms": 5.102447
+      },
+      {
+        "queryId": 706,
+        "frameId": 142,
+        "completedFrameId": 144,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 705,
+        "frameId": 141,
+        "completedFrameId": 144,
+        "label": "minimap",
+        "ms": 0.055312
+      },
+      {
+        "queryId": 704,
+        "frameId": 141,
+        "completedFrameId": 144,
+        "label": "final",
+        "ms": 1.627604
+      },
+      {
+        "queryId": 703,
+        "frameId": 141,
+        "completedFrameId": 144,
+        "label": "bloom",
+        "ms": 0.617031
+      },
+      {
+        "queryId": 702,
+        "frameId": 141,
+        "completedFrameId": 144,
+        "label": "scene",
+        "ms": 5.430155
+      },
+      {
+        "queryId": 708,
+        "frameId": 142,
+        "completedFrameId": 145,
+        "label": "bloom",
+        "ms": 26.563229
+      },
+      {
+        "queryId": 707,
+        "frameId": 142,
+        "completedFrameId": 145,
+        "label": "scene",
+        "ms": 5.239791
+      },
+      {
+        "queryId": 716,
+        "frameId": 144,
+        "completedFrameId": 146,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 715,
+        "frameId": 143,
+        "completedFrameId": 146,
+        "label": "minimap",
+        "ms": 0.057656
+      },
+      {
+        "queryId": 714,
+        "frameId": 143,
+        "completedFrameId": 146,
+        "label": "final",
+        "ms": 1.426927
+      },
+      {
+        "queryId": 713,
+        "frameId": 143,
+        "completedFrameId": 146,
+        "label": "bloom",
+        "ms": 0.544635
+      },
+      {
+        "queryId": 712,
+        "frameId": 143,
+        "completedFrameId": 146,
+        "label": "scene",
+        "ms": 5.088958
+      },
+      {
+        "queryId": 711,
+        "frameId": 143,
+        "completedFrameId": 146,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 710,
+        "frameId": 142,
+        "completedFrameId": 146,
+        "label": "minimap",
+        "ms": 0.06401
+      },
+      {
+        "queryId": 709,
+        "frameId": 142,
+        "completedFrameId": 146,
+        "label": "final",
+        "ms": 1.525832
+      },
+      {
+        "queryId": 721,
+        "frameId": 145,
+        "completedFrameId": 147,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 720,
+        "frameId": 144,
+        "completedFrameId": 147,
+        "label": "minimap",
+        "ms": 0.057343
+      },
+      {
+        "queryId": 719,
+        "frameId": 144,
+        "completedFrameId": 147,
+        "label": "final",
+        "ms": 1.198437
+      },
+      {
+        "queryId": 718,
+        "frameId": 144,
+        "completedFrameId": 147,
+        "label": "bloom",
+        "ms": 0.605104
+      },
+      {
+        "queryId": 717,
+        "frameId": 144,
+        "completedFrameId": 147,
+        "label": "scene",
+        "ms": 5.113801
+      },
+      {
+        "queryId": 726,
+        "frameId": 146,
+        "completedFrameId": 148,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 725,
+        "frameId": 145,
+        "completedFrameId": 148,
+        "label": "minimap",
+        "ms": 0.062291
+      },
+      {
+        "queryId": 724,
+        "frameId": 145,
+        "completedFrameId": 148,
+        "label": "final",
+        "ms": 1.72052
+      },
+      {
+        "queryId": 723,
+        "frameId": 145,
+        "completedFrameId": 148,
+        "label": "bloom",
+        "ms": 0.672552
+      },
+      {
+        "queryId": 722,
+        "frameId": 145,
+        "completedFrameId": 148,
+        "label": "scene",
+        "ms": 5.321405
+      },
+      {
+        "queryId": 729,
+        "frameId": 146,
+        "completedFrameId": 149,
+        "label": "final",
+        "ms": 1.515208
+      },
+      {
+        "queryId": 728,
+        "frameId": 146,
+        "completedFrameId": 149,
+        "label": "bloom",
+        "ms": 0.65526
+      },
+      {
+        "queryId": 727,
+        "frameId": 146,
+        "completedFrameId": 149,
+        "label": "scene",
+        "ms": 6.111406
+      },
+      {
+        "queryId": 736,
+        "frameId": 148,
+        "completedFrameId": 150,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 735,
+        "frameId": 147,
+        "completedFrameId": 150,
+        "label": "minimap",
+        "ms": 0.077239
+      },
+      {
+        "queryId": 734,
+        "frameId": 147,
+        "completedFrameId": 150,
+        "label": "final",
+        "ms": 1.494739
+      },
+      {
+        "queryId": 733,
+        "frameId": 147,
+        "completedFrameId": 150,
+        "label": "bloom",
+        "ms": 1.058125
+      },
+      {
+        "queryId": 732,
+        "frameId": 147,
+        "completedFrameId": 150,
+        "label": "scene",
+        "ms": 5.486614
+      },
+      {
+        "queryId": 731,
+        "frameId": 147,
+        "completedFrameId": 150,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 730,
+        "frameId": 146,
+        "completedFrameId": 150,
+        "label": "minimap",
+        "ms": 0.059427
+      },
+      {
+        "queryId": 741,
+        "frameId": 149,
+        "completedFrameId": 151,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 740,
+        "frameId": 148,
+        "completedFrameId": 151,
+        "label": "minimap",
+        "ms": 0.054791
+      },
+      {
+        "queryId": 739,
+        "frameId": 148,
+        "completedFrameId": 151,
+        "label": "final",
+        "ms": 1.518854
+      },
+      {
+        "queryId": 738,
+        "frameId": 148,
+        "completedFrameId": 151,
+        "label": "bloom",
+        "ms": 0.60125
+      },
+      {
+        "queryId": 737,
+        "frameId": 148,
+        "completedFrameId": 151,
+        "label": "scene",
+        "ms": 15.788228
+      },
+      {
+        "queryId": 746,
+        "frameId": 150,
+        "completedFrameId": 152,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 745,
+        "frameId": 149,
+        "completedFrameId": 152,
+        "label": "minimap",
+        "ms": 0.056718
+      },
+      {
+        "queryId": 744,
+        "frameId": 149,
+        "completedFrameId": 152,
+        "label": "final",
+        "ms": 1.25625
+      },
+      {
+        "queryId": 743,
+        "frameId": 149,
+        "completedFrameId": 152,
+        "label": "bloom",
+        "ms": 0.61677
+      },
+      {
+        "queryId": 742,
+        "frameId": 149,
+        "completedFrameId": 152,
+        "label": "scene",
+        "ms": 5.800207
+      },
+      {
+        "queryId": 751,
+        "frameId": 151,
+        "completedFrameId": 153,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 750,
+        "frameId": 150,
+        "completedFrameId": 153,
+        "label": "minimap",
+        "ms": 0.052395
+      },
+      {
+        "queryId": 749,
+        "frameId": 150,
+        "completedFrameId": 153,
+        "label": "final",
+        "ms": 1.104218
+      },
+      {
+        "queryId": 748,
+        "frameId": 150,
+        "completedFrameId": 153,
+        "label": "bloom",
+        "ms": 0.526562
+      },
+      {
+        "queryId": 747,
+        "frameId": 150,
+        "completedFrameId": 153,
+        "label": "scene",
+        "ms": 4.827082
+      },
+      {
+        "queryId": 756,
+        "frameId": 152,
+        "completedFrameId": 154,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 755,
+        "frameId": 151,
+        "completedFrameId": 154,
+        "label": "minimap",
+        "ms": 0.077135
+      },
+      {
+        "queryId": 754,
+        "frameId": 151,
+        "completedFrameId": 154,
+        "label": "final",
+        "ms": 1.452604
+      },
+      {
+        "queryId": 753,
+        "frameId": 151,
+        "completedFrameId": 154,
+        "label": "bloom",
+        "ms": 0.568125
+      },
+      {
+        "queryId": 752,
+        "frameId": 151,
+        "completedFrameId": 154,
+        "label": "scene",
+        "ms": 5.185311
+      },
+      {
+        "queryId": 761,
+        "frameId": 153,
+        "completedFrameId": 155,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 760,
+        "frameId": 152,
+        "completedFrameId": 155,
+        "label": "minimap",
+        "ms": 0.053854
+      },
+      {
+        "queryId": 759,
+        "frameId": 152,
+        "completedFrameId": 155,
+        "label": "final",
+        "ms": 1.460677
+      },
+      {
+        "queryId": 758,
+        "frameId": 152,
+        "completedFrameId": 155,
+        "label": "bloom",
+        "ms": 0.604218
+      },
+      {
+        "queryId": 757,
+        "frameId": 152,
+        "completedFrameId": 155,
+        "label": "scene",
+        "ms": 5.241614
+      },
+      {
+        "queryId": 766,
+        "frameId": 154,
+        "completedFrameId": 156,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 765,
+        "frameId": 153,
+        "completedFrameId": 156,
+        "label": "minimap",
+        "ms": 0.056041
+      },
+      {
+        "queryId": 764,
+        "frameId": 153,
+        "completedFrameId": 156,
+        "label": "final",
+        "ms": 1.443437
+      },
+      {
+        "queryId": 763,
+        "frameId": 153,
+        "completedFrameId": 156,
+        "label": "bloom",
+        "ms": 0.537968
+      },
+      {
+        "queryId": 762,
+        "frameId": 153,
+        "completedFrameId": 156,
+        "label": "scene",
+        "ms": 4.844842
+      },
+      {
+        "queryId": 771,
+        "frameId": 155,
+        "completedFrameId": 157,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 770,
+        "frameId": 154,
+        "completedFrameId": 157,
+        "label": "minimap",
+        "ms": 0.055572
+      },
+      {
+        "queryId": 769,
+        "frameId": 154,
+        "completedFrameId": 157,
+        "label": "final",
+        "ms": 1.384479
+      },
+      {
+        "queryId": 768,
+        "frameId": 154,
+        "completedFrameId": 157,
+        "label": "bloom",
+        "ms": 0.633802
+      },
+      {
+        "queryId": 767,
+        "frameId": 154,
+        "completedFrameId": 157,
+        "label": "scene",
+        "ms": 5.377135
+      },
+      {
+        "queryId": 776,
+        "frameId": 156,
+        "completedFrameId": 158,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 775,
+        "frameId": 155,
+        "completedFrameId": 158,
+        "label": "minimap",
+        "ms": 0.061718
+      },
+      {
+        "queryId": 774,
+        "frameId": 155,
+        "completedFrameId": 158,
+        "label": "final",
+        "ms": 1.469218
+      },
+      {
+        "queryId": 773,
+        "frameId": 155,
+        "completedFrameId": 158,
+        "label": "bloom",
+        "ms": 0.531041
+      },
+      {
+        "queryId": 772,
+        "frameId": 155,
+        "completedFrameId": 158,
+        "label": "scene",
+        "ms": 40.836978
+      },
+      {
+        "queryId": 781,
+        "frameId": 157,
+        "completedFrameId": 159,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 780,
+        "frameId": 156,
+        "completedFrameId": 159,
+        "label": "minimap",
+        "ms": 0.058697
+      },
+      {
+        "queryId": 779,
+        "frameId": 156,
+        "completedFrameId": 159,
+        "label": "final",
+        "ms": 1.286145
+      },
+      {
+        "queryId": 778,
+        "frameId": 156,
+        "completedFrameId": 159,
+        "label": "bloom",
+        "ms": 0.60927
+      },
+      {
+        "queryId": 777,
+        "frameId": 156,
+        "completedFrameId": 159,
+        "label": "scene",
+        "ms": 5.323645
+      },
+      {
+        "queryId": 786,
+        "frameId": 158,
+        "completedFrameId": 160,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 785,
+        "frameId": 157,
+        "completedFrameId": 160,
+        "label": "minimap",
+        "ms": 0.061875
+      },
+      {
+        "queryId": 784,
+        "frameId": 157,
+        "completedFrameId": 160,
+        "label": "final",
+        "ms": 2.203125
+      },
+      {
+        "queryId": 783,
+        "frameId": 157,
+        "completedFrameId": 160,
+        "label": "bloom",
+        "ms": 0.608697
+      },
+      {
+        "queryId": 782,
+        "frameId": 157,
+        "completedFrameId": 160,
+        "label": "scene",
+        "ms": 5.044947
+      },
+      {
+        "queryId": 791,
+        "frameId": 159,
+        "completedFrameId": 161,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 790,
+        "frameId": 158,
+        "completedFrameId": 161,
+        "label": "minimap",
+        "ms": 0.059427
+      },
+      {
+        "queryId": 789,
+        "frameId": 158,
+        "completedFrameId": 161,
+        "label": "final",
+        "ms": 1.738177
+      },
+      {
+        "queryId": 788,
+        "frameId": 158,
+        "completedFrameId": 161,
+        "label": "bloom",
+        "ms": 0.609739
+      },
+      {
+        "queryId": 787,
+        "frameId": 158,
+        "completedFrameId": 161,
+        "label": "scene",
+        "ms": 5.247134
+      },
+      {
+        "queryId": 796,
+        "frameId": 160,
+        "completedFrameId": 162,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 795,
+        "frameId": 159,
+        "completedFrameId": 162,
+        "label": "minimap",
+        "ms": 0.066041
+      },
+      {
+        "queryId": 794,
+        "frameId": 159,
+        "completedFrameId": 162,
+        "label": "final",
+        "ms": 1.516666
+      },
+      {
+        "queryId": 793,
+        "frameId": 159,
+        "completedFrameId": 162,
+        "label": "bloom",
+        "ms": 0.593437
+      },
+      {
+        "queryId": 792,
+        "frameId": 159,
+        "completedFrameId": 162,
+        "label": "scene",
+        "ms": 23.715051
+      },
+      {
+        "queryId": 798,
+        "frameId": 160,
+        "completedFrameId": 163,
+        "label": "bloom",
+        "ms": 0.544583
+      },
+      {
+        "queryId": 797,
+        "frameId": 160,
+        "completedFrameId": 163,
+        "label": "scene",
+        "ms": 5.464009
+      },
+      {
+        "queryId": 806,
+        "frameId": 162,
+        "completedFrameId": 164,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 805,
+        "frameId": 161,
+        "completedFrameId": 164,
+        "label": "minimap",
+        "ms": 0.058125
+      },
+      {
+        "queryId": 804,
+        "frameId": 161,
+        "completedFrameId": 164,
+        "label": "final",
+        "ms": 1.931562
+      },
+      {
+        "queryId": 803,
+        "frameId": 161,
+        "completedFrameId": 164,
+        "label": "bloom",
+        "ms": 0.569895
+      },
+      {
+        "queryId": 802,
+        "frameId": 161,
+        "completedFrameId": 164,
+        "label": "scene",
+        "ms": 7.129166
+      },
+      {
+        "queryId": 801,
+        "frameId": 161,
+        "completedFrameId": 164,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 800,
+        "frameId": 160,
+        "completedFrameId": 164,
+        "label": "minimap",
+        "ms": 0.06026
+      },
+      {
+        "queryId": 799,
+        "frameId": 160,
+        "completedFrameId": 164,
+        "label": "final",
+        "ms": 1.477031
+      },
+      {
+        "queryId": 811,
+        "frameId": 163,
+        "completedFrameId": 165,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 810,
+        "frameId": 162,
+        "completedFrameId": 165,
+        "label": "minimap",
+        "ms": 0.057395
+      },
+      {
+        "queryId": 809,
+        "frameId": 162,
+        "completedFrameId": 165,
+        "label": "final",
+        "ms": 1.659114
+      },
+      {
+        "queryId": 808,
+        "frameId": 162,
+        "completedFrameId": 165,
+        "label": "bloom",
+        "ms": 0.638437
+      },
+      {
+        "queryId": 807,
+        "frameId": 162,
+        "completedFrameId": 165,
+        "label": "scene",
+        "ms": 6.006249
+      },
+      {
+        "queryId": 816,
+        "frameId": 164,
+        "completedFrameId": 166,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 815,
+        "frameId": 163,
+        "completedFrameId": 166,
+        "label": "minimap",
+        "ms": 0.056822
+      },
+      {
+        "queryId": 814,
+        "frameId": 163,
+        "completedFrameId": 166,
+        "label": "final",
+        "ms": 1.609114
+      },
+      {
+        "queryId": 813,
+        "frameId": 163,
+        "completedFrameId": 166,
+        "label": "bloom",
+        "ms": 0.688437
+      },
+      {
+        "queryId": 812,
+        "frameId": 163,
+        "completedFrameId": 166,
+        "label": "scene",
+        "ms": 5.484843
+      },
+      {
+        "queryId": 821,
+        "frameId": 165,
+        "completedFrameId": 167,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 820,
+        "frameId": 164,
+        "completedFrameId": 167,
+        "label": "minimap",
+        "ms": 0.058229
+      },
+      {
+        "queryId": 819,
+        "frameId": 164,
+        "completedFrameId": 167,
+        "label": "final",
+        "ms": 1.495729
+      },
+      {
+        "queryId": 818,
+        "frameId": 164,
+        "completedFrameId": 167,
+        "label": "bloom",
+        "ms": 0.603125
+      },
+      {
+        "queryId": 817,
+        "frameId": 164,
+        "completedFrameId": 167,
+        "label": "scene",
+        "ms": 24.611041
+      },
+      {
+        "queryId": 826,
+        "frameId": 166,
+        "completedFrameId": 168,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 825,
+        "frameId": 165,
+        "completedFrameId": 168,
+        "label": "minimap",
+        "ms": 0.057708
+      },
+      {
+        "queryId": 824,
+        "frameId": 165,
+        "completedFrameId": 168,
+        "label": "final",
+        "ms": 1.438697
+      },
+      {
+        "queryId": 823,
+        "frameId": 165,
+        "completedFrameId": 168,
+        "label": "bloom",
+        "ms": 0.544583
+      },
+      {
+        "queryId": 822,
+        "frameId": 165,
+        "completedFrameId": 168,
+        "label": "scene",
+        "ms": 5.265155
+      },
+      {
+        "queryId": 831,
+        "frameId": 167,
+        "completedFrameId": 169,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 830,
+        "frameId": 166,
+        "completedFrameId": 169,
+        "label": "minimap",
+        "ms": 0.057135
+      },
+      {
+        "queryId": 829,
+        "frameId": 166,
+        "completedFrameId": 169,
+        "label": "final",
+        "ms": 1.601718
+      },
+      {
+        "queryId": 828,
+        "frameId": 166,
+        "completedFrameId": 169,
+        "label": "bloom",
+        "ms": 0.644791
+      },
+      {
+        "queryId": 827,
+        "frameId": 166,
+        "completedFrameId": 169,
+        "label": "scene",
+        "ms": 5.404947
+      },
+      {
+        "queryId": 836,
+        "frameId": 168,
+        "completedFrameId": 170,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 835,
+        "frameId": 167,
+        "completedFrameId": 170,
+        "label": "minimap",
+        "ms": 0.05927
+      },
+      {
+        "queryId": 834,
+        "frameId": 167,
+        "completedFrameId": 170,
+        "label": "final",
+        "ms": 1.556041
+      },
+      {
+        "queryId": 833,
+        "frameId": 167,
+        "completedFrameId": 170,
+        "label": "bloom",
+        "ms": 0.643593
+      },
+      {
+        "queryId": 832,
+        "frameId": 167,
+        "completedFrameId": 170,
+        "label": "scene",
+        "ms": 5.385468
+      },
+      {
+        "queryId": 840,
+        "frameId": 168,
+        "completedFrameId": 171,
+        "label": "minimap",
+        "ms": 0.062812
+      },
+      {
+        "queryId": 839,
+        "frameId": 168,
+        "completedFrameId": 171,
+        "label": "final",
+        "ms": 1.595572
+      },
+      {
+        "queryId": 838,
+        "frameId": 168,
+        "completedFrameId": 171,
+        "label": "bloom",
+        "ms": 0.704218
+      },
+      {
+        "queryId": 837,
+        "frameId": 168,
+        "completedFrameId": 171,
+        "label": "scene",
+        "ms": 5.510728
+      },
+      {
+        "queryId": 846,
+        "frameId": 170,
+        "completedFrameId": 172,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 845,
+        "frameId": 169,
+        "completedFrameId": 172,
+        "label": "minimap",
+        "ms": 0.078072
+      },
+      {
+        "queryId": 844,
+        "frameId": 169,
+        "completedFrameId": 172,
+        "label": "final",
+        "ms": 1.455156
+      },
+      {
+        "queryId": 843,
+        "frameId": 169,
+        "completedFrameId": 172,
+        "label": "bloom",
+        "ms": 0.597343
+      },
+      {
+        "queryId": 842,
+        "frameId": 169,
+        "completedFrameId": 172,
+        "label": "scene",
+        "ms": 5.482811
+      },
+      {
+        "queryId": 841,
+        "frameId": 169,
+        "completedFrameId": 172,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 851,
+        "frameId": 171,
+        "completedFrameId": 173,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 850,
+        "frameId": 170,
+        "completedFrameId": 173,
+        "label": "minimap",
+        "ms": 0.063489
+      },
+      {
+        "queryId": 849,
+        "frameId": 170,
+        "completedFrameId": 173,
+        "label": "final",
+        "ms": 1.78375
+      },
+      {
+        "queryId": 848,
+        "frameId": 170,
+        "completedFrameId": 173,
+        "label": "bloom",
+        "ms": 0.734687
+      },
+      {
+        "queryId": 847,
+        "frameId": 170,
+        "completedFrameId": 173,
+        "label": "scene",
+        "ms": 5.900155
+      },
+      {
+        "queryId": 856,
+        "frameId": 172,
+        "completedFrameId": 174,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 855,
+        "frameId": 171,
+        "completedFrameId": 174,
+        "label": "minimap",
+        "ms": 0.06526
+      },
+      {
+        "queryId": 854,
+        "frameId": 171,
+        "completedFrameId": 174,
+        "label": "final",
+        "ms": 1.772552
+      },
+      {
+        "queryId": 853,
+        "frameId": 171,
+        "completedFrameId": 174,
+        "label": "bloom",
+        "ms": 0.699739
+      },
+      {
+        "queryId": 852,
+        "frameId": 171,
+        "completedFrameId": 174,
+        "label": "scene",
+        "ms": 5.406979
+      },
+      {
+        "queryId": 861,
+        "frameId": 173,
+        "completedFrameId": 175,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 860,
+        "frameId": 172,
+        "completedFrameId": 175,
+        "label": "minimap",
+        "ms": 0.064583
+      },
+      {
+        "queryId": 859,
+        "frameId": 172,
+        "completedFrameId": 175,
+        "label": "final",
+        "ms": 1.727135
+      },
+      {
+        "queryId": 858,
+        "frameId": 172,
+        "completedFrameId": 175,
+        "label": "bloom",
+        "ms": 0.626458
+      },
+      {
+        "queryId": 857,
+        "frameId": 172,
+        "completedFrameId": 175,
+        "label": "scene",
+        "ms": 5.591665
+      },
+      {
+        "queryId": 866,
+        "frameId": 174,
+        "completedFrameId": 176,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 865,
+        "frameId": 173,
+        "completedFrameId": 176,
+        "label": "minimap",
+        "ms": 0.061718
+      },
+      {
+        "queryId": 864,
+        "frameId": 173,
+        "completedFrameId": 176,
+        "label": "final",
+        "ms": 1.706875
+      },
+      {
+        "queryId": 863,
+        "frameId": 173,
+        "completedFrameId": 176,
+        "label": "bloom",
+        "ms": 0.669062
+      },
+      {
+        "queryId": 862,
+        "frameId": 173,
+        "completedFrameId": 176,
+        "label": "scene",
+        "ms": 29.358436
+      },
+      {
+        "queryId": 871,
+        "frameId": 175,
+        "completedFrameId": 177,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 870,
+        "frameId": 174,
+        "completedFrameId": 177,
+        "label": "minimap",
+        "ms": 0.061458
+      },
+      {
+        "queryId": 869,
+        "frameId": 174,
+        "completedFrameId": 177,
+        "label": "final",
+        "ms": 1.724218
+      },
+      {
+        "queryId": 868,
+        "frameId": 174,
+        "completedFrameId": 177,
+        "label": "bloom",
+        "ms": 0.610833
+      },
+      {
+        "queryId": 867,
+        "frameId": 174,
+        "completedFrameId": 177,
+        "label": "scene",
+        "ms": 7.356457
+      },
+      {
+        "queryId": 876,
+        "frameId": 176,
+        "completedFrameId": 178,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 875,
+        "frameId": 175,
+        "completedFrameId": 178,
+        "label": "minimap",
+        "ms": 0.06302
+      },
+      {
+        "queryId": 874,
+        "frameId": 175,
+        "completedFrameId": 178,
+        "label": "final",
+        "ms": 1.65625
+      },
+      {
+        "queryId": 873,
+        "frameId": 175,
+        "completedFrameId": 178,
+        "label": "bloom",
+        "ms": 0.637656
+      },
+      {
+        "queryId": 872,
+        "frameId": 175,
+        "completedFrameId": 178,
+        "label": "scene",
+        "ms": 5.625468
+      },
+      {
+        "queryId": 881,
+        "frameId": 177,
+        "completedFrameId": 179,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 880,
+        "frameId": 176,
+        "completedFrameId": 179,
+        "label": "minimap",
+        "ms": 0.063072
+      },
+      {
+        "queryId": 879,
+        "frameId": 176,
+        "completedFrameId": 179,
+        "label": "final",
+        "ms": 1.553541
+      },
+      {
+        "queryId": 878,
+        "frameId": 176,
+        "completedFrameId": 179,
+        "label": "bloom",
+        "ms": 0.609322
+      },
+      {
+        "queryId": 877,
+        "frameId": 176,
+        "completedFrameId": 179,
+        "label": "scene",
+        "ms": 5.454738
+      },
+      {
+        "queryId": 886,
+        "frameId": 178,
+        "completedFrameId": 180,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 885,
+        "frameId": 177,
+        "completedFrameId": 180,
+        "label": "minimap",
+        "ms": 0.063802
+      },
+      {
+        "queryId": 884,
+        "frameId": 177,
+        "completedFrameId": 180,
+        "label": "final",
+        "ms": 1.491927
+      },
+      {
+        "queryId": 883,
+        "frameId": 177,
+        "completedFrameId": 180,
+        "label": "bloom",
+        "ms": 0.713645
+      },
+      {
+        "queryId": 882,
+        "frameId": 177,
+        "completedFrameId": 180,
+        "label": "scene",
+        "ms": 6.027758
+      },
+      {
+        "queryId": 891,
+        "frameId": 179,
+        "completedFrameId": 181,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 890,
+        "frameId": 178,
+        "completedFrameId": 181,
+        "label": "minimap",
+        "ms": 0.064322
+      },
+      {
+        "queryId": 889,
+        "frameId": 178,
+        "completedFrameId": 181,
+        "label": "final",
+        "ms": 2.084375
+      },
+      {
+        "queryId": 888,
+        "frameId": 178,
+        "completedFrameId": 181,
+        "label": "bloom",
+        "ms": 0.593906
+      },
+      {
+        "queryId": 887,
+        "frameId": 178,
+        "completedFrameId": 181,
+        "label": "scene",
+        "ms": 6.26828
+      },
+      {
+        "queryId": 896,
+        "frameId": 180,
+        "completedFrameId": 182,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 895,
+        "frameId": 179,
+        "completedFrameId": 182,
+        "label": "minimap",
+        "ms": 0.063385
+      },
+      {
+        "queryId": 894,
+        "frameId": 179,
+        "completedFrameId": 182,
+        "label": "final",
+        "ms": 1.482083
+      },
+      {
+        "queryId": 893,
+        "frameId": 179,
+        "completedFrameId": 182,
+        "label": "bloom",
+        "ms": 0.70677
+      },
+      {
+        "queryId": 892,
+        "frameId": 179,
+        "completedFrameId": 182,
+        "label": "scene",
+        "ms": 5.778072
+      },
+      {
+        "queryId": 901,
+        "frameId": 181,
+        "completedFrameId": 183,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 900,
+        "frameId": 180,
+        "completedFrameId": 183,
+        "label": "minimap",
+        "ms": 0.062135
+      },
+      {
+        "queryId": 899,
+        "frameId": 180,
+        "completedFrameId": 183,
+        "label": "final",
+        "ms": 1.664843
+      },
+      {
+        "queryId": 898,
+        "frameId": 180,
+        "completedFrameId": 183,
+        "label": "bloom",
+        "ms": 0.755625
+      },
+      {
+        "queryId": 897,
+        "frameId": 180,
+        "completedFrameId": 183,
+        "label": "scene",
+        "ms": 5.840885
+      },
+      {
+        "queryId": 906,
+        "frameId": 182,
+        "completedFrameId": 184,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 905,
+        "frameId": 181,
+        "completedFrameId": 184,
+        "label": "minimap",
+        "ms": 0.062864
+      },
+      {
+        "queryId": 904,
+        "frameId": 181,
+        "completedFrameId": 184,
+        "label": "final",
+        "ms": 2.172864
+      },
+      {
+        "queryId": 903,
+        "frameId": 181,
+        "completedFrameId": 184,
+        "label": "bloom",
+        "ms": 0.61302
+      },
+      {
+        "queryId": 902,
+        "frameId": 181,
+        "completedFrameId": 184,
+        "label": "scene",
+        "ms": 5.712551
+      },
+      {
+        "queryId": 911,
+        "frameId": 183,
+        "completedFrameId": 185,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 910,
+        "frameId": 182,
+        "completedFrameId": 185,
+        "label": "minimap",
+        "ms": 0.065572
+      },
+      {
+        "queryId": 909,
+        "frameId": 182,
+        "completedFrameId": 185,
+        "label": "final",
+        "ms": 1.679635
+      },
+      {
+        "queryId": 908,
+        "frameId": 182,
+        "completedFrameId": 185,
+        "label": "bloom",
+        "ms": 0.630208
+      },
+      {
+        "queryId": 907,
+        "frameId": 182,
+        "completedFrameId": 185,
+        "label": "scene",
+        "ms": 5.772134
+      },
+      {
+        "queryId": 916,
+        "frameId": 184,
+        "completedFrameId": 186,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 915,
+        "frameId": 183,
+        "completedFrameId": 186,
+        "label": "minimap",
+        "ms": 0.060937
+      },
+      {
+        "queryId": 914,
+        "frameId": 183,
+        "completedFrameId": 186,
+        "label": "final",
+        "ms": 1.504218
+      },
+      {
+        "queryId": 913,
+        "frameId": 183,
+        "completedFrameId": 186,
+        "label": "bloom",
+        "ms": 0.644739
+      },
+      {
+        "queryId": 912,
+        "frameId": 183,
+        "completedFrameId": 186,
+        "label": "scene",
+        "ms": 5.789582
+      },
+      {
+        "queryId": 921,
+        "frameId": 185,
+        "completedFrameId": 187,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 920,
+        "frameId": 184,
+        "completedFrameId": 187,
+        "label": "minimap",
+        "ms": 0.062812
+      },
+      {
+        "queryId": 919,
+        "frameId": 184,
+        "completedFrameId": 187,
+        "label": "final",
+        "ms": 1.641406
+      },
+      {
+        "queryId": 918,
+        "frameId": 184,
+        "completedFrameId": 187,
+        "label": "bloom",
+        "ms": 0.748906
+      },
+      {
+        "queryId": 917,
+        "frameId": 184,
+        "completedFrameId": 187,
+        "label": "scene",
+        "ms": 6.317187
+      },
+      {
+        "queryId": 922,
+        "frameId": 185,
+        "completedFrameId": 188,
+        "label": "scene",
+        "ms": 5.479322
+      },
+      {
+        "queryId": 928,
+        "frameId": 186,
+        "completedFrameId": 189,
+        "label": "bloom",
+        "ms": 0.548489
+      },
+      {
+        "queryId": 927,
+        "frameId": 186,
+        "completedFrameId": 189,
+        "label": "scene",
+        "ms": 5.057499
+      },
+      {
+        "queryId": 926,
+        "frameId": 186,
+        "completedFrameId": 189,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 925,
+        "frameId": 185,
+        "completedFrameId": 189,
+        "label": "minimap",
+        "ms": 0.058333
+      },
+      {
+        "queryId": 924,
+        "frameId": 185,
+        "completedFrameId": 189,
+        "label": "final",
+        "ms": 1.612395
+      },
+      {
+        "queryId": 923,
+        "frameId": 185,
+        "completedFrameId": 189,
+        "label": "bloom",
+        "ms": 19.28276
+      },
+      {
+        "queryId": 936,
+        "frameId": 188,
+        "completedFrameId": 190,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 935,
+        "frameId": 187,
+        "completedFrameId": 190,
+        "label": "minimap",
+        "ms": 0.057968
+      },
+      {
+        "queryId": 934,
+        "frameId": 187,
+        "completedFrameId": 190,
+        "label": "final",
+        "ms": 1.454218
+      },
+      {
+        "queryId": 933,
+        "frameId": 187,
+        "completedFrameId": 190,
+        "label": "bloom",
+        "ms": 0.640572
+      },
+      {
+        "queryId": 932,
+        "frameId": 187,
+        "completedFrameId": 190,
+        "label": "scene",
+        "ms": 5.543541
+      },
+      {
+        "queryId": 931,
+        "frameId": 187,
+        "completedFrameId": 190,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 930,
+        "frameId": 186,
+        "completedFrameId": 190,
+        "label": "minimap",
+        "ms": 0.06302
+      },
+      {
+        "queryId": 929,
+        "frameId": 186,
+        "completedFrameId": 190,
+        "label": "final",
+        "ms": 1.384322
+      },
+      {
+        "queryId": 941,
+        "frameId": 189,
+        "completedFrameId": 191,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 940,
+        "frameId": 188,
+        "completedFrameId": 191,
+        "label": "minimap",
+        "ms": 0.056562
+      },
+      {
+        "queryId": 939,
+        "frameId": 188,
+        "completedFrameId": 191,
+        "label": "final",
+        "ms": 1.529166
+      },
+      {
+        "queryId": 938,
+        "frameId": 188,
+        "completedFrameId": 191,
+        "label": "bloom",
+        "ms": 0.607916
+      },
+      {
+        "queryId": 937,
+        "frameId": 188,
+        "completedFrameId": 191,
+        "label": "scene",
+        "ms": 5.377707
+      },
+      {
+        "queryId": 946,
+        "frameId": 190,
+        "completedFrameId": 192,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 945,
+        "frameId": 189,
+        "completedFrameId": 192,
+        "label": "minimap",
+        "ms": 0.05651
+      },
+      {
+        "queryId": 944,
+        "frameId": 189,
+        "completedFrameId": 192,
+        "label": "final",
+        "ms": 1.601458
+      },
+      {
+        "queryId": 943,
+        "frameId": 189,
+        "completedFrameId": 192,
+        "label": "bloom",
+        "ms": 0.679687
+      },
+      {
+        "queryId": 942,
+        "frameId": 189,
+        "completedFrameId": 192,
+        "label": "scene",
+        "ms": 5.481145
+      },
+      {
+        "queryId": 951,
+        "frameId": 191,
+        "completedFrameId": 193,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 950,
+        "frameId": 190,
+        "completedFrameId": 193,
+        "label": "minimap",
+        "ms": 0.062187
+      },
+      {
+        "queryId": 949,
+        "frameId": 190,
+        "completedFrameId": 193,
+        "label": "final",
+        "ms": 1.60651
+      },
+      {
+        "queryId": 948,
+        "frameId": 190,
+        "completedFrameId": 193,
+        "label": "bloom",
+        "ms": 0.608385
+      },
+      {
+        "queryId": 947,
+        "frameId": 190,
+        "completedFrameId": 193,
+        "label": "scene",
+        "ms": 5.191978
+      },
+      {
+        "queryId": 956,
+        "frameId": 192,
+        "completedFrameId": 194,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 955,
+        "frameId": 191,
+        "completedFrameId": 194,
+        "label": "minimap",
+        "ms": 0.059427
+      },
+      {
+        "queryId": 954,
+        "frameId": 191,
+        "completedFrameId": 194,
+        "label": "final",
+        "ms": 1.492968
+      },
+      {
+        "queryId": 953,
+        "frameId": 191,
+        "completedFrameId": 194,
+        "label": "bloom",
+        "ms": 0.679114
+      },
+      {
+        "queryId": 952,
+        "frameId": 191,
+        "completedFrameId": 194,
+        "label": "scene",
+        "ms": 5.701979
+      },
+      {
+        "queryId": 961,
+        "frameId": 193,
+        "completedFrameId": 195,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 960,
+        "frameId": 192,
+        "completedFrameId": 195,
+        "label": "minimap",
+        "ms": 0.062291
+      },
+      {
+        "queryId": 959,
+        "frameId": 192,
+        "completedFrameId": 195,
+        "label": "final",
+        "ms": 1.802812
+      },
+      {
+        "queryId": 958,
+        "frameId": 192,
+        "completedFrameId": 195,
+        "label": "bloom",
+        "ms": 0.739895
+      },
+      {
+        "queryId": 957,
+        "frameId": 192,
+        "completedFrameId": 195,
+        "label": "scene",
+        "ms": 5.614895
+      },
+      {
+        "queryId": 966,
+        "frameId": 194,
+        "completedFrameId": 196,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 965,
+        "frameId": 193,
+        "completedFrameId": 196,
+        "label": "minimap",
+        "ms": 0.060781
+      },
+      {
+        "queryId": 964,
+        "frameId": 193,
+        "completedFrameId": 196,
+        "label": "final",
+        "ms": 1.495729
+      },
+      {
+        "queryId": 963,
+        "frameId": 193,
+        "completedFrameId": 196,
+        "label": "bloom",
+        "ms": 0.660468
+      },
+      {
+        "queryId": 962,
+        "frameId": 193,
+        "completedFrameId": 196,
+        "label": "scene",
+        "ms": 5.49177
+      },
+      {
+        "queryId": 971,
+        "frameId": 195,
+        "completedFrameId": 197,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 970,
+        "frameId": 194,
+        "completedFrameId": 197,
+        "label": "minimap",
+        "ms": 0.066562
+      },
+      {
+        "queryId": 969,
+        "frameId": 194,
+        "completedFrameId": 197,
+        "label": "final",
+        "ms": 1.771875
+      },
+      {
+        "queryId": 968,
+        "frameId": 194,
+        "completedFrameId": 197,
+        "label": "bloom",
+        "ms": 0.762239
+      },
+      {
+        "queryId": 967,
+        "frameId": 194,
+        "completedFrameId": 197,
+        "label": "scene",
+        "ms": 16.073437
+      },
+      {
+        "queryId": 976,
+        "frameId": 196,
+        "completedFrameId": 198,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 975,
+        "frameId": 195,
+        "completedFrameId": 198,
+        "label": "minimap",
+        "ms": 0.068072
+      },
+      {
+        "queryId": 974,
+        "frameId": 195,
+        "completedFrameId": 198,
+        "label": "final",
+        "ms": 1.682552
+      },
+      {
+        "queryId": 973,
+        "frameId": 195,
+        "completedFrameId": 198,
+        "label": "bloom",
+        "ms": 0.714375
+      },
+      {
+        "queryId": 972,
+        "frameId": 195,
+        "completedFrameId": 198,
+        "label": "scene",
+        "ms": 7.94677
+      }
+    ],
+    "gpuStatus": {
+      "supported": true,
+      "pending": 14,
+      "dropped": 0,
+      "invalidated": 0,
+      "disjointEvents": 0,
+      "skipped": 0
+    },
+    "errors": [],
+    "player": [
+      0,
+      0,
+      -2.5
+    ],
+    "mode": "NORMAL"
+  },
+  "security": {
+    "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "viewport": [
+      1280,
+      720
+    ],
+    "pixelRatio": 1,
+    "exposure": 1.15,
+    "resources": {
+      "geometries": 706,
+      "textures": 86,
+      "programs": 37
+    },
+    "render": {
+      "frame": 5258,
+      "calls": 587,
+      "triangles": 143758,
+      "points": 646,
+      "lines": 660
+    },
+    "samples": [
+      {
+        "frameId": 320,
+        "timestampMs": 65174.6,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.09999999962747,
+        "drawCpuMs": 25.399999998509884,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 321,
+        "timestampMs": 65274.6,
+        "frameMs": 100,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.700000001117587,
+        "drawCpuMs": 23,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 322,
+        "timestampMs": 65307.8,
+        "frameMs": 33.200000000004366,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.5,
+        "drawCpuMs": 27.40000000037253,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 323,
+        "timestampMs": 65324.6,
+        "frameMs": 16.799999999995634,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.59999999962747,
+        "drawCpuMs": 24.90000000037253,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 324,
+        "timestampMs": 65357.8,
+        "frameMs": 33.200000000004366,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.5,
+        "drawCpuMs": 25.5,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 325,
+        "timestampMs": 65408,
+        "frameMs": 50.19999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 18,
+        "drawCpuMs": 19.199999999254942,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 326,
+        "timestampMs": 65474.6,
+        "frameMs": 66.59999999999854,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.09999999962747,
+        "drawCpuMs": 24.299999998882413,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 327,
+        "timestampMs": 65508,
+        "frameMs": 33.400000000001455,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.799999998882413,
+        "drawCpuMs": 22.800000000745058,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 328,
+        "timestampMs": 65557.8,
+        "frameMs": 49.80000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.799999998882413,
+        "drawCpuMs": 27.300000000745058,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 329,
+        "timestampMs": 65624.5,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.199999999254942,
+        "drawCpuMs": 23.300000000745058,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 330,
+        "timestampMs": 65674.5,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.40000000037253,
+        "drawCpuMs": 21.59999999962747,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 331,
+        "timestampMs": 65707.9,
+        "frameMs": 33.39999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 16.899999998509884,
+        "drawCpuMs": 18.90000000037253,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 332,
+        "timestampMs": 65758,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 19.800000000745058,
+        "drawCpuMs": 21.90000000037253,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 333,
+        "timestampMs": 65791.3,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.800000000745058,
+        "drawCpuMs": 21.700000001117587,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 334,
+        "timestampMs": 65857.8,
+        "frameMs": 66.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.90000000037253,
+        "drawCpuMs": 22.200000001117587,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 335,
+        "timestampMs": 65891.1,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.59999999962747,
+        "drawCpuMs": 26,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 336,
+        "timestampMs": 65941.1,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.899999998509884,
+        "drawCpuMs": 26.200000001117587,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 337,
+        "timestampMs": 66007.9,
+        "frameMs": 66.79999999998836,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.90000000037253,
+        "drawCpuMs": 26.100000001490116,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 338,
+        "timestampMs": 66074.4,
+        "frameMs": 66.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.40000000037253,
+        "drawCpuMs": 24.300000000745058,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 339,
+        "timestampMs": 66107.9,
+        "frameMs": 33.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.799999998882413,
+        "drawCpuMs": 23.90000000037253,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 340,
+        "timestampMs": 66191.4,
+        "frameMs": 83.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 19.299999998882413,
+        "drawCpuMs": 20.899999998509884,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 341,
+        "timestampMs": 66224.5,
+        "frameMs": 33.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.90000000037253,
+        "drawCpuMs": 24.700000001117587,
+        "minimapCpuMs": 0.8000000007450581,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 342,
+        "timestampMs": 66274.6,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.5,
+        "drawCpuMs": 26.100000001490116,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 343,
+        "timestampMs": 66307.9,
+        "frameMs": 33.29999999998836,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.699999999254942,
+        "drawCpuMs": 27.600000001490116,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 344,
+        "timestampMs": 66357.9,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 19.799999998882413,
+        "drawCpuMs": 22.300000000745058,
+        "minimapCpuMs": 1.099999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 345,
+        "timestampMs": 66407.9,
+        "frameMs": 50,
+        "updateCpuMs": 0.10000000149011612,
+        "sceneCpuMs": 27,
+        "drawCpuMs": 29.399999998509884,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 346,
+        "timestampMs": 66457.7,
+        "frameMs": 49.80000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.199999999254942,
+        "drawCpuMs": 25.100000001490116,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 347,
+        "timestampMs": 66491.2,
+        "frameMs": 33.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.09999999962747,
+        "drawCpuMs": 23.90000000037253,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 348,
+        "timestampMs": 66541.3,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 19.5,
+        "drawCpuMs": 21.59999999962747,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 349,
+        "timestampMs": 66607.9,
+        "frameMs": 66.59999999999127,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.600000001490116,
+        "drawCpuMs": 26.699999999254942,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 350,
+        "timestampMs": 66657.8,
+        "frameMs": 49.90000000000873,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.699999999254942,
+        "drawCpuMs": 29.199999999254942,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 351,
+        "timestampMs": 66724.5,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.59999999962747,
+        "drawCpuMs": 24.399999998509884,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 352,
+        "timestampMs": 66774.6,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.59999999962747,
+        "drawCpuMs": 24.199999999254942,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 353,
+        "timestampMs": 66824.4,
+        "frameMs": 49.79999999998836,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24,
+        "drawCpuMs": 25.799999998882413,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 354,
+        "timestampMs": 66907.8,
+        "frameMs": 83.40000000000873,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 26,
+        "drawCpuMs": 28.09999999962747,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 355,
+        "timestampMs": 66941.1,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.300000000745058,
+        "drawCpuMs": 27.59999999962747,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 356,
+        "timestampMs": 66991.3,
+        "frameMs": 50.19999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.300000000745058,
+        "drawCpuMs": 27,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 357,
+        "timestampMs": 67024.5,
+        "frameMs": 33.19999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.09999999962747,
+        "drawCpuMs": 23,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 358,
+        "timestampMs": 67091.3,
+        "frameMs": 66.80000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.199999999254942,
+        "drawCpuMs": 24.800000000745058,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 359,
+        "timestampMs": 67141.3,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.5,
+        "drawCpuMs": 24.40000000037253,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 360,
+        "timestampMs": 67224.5,
+        "frameMs": 83.19999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 19.700000001117587,
+        "drawCpuMs": 21.300000000745058,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 361,
+        "timestampMs": 67257.8,
+        "frameMs": 33.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25,
+        "drawCpuMs": 27.300000000745058,
+        "minimapCpuMs": 0.7000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 362,
+        "timestampMs": 67307.8,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.59999999962747,
+        "drawCpuMs": 22.399999998509884,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 363,
+        "timestampMs": 67391.1,
+        "frameMs": 83.30000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.899999998509884,
+        "drawCpuMs": 25.600000001490116,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 364,
+        "timestampMs": 67441.1,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21,
+        "drawCpuMs": 22.59999999962747,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 365,
+        "timestampMs": 67474.5,
+        "frameMs": 33.39999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22,
+        "drawCpuMs": 23.800000000745058,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 366,
+        "timestampMs": 67541.2,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.199999999254942,
+        "drawCpuMs": 21.59999999962747,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 367,
+        "timestampMs": 67607.9,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.199999999254942,
+        "drawCpuMs": 23.300000000745058,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 368,
+        "timestampMs": 67657.9,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.199999999254942,
+        "drawCpuMs": 24.399999998509884,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 369,
+        "timestampMs": 67724.7,
+        "frameMs": 66.80000000000291,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.799999998882413,
+        "drawCpuMs": 23.199999999254942,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 370,
+        "timestampMs": 67791.2,
+        "frameMs": 66.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.90000000037253,
+        "drawCpuMs": 22.700000001117587,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 371,
+        "timestampMs": 67857.8,
+        "frameMs": 66.60000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.199999999254942,
+        "drawCpuMs": 24.799999998882413,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 372,
+        "timestampMs": 67907.8,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.5,
+        "drawCpuMs": 23.90000000037253,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 373,
+        "timestampMs": 67974.5,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22,
+        "drawCpuMs": 23.59999999962747,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 374,
+        "timestampMs": 68007.9,
+        "frameMs": 33.39999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23,
+        "drawCpuMs": 24.600000001490116,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 375,
+        "timestampMs": 68074.5,
+        "frameMs": 66.60000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 28.699999999254942,
+        "drawCpuMs": 30.199999999254942,
+        "minimapCpuMs": 0.19999999925494194,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 376,
+        "timestampMs": 68108.1,
+        "frameMs": 33.60000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.300000000745058,
+        "drawCpuMs": 27,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 377,
+        "timestampMs": 68174.6,
+        "frameMs": 66.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 27,
+        "drawCpuMs": 28.699999999254942,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 378,
+        "timestampMs": 68224.6,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.90000000037253,
+        "drawCpuMs": 24.700000001117587,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 379,
+        "timestampMs": 68291.2,
+        "frameMs": 66.59999999999127,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.09999999962747,
+        "drawCpuMs": 23.5,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 380,
+        "timestampMs": 68341.2,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.799999998882413,
+        "drawCpuMs": 26.59999999962747,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 381,
+        "timestampMs": 68407.8,
+        "frameMs": 66.60000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 24.5,
+        "drawCpuMs": 26.199999999254942,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 382,
+        "timestampMs": 68441.3,
+        "frameMs": 33.5,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.299999998882413,
+        "drawCpuMs": 24.5,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 383,
+        "timestampMs": 68491.2,
+        "frameMs": 49.89999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.40000000037253,
+        "drawCpuMs": 24.90000000037253,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 384,
+        "timestampMs": 68557.8,
+        "frameMs": 66.60000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.09999999962747,
+        "drawCpuMs": 22.899999998509884,
+        "minimapCpuMs": 0.3999999985098839,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 385,
+        "timestampMs": 68624.4,
+        "frameMs": 66.59999999999127,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.300000000745058,
+        "drawCpuMs": 24,
+        "minimapCpuMs": 0.09999999962747097,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 386,
+        "timestampMs": 68674.5,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.59999999962747,
+        "drawCpuMs": 24.799999998882413,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 387,
+        "timestampMs": 68774.5,
+        "frameMs": 100,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 21.800000000745058,
+        "drawCpuMs": 24.5,
+        "minimapCpuMs": 0.7000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 388,
+        "timestampMs": 68824.5,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.800000000745058,
+        "drawCpuMs": 25.800000000745058,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 389,
+        "timestampMs": 68874.6,
+        "frameMs": 50.10000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 23.199999999254942,
+        "drawCpuMs": 26.100000001490116,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 390,
+        "timestampMs": 68924.5,
+        "frameMs": 49.89999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 27.5,
+        "drawCpuMs": 29.300000000745058,
+        "minimapCpuMs": 0.40000000037252903,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 391,
+        "timestampMs": 68991.1,
+        "frameMs": 66.60000000000582,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 27.09999999962747,
+        "drawCpuMs": 29.399999998509884,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 392,
+        "timestampMs": 69057.8,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 27.40000000037253,
+        "drawCpuMs": 30.799999998882413,
+        "minimapCpuMs": 0.8000000007450581,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 393,
+        "timestampMs": 69107.8,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 27.199999999254942,
+        "drawCpuMs": 29.40000000037253,
+        "minimapCpuMs": 0.2999999988824129,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 394,
+        "timestampMs": 69174.5,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.800000000745058,
+        "drawCpuMs": 25.799999998882413,
+        "minimapCpuMs": 0.5,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 395,
+        "timestampMs": 69241.2,
+        "frameMs": 66.69999999999709,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22,
+        "drawCpuMs": 25.5,
+        "minimapCpuMs": 0.599999999627471,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 396,
+        "timestampMs": 69291.2,
+        "frameMs": 50,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 22.90000000037253,
+        "drawCpuMs": 25.40000000037253,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 397,
+        "timestampMs": 69341.1,
+        "frameMs": 49.90000000000873,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 20.59999999962747,
+        "drawCpuMs": 21.600000001490116,
+        "minimapCpuMs": 0.30000000074505806,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      },
+      {
+        "frameId": 398,
+        "timestampMs": 69374.5,
+        "frameMs": 33.39999999999418,
+        "updateCpuMs": 0,
+        "sceneCpuMs": 25.100000001490116,
+        "drawCpuMs": 26.700000001117587,
+        "minimapCpuMs": 0.2000000011175871,
+        "hidden": false,
+        "exclusion": null,
+        "sawMain": true,
+        "calls": 587,
+        "triangles": 143758
+      }
+    ],
+    "gpuSamples": [
+      {
+        "queryId": 1594,
+        "frameId": 319,
+        "completedFrameId": 320,
+        "label": "final",
+        "ms": 1.699166
+      },
+      {
+        "queryId": 1593,
+        "frameId": 319,
+        "completedFrameId": 320,
+        "label": "bloom",
+        "ms": 0.605156
+      },
+      {
+        "queryId": 1592,
+        "frameId": 319,
+        "completedFrameId": 320,
+        "label": "scene",
+        "ms": 5.709843
+      },
+      {
+        "queryId": 1591,
+        "frameId": 319,
+        "completedFrameId": 320,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1596,
+        "frameId": 320,
+        "completedFrameId": 321,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1595,
+        "frameId": 319,
+        "completedFrameId": 321,
+        "label": "minimap",
+        "ms": 0.062864
+      },
+      {
+        "queryId": 1590,
+        "frameId": 318,
+        "completedFrameId": 321,
+        "label": "minimap",
+        "ms": 0.059895
+      },
+      {
+        "queryId": 1589,
+        "frameId": 318,
+        "completedFrameId": 321,
+        "label": "final",
+        "ms": 1.379114
+      },
+      {
+        "queryId": 1588,
+        "frameId": 318,
+        "completedFrameId": 321,
+        "label": "bloom",
+        "ms": 0.598906
+      },
+      {
+        "queryId": 1587,
+        "frameId": 318,
+        "completedFrameId": 321,
+        "label": "scene",
+        "ms": 5.602708
+      },
+      {
+        "queryId": 1586,
+        "frameId": 318,
+        "completedFrameId": 321,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1585,
+        "frameId": 317,
+        "completedFrameId": 321,
+        "label": "minimap",
+        "ms": 0.082083
+      },
+      {
+        "queryId": 1584,
+        "frameId": 317,
+        "completedFrameId": 321,
+        "label": "final",
+        "ms": 1.673177
+      },
+      {
+        "queryId": 1583,
+        "frameId": 317,
+        "completedFrameId": 321,
+        "label": "bloom",
+        "ms": 0.688281
+      },
+      {
+        "queryId": 1582,
+        "frameId": 317,
+        "completedFrameId": 321,
+        "label": "scene",
+        "ms": 9.682968
+      },
+      {
+        "queryId": 1601,
+        "frameId": 321,
+        "completedFrameId": 322,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1600,
+        "frameId": 320,
+        "completedFrameId": 322,
+        "label": "minimap",
+        "ms": 0.066614
+      },
+      {
+        "queryId": 1599,
+        "frameId": 320,
+        "completedFrameId": 322,
+        "label": "final",
+        "ms": 1.699739
+      },
+      {
+        "queryId": 1598,
+        "frameId": 320,
+        "completedFrameId": 322,
+        "label": "bloom",
+        "ms": 0.700156
+      },
+      {
+        "queryId": 1597,
+        "frameId": 320,
+        "completedFrameId": 322,
+        "label": "scene",
+        "ms": 16.257967
+      },
+      {
+        "queryId": 1606,
+        "frameId": 322,
+        "completedFrameId": 324,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1605,
+        "frameId": 321,
+        "completedFrameId": 324,
+        "label": "minimap",
+        "ms": 0.067239
+      },
+      {
+        "queryId": 1604,
+        "frameId": 321,
+        "completedFrameId": 324,
+        "label": "final",
+        "ms": 1.772083
+      },
+      {
+        "queryId": 1603,
+        "frameId": 321,
+        "completedFrameId": 324,
+        "label": "bloom",
+        "ms": 0.634739
+      },
+      {
+        "queryId": 1602,
+        "frameId": 321,
+        "completedFrameId": 324,
+        "label": "scene",
+        "ms": 6.274738
+      },
+      {
+        "queryId": 1611,
+        "frameId": 323,
+        "completedFrameId": 325,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1610,
+        "frameId": 322,
+        "completedFrameId": 325,
+        "label": "minimap",
+        "ms": 0.063697
+      },
+      {
+        "queryId": 1609,
+        "frameId": 322,
+        "completedFrameId": 325,
+        "label": "final",
+        "ms": 1.788697
+      },
+      {
+        "queryId": 1608,
+        "frameId": 322,
+        "completedFrameId": 325,
+        "label": "bloom",
+        "ms": 0.642812
+      },
+      {
+        "queryId": 1607,
+        "frameId": 322,
+        "completedFrameId": 325,
+        "label": "scene",
+        "ms": 5.72203
+      },
+      {
+        "queryId": 1616,
+        "frameId": 324,
+        "completedFrameId": 326,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1615,
+        "frameId": 323,
+        "completedFrameId": 326,
+        "label": "minimap",
+        "ms": 0.062864
+      },
+      {
+        "queryId": 1614,
+        "frameId": 323,
+        "completedFrameId": 326,
+        "label": "final",
+        "ms": 1.618906
+      },
+      {
+        "queryId": 1613,
+        "frameId": 323,
+        "completedFrameId": 326,
+        "label": "bloom",
+        "ms": 0.686718
+      },
+      {
+        "queryId": 1612,
+        "frameId": 323,
+        "completedFrameId": 326,
+        "label": "scene",
+        "ms": 17.794322
+      },
+      {
+        "queryId": 1621,
+        "frameId": 325,
+        "completedFrameId": 327,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1620,
+        "frameId": 324,
+        "completedFrameId": 327,
+        "label": "minimap",
+        "ms": 0.063541
+      },
+      {
+        "queryId": 1619,
+        "frameId": 324,
+        "completedFrameId": 327,
+        "label": "final",
+        "ms": 1.622604
+      },
+      {
+        "queryId": 1618,
+        "frameId": 324,
+        "completedFrameId": 327,
+        "label": "bloom",
+        "ms": 0.642135
+      },
+      {
+        "queryId": 1617,
+        "frameId": 324,
+        "completedFrameId": 327,
+        "label": "scene",
+        "ms": 5.642029
+      },
+      {
+        "queryId": 1626,
+        "frameId": 326,
+        "completedFrameId": 328,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1625,
+        "frameId": 325,
+        "completedFrameId": 328,
+        "label": "minimap",
+        "ms": 0.069322
+      },
+      {
+        "queryId": 1624,
+        "frameId": 325,
+        "completedFrameId": 328,
+        "label": "final",
+        "ms": 1.610937
+      },
+      {
+        "queryId": 1623,
+        "frameId": 325,
+        "completedFrameId": 328,
+        "label": "bloom",
+        "ms": 0.63177
+      },
+      {
+        "queryId": 1622,
+        "frameId": 325,
+        "completedFrameId": 328,
+        "label": "scene",
+        "ms": 5.407291
+      },
+      {
+        "queryId": 1631,
+        "frameId": 327,
+        "completedFrameId": 329,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1630,
+        "frameId": 326,
+        "completedFrameId": 329,
+        "label": "minimap",
+        "ms": 0.066197
+      },
+      {
+        "queryId": 1629,
+        "frameId": 326,
+        "completedFrameId": 329,
+        "label": "final",
+        "ms": 1.578593
+      },
+      {
+        "queryId": 1628,
+        "frameId": 326,
+        "completedFrameId": 329,
+        "label": "bloom",
+        "ms": 1.805468
+      },
+      {
+        "queryId": 1627,
+        "frameId": 326,
+        "completedFrameId": 329,
+        "label": "scene",
+        "ms": 5.650572
+      },
+      {
+        "queryId": 1636,
+        "frameId": 328,
+        "completedFrameId": 330,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1635,
+        "frameId": 327,
+        "completedFrameId": 330,
+        "label": "minimap",
+        "ms": 0.063541
+      },
+      {
+        "queryId": 1634,
+        "frameId": 327,
+        "completedFrameId": 330,
+        "label": "final",
+        "ms": 1.761457
+      },
+      {
+        "queryId": 1633,
+        "frameId": 327,
+        "completedFrameId": 330,
+        "label": "bloom",
+        "ms": 0.567083
+      },
+      {
+        "queryId": 1632,
+        "frameId": 327,
+        "completedFrameId": 330,
+        "label": "scene",
+        "ms": 5.411822
+      },
+      {
+        "queryId": 1641,
+        "frameId": 329,
+        "completedFrameId": 331,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1640,
+        "frameId": 328,
+        "completedFrameId": 331,
+        "label": "minimap",
+        "ms": 0.064218
+      },
+      {
+        "queryId": 1639,
+        "frameId": 328,
+        "completedFrameId": 331,
+        "label": "final",
+        "ms": 1.449739
+      },
+      {
+        "queryId": 1638,
+        "frameId": 328,
+        "completedFrameId": 331,
+        "label": "bloom",
+        "ms": 0.692187
+      },
+      {
+        "queryId": 1637,
+        "frameId": 328,
+        "completedFrameId": 331,
+        "label": "scene",
+        "ms": 5.428124
+      },
+      {
+        "queryId": 1646,
+        "frameId": 330,
+        "completedFrameId": 332,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1645,
+        "frameId": 329,
+        "completedFrameId": 332,
+        "label": "minimap",
+        "ms": 0.059947
+      },
+      {
+        "queryId": 1644,
+        "frameId": 329,
+        "completedFrameId": 332,
+        "label": "final",
+        "ms": 1.567968
+      },
+      {
+        "queryId": 1643,
+        "frameId": 329,
+        "completedFrameId": 332,
+        "label": "bloom",
+        "ms": 0.670572
+      },
+      {
+        "queryId": 1642,
+        "frameId": 329,
+        "completedFrameId": 332,
+        "label": "scene",
+        "ms": 7.508957
+      },
+      {
+        "queryId": 1648,
+        "frameId": 330,
+        "completedFrameId": 333,
+        "label": "bloom",
+        "ms": 0.612291
+      },
+      {
+        "queryId": 1647,
+        "frameId": 330,
+        "completedFrameId": 333,
+        "label": "scene",
+        "ms": 5.511562
+      },
+      {
+        "queryId": 1656,
+        "frameId": 332,
+        "completedFrameId": 334,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1655,
+        "frameId": 331,
+        "completedFrameId": 334,
+        "label": "minimap",
+        "ms": 0.066458
+      },
+      {
+        "queryId": 1654,
+        "frameId": 331,
+        "completedFrameId": 334,
+        "label": "final",
+        "ms": 1.559843
+      },
+      {
+        "queryId": 1653,
+        "frameId": 331,
+        "completedFrameId": 334,
+        "label": "bloom",
+        "ms": 0.695625
+      },
+      {
+        "queryId": 1652,
+        "frameId": 331,
+        "completedFrameId": 334,
+        "label": "scene",
+        "ms": 24.987603
+      },
+      {
+        "queryId": 1651,
+        "frameId": 331,
+        "completedFrameId": 334,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1650,
+        "frameId": 330,
+        "completedFrameId": 334,
+        "label": "minimap",
+        "ms": 0.064375
+      },
+      {
+        "queryId": 1649,
+        "frameId": 330,
+        "completedFrameId": 334,
+        "label": "final",
+        "ms": 2.589427
+      },
+      {
+        "queryId": 1661,
+        "frameId": 333,
+        "completedFrameId": 335,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1660,
+        "frameId": 332,
+        "completedFrameId": 335,
+        "label": "minimap",
+        "ms": 0.062395
+      },
+      {
+        "queryId": 1659,
+        "frameId": 332,
+        "completedFrameId": 335,
+        "label": "final",
+        "ms": 1.595052
+      },
+      {
+        "queryId": 1658,
+        "frameId": 332,
+        "completedFrameId": 335,
+        "label": "bloom",
+        "ms": 0.604218
+      },
+      {
+        "queryId": 1657,
+        "frameId": 332,
+        "completedFrameId": 335,
+        "label": "scene",
+        "ms": 5.450832
+      },
+      {
+        "queryId": 1665,
+        "frameId": 333,
+        "completedFrameId": 336,
+        "label": "minimap",
+        "ms": 0.062968
+      },
+      {
+        "queryId": 1664,
+        "frameId": 333,
+        "completedFrameId": 336,
+        "label": "final",
+        "ms": 1.394687
+      },
+      {
+        "queryId": 1663,
+        "frameId": 333,
+        "completedFrameId": 336,
+        "label": "bloom",
+        "ms": 0.658802
+      },
+      {
+        "queryId": 1662,
+        "frameId": 333,
+        "completedFrameId": 336,
+        "label": "scene",
+        "ms": 5.571405
+      },
+      {
+        "queryId": 1671,
+        "frameId": 335,
+        "completedFrameId": 337,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1670,
+        "frameId": 334,
+        "completedFrameId": 337,
+        "label": "minimap",
+        "ms": 0.069479
+      },
+      {
+        "queryId": 1669,
+        "frameId": 334,
+        "completedFrameId": 337,
+        "label": "final",
+        "ms": 1.7
+      },
+      {
+        "queryId": 1668,
+        "frameId": 334,
+        "completedFrameId": 337,
+        "label": "bloom",
+        "ms": 0.619531
+      },
+      {
+        "queryId": 1667,
+        "frameId": 334,
+        "completedFrameId": 337,
+        "label": "scene",
+        "ms": 6.258697
+      },
+      {
+        "queryId": 1666,
+        "frameId": 334,
+        "completedFrameId": 337,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1676,
+        "frameId": 336,
+        "completedFrameId": 338,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1675,
+        "frameId": 335,
+        "completedFrameId": 338,
+        "label": "minimap",
+        "ms": 0.065989
+      },
+      {
+        "queryId": 1674,
+        "frameId": 335,
+        "completedFrameId": 338,
+        "label": "final",
+        "ms": 1.598958
+      },
+      {
+        "queryId": 1673,
+        "frameId": 335,
+        "completedFrameId": 338,
+        "label": "bloom",
+        "ms": 0.614062
+      },
+      {
+        "queryId": 1672,
+        "frameId": 335,
+        "completedFrameId": 338,
+        "label": "scene",
+        "ms": 5.631822
+      },
+      {
+        "queryId": 1681,
+        "frameId": 337,
+        "completedFrameId": 339,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1680,
+        "frameId": 336,
+        "completedFrameId": 339,
+        "label": "minimap",
+        "ms": 0.065729
+      },
+      {
+        "queryId": 1679,
+        "frameId": 336,
+        "completedFrameId": 339,
+        "label": "final",
+        "ms": 1.593593
+      },
+      {
+        "queryId": 1678,
+        "frameId": 336,
+        "completedFrameId": 339,
+        "label": "bloom",
+        "ms": 0.667239
+      },
+      {
+        "queryId": 1677,
+        "frameId": 336,
+        "completedFrameId": 339,
+        "label": "scene",
+        "ms": 5.703593
+      },
+      {
+        "queryId": 1686,
+        "frameId": 338,
+        "completedFrameId": 340,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1685,
+        "frameId": 337,
+        "completedFrameId": 340,
+        "label": "minimap",
+        "ms": 0.063385
+      },
+      {
+        "queryId": 1684,
+        "frameId": 337,
+        "completedFrameId": 340,
+        "label": "final",
+        "ms": 1.380625
+      },
+      {
+        "queryId": 1683,
+        "frameId": 337,
+        "completedFrameId": 340,
+        "label": "bloom",
+        "ms": 0.572604
+      },
+      {
+        "queryId": 1682,
+        "frameId": 337,
+        "completedFrameId": 340,
+        "label": "scene",
+        "ms": 25.968384
+      },
+      {
+        "queryId": 1691,
+        "frameId": 339,
+        "completedFrameId": 341,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1690,
+        "frameId": 338,
+        "completedFrameId": 341,
+        "label": "minimap",
+        "ms": 0.064843
+      },
+      {
+        "queryId": 1689,
+        "frameId": 338,
+        "completedFrameId": 341,
+        "label": "final",
+        "ms": 1.585625
+      },
+      {
+        "queryId": 1688,
+        "frameId": 338,
+        "completedFrameId": 341,
+        "label": "bloom",
+        "ms": 0.648229
+      },
+      {
+        "queryId": 1687,
+        "frameId": 338,
+        "completedFrameId": 341,
+        "label": "scene",
+        "ms": 5.645416
+      },
+      {
+        "queryId": 1696,
+        "frameId": 340,
+        "completedFrameId": 342,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1695,
+        "frameId": 339,
+        "completedFrameId": 342,
+        "label": "minimap",
+        "ms": 0.067343
+      },
+      {
+        "queryId": 1694,
+        "frameId": 339,
+        "completedFrameId": 342,
+        "label": "final",
+        "ms": 1.66927
+      },
+      {
+        "queryId": 1693,
+        "frameId": 339,
+        "completedFrameId": 342,
+        "label": "bloom",
+        "ms": 0.667812
+      },
+      {
+        "queryId": 1692,
+        "frameId": 339,
+        "completedFrameId": 342,
+        "label": "scene",
+        "ms": 5.594218
+      },
+      {
+        "queryId": 1701,
+        "frameId": 341,
+        "completedFrameId": 343,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1700,
+        "frameId": 340,
+        "completedFrameId": 343,
+        "label": "minimap",
+        "ms": 0.064166
+      },
+      {
+        "queryId": 1699,
+        "frameId": 340,
+        "completedFrameId": 343,
+        "label": "final",
+        "ms": 1.648541
+      },
+      {
+        "queryId": 1698,
+        "frameId": 340,
+        "completedFrameId": 343,
+        "label": "bloom",
+        "ms": 0.569635
+      },
+      {
+        "queryId": 1697,
+        "frameId": 340,
+        "completedFrameId": 343,
+        "label": "scene",
+        "ms": 5.81552
+      },
+      {
+        "queryId": 1706,
+        "frameId": 342,
+        "completedFrameId": 344,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1705,
+        "frameId": 341,
+        "completedFrameId": 344,
+        "label": "minimap",
+        "ms": 0.065833
+      },
+      {
+        "queryId": 1704,
+        "frameId": 341,
+        "completedFrameId": 344,
+        "label": "final",
+        "ms": 1.520677
+      },
+      {
+        "queryId": 1703,
+        "frameId": 341,
+        "completedFrameId": 344,
+        "label": "bloom",
+        "ms": 0.717812
+      },
+      {
+        "queryId": 1702,
+        "frameId": 341,
+        "completedFrameId": 344,
+        "label": "scene",
+        "ms": 6.911978
+      },
+      {
+        "queryId": 1711,
+        "frameId": 343,
+        "completedFrameId": 345,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1710,
+        "frameId": 342,
+        "completedFrameId": 345,
+        "label": "minimap",
+        "ms": 0.06302
+      },
+      {
+        "queryId": 1709,
+        "frameId": 342,
+        "completedFrameId": 345,
+        "label": "final",
+        "ms": 1.751666
+      },
+      {
+        "queryId": 1708,
+        "frameId": 342,
+        "completedFrameId": 345,
+        "label": "bloom",
+        "ms": 0.628489
+      },
+      {
+        "queryId": 1707,
+        "frameId": 342,
+        "completedFrameId": 345,
+        "label": "scene",
+        "ms": 5.679739
+      },
+      {
+        "queryId": 1716,
+        "frameId": 344,
+        "completedFrameId": 346,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1715,
+        "frameId": 343,
+        "completedFrameId": 346,
+        "label": "minimap",
+        "ms": 0.068125
+      },
+      {
+        "queryId": 1714,
+        "frameId": 343,
+        "completedFrameId": 346,
+        "label": "final",
+        "ms": 1.594895
+      },
+      {
+        "queryId": 1713,
+        "frameId": 343,
+        "completedFrameId": 346,
+        "label": "bloom",
+        "ms": 0.641145
+      },
+      {
+        "queryId": 1712,
+        "frameId": 343,
+        "completedFrameId": 346,
+        "label": "scene",
+        "ms": 7.337186
+      },
+      {
+        "queryId": 1721,
+        "frameId": 345,
+        "completedFrameId": 347,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1720,
+        "frameId": 344,
+        "completedFrameId": 347,
+        "label": "minimap",
+        "ms": 0.068125
+      },
+      {
+        "queryId": 1719,
+        "frameId": 344,
+        "completedFrameId": 347,
+        "label": "final",
+        "ms": 1.678385
+      },
+      {
+        "queryId": 1718,
+        "frameId": 344,
+        "completedFrameId": 347,
+        "label": "bloom",
+        "ms": 0.826458
+      },
+      {
+        "queryId": 1717,
+        "frameId": 344,
+        "completedFrameId": 347,
+        "label": "scene",
+        "ms": 5.711926
+      },
+      {
+        "queryId": 1726,
+        "frameId": 346,
+        "completedFrameId": 348,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1725,
+        "frameId": 345,
+        "completedFrameId": 348,
+        "label": "minimap",
+        "ms": 0.066666
+      },
+      {
+        "queryId": 1724,
+        "frameId": 345,
+        "completedFrameId": 348,
+        "label": "final",
+        "ms": 1.810416
+      },
+      {
+        "queryId": 1723,
+        "frameId": 345,
+        "completedFrameId": 348,
+        "label": "bloom",
+        "ms": 0.783906
+      },
+      {
+        "queryId": 1722,
+        "frameId": 345,
+        "completedFrameId": 348,
+        "label": "scene",
+        "ms": 5.736197
+      },
+      {
+        "queryId": 1731,
+        "frameId": 347,
+        "completedFrameId": 349,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1730,
+        "frameId": 346,
+        "completedFrameId": 349,
+        "label": "minimap",
+        "ms": 0.062708
+      },
+      {
+        "queryId": 1729,
+        "frameId": 346,
+        "completedFrameId": 349,
+        "label": "final",
+        "ms": 1.46302
+      },
+      {
+        "queryId": 1728,
+        "frameId": 346,
+        "completedFrameId": 349,
+        "label": "bloom",
+        "ms": 0.64875
+      },
+      {
+        "queryId": 1727,
+        "frameId": 346,
+        "completedFrameId": 349,
+        "label": "scene",
+        "ms": 17.953385
+      },
+      {
+        "queryId": 1736,
+        "frameId": 348,
+        "completedFrameId": 350,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1735,
+        "frameId": 347,
+        "completedFrameId": 350,
+        "label": "minimap",
+        "ms": 0.067968
+      },
+      {
+        "queryId": 1734,
+        "frameId": 347,
+        "completedFrameId": 350,
+        "label": "final",
+        "ms": 1.815208
+      },
+      {
+        "queryId": 1733,
+        "frameId": 347,
+        "completedFrameId": 350,
+        "label": "bloom",
+        "ms": 0.85302
+      },
+      {
+        "queryId": 1732,
+        "frameId": 347,
+        "completedFrameId": 350,
+        "label": "scene",
+        "ms": 6.141093
+      },
+      {
+        "queryId": 1741,
+        "frameId": 349,
+        "completedFrameId": 351,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1740,
+        "frameId": 348,
+        "completedFrameId": 351,
+        "label": "minimap",
+        "ms": 0.063489
+      },
+      {
+        "queryId": 1739,
+        "frameId": 348,
+        "completedFrameId": 351,
+        "label": "final",
+        "ms": 1.381093
+      },
+      {
+        "queryId": 1738,
+        "frameId": 348,
+        "completedFrameId": 351,
+        "label": "bloom",
+        "ms": 0.59125
+      },
+      {
+        "queryId": 1737,
+        "frameId": 348,
+        "completedFrameId": 351,
+        "label": "scene",
+        "ms": 5.637551
+      },
+      {
+        "queryId": 1746,
+        "frameId": 350,
+        "completedFrameId": 352,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1745,
+        "frameId": 349,
+        "completedFrameId": 352,
+        "label": "minimap",
+        "ms": 0.066927
+      },
+      {
+        "queryId": 1744,
+        "frameId": 349,
+        "completedFrameId": 352,
+        "label": "final",
+        "ms": 1.643177
+      },
+      {
+        "queryId": 1743,
+        "frameId": 349,
+        "completedFrameId": 352,
+        "label": "bloom",
+        "ms": 0.643906
+      },
+      {
+        "queryId": 1742,
+        "frameId": 349,
+        "completedFrameId": 352,
+        "label": "scene",
+        "ms": 5.692863
+      },
+      {
+        "queryId": 1751,
+        "frameId": 351,
+        "completedFrameId": 353,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1750,
+        "frameId": 350,
+        "completedFrameId": 353,
+        "label": "minimap",
+        "ms": 0.067708
+      },
+      {
+        "queryId": 1749,
+        "frameId": 350,
+        "completedFrameId": 353,
+        "label": "final",
+        "ms": 1.502656
+      },
+      {
+        "queryId": 1748,
+        "frameId": 350,
+        "completedFrameId": 353,
+        "label": "bloom",
+        "ms": 0.989895
+      },
+      {
+        "queryId": 1747,
+        "frameId": 350,
+        "completedFrameId": 353,
+        "label": "scene",
+        "ms": 5.617864
+      },
+      {
+        "queryId": 1756,
+        "frameId": 352,
+        "completedFrameId": 354,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1755,
+        "frameId": 351,
+        "completedFrameId": 354,
+        "label": "minimap",
+        "ms": 0.065
+      },
+      {
+        "queryId": 1754,
+        "frameId": 351,
+        "completedFrameId": 354,
+        "label": "final",
+        "ms": 1.574739
+      },
+      {
+        "queryId": 1753,
+        "frameId": 351,
+        "completedFrameId": 354,
+        "label": "bloom",
+        "ms": 0.578854
+      },
+      {
+        "queryId": 1752,
+        "frameId": 351,
+        "completedFrameId": 354,
+        "label": "scene",
+        "ms": 5.371822
+      },
+      {
+        "queryId": 1761,
+        "frameId": 353,
+        "completedFrameId": 355,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1760,
+        "frameId": 352,
+        "completedFrameId": 355,
+        "label": "minimap",
+        "ms": 0.086353
+      },
+      {
+        "queryId": 1759,
+        "frameId": 352,
+        "completedFrameId": 355,
+        "label": "final",
+        "ms": 1.550104
+      },
+      {
+        "queryId": 1758,
+        "frameId": 352,
+        "completedFrameId": 355,
+        "label": "bloom",
+        "ms": 0.622135
+      },
+      {
+        "queryId": 1757,
+        "frameId": 352,
+        "completedFrameId": 355,
+        "label": "scene",
+        "ms": 5.531926
+      },
+      {
+        "queryId": 1766,
+        "frameId": 354,
+        "completedFrameId": 356,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1765,
+        "frameId": 353,
+        "completedFrameId": 356,
+        "label": "minimap",
+        "ms": 0.064791
+      },
+      {
+        "queryId": 1764,
+        "frameId": 353,
+        "completedFrameId": 356,
+        "label": "final",
+        "ms": 1.554687
+      },
+      {
+        "queryId": 1763,
+        "frameId": 353,
+        "completedFrameId": 356,
+        "label": "bloom",
+        "ms": 0.625364
+      },
+      {
+        "queryId": 1762,
+        "frameId": 353,
+        "completedFrameId": 356,
+        "label": "scene",
+        "ms": 5.548853
+      },
+      {
+        "queryId": 1771,
+        "frameId": 355,
+        "completedFrameId": 357,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1770,
+        "frameId": 354,
+        "completedFrameId": 357,
+        "label": "minimap",
+        "ms": 0.067447
+      },
+      {
+        "queryId": 1769,
+        "frameId": 354,
+        "completedFrameId": 357,
+        "label": "final",
+        "ms": 1.667916
+      },
+      {
+        "queryId": 1768,
+        "frameId": 354,
+        "completedFrameId": 357,
+        "label": "bloom",
+        "ms": 0.753437
+      },
+      {
+        "queryId": 1767,
+        "frameId": 354,
+        "completedFrameId": 357,
+        "label": "scene",
+        "ms": 6.090363
+      },
+      {
+        "queryId": 1776,
+        "frameId": 356,
+        "completedFrameId": 358,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1775,
+        "frameId": 355,
+        "completedFrameId": 358,
+        "label": "minimap",
+        "ms": 0.062135
+      },
+      {
+        "queryId": 1774,
+        "frameId": 355,
+        "completedFrameId": 358,
+        "label": "final",
+        "ms": 2.140364
+      },
+      {
+        "queryId": 1773,
+        "frameId": 355,
+        "completedFrameId": 358,
+        "label": "bloom",
+        "ms": 0.692551
+      },
+      {
+        "queryId": 1772,
+        "frameId": 355,
+        "completedFrameId": 358,
+        "label": "scene",
+        "ms": 5.618489
+      },
+      {
+        "queryId": 1781,
+        "frameId": 357,
+        "completedFrameId": 359,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1780,
+        "frameId": 356,
+        "completedFrameId": 359,
+        "label": "minimap",
+        "ms": 0.061875
+      },
+      {
+        "queryId": 1779,
+        "frameId": 356,
+        "completedFrameId": 359,
+        "label": "final",
+        "ms": 1.755833
+      },
+      {
+        "queryId": 1778,
+        "frameId": 356,
+        "completedFrameId": 359,
+        "label": "bloom",
+        "ms": 0.613593
+      },
+      {
+        "queryId": 1777,
+        "frameId": 356,
+        "completedFrameId": 359,
+        "label": "scene",
+        "ms": 6.642239
+      },
+      {
+        "queryId": 1786,
+        "frameId": 358,
+        "completedFrameId": 360,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1785,
+        "frameId": 357,
+        "completedFrameId": 360,
+        "label": "minimap",
+        "ms": 0.063229
+      },
+      {
+        "queryId": 1784,
+        "frameId": 357,
+        "completedFrameId": 360,
+        "label": "final",
+        "ms": 1.557708
+      },
+      {
+        "queryId": 1783,
+        "frameId": 357,
+        "completedFrameId": 360,
+        "label": "bloom",
+        "ms": 0.613645
+      },
+      {
+        "queryId": 1782,
+        "frameId": 357,
+        "completedFrameId": 360,
+        "label": "scene",
+        "ms": 22.578697
+      },
+      {
+        "queryId": 1791,
+        "frameId": 359,
+        "completedFrameId": 361,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1790,
+        "frameId": 358,
+        "completedFrameId": 361,
+        "label": "minimap",
+        "ms": 0.066041
+      },
+      {
+        "queryId": 1789,
+        "frameId": 358,
+        "completedFrameId": 361,
+        "label": "final",
+        "ms": 1.565729
+      },
+      {
+        "queryId": 1788,
+        "frameId": 358,
+        "completedFrameId": 361,
+        "label": "bloom",
+        "ms": 0.572656
+      },
+      {
+        "queryId": 1787,
+        "frameId": 358,
+        "completedFrameId": 361,
+        "label": "scene",
+        "ms": 5.491093
+      },
+      {
+        "queryId": 1796,
+        "frameId": 360,
+        "completedFrameId": 362,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1795,
+        "frameId": 359,
+        "completedFrameId": 362,
+        "label": "minimap",
+        "ms": 0.06125
+      },
+      {
+        "queryId": 1794,
+        "frameId": 359,
+        "completedFrameId": 362,
+        "label": "final",
+        "ms": 1.29625
+      },
+      {
+        "queryId": 1793,
+        "frameId": 359,
+        "completedFrameId": 362,
+        "label": "bloom",
+        "ms": 0.647759
+      },
+      {
+        "queryId": 1792,
+        "frameId": 359,
+        "completedFrameId": 362,
+        "label": "scene",
+        "ms": 5.562343
+      },
+      {
+        "queryId": 1801,
+        "frameId": 361,
+        "completedFrameId": 363,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1800,
+        "frameId": 360,
+        "completedFrameId": 363,
+        "label": "minimap",
+        "ms": 0.066093
+      },
+      {
+        "queryId": 1799,
+        "frameId": 360,
+        "completedFrameId": 363,
+        "label": "final",
+        "ms": 1.602708
+      },
+      {
+        "queryId": 1798,
+        "frameId": 360,
+        "completedFrameId": 363,
+        "label": "bloom",
+        "ms": 0.598385
+      },
+      {
+        "queryId": 1797,
+        "frameId": 360,
+        "completedFrameId": 363,
+        "label": "scene",
+        "ms": 30.0675
+      },
+      {
+        "queryId": 1806,
+        "frameId": 362,
+        "completedFrameId": 364,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1805,
+        "frameId": 361,
+        "completedFrameId": 364,
+        "label": "minimap",
+        "ms": 0.064739
+      },
+      {
+        "queryId": 1804,
+        "frameId": 361,
+        "completedFrameId": 364,
+        "label": "final",
+        "ms": 1.490312
+      },
+      {
+        "queryId": 1803,
+        "frameId": 361,
+        "completedFrameId": 364,
+        "label": "bloom",
+        "ms": 0.629843
+      },
+      {
+        "queryId": 1802,
+        "frameId": 361,
+        "completedFrameId": 364,
+        "label": "scene",
+        "ms": 7.010989
+      },
+      {
+        "queryId": 1807,
+        "frameId": 362,
+        "completedFrameId": 365,
+        "label": "scene",
+        "ms": 5.513488
+      },
+      {
+        "queryId": 1816,
+        "frameId": 364,
+        "completedFrameId": 366,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1815,
+        "frameId": 363,
+        "completedFrameId": 366,
+        "label": "minimap",
+        "ms": 0.063072
+      },
+      {
+        "queryId": 1814,
+        "frameId": 363,
+        "completedFrameId": 366,
+        "label": "final",
+        "ms": 1.357916
+      },
+      {
+        "queryId": 1813,
+        "frameId": 363,
+        "completedFrameId": 366,
+        "label": "bloom",
+        "ms": 0.576302
+      },
+      {
+        "queryId": 1812,
+        "frameId": 363,
+        "completedFrameId": 366,
+        "label": "scene",
+        "ms": 6.687186
+      },
+      {
+        "queryId": 1811,
+        "frameId": 363,
+        "completedFrameId": 366,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1810,
+        "frameId": 362,
+        "completedFrameId": 366,
+        "label": "minimap",
+        "ms": 0.066197
+      },
+      {
+        "queryId": 1809,
+        "frameId": 362,
+        "completedFrameId": 366,
+        "label": "final",
+        "ms": 1.671927
+      },
+      {
+        "queryId": 1808,
+        "frameId": 362,
+        "completedFrameId": 366,
+        "label": "bloom",
+        "ms": 0.684166
+      },
+      {
+        "queryId": 1819,
+        "frameId": 364,
+        "completedFrameId": 367,
+        "label": "final",
+        "ms": 26.509739
+      },
+      {
+        "queryId": 1818,
+        "frameId": 364,
+        "completedFrameId": 367,
+        "label": "bloom",
+        "ms": 0.622864
+      },
+      {
+        "queryId": 1817,
+        "frameId": 364,
+        "completedFrameId": 367,
+        "label": "scene",
+        "ms": 17.797082
+      },
+      {
+        "queryId": 1826,
+        "frameId": 366,
+        "completedFrameId": 368,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1825,
+        "frameId": 365,
+        "completedFrameId": 368,
+        "label": "minimap",
+        "ms": 0.073749
+      },
+      {
+        "queryId": 1824,
+        "frameId": 365,
+        "completedFrameId": 368,
+        "label": "final",
+        "ms": 1.545468
+      },
+      {
+        "queryId": 1823,
+        "frameId": 365,
+        "completedFrameId": 368,
+        "label": "bloom",
+        "ms": 0.673333
+      },
+      {
+        "queryId": 1822,
+        "frameId": 365,
+        "completedFrameId": 368,
+        "label": "scene",
+        "ms": 5.671509
+      },
+      {
+        "queryId": 1821,
+        "frameId": 365,
+        "completedFrameId": 368,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1820,
+        "frameId": 364,
+        "completedFrameId": 368,
+        "label": "minimap",
+        "ms": 0.063177
+      },
+      {
+        "queryId": 1831,
+        "frameId": 367,
+        "completedFrameId": 369,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1830,
+        "frameId": 366,
+        "completedFrameId": 369,
+        "label": "minimap",
+        "ms": 0.069218
+      },
+      {
+        "queryId": 1829,
+        "frameId": 366,
+        "completedFrameId": 369,
+        "label": "final",
+        "ms": 1.723906
+      },
+      {
+        "queryId": 1828,
+        "frameId": 366,
+        "completedFrameId": 369,
+        "label": "bloom",
+        "ms": 0.705364
+      },
+      {
+        "queryId": 1827,
+        "frameId": 366,
+        "completedFrameId": 369,
+        "label": "scene",
+        "ms": 5.547551
+      },
+      {
+        "queryId": 1836,
+        "frameId": 368,
+        "completedFrameId": 370,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1835,
+        "frameId": 367,
+        "completedFrameId": 370,
+        "label": "minimap",
+        "ms": 0.06552
+      },
+      {
+        "queryId": 1834,
+        "frameId": 367,
+        "completedFrameId": 370,
+        "label": "final",
+        "ms": 1.477968
+      },
+      {
+        "queryId": 1833,
+        "frameId": 367,
+        "completedFrameId": 370,
+        "label": "bloom",
+        "ms": 0.601406
+      },
+      {
+        "queryId": 1832,
+        "frameId": 367,
+        "completedFrameId": 370,
+        "label": "scene",
+        "ms": 5.472968
+      },
+      {
+        "queryId": 1841,
+        "frameId": 369,
+        "completedFrameId": 371,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1840,
+        "frameId": 368,
+        "completedFrameId": 371,
+        "label": "minimap",
+        "ms": 0.064687
+      },
+      {
+        "queryId": 1839,
+        "frameId": 368,
+        "completedFrameId": 371,
+        "label": "final",
+        "ms": 1.598125
+      },
+      {
+        "queryId": 1838,
+        "frameId": 368,
+        "completedFrameId": 371,
+        "label": "bloom",
+        "ms": 0.647604
+      },
+      {
+        "queryId": 1837,
+        "frameId": 368,
+        "completedFrameId": 371,
+        "label": "scene",
+        "ms": 22.223332
+      },
+      {
+        "queryId": 1846,
+        "frameId": 370,
+        "completedFrameId": 372,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1845,
+        "frameId": 369,
+        "completedFrameId": 372,
+        "label": "minimap",
+        "ms": 0.062291
+      },
+      {
+        "queryId": 1844,
+        "frameId": 369,
+        "completedFrameId": 372,
+        "label": "final",
+        "ms": 1.585208
+      },
+      {
+        "queryId": 1843,
+        "frameId": 369,
+        "completedFrameId": 372,
+        "label": "bloom",
+        "ms": 0.67901
+      },
+      {
+        "queryId": 1842,
+        "frameId": 369,
+        "completedFrameId": 372,
+        "label": "scene",
+        "ms": 5.40552
+      },
+      {
+        "queryId": 1851,
+        "frameId": 371,
+        "completedFrameId": 373,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1850,
+        "frameId": 370,
+        "completedFrameId": 373,
+        "label": "minimap",
+        "ms": 0.064322
+      },
+      {
+        "queryId": 1849,
+        "frameId": 370,
+        "completedFrameId": 373,
+        "label": "final",
+        "ms": 1.761979
+      },
+      {
+        "queryId": 1848,
+        "frameId": 370,
+        "completedFrameId": 373,
+        "label": "bloom",
+        "ms": 0.699843
+      },
+      {
+        "queryId": 1847,
+        "frameId": 370,
+        "completedFrameId": 373,
+        "label": "scene",
+        "ms": 24.88453
+      },
+      {
+        "queryId": 1856,
+        "frameId": 372,
+        "completedFrameId": 374,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1855,
+        "frameId": 371,
+        "completedFrameId": 374,
+        "label": "minimap",
+        "ms": 0.063437
+      },
+      {
+        "queryId": 1854,
+        "frameId": 371,
+        "completedFrameId": 374,
+        "label": "final",
+        "ms": 1.531614
+      },
+      {
+        "queryId": 1853,
+        "frameId": 371,
+        "completedFrameId": 374,
+        "label": "bloom",
+        "ms": 0.626875
+      },
+      {
+        "queryId": 1852,
+        "frameId": 371,
+        "completedFrameId": 374,
+        "label": "scene",
+        "ms": 5.698228
+      },
+      {
+        "queryId": 1861,
+        "frameId": 373,
+        "completedFrameId": 375,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1860,
+        "frameId": 372,
+        "completedFrameId": 375,
+        "label": "minimap",
+        "ms": 0.067916
+      },
+      {
+        "queryId": 1859,
+        "frameId": 372,
+        "completedFrameId": 375,
+        "label": "final",
+        "ms": 1.972916
+      },
+      {
+        "queryId": 1858,
+        "frameId": 372,
+        "completedFrameId": 375,
+        "label": "bloom",
+        "ms": 0.626562
+      },
+      {
+        "queryId": 1857,
+        "frameId": 372,
+        "completedFrameId": 375,
+        "label": "scene",
+        "ms": 5.665936
+      },
+      {
+        "queryId": 1866,
+        "frameId": 374,
+        "completedFrameId": 376,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1865,
+        "frameId": 373,
+        "completedFrameId": 376,
+        "label": "minimap",
+        "ms": 0.064062
+      },
+      {
+        "queryId": 1864,
+        "frameId": 373,
+        "completedFrameId": 376,
+        "label": "final",
+        "ms": 1.702343
+      },
+      {
+        "queryId": 1863,
+        "frameId": 373,
+        "completedFrameId": 376,
+        "label": "bloom",
+        "ms": 0.656718
+      },
+      {
+        "queryId": 1862,
+        "frameId": 373,
+        "completedFrameId": 376,
+        "label": "scene",
+        "ms": 7.079947
+      },
+      {
+        "queryId": 1871,
+        "frameId": 375,
+        "completedFrameId": 377,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1870,
+        "frameId": 374,
+        "completedFrameId": 377,
+        "label": "minimap",
+        "ms": 0.061458
+      },
+      {
+        "queryId": 1869,
+        "frameId": 374,
+        "completedFrameId": 377,
+        "label": "final",
+        "ms": 1.610572
+      },
+      {
+        "queryId": 1868,
+        "frameId": 374,
+        "completedFrameId": 377,
+        "label": "bloom",
+        "ms": 0.811354
+      },
+      {
+        "queryId": 1867,
+        "frameId": 374,
+        "completedFrameId": 377,
+        "label": "scene",
+        "ms": 17.510207
+      },
+      {
+        "queryId": 1876,
+        "frameId": 376,
+        "completedFrameId": 378,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1875,
+        "frameId": 375,
+        "completedFrameId": 378,
+        "label": "minimap",
+        "ms": 0.063281
+      },
+      {
+        "queryId": 1874,
+        "frameId": 375,
+        "completedFrameId": 378,
+        "label": "final",
+        "ms": 1.64901
+      },
+      {
+        "queryId": 1873,
+        "frameId": 375,
+        "completedFrameId": 378,
+        "label": "bloom",
+        "ms": 1.173072
+      },
+      {
+        "queryId": 1872,
+        "frameId": 375,
+        "completedFrameId": 378,
+        "label": "scene",
+        "ms": 5.694634
+      },
+      {
+        "queryId": 1881,
+        "frameId": 377,
+        "completedFrameId": 379,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1880,
+        "frameId": 376,
+        "completedFrameId": 379,
+        "label": "minimap",
+        "ms": 0.064635
+      },
+      {
+        "queryId": 1879,
+        "frameId": 376,
+        "completedFrameId": 379,
+        "label": "final",
+        "ms": 1.46526
+      },
+      {
+        "queryId": 1878,
+        "frameId": 376,
+        "completedFrameId": 379,
+        "label": "bloom",
+        "ms": 0.626562
+      },
+      {
+        "queryId": 1877,
+        "frameId": 376,
+        "completedFrameId": 379,
+        "label": "scene",
+        "ms": 39.76901
+      },
+      {
+        "queryId": 1886,
+        "frameId": 378,
+        "completedFrameId": 380,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1885,
+        "frameId": 377,
+        "completedFrameId": 380,
+        "label": "minimap",
+        "ms": 0.064218
+      },
+      {
+        "queryId": 1884,
+        "frameId": 377,
+        "completedFrameId": 380,
+        "label": "final",
+        "ms": 1.607395
+      },
+      {
+        "queryId": 1883,
+        "frameId": 377,
+        "completedFrameId": 380,
+        "label": "bloom",
+        "ms": 0.617656
+      },
+      {
+        "queryId": 1882,
+        "frameId": 377,
+        "completedFrameId": 380,
+        "label": "scene",
+        "ms": 5.55828
+      },
+      {
+        "queryId": 1891,
+        "frameId": 379,
+        "completedFrameId": 381,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1890,
+        "frameId": 378,
+        "completedFrameId": 381,
+        "label": "minimap",
+        "ms": 0.068541
+      },
+      {
+        "queryId": 1889,
+        "frameId": 378,
+        "completedFrameId": 381,
+        "label": "final",
+        "ms": 1.791145
+      },
+      {
+        "queryId": 1888,
+        "frameId": 378,
+        "completedFrameId": 381,
+        "label": "bloom",
+        "ms": 0.627291
+      },
+      {
+        "queryId": 1887,
+        "frameId": 378,
+        "completedFrameId": 381,
+        "label": "scene",
+        "ms": 5.546822
+      },
+      {
+        "queryId": 1896,
+        "frameId": 380,
+        "completedFrameId": 382,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1895,
+        "frameId": 379,
+        "completedFrameId": 382,
+        "label": "minimap",
+        "ms": 0.076301
+      },
+      {
+        "queryId": 1894,
+        "frameId": 379,
+        "completedFrameId": 382,
+        "label": "final",
+        "ms": 2.869687
+      },
+      {
+        "queryId": 1893,
+        "frameId": 379,
+        "completedFrameId": 382,
+        "label": "bloom",
+        "ms": 0.671197
+      },
+      {
+        "queryId": 1892,
+        "frameId": 379,
+        "completedFrameId": 382,
+        "label": "scene",
+        "ms": 6.383801
+      },
+      {
+        "queryId": 1897,
+        "frameId": 380,
+        "completedFrameId": 383,
+        "label": "scene",
+        "ms": 5.660051
+      },
+      {
+        "queryId": 1906,
+        "frameId": 382,
+        "completedFrameId": 384,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1905,
+        "frameId": 381,
+        "completedFrameId": 384,
+        "label": "minimap",
+        "ms": 0.064479
+      },
+      {
+        "queryId": 1904,
+        "frameId": 381,
+        "completedFrameId": 384,
+        "label": "final",
+        "ms": 1.709947
+      },
+      {
+        "queryId": 1903,
+        "frameId": 381,
+        "completedFrameId": 384,
+        "label": "bloom",
+        "ms": 0.814843
+      },
+      {
+        "queryId": 1902,
+        "frameId": 381,
+        "completedFrameId": 384,
+        "label": "scene",
+        "ms": 5.35125
+      },
+      {
+        "queryId": 1901,
+        "frameId": 381,
+        "completedFrameId": 384,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1900,
+        "frameId": 380,
+        "completedFrameId": 384,
+        "label": "minimap",
+        "ms": 0.064322
+      },
+      {
+        "queryId": 1899,
+        "frameId": 380,
+        "completedFrameId": 384,
+        "label": "final",
+        "ms": 1.777656
+      },
+      {
+        "queryId": 1898,
+        "frameId": 380,
+        "completedFrameId": 384,
+        "label": "bloom",
+        "ms": 0.830572
+      },
+      {
+        "queryId": 1911,
+        "frameId": 383,
+        "completedFrameId": 385,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1910,
+        "frameId": 382,
+        "completedFrameId": 385,
+        "label": "minimap",
+        "ms": 0.062968
+      },
+      {
+        "queryId": 1909,
+        "frameId": 382,
+        "completedFrameId": 385,
+        "label": "final",
+        "ms": 1.561406
+      },
+      {
+        "queryId": 1908,
+        "frameId": 382,
+        "completedFrameId": 385,
+        "label": "bloom",
+        "ms": 0.642083
+      },
+      {
+        "queryId": 1907,
+        "frameId": 382,
+        "completedFrameId": 385,
+        "label": "scene",
+        "ms": 16.067916
+      },
+      {
+        "queryId": 1913,
+        "frameId": 383,
+        "completedFrameId": 386,
+        "label": "bloom",
+        "ms": 0.641822
+      },
+      {
+        "queryId": 1912,
+        "frameId": 383,
+        "completedFrameId": 386,
+        "label": "scene",
+        "ms": 7.715155
+      },
+      {
+        "queryId": 1921,
+        "frameId": 385,
+        "completedFrameId": 387,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1920,
+        "frameId": 384,
+        "completedFrameId": 387,
+        "label": "minimap",
+        "ms": 0.065156
+      },
+      {
+        "queryId": 1919,
+        "frameId": 384,
+        "completedFrameId": 387,
+        "label": "final",
+        "ms": 1.588385
+      },
+      {
+        "queryId": 1918,
+        "frameId": 384,
+        "completedFrameId": 387,
+        "label": "bloom",
+        "ms": 0.615364
+      },
+      {
+        "queryId": 1917,
+        "frameId": 384,
+        "completedFrameId": 387,
+        "label": "scene",
+        "ms": 19.08453
+      },
+      {
+        "queryId": 1916,
+        "frameId": 384,
+        "completedFrameId": 387,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1915,
+        "frameId": 383,
+        "completedFrameId": 387,
+        "label": "minimap",
+        "ms": 0.064531
+      },
+      {
+        "queryId": 1914,
+        "frameId": 383,
+        "completedFrameId": 387,
+        "label": "final",
+        "ms": 1.563697
+      },
+      {
+        "queryId": 1925,
+        "frameId": 385,
+        "completedFrameId": 388,
+        "label": "minimap",
+        "ms": 0.070208
+      },
+      {
+        "queryId": 1924,
+        "frameId": 385,
+        "completedFrameId": 388,
+        "label": "final",
+        "ms": 1.546927
+      },
+      {
+        "queryId": 1923,
+        "frameId": 385,
+        "completedFrameId": 388,
+        "label": "bloom",
+        "ms": 0.652187
+      },
+      {
+        "queryId": 1922,
+        "frameId": 385,
+        "completedFrameId": 388,
+        "label": "scene",
+        "ms": 51.491145
+      },
+      {
+        "queryId": 1931,
+        "frameId": 387,
+        "completedFrameId": 389,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1930,
+        "frameId": 386,
+        "completedFrameId": 389,
+        "label": "minimap",
+        "ms": 0.069479
+      },
+      {
+        "queryId": 1929,
+        "frameId": 386,
+        "completedFrameId": 389,
+        "label": "final",
+        "ms": 1.618072
+      },
+      {
+        "queryId": 1928,
+        "frameId": 386,
+        "completedFrameId": 389,
+        "label": "bloom",
+        "ms": 0.726093
+      },
+      {
+        "queryId": 1927,
+        "frameId": 386,
+        "completedFrameId": 389,
+        "label": "scene",
+        "ms": 5.708176
+      },
+      {
+        "queryId": 1926,
+        "frameId": 386,
+        "completedFrameId": 389,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1936,
+        "frameId": 388,
+        "completedFrameId": 390,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1935,
+        "frameId": 387,
+        "completedFrameId": 390,
+        "label": "minimap",
+        "ms": 0.070677
+      },
+      {
+        "queryId": 1934,
+        "frameId": 387,
+        "completedFrameId": 390,
+        "label": "final",
+        "ms": 1.827916
+      },
+      {
+        "queryId": 1933,
+        "frameId": 387,
+        "completedFrameId": 390,
+        "label": "bloom",
+        "ms": 0.683854
+      },
+      {
+        "queryId": 1932,
+        "frameId": 387,
+        "completedFrameId": 390,
+        "label": "scene",
+        "ms": 5.928905
+      },
+      {
+        "queryId": 1941,
+        "frameId": 389,
+        "completedFrameId": 391,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1940,
+        "frameId": 388,
+        "completedFrameId": 391,
+        "label": "minimap",
+        "ms": 0.093072
+      },
+      {
+        "queryId": 1939,
+        "frameId": 388,
+        "completedFrameId": 391,
+        "label": "final",
+        "ms": 1.760572
+      },
+      {
+        "queryId": 1938,
+        "frameId": 388,
+        "completedFrameId": 391,
+        "label": "bloom",
+        "ms": 0.70026
+      },
+      {
+        "queryId": 1937,
+        "frameId": 388,
+        "completedFrameId": 391,
+        "label": "scene",
+        "ms": 8.167968
+      },
+      {
+        "queryId": 1946,
+        "frameId": 390,
+        "completedFrameId": 392,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1945,
+        "frameId": 389,
+        "completedFrameId": 392,
+        "label": "minimap",
+        "ms": 0.069427
+      },
+      {
+        "queryId": 1944,
+        "frameId": 389,
+        "completedFrameId": 392,
+        "label": "final",
+        "ms": 1.751145
+      },
+      {
+        "queryId": 1943,
+        "frameId": 389,
+        "completedFrameId": 392,
+        "label": "bloom",
+        "ms": 0.637812
+      },
+      {
+        "queryId": 1942,
+        "frameId": 389,
+        "completedFrameId": 392,
+        "label": "scene",
+        "ms": 7.205051
+      },
+      {
+        "queryId": 1951,
+        "frameId": 391,
+        "completedFrameId": 393,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1950,
+        "frameId": 390,
+        "completedFrameId": 393,
+        "label": "minimap",
+        "ms": 0.0725
+      },
+      {
+        "queryId": 1949,
+        "frameId": 390,
+        "completedFrameId": 393,
+        "label": "final",
+        "ms": 1.502447
+      },
+      {
+        "queryId": 1948,
+        "frameId": 390,
+        "completedFrameId": 393,
+        "label": "bloom",
+        "ms": 0.708125
+      },
+      {
+        "queryId": 1947,
+        "frameId": 390,
+        "completedFrameId": 393,
+        "label": "scene",
+        "ms": 6.193541
+      },
+      {
+        "queryId": 1954,
+        "frameId": 391,
+        "completedFrameId": 394,
+        "label": "final",
+        "ms": 1.486197
+      },
+      {
+        "queryId": 1953,
+        "frameId": 391,
+        "completedFrameId": 394,
+        "label": "bloom",
+        "ms": 0.69177
+      },
+      {
+        "queryId": 1952,
+        "frameId": 391,
+        "completedFrameId": 394,
+        "label": "scene",
+        "ms": 6.011302
+      },
+      {
+        "queryId": 1961,
+        "frameId": 393,
+        "completedFrameId": 395,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1960,
+        "frameId": 392,
+        "completedFrameId": 395,
+        "label": "minimap",
+        "ms": 0.066302
+      },
+      {
+        "queryId": 1959,
+        "frameId": 392,
+        "completedFrameId": 395,
+        "label": "final",
+        "ms": 1.491302
+      },
+      {
+        "queryId": 1958,
+        "frameId": 392,
+        "completedFrameId": 395,
+        "label": "bloom",
+        "ms": 0.619166
+      },
+      {
+        "queryId": 1957,
+        "frameId": 392,
+        "completedFrameId": 395,
+        "label": "scene",
+        "ms": 21.745988
+      },
+      {
+        "queryId": 1956,
+        "frameId": 392,
+        "completedFrameId": 395,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1955,
+        "frameId": 391,
+        "completedFrameId": 395,
+        "label": "minimap",
+        "ms": 0.069635
+      },
+      {
+        "queryId": 1966,
+        "frameId": 394,
+        "completedFrameId": 396,
+        "label": "shadow",
+        "ms": 0.000052
+      },
+      {
+        "queryId": 1965,
+        "frameId": 393,
+        "completedFrameId": 396,
+        "label": "minimap",
+        "ms": 0.065468
+      },
+      {
+        "queryId": 1964,
+        "frameId": 393,
+        "completedFrameId": 396,
+        "label": "final",
+        "ms": 1.647656
+      },
+      {
+        "queryId": 1963,
+        "frameId": 393,
+        "completedFrameId": 396,
+        "label": "bloom",
+        "ms": 0.631822
+      },
+      {
+        "queryId": 1962,
+        "frameId": 393,
+        "completedFrameId": 396,
+        "label": "scene",
+        "ms": 5.705312
+      },
+      {
+        "queryId": 1969,
+        "frameId": 394,
+        "completedFrameId": 397,
+        "label": "final",
+        "ms": 1.634479
+      },
+      {
+        "queryId": 1968,
+        "frameId": 394,
+        "completedFrameId": 397,
+        "label": "bloom",
+        "ms": 0.713958
+      },
+      {
+        "queryId": 1967,
+        "frameId": 394,
+        "completedFrameId": 397,
+        "label": "scene",
+        "ms": 5.542342
+      },
+      {
+        "queryId": 1973,
+        "frameId": 395,
+        "completedFrameId": 398,
+        "label": "bloom",
+        "ms": 0.758229
+      },
+      {
+        "queryId": 1972,
+        "frameId": 395,
+        "completedFrameId": 398,
+        "label": "scene",
+        "ms": 5.464426
+      },
+      {
+        "queryId": 1971,
+        "frameId": 395,
+        "completedFrameId": 398,
+        "label": "shadow",
+        "ms": 0
+      },
+      {
+        "queryId": 1970,
+        "frameId": 394,
+        "completedFrameId": 398,
+        "label": "minimap",
+        "ms": 0.067552
+      }
+    ],
+    "gpuStatus": {
+      "supported": true,
+      "pending": 17,
+      "dropped": 0,
+      "invalidated": 0,
+      "disjointEvents": 0,
+      "skipped": 0
+    },
+    "errors": [],
+    "player": [
+      0,
+      0,
+      -48.5
+    ],
+    "mode": "NORMAL"
+  }
+}
