@@ -818,16 +818,15 @@ export function createTutorialPassage({ interaction, hud, player, respawn, conne
     stageBulkhead.userData.stageBoundary = true
   }
 
-  // Reference 03: glazed cream brick over dark green tile, a damp concrete
-  // floor, pipes, caged lamps and lanterns, a green service door with a lit
-  // transom, and a window onto the moonlit platform.
+  // The ticket hall and its connected rooms use the same ashlar stone as the
+  // exterior station, with the existing dark green tiled wainscot below.
   retile(group, [
     [floorMat, k.concrete, 3],
-    [wallMat, k.brick, 0.46],
+    [wallMat, k.facadeStone, 2.05],
     [ceilingMat, k.ceiling, 3]
   ])
   dressWalls(group, {
-    walls: [k.brick],
+    walls: [k.facadeStone],
     finish: 'tile',
     name: 'tutorial-wall-dressing',
     clear: [{ minX: worldX(-83.5) - 0.7, maxX: worldX(-83.5) + 0.7, minZ: -28, maxZ: -27 }]
