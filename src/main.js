@@ -32,6 +32,8 @@ import { createCredits } from './ui/credits.js'
 import { createStoryPlayer } from './ui/story-player.js'
 import { createTitleBackdrop } from './ui/title-backdrop.js'
 import { introBeat } from './story/intro-beat.js'
+import { createTransitionPlayer } from './ui/transition-player.js'
+import { l3TransitionBeat } from './story/l3-transition-beat.js'
 import { createBoardingLevel } from './levels/boarding.js'
 import { LANDING_CAMERA, LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
 import { loadBoardingAssets } from './environment/nature-props.js'
@@ -338,7 +340,10 @@ const levelManager = createLevelManager({
       if (levelManager.getState() === state) levelManager.prefetch(next)
     }))
   },
-  onLeave: stopLevelMusic,
+  onLeave: () => {
+    stopLevelMusic()
+    releaseIdleLevel3Transition()
+  },
   onInputStateChange: () => {
     startPreparedIntro()
     syncInputState()
@@ -348,8 +353,14 @@ const levelManager = createLevelManager({
       await loadBoardingAssets()
       return ctx => createBoardingLevel({ ...ctx, renderCamera: camera })
     } },
+    // Level 2's Core ending calls advance(); it now plays the Level 2 → 3
+    // story beat, which builds Level 3 itself under black.
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
-      .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
+      .then(({ createMovingHeistLevel }) => ctx => {
+        prepareLevel3Transition()
+        startDevLevel3Cutscene()
+        return createMovingHeistLevel({ ...ctx, post, advance: beginLevel3Transition })
+      }) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
     { state: 'Ending', load: () => import('./levels/ending.js')
       .then(({ createEndingLevel, prefetchEndingPaintings }) => {
@@ -823,6 +834,8 @@ function devStartOptions() {
   if (target === 'level2') return { state: 'MovingHeist' }
   if (target === 'level3') return { state: 'Timewreck' }
   if (target === 'ending') return { state: 'Ending' }
+  // Level 2 → 3 story beat straight away (as if the Core was just taken).
+  if (target === 'l3cut') return { state: 'MovingHeist', levelOptions: { startAt: 'vault' }, cutscene: 'l3' }
   if (['level3-convergence', 'level3-mechanical', 'level3-passenger'].includes(target)) return { state: 'Timewreck', levelOptions: { startCarriage: target.slice(7) } }
   if (target === 'level3-security') return { state: 'Timewreck', levelOptions: { startCarriage: 'security' } }
   if (target === 'level3-relay') return { state: 'Timewreck', levelOptions: { startCarriage: 'relay' } }
@@ -831,6 +844,73 @@ function devStartOptions() {
   if (carriages.includes(target)) return { state: 'MovingHeist', levelOptions: { startAt: target } }
   console.warn(`?start=${target} is not a known start point`)
   return null
+}
+
+// ---------------------------------------------------------------
+// Level 2 → Level 3 story beat
+// ---------------------------------------------------------------
+// Prepared (images + audio fetched) whenever Level 2 is built, consumed once
+// when the Core ending calls advance(). While it runs it occupies the same
+// storyPlayer slot as the intro, so STORY input, pause blocking, music gating
+// and the minimap rules all apply unchanged.
+let level3Transition = null
+let devLevel3CutRun = -1
+
+function prepareLevel3Transition() {
+  if (level3Transition) return
+  const owner = createTransitionPlayer({ beat: l3TransitionBeat, renderer,
+    onRendererRestore: () => post.resize(),
+    isLevelReady: () => levelManager.getState() === 'Timewreck' && !levelManager.isTransitioning(),
+    onBlack() {
+      if (storyPlayer !== owner) return
+      // Already silent under the master fade; now actually stop them.
+      stopLevelMusic()
+      disposeGameplayDrone()
+      // Builds Level 3 (energy carried over) behind the opaque black.
+      levelManager.advance()
+    },
+    onComplete() {
+      if (storyPlayer !== owner) return
+      storyPlayer = null
+      playMusicForState(levelManager.getState())
+      hud.root.style.visibility = ''
+      hud.setVisible(true)
+      syncInputState()
+    } })
+  level3Transition = owner
+  owner.prefetch()
+}
+
+function beginLevel3Transition() {
+  if (!gameStarted) { levelManager.advance(); return }
+  if (storyPlayer?.active) return
+  if (!level3Transition) prepareLevel3Transition()
+  const owner = level3Transition
+  level3Transition = null
+  storyPlayer = owner
+  hud.setVisible(false)
+  owner.start()
+  syncInputState()
+}
+
+// A level teardown (restart, quit) drops an unused prepared beat; the next
+// Level 2 build prepares a fresh one.
+function releaseIdleLevel3Transition() {
+  if (!level3Transition || storyPlayer === level3Transition) return
+  level3Transition.cancel()
+  level3Transition = null
+}
+
+// DEV ?start=l3cut: once per run, as soon as Level 2 has finished loading.
+function startDevLevel3Cutscene() {
+  if (!import.meta.env?.DEV || devLevel3CutRun === storyRun || devStartOptions()?.cutscene !== 'l3') return
+  devLevel3CutRun = storyRun
+  const check = () => {
+    if (levelManager.getState() !== 'MovingHeist') return
+    if (levelManager.isTransitioning()) { requestAnimationFrame(check); return }
+    beginLevel3Transition()
+  }
+  requestAnimationFrame(check)
 }
 
 // Quit to title: tear the run down and rebuild the title screen's backdrop,
@@ -1041,7 +1121,8 @@ loop.add((delta) => {
   ranFullGameFrame = false
   if (storyPlayer?.active) {
     storyPlayer.update(delta)
-    if (storyPlayer?.showGame) ranFullGameFrame = updateGameFrame(delta, true)
+    // liveGame is false while the Level 2 → 3 beat fades over a frozen Level 2.
+    if (storyPlayer?.showGame && storyPlayer.liveGame !== false) ranFullGameFrame = updateGameFrame(delta, true)
     return
   }
   if (!gameStarted && titleBackdrop) {

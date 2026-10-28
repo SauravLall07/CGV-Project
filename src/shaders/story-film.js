@@ -7,6 +7,19 @@ export const FILM_RAIN = 0.025
 export const CARD_RAIN = 0.06
 export const SHARPEN = 0.35
 
+// Panel effects for later story beats (Level 2 → 3). uFx = 0 is the intro
+// look exactly; every effect term below is multiplied out when it is 0.
+export const FX_NONE = 0, FX_TREMOR = 1, FX_ROCKSLIDE = 2, FX_TIMEWARP = 3
+export const RING_DISPLACE = 0.006
+export const RING_GLOW = 0.15
+export const RING_WIDTH = 0.045
+export const WARP_DISPLACE = 0.004
+export const WARP_GHOST = 0.003
+export const WARP_GHOST_OPACITY = 0.35
+export const SLIP_OFFSET = 0.005
+const CHRONO_BLUE = 'vec3(0.2196, 0.7412, 0.9725)' // #38BDF8
+const glsl = value => Number(value).toFixed(5)
+
 // Both images have independent cover and motion transforms, so transitions
 // remain correctly framed even when future beats use different image sizes.
 export function createStoryFilm() {
@@ -32,7 +45,12 @@ export function createStoryFilm() {
     uPanA: { value: new THREE.Vector2() },
     uPanB: { value: new THREE.Vector2() },
     uZoomA: { value: 1 }, uZoomB: { value: 1 },
-    uMix: { value: 0 }, uTime: { value: 0 }, uFade: { value: 0 }
+    uMix: { value: 0 }, uTime: { value: 0 }, uFade: { value: 0 },
+    uFx: { value: FX_NONE }, uFxShake: { value: new THREE.Vector2() },
+    uRingCenter: { value: new THREE.Vector2(0.5, 0.5) }, uRingSquash: { value: 1 },
+    uRingA: { value: new THREE.Vector2() }, uRingB: { value: new THREE.Vector2() },
+    uWarp: { value: 0 }, uWarpPulseHz: { value: 0.7 },
+    uSlip: { value: new THREE.Vector3() }, uDust: { value: 0 }
   }
   const material = new THREE.ShaderMaterial({
     name: 'story-film', uniforms, depthTest: false, depthWrite: false,
@@ -57,6 +75,9 @@ export function createStoryFilm() {
       uniform sampler2D uTrain;
       uniform vec2 uTrainSize, uTrainCenter;
       uniform float uTrainHeight, uTrainBlur, uTrainRattle, uSteam, uSmokeClear, uSteamFront;
+      uniform float uFx, uRingSquash, uWarp, uWarpPulseHz, uDust;
+      uniform vec2 uFxShake, uRingCenter, uRingA, uRingB;
+      uniform vec3 uSlip;
       varying vec2 vUv;
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -99,6 +120,49 @@ export function createStoryFilm() {
         return (bandUv - 0.5) * extent + 0.5
           + clamp(pan, -(1.0 - extent) * 0.5, (1.0 - extent) * 0.5);
       }
+      // Expanding ellipse matching the ring drawn in the panel. ripple.x is
+      // the radius (image-width units), ripple.y its current strength.
+      float chronoRing(vec2 uv, vec2 ripple) {
+        if (ripple.y <= 0.0) return 0.0;
+        float dist = length((uv - uRingCenter) * vec2(1.0, 1.0 / uRingSquash));
+        float x = (dist - ripple.x) / ${glsl(RING_WIDTH)};
+        return exp(-x * x) * ripple.y;
+      }
+      float chronoBlue(vec3 c) { return smoothstep(0.10, 0.30, c.b - c.r); }
+      float warpPulse() { return 0.6 + 0.4 * sin(uTime * 6.283185 * uWarpPulseHz); }
+      // Displaces only the current panel's image coordinates.
+      vec2 panelEffect(vec2 uv) {
+        if (uFx < 0.5) return uv;
+        float ring = chronoRing(uv, uRingA) + chronoRing(uv, uRingB);
+        uv += normalize(uv - uRingCenter + 1e-5) * ring * ${glsl(RING_DISPLACE)};
+        if (uWarp > 0.0) {
+          float blue = chronoBlue(texture2D(uTexB, uv).rgb);
+          vec2 flow = vec2(cloudNoise(uv * 18.0 + vec2(uTime * 0.6, 0.0)),
+                           cloudNoise(uv * 18.0 + vec2(13.0, -uTime * 0.5))) - 0.5;
+          uv += flow * 2.0 * ${glsl(WARP_DISPLACE)} * blue * warpPulse() * uWarp;
+        }
+        if (uSlip.x > 0.0 && vUv.y > uSlip.y && vUv.y < uSlip.y + uSlip.z) uv.x += ${glsl(SLIP_OFFSET)} * uSlip.x;
+        return uv;
+      }
+      vec3 panelEffectColor(vec3 color, vec2 uv) {
+        if (uFx < 0.5) return color;
+        float ring = chronoRing(uv, uRingA) + chronoRing(uv, uRingB);
+        color += ${CHRONO_BLUE} * ring * ${glsl(RING_GLOW)};
+        if (uWarp > 0.0) {
+          vec3 ghost = texture2D(uTexB, uv - vec2(${glsl(WARP_GHOST)}, ${glsl(WARP_GHOST * 0.4)}) * warpPulse()).rgb;
+          color += ghost * chronoBlue(ghost) * ${glsl(WARP_GHOST_OPACITY)} * uWarp;
+        }
+        return color;
+      }
+      // Sparse grey specks drifting downward (rockslide dust), kept out of
+      // the subtitle area.
+      float dustSpecks(vec2 uv, float aspect, float scale, float speed, float seed) {
+        vec2 p = vec2(uv.x * aspect, uv.y) * scale + vec2(0.0, uTime * speed);
+        vec2 cell = floor(p), f = fract(p) - 0.5;
+        vec2 jitter = vec2(hash(cell + seed), hash(cell + seed + 7.7)) - 0.5;
+        float speck = step(0.94, hash(cell + seed * 3.1)) * (1.0 - smoothstep(0.04, 0.14, length(f - jitter * 0.6)));
+        return speck * smoothstep(0.2, 0.36, uv.y);
+      }
       void main() {
         if (vUv.y < uBand.x || vUv.y > uBand.y) {
           gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
@@ -107,10 +171,14 @@ export function createStoryFilm() {
         float aspect = uResolution.x / max(uResolution.y, 1.0);
         vec2 centred = (vUv - 0.5) * vec2(aspect, 1.0);
         vec2 imageUv = vUv;
-        vec3 a = sharpen(uTexA, cover(imageUv, uSizeA, uZoomA, uPanA), uSizeA);
-        vec2 bUv = cover(imageUv, uSizeB, uZoomB, uPanB);
-        vec3 b = sharpen(uTexB, bUv, uSizeB);
+        vec3 a = sharpen(uTexA, cover(imageUv, uSizeA, uZoomA, uPanA) + uFxShake, uSizeA);
+        vec2 bUv = panelEffect(cover(imageUv, uSizeB, uZoomB, uPanB) + uFxShake);
+        vec3 b = panelEffectColor(sharpen(uTexB, bUv, uSizeB), bUv);
         vec3 color = mix(a, b, clamp(uMix, 0.0, 1.0)) * uImage;
+        if (uDust > 0.0) {
+          float dust = max(dustSpecks(vUv, aspect, 34.0, 1.6, 1.0), dustSpecks(vUv, aspect, 21.0, 1.1, 5.0));
+          color = mix(color, vec3(0.72) * uImage, dust * uDust);
+        }
         float grain = hash(floor(vUv * uResolution) + floor(uTime * 24.0)) - 0.5;
         float vignette = smoothstep(0.15, 0.72, length(vUv - 0.5));
         float flicker = sin(uTime * 17.0) * sin(uTime * 7.3);

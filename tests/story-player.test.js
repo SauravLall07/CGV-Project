@@ -684,7 +684,7 @@ test('hidden handover runs the complete shared update with neutral input and a s
   assert.deepEqual(camera.position.toArray(), [10, 20, 30], 'warming collision must not replace the arrival shot')
   assert.deepEqual(calls.slice(0, 11), ['visual', 'hud stats', 'timer', 'time', 'level', 'player', 'camera collision', 'interaction', 'respawn', 'hud state', 'visual'])
   assert.equal(calls.filter(name => name === 'level').length, 10)
-  assert.match(main, /if \(storyPlayer\?\.showGame\) ranFullGameFrame = updateGameFrame\(delta, true\)/)
+  assert.match(main, /if \(storyPlayer\?\.showGame && storyPlayer\.liveGame !== false\) ranFullGameFrame = updateGameFrame\(delta, true\)/)
   const render = main.slice(main.indexOf('render(world, view) {'), main.indexOf('  afterRender:', main.indexOf('render(world, view) {')))
   assert.ok(render.indexOf('post.render(world, view)') < render.indexOf('minimap.render(renderer)'))
   assert.ok(render.indexOf('minimap.render(renderer)') < render.indexOf('storyPlayer.render()'))

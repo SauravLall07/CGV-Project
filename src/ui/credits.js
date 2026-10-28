@@ -154,6 +154,7 @@ function buildRollContent() {
     line('Narration voice generated with ElevenLabs (voice: David) (elevenlabs.io)'),
     line('Rain ambience generated with ElevenLabs (elevenlabs.io)'),
     line('Steam whistle sound generated with ElevenLabs (elevenlabs.io)'),
+    line('Rockslide rumble sound generated with ElevenLabs (elevenlabs.io)'),
     line('Ending background paintings — AI-generated with ChatGPT (OpenAI), edited for Chrono Express'),
     line('Physics library: cannon-es'),
     line('Built with Three.js', { size: '13px' }),
