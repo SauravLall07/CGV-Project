@@ -2176,9 +2176,11 @@ export function createMovingHeistLevel({
       root.add(section)
       const outline = makeOutline(planks)
       const support = roofSupport()
+      // Both sections arm on the approach, so the player sees the bridge go
+      // before stepping onto it rather than falling with it.
       addRewindMachine({
         z: section.position.z, handle: section, activeIn: 'roof',
-        triggerFrom: z0, triggerTo: z1, delay: 0.08, duration: 0.55,
+        triggerFrom: roofZ(a) - 1.2 + k * 0.4, triggerTo: z1, delay: 0.08, duration: 0.55,
         outlines: [outline],
         apply(p) {
           section.position.y = ROOF_Y - p * 4.2
