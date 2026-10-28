@@ -27,6 +27,7 @@ import { createSkyDome } from '../environment/sky-dome.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
+import { createSteamPuffs, fract, puffSeed, puffFade } from '../environment/steam.js'
 
 // Level 2 — "The Moving Heist".
 //
@@ -786,7 +787,7 @@ export function createMovingHeistLevel({
   const STEAM_PERIOD = 3.2
   const STEAM_BURST = 1.1
   const STEAM_WARN = 0.6
-  const STEAM_PUFFS = 10
+  const STEAM_PUFFS = 18
   const STEAM_NOZZLE_X = HAZARD_AISLE_X + 0.2
   const STEAM_HEIGHTS = [0.6, 1.4]
   const steamBanks = [
@@ -798,7 +799,6 @@ export function createMovingHeistLevel({
   flangeGeo.rotateZ(Math.PI / 2)
   const nozzleGeo = new THREE.CylinderGeometry(0.065, 0.085, 0.24, 14)
   nozzleGeo.rotateZ(Math.PI / 2)
-  const puffGeo = new THREE.IcosahedronGeometry(1, 1)
   const steamGroup = new THREE.Group()
   steamGroup.name = 'security-steam-vents'
   for (const bank of steamBanks) {
@@ -812,19 +812,12 @@ export function createMovingHeistLevel({
         steamGroup.add(nozzle)
       }
     }
-    bank.mat = new THREE.MeshLambertMaterial({
-      color: 0xe9e4da, transparent: true, opacity: 0, depthWrite: false
-    })
-    bank.puffs = new THREE.InstancedMesh(puffGeo, bank.mat, 2 * STEAM_HEIGHTS.length * STEAM_PUFFS)
-    bank.puffs.userData.noCameraCollision = true
-    bank.puffs.raycast = () => {} // steam never blocks interaction or vision rays
-    bank.puffs.frustumCulled = false
+    bank.steam = createSteamPuffs(2 * STEAM_HEIGHTS.length * STEAM_PUFFS, { color: 0xd6d0c4 })
     bank.density = 0
-    steamGroup.add(bank.puffs)
+    steamGroup.add(bank.steam.mesh)
   }
   root.add(steamGroup)
 
-  const steamDummy = new THREE.Object3D()
   let steamT = 0
   // 0 = clear, ~0.2 = warning plume, 1 = full burst.
   function steamDensity(phase) {
@@ -836,27 +829,30 @@ export function createMovingHeistLevel({
     for (const bank of steamBanks) {
       const phase = (steamT + bank.offset) % STEAM_PERIOD
       bank.density = steamDensity(phase)
-      bank.puffs.visible = bank.density > 0
-      if (!bank.puffs.visible) continue
-      bank.mat.opacity = 0.25 + 0.45 * bank.density
-      const reach = 0.25 + 0.75 * bank.density
+      bank.steam.mesh.visible = bank.density > 0
+      if (!bank.steam.mesh.visible) continue
+      const reach = 0.3 + 0.8 * bank.density
       let i = 0
       for (const s of [-1, 1]) {
         for (const y of STEAM_HEIGHTS) {
           for (let k = 0; k < STEAM_PUFFS; k++) {
-            const u = (k / STEAM_PUFFS + steamT * 1.8) % 1
-            steamDummy.position.set(
-              s * (STEAM_NOZZLE_X - 0.25 - u * reach),
-              y + u * 0.3 * bank.density,
-              bank.z + Math.sin(k * 1.7 + steamT * 3) * 0.14 * u
+            const seed = puffSeed(k + y * 7 + s * 3)
+            const u = fract(k / STEAM_PUFFS + seed * 0.05 + steamT * 1.6)
+            // Fast out of the nozzle, slowing as it billows.
+            const travel = 1 - (1 - u) * (1 - u)
+            const drift = Math.sin(seed * 40 + steamT * 2.6)
+            bank.steam.set(i++,
+              s * (STEAM_NOZZLE_X - 0.27 - travel * reach),
+              y + u * u * (0.2 + 0.35 * bank.density) + drift * 0.06 * u,
+              bank.z + Math.cos(seed * 23 + steamT * 2.1) * 0.16 * u,
+              (0.14 + u * 0.75) * (0.45 + 0.55 * bank.density),
+              puffFade(u) * (0.3 + 0.7 * bank.density),
+              seed * 6.28 + steamT * (seed - 0.5) * 1.4
             )
-            steamDummy.scale.setScalar((0.08 + u * 0.34) * (0.4 + 0.6 * bank.density))
-            steamDummy.updateMatrix()
-            bank.puffs.setMatrixAt(i++, steamDummy.matrix)
           }
         }
       }
-      bank.puffs.instanceMatrix.needsUpdate = true
+      bank.steam.commit()
     }
   }
   applySteam()
@@ -2194,7 +2190,7 @@ export function createMovingHeistLevel({
   // --- 4. Vent hatches (Freeze) ---------------------------------------------------
   const VENT_Z = roofZ(18.5)
   const VENT_PERIOD = 1.6
-  const VENT_PUFFS = 9
+  const VENT_PUFFS = 18
   let ventSteam = 0 // 0 clear .. 1 full blast, for the hit test
   {
     const grateMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.6, metalness: 0.8 })
@@ -2213,36 +2209,38 @@ export function createMovingHeistLevel({
       vents.add(hinge)
       lids.push(hinge)
     }
-    const steamMat = new THREE.MeshLambertMaterial({
-      color: 0xe9e4da, transparent: true, opacity: 0, depthWrite: false
-    })
-    const puffs = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), steamMat, 3 * VENT_PUFFS)
-    puffs.userData.noCameraCollision = true
-    puffs.raycast = () => {}
-    puffs.frustumCulled = false
-    vents.add(puffs)
+    // Moonlit rather than lamp-lit, so a cooler grey than the carriage steam.
+    const steam = createSteamPuffs(3 * VENT_PUFFS, { color: 0xb9c0c8 })
+    vents.add(steam.mesh)
     vents.position.set(0, ROOF_Y, VENT_Z)
     root.add(vents)
-    const dummy = new THREE.Object3D()
     registerCargoHazard(vents, (t) => {
       const u = ((t / VENT_PERIOD) % 1 + 1) % 1
       // Down, lids lifting (warning wisps), full blast, lids closing.
       const lift = u < 0.2 ? 0 : u < 0.32 ? (u - 0.2) / 0.12 : u < 0.9 ? 1 : 1 - (u - 0.9) / 0.1
       ventSteam = u < 0.32 ? (u < 0.2 ? 0 : 0.2) : u < 0.9 ? 1 : 0.3
       for (const hinge of lids) hinge.rotation.x = -lift * 1.1
-      steamMat.opacity = ventSteam * 0.6
-      puffs.visible = ventSteam > 0
+      steam.mesh.visible = ventSteam > 0
+      if (!steam.mesh.visible) return
       let i = 0
       for (const x of [-1.6, 0, 1.6]) {
         for (let k = 0; k < VENT_PUFFS; k++) {
-          const v = (k / VENT_PUFFS + t * 1.5) % 1
-          dummy.position.set(x + Math.sin(k * 2.1 + t * 3) * 0.2 * v, 0.2 + v * 2.4 * ventSteam, Math.cos(k * 1.3) * 0.2)
-          dummy.scale.setScalar((0.15 + v * 0.45) * Math.max(0.3, ventSteam))
-          dummy.updateMatrix()
-          puffs.setMatrixAt(i++, dummy.matrix)
+          const seed = puffSeed(k + x * 5)
+          const v = fract(k / VENT_PUFFS + seed * 0.05 + t * 1.2)
+          // Shoots up out of the grate, then slows and spreads; the train's
+          // headwind bends the top of each plume back toward the rear.
+          const rise = 1 - (1 - v) * (1 - v)
+          steam.set(i++,
+            x + Math.sin(seed * 40 + t * 2.4) * 0.25 * v,
+            0.15 + rise * 2.6 * ventSteam,
+            Math.cos(seed * 23 + t * 1.9) * 0.18 * v - v * v * 0.9 * ventSteam,
+            (0.25 + v * 1.1) * Math.max(0.35, ventSteam),
+            puffFade(v) * Math.max(0.3, ventSteam),
+            seed * 6.28 + t * (seed - 0.5) * 1.2
+          )
         }
       }
-      puffs.instanceMatrix.needsUpdate = true
+      steam.commit()
     })
   }
 
