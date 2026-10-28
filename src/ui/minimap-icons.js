@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { DOOR_W } from '../environment/carriage-bounds.js'
 
 // Unlit HUD sprites for the minimap camera. The main view stays on layer 0
 // (level geometry, MeshStandardMaterial, real lights). This module owns
@@ -26,8 +27,9 @@ const ICON_Y = {
 }
 
 const COLOR = {
-  ground: 0x10161f,
-  wall: 0x64748b,
+  ground: 0x233246,
+  wall: 0x91a4b9,
+  boundary: 0x547076,
   crate: 0xb45309,
   seat: 0x4a5c74,
   locker: 0x64748b,
@@ -96,6 +98,7 @@ function yawFromWorldForward(object, fallbackYaw) {
 }
 
 function obstacleKind(box) {
+  if (box.kind === 'boundary') return 'boundary'
   if (box.kind === 'crate' || box.kind === 'trunk' || box.type === 'crate') return 'crate'
   if (box.kind === 'seat') return 'seat'
   if (box.kind === 'locker' || box.kind === 'relaybox') return 'locker'
@@ -118,13 +121,22 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
   root.name = 'minimap-icons'
   root.layers.set(MINIMAP_LAYER)
   scene.add(root)
+  const grid = new THREE.GridHelper(120, 60, 0x34445a, 0x34445a)
+  Object.assign(grid.material, { transparent: true, opacity: 0.25, toneMapped: false, depthTest: false, depthWrite: false })
+  grid.renderOrder = -1
+  markIcon(grid)
+  root.add(grid)
 
   const wallMat = unlit(COLOR.wall)
+  const boundaryMat = unlit(COLOR.boundary)
   const crateMat = unlit(COLOR.crate)
   const seatMat = unlit(COLOR.seat)
   const lockerMat = unlit(COLOR.locker)
   const playerMat = unlit(COLOR.player)
+  const outlineMat = unlit(0x030810)
   const guardMat = unlit(COLOR.guard)
+  const floorMat = unlit(COLOR.ground)
+  const doorMat = unlit(0xc6a563)
   const beamMatTemplate = {
     color: COLOR.beam,
     transparent: true,
@@ -137,33 +149,46 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
   const playerGeo = triangleGeometry(0.85, 0.38)
   const guardGeo = triangleGeometry(0.7, 0.32)
   const beamGeo = wedgeGeometry(GUARD_VISION_DISTANCE, GUARD_VISION_ANGLE)
-  const groundGeo = new THREE.CircleGeometry(16, 48)
-  groundGeo.rotateX(-Math.PI / 2)
-
-  const ground = new THREE.Mesh(groundGeo, unlit(COLOR.ground))
-  ground.renderOrder = 0
-  markIcon(ground)
-  root.add(ground)
-
-  // Carriage-mode floor: scaled to the current car AABB instead of a
-  // follow-radius disc, so neighbouring cars don't read as map background.
-  const floor = new THREE.Mesh(planeGeo, unlit(COLOR.ground))
-  floor.renderOrder = 0
-  floor.visible = false
-  markIcon(floor)
-  root.add(floor)
+  function createFloorBatch(capacity) {
+    const batch = new THREE.InstancedMesh(planeGeo, floorMat, capacity)
+    batch.name = 'minimap-floors'
+    batch.frustumCulled = false
+    batch.renderOrder = 0
+    batch.visible = false
+    markIcon(batch)
+    root.add(batch)
+    return batch
+  }
+  let floor = createFloorBatch(8)
+  const doorIcons = new THREE.InstancedMesh(planeGeo, doorMat, 16)
+  doorIcons.name = 'minimap-doors'
+  doorIcons.frustumCulled = false
+  doorIcons.renderOrder = 2
+  doorIcons.count = 0
+  markIcon(doorIcons)
+  root.add(doorIcons)
 
   const playerIcon = new THREE.Mesh(playerGeo, playerMat)
   playerIcon.renderOrder = 4
   markIcon(playerIcon)
   root.add(playerIcon)
+  playerIcon.name = 'minimap-player'
+  const playerOutline = new THREE.Mesh(playerGeo, outlineMat)
+  playerOutline.renderOrder = 3.5
+  markIcon(playerOutline)
+  root.add(playerOutline)
 
-  const obstacleIcons = []
+  const obstacleBatches = new Map()
+  const obstacleMatrix = new THREE.Matrix4()
   const guardIcons = []
-  let lastObstacleLogKey = null
+  function setArrow(arrow, yaw, unitsPerPixel, pixels, length) {
+    arrow.rotation.y = yaw
+    arrow.scale.setScalar(unitsPerPixel * pixels / (length * 1.45))
+  }
 
   function materialForObstacle(box) {
     const kind = obstacleKind(box)
+    if (kind === 'boundary') return boundaryMat
     if (kind === 'crate') return crateMat
     if (kind === 'seat') return seatMat
     if (kind === 'locker') return lockerMat
@@ -184,56 +209,52 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
     }
   }
 
-  function syncObstacles(boxes, y, clip) {
-    const incoming = boxes || []
-    const list = incoming.filter((box) => boxOverlapsClip(box, clip))
-
-    // Temporary: prove icon creation vs clip filter when entering a car.
-    const logKey = clip?.key ?? null
-    if (logKey && logKey !== lastObstacleLogKey) {
-      lastObstacleLogKey = logKey
-      const samples = incoming.slice(0, 6).map((box) => ({
-        kind: box.kind || 'wall',
-        x: +((box.minX + box.maxX) * 0.5).toFixed(2),
-        z: +((box.minZ + box.maxZ) * 0.5).toFixed(2),
-        pass: boxOverlapsClip(box, clip)
-      }))
-      console.log('[minimap-obstacles] enter', logKey, {
-        created: incoming.length,
-        afterFilter: list.length,
-        clip: {
-          minX: clip.minX, maxX: clip.maxX, minZ: +clip.minZ.toFixed(2), maxZ: +clip.maxZ.toFixed(2)
-        },
-        samples
-      })
-    }
-    if (!clip) lastObstacleLogKey = null
-    resizePool(obstacleIcons, list.length, () => {
-      const mesh = new THREE.Mesh(planeGeo, wallMat)
-      mesh.renderOrder = 1
-      return {
-        root: mesh,
-        dispose() { /* shared geo/mat */ }
+  function syncObstacles(boxes, y, clip, unitsPerPixel) {
+    for (const batch of obstacleBatches.values()) batch.count = 0
+    for (const box of boxes || []) {
+      if (!boxOverlapsClip(box, clip)) continue
+      const material = materialForObstacle(box)
+      let batch = obstacleBatches.get(material)
+      if (!batch || batch.count === batch.instanceMatrix.count) {
+        const next = new THREE.InstancedMesh(planeGeo, material, batch ? batch.count * 2 : 32)
+        next.count = batch?.count ?? 0
+        next.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+        next.renderOrder = 1
+        next.frustumCulled = false
+        markIcon(next)
+        if (batch) {
+          next.instanceMatrix.array.set(batch.instanceMatrix.array)
+          root.remove(batch)
+          batch.dispose()
+        }
+        root.add(next)
+        obstacleBatches.set(material, next)
+        batch = next
       }
-    })
-    for (let i = 0; i < list.length; i++) {
-      const box = list[i]
-      const mesh = obstacleIcons[i].root
-      const w = Math.max(0.08, box.maxX - box.minX)
-      const d = Math.max(0.08, box.maxZ - box.minZ)
-      mesh.position.set((box.minX + box.maxX) * 0.5, y, (box.minZ + box.maxZ) * 0.5)
-      mesh.scale.set(w, 1, d)
-      mesh.material = materialForObstacle(box)
+      const wall = obstacleKind(box) === 'wall'
+      const w = Math.max(wall ? unitsPerPixel * 1.25 : 0.08, box.maxX - box.minX)
+      const d = Math.max(wall ? unitsPerPixel * 1.25 : 0.08, box.maxZ - box.minZ)
+      obstacleMatrix.makeScale(w, 1, d)
+      obstacleMatrix.setPosition((box.minX + box.maxX) * 0.5, y, (box.minZ + box.maxZ) * 0.5)
+      batch.setMatrixAt(batch.count++, obstacleMatrix)
+    }
+    for (const batch of obstacleBatches.values()) {
+      batch.visible = batch.count > 0
+      if (batch.count) batch.instanceMatrix.needsUpdate = true
     }
   }
 
-  function syncGuards(guards, yBeam, yActor, clip) {
+  function syncGuards(guards, yBeam, yActor, clip, unitsPerPixel) {
     const list = (guards || []).filter((guard) => {
+      for (let node = guard.group; node; node = node.parent) {
+        if (!node.visible) return false
+      }
       const p = guard.group.position
       return pointInClip(p.x, p.z, clip)
     })
     resizePool(guardIcons, list.length, () => {
       const group = new THREE.Group()
+      group.name = 'minimap-guard'
       const beam = new THREE.Mesh(beamGeo, unlit(COLOR.beam, beamMatTemplate))
       beam.renderOrder = 2
       const arrow = new THREE.Mesh(guardGeo, guardMat)
@@ -262,7 +283,7 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
       entry.root.position.set(p.x, 0, p.z)
       entry.root.rotation.y = 0
       entry.arrow.position.y = yActor
-      entry.arrow.rotation.y = bodyYaw
+      setArrow(entry.arrow, bodyYaw, unitsPerPixel, 7, 0.7)
       entry.beam.position.y = yBeam
       entry.beam.rotation.y = beamYaw
       const alert = guard.state === 'ALERT'
@@ -271,51 +292,69 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
     }
   }
 
-  function update({ clip = null, extraObstacles = null } = {}) {
+  function update({ clip = null, extraObstacles = null, floorVolumes = null,
+    detailClip = null, unitsPerPixel = 0.1, doors = [] } = {}) {
     const origin = player.mesh.position
     const yaw = player.mesh.rotation.y
     const y0 = origin.y
+    grid.position.set(Math.floor(origin.x / 2) * 2, y0, Math.floor(origin.z / 2) * 2)
 
-    if (clip) {
-      ground.visible = false
-      floor.visible = true
-      floor.position.set(
-        (clip.minX + clip.maxX) * 0.5,
-        y0 + ICON_Y.ground,
-        (clip.minZ + clip.maxZ) * 0.5
-      )
-      floor.scale.set(
-        Math.max(0.2, clip.maxX - clip.minX),
-        1,
-        Math.max(0.2, clip.maxZ - clip.minZ)
-      )
-    } else {
-      floor.visible = false
-      ground.visible = true
-      ground.position.set(origin.x, y0 + ICON_Y.ground, origin.z)
+    const floors = floorVolumes ?? (clip ? [clip] : [])
+    if (floors.length > floor.instanceMatrix.count) {
+      const previous = floor
+      floor = createFloorBatch(floors.length)
+      root.remove(previous)
+      previous.dispose()
     }
+    floor.visible = floors.length > 0
+    floor.count = floors.length
+    for (let i = 0; i < floors.length; i++) {
+      const v = floors[i]
+      obstacleMatrix.makeScale(v.maxX - v.minX, 1, v.maxZ - v.minZ)
+      obstacleMatrix.setPosition((v.minX + v.maxX) / 2, y0 + ICON_Y.ground, (v.minZ + v.maxZ) / 2)
+      floor.setMatrixAt(i, obstacleMatrix)
+    }
+    floor.instanceMatrix.needsUpdate = true
+    doorIcons.count = doors.length
+    for (let i = 0; i < doors.length; i++) {
+      const door = doors[i]
+      obstacleMatrix.makeScale(DOOR_W, 1, Math.max(0.12, unitsPerPixel * 2))
+      obstacleMatrix.setPosition(door.x, y0 + ICON_Y.obstacle, door.z)
+      doorIcons.setMatrixAt(i, obstacleMatrix)
+    }
+    doorIcons.instanceMatrix.needsUpdate = true
 
     playerIcon.position.set(origin.x, y0 + ICON_Y.actor, origin.z)
-    playerIcon.rotation.y = yawFromWorldForward(player.mesh, yaw)
+    setArrow(playerIcon, yawFromWorldForward(player.mesh, yaw), unitsPerPixel, 12, 0.85)
+    playerOutline.position.copy(playerIcon.position)
+    playerOutline.rotation.copy(playerIcon.rotation)
+    playerOutline.scale.copy(playerIcon.scale).multiplyScalar(1.4)
 
     const obstacles = [
-      ...(getObstacles?.() ?? []),
+      ...(getObstacles?.() ?? []).filter(box => boxOverlapsClip(box, detailClip)),
       ...(extraObstacles ?? [])
     ]
     // Same MeshBasicMaterial AABB pool as Boarding. Clip is world XZ;
     // L1 colliders and L2 crate AABBs are already world-space.
-    syncObstacles(obstacles, y0 + ICON_Y.obstacle, clip)
-    syncGuards(getGuards?.() ?? null, y0 + ICON_Y.beam, y0 + ICON_Y.actor, clip)
+    syncObstacles(obstacles, y0 + ICON_Y.obstacle, clip, unitsPerPixel)
+    syncGuards(getGuards?.() ?? null, y0 + ICON_Y.beam, y0 + ICON_Y.actor, detailClip ?? clip, unitsPerPixel)
   }
 
   function dispose() {
-    resizePool(obstacleIcons, 0, () => ({}))
+    for (const batch of obstacleBatches.values()) batch.dispose()
+    obstacleBatches.clear()
     resizePool(guardIcons, 0, () => ({}))
     scene.remove(root)
-    ground.material.dispose()
-    floor.material.dispose()
+    grid.geometry.dispose()
+    grid.material.dispose()
+    floorMat.dispose()
+    floor.dispose()
+    doorMat.dispose()
+    doorIcons.dispose()
+    outlineMat.dispose()
     playerMat.dispose()
     wallMat.dispose()
+    boundaryMat.dispose()
     crateMat.dispose()
     seatMat.dispose()
     lockerMat.dispose()
@@ -324,7 +363,6 @@ export function createMinimapIcons({ scene, player, getObstacles, getGuards }) {
     playerGeo.dispose()
     guardGeo.dispose()
     beamGeo.dispose()
-    groundGeo.dispose()
   }
 
   return { update, dispose, root, layer: MINIMAP_LAYER }

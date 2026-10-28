@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { settings, shadowMapSize } from '../core/settings.js'
+import { settings, shadowMapSize, brightnessToExposure } from '../core/settings.js'
 
 // Creates and owns the WebGLRenderer. Pixel ratio is capped at 1.25 so a
 // 2x display does not draw four times the pixels. The render-scale setting
@@ -15,9 +15,6 @@ import { settings, shadowMapSize } from '../core/settings.js'
 // target, and only the final full-screen pass reaches the canvas, so a
 // multisampled backbuffer would just add a resolve every frame.
 const MAX_PIXEL_RATIO = 1.25
-// Applied on top of the brightness slider, so players who already saved a
-// brightness value get the brighter baseline too.
-const EXPOSURE_BOOST = 1.1
 
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false })
@@ -66,7 +63,7 @@ export function createRenderer(canvas) {
   }
 
   function applySettings() {
-    renderer.toneMappingExposure = settings.get('brightness') * EXPOSURE_BOOST
+    renderer.toneMappingExposure = brightnessToExposure(settings.get('brightness'))
 
     const quality = settings.get('shadowQuality')
     const enabled = quality !== 'off'

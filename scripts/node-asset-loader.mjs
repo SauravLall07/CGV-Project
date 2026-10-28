@@ -4,7 +4,7 @@ const assetRoot = new URL('../src/assets/', import.meta.url).href
 
 export async function load(url, context, nextLoad) {
   const asset = new URL(url)
-  const viteAsset = asset.search === '?url' || /\.(png|jpe?g|webp)$/i.test(asset.pathname)
+  const viteAsset = asset.search === '?url' || /\.(png|jpe?g|webp|mp3|ogg|wav)$/i.test(asset.pathname)
   if (!asset.href.startsWith(assetRoot) || !viteAsset) {
     return nextLoad(url, context)
   }

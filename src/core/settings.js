@@ -12,6 +12,8 @@
 const STORAGE_KEY = 'chrono-express:settings:v1'
 // 2: crouch defaults to X/Z again (1 had moved it to Ctrl).
 const BINDINGS_VERSION = 2
+// 2: brightness stores the displayed percentage (1 stored exposure directly).
+const BRIGHTNESS_VERSION = 2
 
 // ---------------------------------------------------------------
 // Option definitions
@@ -20,17 +22,41 @@ const BINDINGS_VERSION = 2
 // here is all it takes for it to appear in the UI. There is no `apply` hook —
 // consumers subscribe() and read the value they care about.
 
+// Keep the established 0.4 minimum, and make the established 2.2 maximum the
+// new 100% reference. The extended range reaches twice that exposure at 200%;
+// ACES still rolls off highlights in the existing final output path.
+const MIN_BRIGHTNESS_EXPOSURE = 0.4
+const REFERENCE_BRIGHTNESS_EXPOSURE = 2.2
+const MAX_BRIGHTNESS_EXPOSURE = 4.4
+
+export function brightnessToExposure(percentage) {
+  const value = Math.min(200, Math.max(0, percentage))
+  if (value <= 100) {
+    return MIN_BRIGHTNESS_EXPOSURE +
+      (REFERENCE_BRIGHTNESS_EXPOSURE - MIN_BRIGHTNESS_EXPOSURE) * (value / 100)
+  }
+  return REFERENCE_BRIGHTNESS_EXPOSURE +
+    (MAX_BRIGHTNESS_EXPOSURE - REFERENCE_BRIGHTNESS_EXPOSURE) * ((value - 100) / 100)
+}
+
+function legacyExposureToBrightness(exposure) {
+  const value = Math.min(REFERENCE_BRIGHTNESS_EXPOSURE, Math.max(MIN_BRIGHTNESS_EXPOSURE, exposure))
+  return ((value - MIN_BRIGHTNESS_EXPOSURE) / (REFERENCE_BRIGHTNESS_EXPOSURE - MIN_BRIGHTNESS_EXPOSURE)) * 100
+}
+
 export const OPTION_DEFS = [
   {
     id: 'brightness',
     label: 'Brightness',
-    hint: 'Tone-mapping exposure. Raise it if the carriages read too dark.',
+    hint: 'Tone-mapping exposure.',
     group: 'Display',
     type: 'slider',
-    min: 0.4,
-    max: 2.2,
-    step: 0.05,
-    format: (v) => `${Math.round((v / 1.15) * 100)}%`
+    min: 0,
+    max: 200,
+    // Continuous input also preserves migrated legacy values exactly. Arrow
+    // keys still use the browser's default one-percent increment.
+    step: 'any',
+    format: (v) => `${Math.round(v)}%`
   },
   {
     id: 'fov',
@@ -94,6 +120,17 @@ export const OPTION_DEFS = [
     hint: 'Shows frames per second in the corner of the HUD.',
     group: 'Display',
     type: 'toggle'
+  },
+  {
+    id: 'minimapRange',
+    label: 'Minimap Range',
+    hint: 'Map width in metres. Lower shows larger detail; higher shows more surroundings.',
+    group: 'Display',
+    type: 'slider',
+    min: 10,
+    max: 40,
+    step: 2,
+    format: v => `${v} m`
   },
   {
     id: 'captureShortcuts',
@@ -169,7 +206,7 @@ export function shadowMapSize(quality) {
 }
 
 export const DEFAULT_OPTIONS = {
-  brightness: 1.15,
+  brightness: 100,
   fov: 60,
   renderScale: 1,
   renderQuality: 'auto',
@@ -177,6 +214,7 @@ export const DEFAULT_OPTIONS = {
   shadowQuality: 'medium',
   grassDensity: 'medium',
   showStats: false,
+  minimapRange: 16,
   captureShortcuts: true,
   mouseSensitivity: 1,
   invertY: false,
@@ -328,6 +366,7 @@ function readStorage() {
 
 function createSettingsStore() {
   const stored = readStorage() ?? {}
+  const migrateBrightness = (stored.brightnessVersion ?? 1) < BRIGHTNESS_VERSION
 
   // Validate rather than trust: a stale or hand-edited payload should fall
   // back to the default for that one field, not break the game.
@@ -342,6 +381,14 @@ function createSettingsStore() {
     } else if (def.type === 'choice' && def.choices.some((choice) => choice.value === value)) {
       values[def.id] = value
     }
+  }
+
+  // Version 1 saved the renderer's exposure (0.4–2.2), not the percentage
+  // shown by the old slider. Convert once so every existing choice keeps the
+  // same visual exposure under the recalibrated control.
+  const legacyBrightness = stored.options?.brightness
+  if (migrateBrightness && typeof legacyBrightness === 'number' && Number.isFinite(legacyBrightness)) {
+    values.brightness = legacyExposureToBrightness(legacyBrightness)
   }
 
   // Older saves had a Shadows toggle and a Soft Shadows toggle. Soft shadows
@@ -372,13 +419,18 @@ function createSettingsStore() {
   const listeners = new Set()
   // Internal scale is transient: Auto/benchmark changes must not write saves.
   let runtimeRenderScale = 1
-  if (migrateCrouch && stored.bindings) persist()
+  if ((migrateCrouch && stored.bindings) || (migrateBrightness && stored.options)) persist()
 
   function persist() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ options: values, bindings, bindingsVersion: BINDINGS_VERSION })
+        JSON.stringify({
+          options: values,
+          bindings,
+          bindingsVersion: BINDINGS_VERSION,
+          brightnessVersion: BRIGHTNESS_VERSION
+        })
       )
     } catch {
       // Storage unavailable (private mode, blocked site data) — settings still

@@ -1,0 +1,1592 @@
+{
+  "baseline": "bd92a56e2c85d5322f188fe96afa58eeefb8039b",
+  "sourceHashes": {
+    "src/environment/carriage-bounds.js": "25d7fab84e931a24e286a5940d1067323274b8f4fd63f91f9f2e3e7aef1e998d",
+    "src/environment/carriages.js": "26cf26764c421f8ac86b3266d8a99bf0718ca16e5cb49b14593b63c69fd6d168",
+    "src/environment/sky-environment.js": "a2a09127ecc7a63ecfc551ed4e8f018e1c435c4e611021d8cb7ab19d403f961f",
+    "src/environment/timewreck-exterior.js": "6d8235727f0f9f16c6b849a25319a213d462ab29106a338f7deb6ae58858d83a",
+    "src/environment/wreck-damage.js": "2de88182a637423334f7d9a2f33957be3ff1131050a43e44b85849a7829365b8",
+    "src/environment/wreck-ownership.js": "201bb7dea1f69f64f0feee20d4448bcdcea57cb8c07a03613d8f45952a644a0d",
+    "src/environment/wreck-structure.js": "e9be64c6762eb30431fa9429960e992b28eee9986199d8df4dee5a905ee8fbc5",
+    "src/environment/wreck-visibility.js": "bc982f482d93184e754e2db621efae0741e7586bda22ea1bd58e71c266214970",
+    "src/levels/timewreck-atmosphere.js": "f1f652c0f7e494d3e2e43ecdf3029573b431fea589d30fd3bbda4ac8239f9912",
+    "src/levels/timewreck.js": "53ca4c05010291eb52da5abe2cc6c19f61fd623da98d871b2484637f45dc453e",
+    "src/main.js": "ea3a92d9ce8912ff1395066568cc0140bc452eb3cabc08631d4c81d52e2c2245",
+    "src/systems/wreck-audio.js": "16bec59126794d712caa249ea3809c2d308dd9da1680f7f622c5fbddd071d54f",
+    "src/ui/minimap-icons.js": "7508da7112ad02d5c69a8e6976166d7cc02a04dbf5637e204bf244c0ded9d079",
+    "src/ui/minimap.js": "fe44d7c3a512f3e245ac1fa8b3a67a5f5c92e2a44a72be43eb861d5a0e9f145a"
+  },
+  "protocol": "Isolated headless Chrome; 1280x720, pixel ratio 1, High, exposure 1.15, debris seed 12345, actual level/cameras/post/minimap with procedural fallback player. profile-seeded-* additionally pins only legacy scenery scatter to 7143 through a diagnostic browser response transform; game source is unchanged. Other captures retain randomized scenery and are exploratory. Paused overhead: 4 s capture after approach/interior/exterior warmup. Active first person: 3 s warmup + 6 s capture, standing at checkpoint. Runs sequential, no test suite or second task browser running. GPU samples filtered by measured frame IDs; pending tails not estimated. Short diagnostic, not a normal-play FPS claim.",
+  "captures": {
+    "profile-before": {
+      "cargo": {
+        "frames": {
+          "frames": 185,
+          "excludedFrames": 0,
+          "elapsedMs": 4216.799999999999,
+          "averageFps": 43.87213052551699,
+          "onePercentLowFps": 15.037593984962818,
+          "meanFrameMs": 22.79351351351351,
+          "p50FrameMs": 16.899999999997817,
+          "p95FrameMs": 33.60000000000218,
+          "p99FrameMs": 49.89999999999782,
+          "maxFrameMs": 83.09999999999854,
+          "over16_67Ms": 137,
+          "over33_33Ms": 25,
+          "over50Ms": 1
+        },
+        "cpu": {
+          "updateCpuMs": 0.0005405405385268701,
+          "sceneCpuMs": 14.300540540598938,
+          "drawCpuMs": 15.352432432478746,
+          "minimapCpuMs": 0.19891891879205767
+        },
+        "gpu": {
+          "minimap": {
+            "samples": 182,
+            "totalMs": 8.356737000000004,
+            "meanMs": 0.04591613736263739
+          },
+          "final": {
+            "samples": 182,
+            "totalMs": 249.86782400000004,
+            "meanMs": 1.3729001318681322
+          },
+          "bloom": {
+            "samples": 182,
+            "totalMs": 82.911897,
+            "meanMs": 0.4555598736263736
+          },
+          "scene": {
+            "samples": 182,
+            "totalMs": 790.7694149999999,
+            "meanMs": 4.344886895604395
+          },
+          "shadow": {
+            "samples": 183,
+            "totalMs": 0.004419999999999998,
+            "meanMs": 0.00002415300546448086
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 634,
+        "triangles": 161288,
+        "resources": {
+          "geometries": 1120,
+          "textures": 108,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "cargo-active": {
+        "frames": {
+          "frames": 174,
+          "excludedFrames": 0,
+          "elapsedMs": 6200.4000000000015,
+          "averageFps": 28.06270563189471,
+          "onePercentLowFps": 15.003750937734106,
+          "meanFrameMs": 35.6344827586207,
+          "p50FrameMs": 33.39999999999418,
+          "p95FrameMs": 50.10000000000582,
+          "p99FrameMs": 66.5,
+          "maxFrameMs": 66.80000000000291,
+          "over16_67Ms": 171,
+          "over33_33Ms": 90,
+          "over50Ms": 15
+        },
+        "cpu": {
+          "updateCpuMs": 2.062643678195175,
+          "sceneCpuMs": 15.221264367826796,
+          "drawCpuMs": 16.096551724195738,
+          "minimapCpuMs": 0.18505747126008587
+        },
+        "gpu": {
+          "minimap": {
+            "samples": 171,
+            "totalMs": 8.835284000000001,
+            "meanMs": 0.051668327485380125
+          },
+          "final": {
+            "samples": 171,
+            "totalMs": 269.8553259999999,
+            "meanMs": 1.5781013216374262
+          },
+          "bloom": {
+            "samples": 171,
+            "totalMs": 227.66492000000002,
+            "meanMs": 1.3313738011695908
+          },
+          "scene": {
+            "samples": 171,
+            "totalMs": 1714.7533309999994,
+            "meanMs": 10.027797257309938
+          },
+          "shadow": {
+            "samples": 172,
+            "totalMs": 0.004991999999999997,
+            "meanMs": 0.000029023255813953472
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 906.9425287356322,
+        "triangles": 175856.6896551724,
+        "resources": {
+          "geometries": 1123,
+          "textures": 108,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "security": {
+        "frames": {
+          "frames": 182,
+          "excludedFrames": 0,
+          "elapsedMs": 4250,
+          "averageFps": 42.8235294117647,
+          "onePercentLowFps": 14.958863126402719,
+          "meanFrameMs": 23.35164835164835,
+          "p50FrameMs": 16.80000000000291,
+          "p95FrameMs": 33.700000000004366,
+          "p99FrameMs": 50.19999999999709,
+          "maxFrameMs": 83.5,
+          "over16_67Ms": 132,
+          "over33_33Ms": 28,
+          "over50Ms": 4
+        },
+        "cpu": {
+          "updateCpuMs": 0.0021978021896147466,
+          "sceneCpuMs": 13.766483516544922,
+          "drawCpuMs": 14.846703296711484,
+          "minimapCpuMs": 0.21373626371784196
+        },
+        "gpu": {
+          "final": {
+            "samples": 179,
+            "totalMs": 242.62043200000005,
+            "meanMs": 1.3554214078212294
+          },
+          "bloom": {
+            "samples": 179,
+            "totalMs": 92.826578,
+            "meanMs": 0.5185842346368715
+          },
+          "scene": {
+            "samples": 179,
+            "totalMs": 904.9964519999999,
+            "meanMs": 5.055846100558658
+          },
+          "shadow": {
+            "samples": 180,
+            "totalMs": 0.005719999999999997,
+            "meanMs": 0.00003177777777777776
+          },
+          "minimap": {
+            "samples": 179,
+            "totalMs": 9.845488000000003,
+            "meanMs": 0.055002726256983256
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 587,
+        "triangles": 143806,
+        "resources": {
+          "geometries": 706,
+          "textures": 86,
+          "programs": 37
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      },
+      "security-active": {
+        "frames": {
+          "frames": 234,
+          "excludedFrames": 0,
+          "elapsedMs": 6149.699999999997,
+          "averageFps": 38.050636616420334,
+          "onePercentLowFps": 19.867549668874172,
+          "meanFrameMs": 26.28076923076922,
+          "p50FrameMs": 17.099999999998545,
+          "p95FrameMs": 49.900000000001455,
+          "p99FrameMs": 50.299999999995634,
+          "maxFrameMs": 50.400000000001455,
+          "over16_67Ms": 193,
+          "over33_33Ms": 57,
+          "over50Ms": 6
+        },
+        "cpu": {
+          "updateCpuMs": 1.6363247864139385,
+          "sceneCpuMs": 11.868376068396765,
+          "drawCpuMs": 12.819658119653344,
+          "minimapCpuMs": 0.1803418803227763
+        },
+        "gpu": {
+          "shadow": {
+            "samples": 232,
+            "totalMs": 0.006967999999999996,
+            "meanMs": 0.00003003448275862067
+          },
+          "minimap": {
+            "samples": 231,
+            "totalMs": 11.313903,
+            "meanMs": 0.048977935064935064
+          },
+          "final": {
+            "samples": 231,
+            "totalMs": 346.0458369999997,
+            "meanMs": 1.4980339264069251
+          },
+          "bloom": {
+            "samples": 231,
+            "totalMs": 151.867445,
+            "meanMs": 0.6574348268398269
+          },
+          "scene": {
+            "samples": 231,
+            "totalMs": 1515.6299000000004,
+            "meanMs": 6.5611683982684
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 473.13675213675214,
+        "triangles": 124486.0170940171,
+        "resources": {
+          "geometries": 710,
+          "textures": 86,
+          "programs": 39
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      }
+    },
+    "profile-after": {
+      "cargo": {
+        "frames": {
+          "frames": 159,
+          "excludedFrames": 0,
+          "elapsedMs": 4266.5,
+          "averageFps": 37.267080745341616,
+          "onePercentLowFps": 14.992503748125774,
+          "meanFrameMs": 26.833333333333332,
+          "p50FrameMs": 33.099999999998545,
+          "p95FrameMs": 50,
+          "p99FrameMs": 66.59999999999854,
+          "maxFrameMs": 66.80000000000291,
+          "over16_67Ms": 127,
+          "over33_33Ms": 36,
+          "over50Ms": 7
+        },
+        "cpu": {
+          "updateCpuMs": 0.008176100633616717,
+          "sceneCpuMs": 13.165408805047846,
+          "drawCpuMs": 14.432704402461836,
+          "minimapCpuMs": 0.24842767302626334
+        },
+        "gpu": {
+          "minimap": {
+            "samples": 156,
+            "totalMs": 8.568515999999999,
+            "meanMs": 0.054926384615384606
+          },
+          "final": {
+            "samples": 156,
+            "totalMs": 216.56992999999994,
+            "meanMs": 1.3882687820512818
+          },
+          "bloom": {
+            "samples": 156,
+            "totalMs": 100.94877899999999,
+            "meanMs": 0.6471075576923077
+          },
+          "scene": {
+            "samples": 156,
+            "totalMs": 1223.6346399999995,
+            "meanMs": 7.843811794871792
+          },
+          "shadow": {
+            "samples": 157,
+            "totalMs": 0.004939999999999997,
+            "meanMs": 0.00003146496815286623
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 606,
+        "triangles": 158744,
+        "resources": {
+          "geometries": 1024,
+          "textures": 101,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "cargo-active": {
+        "frames": {
+          "frames": 191,
+          "excludedFrames": 0,
+          "elapsedMs": 6133.299999999999,
+          "averageFps": 31.141473594965195,
+          "onePercentLowFps": 14.958863126401905,
+          "meanFrameMs": 32.111518324607324,
+          "p50FrameMs": 33.30000000000291,
+          "p95FrameMs": 50.099999999998545,
+          "p99FrameMs": 50.200000000004366,
+          "maxFrameMs": 83.5,
+          "over16_67Ms": 172,
+          "over33_33Ms": 83,
+          "over50Ms": 12
+        },
+        "cpu": {
+          "updateCpuMs": 2.0256544502832345,
+          "sceneCpuMs": 14.823036649201006,
+          "drawCpuMs": 15.81413612560569,
+          "minimapCpuMs": 0.22827225118017322
+        },
+        "gpu": {
+          "shadow": {
+            "samples": 189,
+            "totalMs": 0.005199999999999997,
+            "meanMs": 0.000027513227513227498
+          },
+          "minimap": {
+            "samples": 188,
+            "totalMs": 9.522978000000002,
+            "meanMs": 0.05065413829787235
+          },
+          "final": {
+            "samples": 188,
+            "totalMs": 272.981008,
+            "meanMs": 1.4520266382978722
+          },
+          "bloom": {
+            "samples": 188,
+            "totalMs": 148.137521,
+            "meanMs": 0.7879655372340425
+          },
+          "scene": {
+            "samples": 188,
+            "totalMs": 1951.268052,
+            "meanMs": 10.379085382978722
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 817.9842931937172,
+        "triangles": 171354.5340314136,
+        "resources": {
+          "geometries": 1027,
+          "textures": 101,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "security": {
+        "frames": {
+          "frames": 171,
+          "excludedFrames": 0,
+          "elapsedMs": 4216.799999999996,
+          "averageFps": 40.55207740466709,
+          "onePercentLowFps": 17.050298380221232,
+          "meanFrameMs": 24.659649122806993,
+          "p50FrameMs": 16.80000000000291,
+          "p95FrameMs": 33.599999999998545,
+          "p99FrameMs": 50.30000000000291,
+          "maxFrameMs": 67,
+          "over16_67Ms": 144,
+          "over33_33Ms": 29,
+          "over50Ms": 5
+        },
+        "cpu": {
+          "updateCpuMs": 0.0017543859692693454,
+          "sceneCpuMs": 11.96198830410446,
+          "drawCpuMs": 13.136257309924092,
+          "minimapCpuMs": 0.24678362570485177
+        },
+        "gpu": {
+          "shadow": {
+            "samples": 169,
+            "totalMs": 0.005095999999999997,
+            "meanMs": 0.00003015384615384614
+          },
+          "scene": {
+            "samples": 168,
+            "totalMs": 1214.5958799999996,
+            "meanMs": 7.229737380952379
+          },
+          "minimap": {
+            "samples": 168,
+            "totalMs": 9.116842999999998,
+            "meanMs": 0.05426692261904761
+          },
+          "final": {
+            "samples": 168,
+            "totalMs": 225.34225999999995,
+            "meanMs": 1.341322976190476
+          },
+          "bloom": {
+            "samples": 168,
+            "totalMs": 85.27747399999997,
+            "meanMs": 0.5076040119047617
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 521,
+        "triangles": 143004,
+        "resources": {
+          "geometries": 640,
+          "textures": 79,
+          "programs": 37
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      },
+      "security-active": {
+        "frames": {
+          "frames": 252,
+          "excludedFrames": 0,
+          "elapsedMs": 6133.199999999997,
+          "averageFps": 41.08784973586384,
+          "onePercentLowFps": 16.339869281045235,
+          "meanFrameMs": 24.338095238095228,
+          "p50FrameMs": 16.80000000000291,
+          "p95FrameMs": 33.599999999998545,
+          "p99FrameMs": 50.099999999998545,
+          "maxFrameMs": 83.40000000000146,
+          "over16_67Ms": 195,
+          "over33_33Ms": 43,
+          "over50Ms": 4
+        },
+        "cpu": {
+          "updateCpuMs": 1.4075396824628115,
+          "sceneCpuMs": 10.437698412612672,
+          "drawCpuMs": 11.52420634924922,
+          "minimapCpuMs": 0.24047619054123523
+        },
+        "gpu": {
+          "shadow": {
+            "samples": 249,
+            "totalMs": 0.006603999999999996,
+            "meanMs": 0.00002652208835341364
+          },
+          "minimap": {
+            "samples": 248,
+            "totalMs": 12.759810999999994,
+            "meanMs": 0.051450850806451585
+          },
+          "final": {
+            "samples": 248,
+            "totalMs": 385.8935869999998,
+            "meanMs": 1.5560225282258056
+          },
+          "bloom": {
+            "samples": 248,
+            "totalMs": 142.76598299999992,
+            "meanMs": 0.5756692862903222
+          },
+          "scene": {
+            "samples": 248,
+            "totalMs": 1881.6822900000009,
+            "meanMs": 7.587428588709681
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 19,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 418.0079365079365,
+        "triangles": 124549.63492063493,
+        "resources": {
+          "geometries": 644,
+          "textures": 79,
+          "programs": 39
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      }
+    },
+    "profile-cached": {
+      "cargo": {
+        "frames": {
+          "frames": 158,
+          "excludedFrames": 0,
+          "elapsedMs": 4216.700000000001,
+          "averageFps": 37.47005952522114,
+          "onePercentLowFps": 17.094017094017094,
+          "meanFrameMs": 26.687974683544308,
+          "p50FrameMs": 33,
+          "p95FrameMs": 50,
+          "p99FrameMs": 50.20000000000073,
+          "maxFrameMs": 66.79999999999927,
+          "over16_67Ms": 127,
+          "over33_33Ms": 42,
+          "over50Ms": 6
+        },
+        "cpu": {
+          "updateCpuMs": 0.0006329113900472846,
+          "sceneCpuMs": 14.47088607589278,
+          "drawCpuMs": 15.772784810194958,
+          "minimapCpuMs": 0.2468354430143969
+        },
+        "gpu": {
+          "scene": {
+            "samples": 155,
+            "totalMs": 1003.4377860000004,
+            "meanMs": 6.473792167741938
+          },
+          "shadow": {
+            "samples": 156,
+            "totalMs": 0.004471999999999998,
+            "meanMs": 0.00002866666666666665
+          },
+          "minimap": {
+            "samples": 155,
+            "totalMs": 8.427585,
+            "meanMs": 0.05437151612903226
+          },
+          "final": {
+            "samples": 155,
+            "totalMs": 215.71561100000002,
+            "meanMs": 1.391713619354839
+          },
+          "bloom": {
+            "samples": 155,
+            "totalMs": 88.25070199999999,
+            "meanMs": 0.5693593677419354
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 606,
+        "triangles": 160100,
+        "resources": {
+          "geometries": 1024,
+          "textures": 101,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "cargo-active": {
+        "frames": {
+          "frames": 157,
+          "excludedFrames": 0,
+          "elapsedMs": 6183.300000000003,
+          "averageFps": 25.39097245807254,
+          "onePercentLowFps": 10.899182561307901,
+          "meanFrameMs": 39.38407643312104,
+          "p50FrameMs": 33.400000000001455,
+          "p95FrameMs": 50.10000000000582,
+          "p99FrameMs": 66.79999999999927,
+          "maxFrameMs": 116.70000000000073,
+          "over16_67Ms": 153,
+          "over33_33Ms": 96,
+          "over50Ms": 22
+        },
+        "cpu": {
+          "updateCpuMs": 2.1452229299410512,
+          "sceneCpuMs": 18.925477706975524,
+          "drawCpuMs": 20.054140127400398,
+          "minimapCpuMs": 0.2363057324461117
+        },
+        "gpu": {
+          "minimap": {
+            "samples": 154,
+            "totalMs": 8.947844,
+            "meanMs": 0.058102883116883115
+          },
+          "final": {
+            "samples": 154,
+            "totalMs": 254.3778959999999,
+            "meanMs": 1.6518045194805189
+          },
+          "bloom": {
+            "samples": 154,
+            "totalMs": 175.84992800000003,
+            "meanMs": 1.1418826493506495
+          },
+          "scene": {
+            "samples": 154,
+            "totalMs": 1623.073810999999,
+            "meanMs": 10.539440331168825
+          },
+          "shadow": {
+            "samples": 155,
+            "totalMs": 0.005251999999999997,
+            "meanMs": 0.00003388387096774192
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 817.9299363057324,
+        "triangles": 172706.49681528663,
+        "resources": {
+          "geometries": 1027,
+          "textures": 101,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "security": {
+        "frames": {
+          "frames": 161,
+          "excludedFrames": 0,
+          "elapsedMs": 4216.700000000004,
+          "averageFps": 38.18151635164936,
+          "onePercentLowFps": 13.324450366422514,
+          "meanFrameMs": 26.190683229813693,
+          "p50FrameMs": 16.89999999999418,
+          "p95FrameMs": 50,
+          "p99FrameMs": 50.099999999998545,
+          "maxFrameMs": 100,
+          "over16_67Ms": 131,
+          "over33_33Ms": 37,
+          "over50Ms": 7
+        },
+        "cpu": {
+          "updateCpuMs": 0.0006211180216777398,
+          "sceneCpuMs": 13.916770186437214,
+          "drawCpuMs": 15.078881987619289,
+          "minimapCpuMs": 0.2291925465514571
+        },
+        "gpu": {
+          "shadow": {
+            "samples": 159,
+            "totalMs": 0.005459999999999997,
+            "meanMs": 0.000034339622641509414
+          },
+          "minimap": {
+            "samples": 158,
+            "totalMs": 9.642162999999998,
+            "meanMs": 0.06102634810126581
+          },
+          "final": {
+            "samples": 158,
+            "totalMs": 224.84664699999996,
+            "meanMs": 1.4230800443037972
+          },
+          "bloom": {
+            "samples": 158,
+            "totalMs": 98.59456699999998,
+            "meanMs": 0.624016246835443
+          },
+          "scene": {
+            "samples": 158,
+            "totalMs": 986.8556400000002,
+            "meanMs": 6.2459217721519
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 521,
+        "triangles": 147048,
+        "resources": {
+          "geometries": 640,
+          "textures": 79,
+          "programs": 37
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      },
+      "security-active": {
+        "frames": {
+          "frames": 234,
+          "excludedFrames": 0,
+          "elapsedMs": 6183.300000000003,
+          "averageFps": 37.84386977827372,
+          "onePercentLowFps": 17.964071856286644,
+          "meanFrameMs": 26.424358974358988,
+          "p50FrameMs": 33.099999999998545,
+          "p95FrameMs": 49.900000000001455,
+          "p99FrameMs": 50.099999999998545,
+          "maxFrameMs": 66.70000000000437,
+          "over16_67Ms": 188,
+          "over33_33Ms": 53,
+          "over50Ms": 5
+        },
+        "cpu": {
+          "updateCpuMs": 1.5837606837670517,
+          "sceneCpuMs": 13.190598290580779,
+          "drawCpuMs": 14.363675213578102,
+          "minimapCpuMs": 0.243162393100305
+        },
+        "gpu": {
+          "final": {
+            "samples": 231,
+            "totalMs": 356.209479,
+            "meanMs": 1.5420323766233766
+          },
+          "bloom": {
+            "samples": 231,
+            "totalMs": 160.05946900000004,
+            "meanMs": 0.6928981341991344
+          },
+          "scene": {
+            "samples": 231,
+            "totalMs": 1571.1413529999995,
+            "meanMs": 6.801477718614716
+          },
+          "shadow": {
+            "samples": 232,
+            "totalMs": 0.006707999999999996,
+            "meanMs": 0.000028913793103448258
+          },
+          "minimap": {
+            "samples": 231,
+            "totalMs": 23.384165999999986,
+            "meanMs": 0.10123015584415579
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 417.88034188034186,
+        "triangles": 128585.9829059829,
+        "resources": {
+          "geometries": 644,
+          "textures": 79,
+          "programs": 39
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      }
+    },
+    "profile-seeded-before": {
+      "cargo": {
+        "frames": {
+          "frames": 143,
+          "excludedFrames": 0,
+          "elapsedMs": 4283.200000000004,
+          "averageFps": 33.386253268584206,
+          "onePercentLowFps": 13.297872340425403,
+          "meanFrameMs": 29.952447552447584,
+          "p50FrameMs": 33.299999999995634,
+          "p95FrameMs": 49.700000000004366,
+          "p99FrameMs": 50.10000000000582,
+          "maxFrameMs": 100.29999999999563,
+          "over16_67Ms": 131,
+          "over33_33Ms": 44,
+          "over50Ms": 3
+        },
+        "cpu": {
+          "updateCpuMs": 0.004895104889894699,
+          "sceneCpuMs": 18.884615384641435,
+          "drawCpuMs": 20.380419580396133,
+          "minimapCpuMs": 0.2790209790366096
+        },
+        "gpu": {
+          "minimap": {
+            "samples": 140,
+            "totalMs": 8.304101,
+            "meanMs": 0.05931500714285714
+          },
+          "final": {
+            "samples": 140,
+            "totalMs": 212.0639989999999,
+            "meanMs": 1.5147428499999993
+          },
+          "bloom": {
+            "samples": 140,
+            "totalMs": 110.68451799999998,
+            "meanMs": 0.7906036999999999
+          },
+          "scene": {
+            "samples": 140,
+            "totalMs": 853.2090839999996,
+            "meanMs": 6.094350599999998
+          },
+          "shadow": {
+            "samples": 141,
+            "totalMs": 0.0047319999999999975,
+            "meanMs": 0.000033560283687943244
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 634,
+        "triangles": 161840,
+        "resources": {
+          "geometries": 1120,
+          "textures": 108,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "cargo-active": {
+        "frames": {
+          "frames": 148,
+          "excludedFrames": 0,
+          "elapsedMs": 6150,
+          "averageFps": 24.065040650406505,
+          "onePercentLowFps": 11.98322348711793,
+          "meanFrameMs": 41.554054054054056,
+          "p50FrameMs": 33.5,
+          "p95FrameMs": 50.200000000004366,
+          "p99FrameMs": 66.69999999999709,
+          "maxFrameMs": 100.20000000000437,
+          "over16_67Ms": 148,
+          "over33_33Ms": 97,
+          "over50Ms": 30
+        },
+        "cpu": {
+          "updateCpuMs": 2.1033783782953144,
+          "sceneCpuMs": 19.928378378406066,
+          "drawCpuMs": 21.093918919009536,
+          "minimapCpuMs": 0.26418918923701384
+        },
+        "gpu": {
+          "minimap": {
+            "samples": 145,
+            "totalMs": 8.947745000000001,
+            "meanMs": 0.06170858620689656
+          },
+          "final": {
+            "samples": 145,
+            "totalMs": 257.80561,
+            "meanMs": 1.777969724137931
+          },
+          "bloom": {
+            "samples": 145,
+            "totalMs": 219.431123,
+            "meanMs": 1.5133180896551726
+          },
+          "scene": {
+            "samples": 145,
+            "totalMs": 1679.5398629999995,
+            "meanMs": 11.583033537931032
+          },
+          "shadow": {
+            "samples": 146,
+            "totalMs": 0.004835999999999997,
+            "meanMs": 0.00003312328767123286
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 907.0743243243244,
+        "triangles": 176417.86486486485,
+        "resources": {
+          "geometries": 1123,
+          "textures": 108,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "security": {
+        "frames": {
+          "frames": 145,
+          "excludedFrames": 0,
+          "elapsedMs": 4266.800000000003,
+          "averageFps": 33.98331302146806,
+          "onePercentLowFps": 11.98322348711793,
+          "meanFrameMs": 29.426206896551744,
+          "p50FrameMs": 33.19999999999709,
+          "p95FrameMs": 50,
+          "p99FrameMs": 50.200000000004366,
+          "maxFrameMs": 116.69999999999709,
+          "over16_67Ms": 124,
+          "over33_33Ms": 48,
+          "over50Ms": 5
+        },
+        "cpu": {
+          "updateCpuMs": 0.007586206881136729,
+          "sceneCpuMs": 19.027586206909398,
+          "drawCpuMs": 20.339999999940908,
+          "minimapCpuMs": 0.2537931034020309
+        },
+        "gpu": {
+          "bloom": {
+            "samples": 142,
+            "totalMs": 122.44269899999998,
+            "meanMs": 0.8622725281690139
+          },
+          "scene": {
+            "samples": 142,
+            "totalMs": 841.7071119999995,
+            "meanMs": 5.927514873239433
+          },
+          "shadow": {
+            "samples": 143,
+            "totalMs": 0.004575999999999998,
+            "meanMs": 0.000031999999999999985
+          },
+          "minimap": {
+            "samples": 142,
+            "totalMs": 8.839618,
+            "meanMs": 0.06225083098591549
+          },
+          "final": {
+            "samples": 142,
+            "totalMs": 219.48784199999997,
+            "meanMs": 1.5456890281690139
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 587,
+        "triangles": 144046,
+        "resources": {
+          "geometries": 706,
+          "textures": 86,
+          "programs": 37
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      },
+      "security-active": {
+        "frames": {
+          "frames": 199,
+          "excludedFrames": 0,
+          "elapsedMs": 6216.5,
+          "averageFps": 32.011582079948525,
+          "onePercentLowFps": 13.280212483399222,
+          "meanFrameMs": 31.238693467336685,
+          "p50FrameMs": 33.30000000000291,
+          "p95FrameMs": 50,
+          "p99FrameMs": 50.30000000000291,
+          "maxFrameMs": 100.30000000000291,
+          "over16_67Ms": 179,
+          "over33_33Ms": 73,
+          "over50Ms": 7
+        },
+        "cpu": {
+          "updateCpuMs": 1.8713567838091496,
+          "sceneCpuMs": 17.65778894471613,
+          "drawCpuMs": 18.80603015086796,
+          "minimapCpuMs": 0.24221105536623816
+        },
+        "gpu": {
+          "bloom": {
+            "samples": 196,
+            "totalMs": 137.15985499999994,
+            "meanMs": 0.6997951785714283
+          },
+          "scene": {
+            "samples": 196,
+            "totalMs": 1539.2679999999993,
+            "meanMs": 7.8534081632653026
+          },
+          "shadow": {
+            "samples": 197,
+            "totalMs": 0.006759999999999996,
+            "meanMs": 0.00003431472081218272
+          },
+          "minimap": {
+            "samples": 196,
+            "totalMs": 11.730538000000003,
+            "meanMs": 0.0598496836734694
+          },
+          "final": {
+            "samples": 196,
+            "totalMs": 345.64865000000003,
+            "meanMs": 1.7635135204081633
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 473.1608040201005,
+        "triangles": 124728.0703517588,
+        "resources": {
+          "geometries": 710,
+          "textures": 86,
+          "programs": 39
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      }
+    },
+    "profile-seeded-after": {
+      "cargo": {
+        "frames": {
+          "frames": 140,
+          "excludedFrames": 0,
+          "elapsedMs": 4250,
+          "averageFps": 32.94117647058823,
+          "onePercentLowFps": 13.324450366421868,
+          "meanFrameMs": 30.357142857142858,
+          "p50FrameMs": 33.299999999995634,
+          "p95FrameMs": 50.099999999998545,
+          "p99FrameMs": 50.200000000004366,
+          "maxFrameMs": 99.90000000000146,
+          "over16_67Ms": 124,
+          "over33_33Ms": 51,
+          "over50Ms": 8
+        },
+        "cpu": {
+          "updateCpuMs": 0.002857142873108387,
+          "sceneCpuMs": 17.355714285732912,
+          "drawCpuMs": 18.943571428595376,
+          "minimapCpuMs": 0.30428571428305334
+        },
+        "gpu": {
+          "bloom": {
+            "samples": 137,
+            "totalMs": 103.332599,
+            "meanMs": 0.7542525474452555
+          },
+          "scene": {
+            "samples": 137,
+            "totalMs": 985.6788819999997,
+            "meanMs": 7.194736364963502
+          },
+          "shadow": {
+            "samples": 138,
+            "totalMs": 0.004211999999999998,
+            "meanMs": 0.00003052173913043477
+          },
+          "minimap": {
+            "samples": 137,
+            "totalMs": 8.238896999999996,
+            "meanMs": 0.060137934306569316
+          },
+          "final": {
+            "samples": 137,
+            "totalMs": 221.1114430000001,
+            "meanMs": 1.613952138686132
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 606,
+        "triangles": 160640,
+        "resources": {
+          "geometries": 1024,
+          "textures": 101,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "cargo-active": {
+        "frames": {
+          "frames": 176,
+          "excludedFrames": 0,
+          "elapsedMs": 6150.199999999997,
+          "averageFps": 28.616955546161115,
+          "onePercentLowFps": 13.315579227697308,
+          "meanFrameMs": 34.94431818181817,
+          "p50FrameMs": 33.30000000000291,
+          "p95FrameMs": 50.099999999998545,
+          "p99FrameMs": 66.79999999999563,
+          "maxFrameMs": 83.39999999999418,
+          "over16_67Ms": 168,
+          "over33_33Ms": 88,
+          "over50Ms": 14
+        },
+        "cpu": {
+          "updateCpuMs": 2.2340909091290087,
+          "sceneCpuMs": 16.847159090938725,
+          "drawCpuMs": 17.805681818238966,
+          "minimapCpuMs": 0.1863636364419521
+        },
+        "gpu": {
+          "bloom": {
+            "samples": 173,
+            "totalMs": 111.65684600000006,
+            "meanMs": 0.6454152947976882
+          },
+          "scene": {
+            "samples": 173,
+            "totalMs": 1712.9448420000003,
+            "meanMs": 9.901415271676303
+          },
+          "shadow": {
+            "samples": 174,
+            "totalMs": 0.005095999999999997,
+            "meanMs": 0.000029287356321839065
+          },
+          "minimap": {
+            "samples": 173,
+            "totalMs": 9.065758999999998,
+            "meanMs": 0.052403231213872824
+          },
+          "final": {
+            "samples": 173,
+            "totalMs": 286.2012739999999,
+            "meanMs": 1.6543426242774562
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 817.9886363636364,
+        "triangles": 173250.27272727274,
+        "resources": {
+          "geometries": 1027,
+          "textures": 101,
+          "programs": 40
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -2.5
+        ],
+        "errors": []
+      },
+      "security": {
+        "frames": {
+          "frames": 144,
+          "excludedFrames": 0,
+          "elapsedMs": 4250.100000000006,
+          "averageFps": 33.881555728100466,
+          "onePercentLowFps": 13.32445036642316,
+          "meanFrameMs": 29.514583333333373,
+          "p50FrameMs": 33.299999999995634,
+          "p95FrameMs": 50.099999999998545,
+          "p99FrameMs": 50.19999999999709,
+          "maxFrameMs": 99.89999999999418,
+          "over16_67Ms": 122,
+          "over33_33Ms": 45,
+          "over50Ms": 8
+        },
+        "cpu": {
+          "updateCpuMs": 0.004861111093002061,
+          "sceneCpuMs": 17.53888888886043,
+          "drawCpuMs": 19.003472222273963,
+          "minimapCpuMs": 0.30625000002328306
+        },
+        "gpu": {
+          "bloom": {
+            "samples": 141,
+            "totalMs": 85.23639299999999,
+            "meanMs": 0.6045134255319149
+          },
+          "scene": {
+            "samples": 141,
+            "totalMs": 971.3069469999997,
+            "meanMs": 6.8887017517730476
+          },
+          "shadow": {
+            "samples": 142,
+            "totalMs": 0.004159999999999998,
+            "meanMs": 0.00002929577464788731
+          },
+          "final": {
+            "samples": 141,
+            "totalMs": 222.0545220000001,
+            "meanMs": 1.5748547659574474
+          },
+          "minimap": {
+            "samples": 141,
+            "totalMs": 8.682484999999996,
+            "meanMs": 0.06157790780141841
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 14,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 521,
+        "triangles": 145080,
+        "resources": {
+          "geometries": 640,
+          "textures": 79,
+          "programs": 37
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      },
+      "security-active": {
+        "frames": {
+          "frames": 150,
+          "excludedFrames": 0,
+          "elapsedMs": 6183.599999999991,
+          "averageFps": 24.2577139530371,
+          "onePercentLowFps": 7.990411506192708,
+          "meanFrameMs": 41.22399999999994,
+          "p50FrameMs": 33.40000000000873,
+          "p95FrameMs": 66.80000000000291,
+          "p99FrameMs": 100.09999999999127,
+          "maxFrameMs": 150.20000000000437,
+          "over16_67Ms": 146,
+          "over33_33Ms": 90,
+          "over50Ms": 28
+        },
+        "cpu": {
+          "updateCpuMs": 2.4006666666145127,
+          "sceneCpuMs": 23.34599999996523,
+          "drawCpuMs": 25.595333333325883,
+          "minimapCpuMs": 0.44200000011672574
+        },
+        "gpu": {
+          "minimap": {
+            "samples": 149,
+            "totalMs": 9.292792,
+            "meanMs": 0.06236773154362416
+          },
+          "final": {
+            "samples": 149,
+            "totalMs": 270.32336900000007,
+            "meanMs": 1.8142507986577185
+          },
+          "bloom": {
+            "samples": 149,
+            "totalMs": 116.47606499999999,
+            "meanMs": 0.7817185570469798
+          },
+          "scene": {
+            "samples": 149,
+            "totalMs": 1311.1228839999994,
+            "meanMs": 8.799482442953016
+          },
+          "shadow": {
+            "samples": 149,
+            "totalMs": 0.005667999999999997,
+            "meanMs": 0.00003804026845637582
+          }
+        },
+        "gpuStatus": {
+          "supported": true,
+          "pending": 5,
+          "dropped": 0,
+          "invalidated": 0,
+          "disjointEvents": 0,
+          "skipped": 0
+        },
+        "calls": 418.1533333333333,
+        "triangles": 126636.05333333333,
+        "resources": {
+          "geometries": 644,
+          "textures": 79,
+          "programs": 39
+        },
+        "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "viewport": [
+          1280,
+          720
+        ],
+        "ratio": 1,
+        "exposure": 1.15,
+        "player": [
+          0,
+          0,
+          -48.5
+        ],
+        "errors": []
+      }
+    }
+  }
+}

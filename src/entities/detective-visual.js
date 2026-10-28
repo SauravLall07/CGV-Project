@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
 
 // Mixamo detective: Idle.fbx is the skinned mesh; the other FBXs are
 // animation-only clips retargeted onto that skeleton by track/bone name.
@@ -32,16 +33,17 @@ const FILES = {
   crouchIdle: new URL('../assets/models/detective/Crouch Idle 02 Looking Around.fbx', import.meta.url),
   crouchWalk: new URL('../assets/models/detective/Crouch Walk Forward.fbx', import.meta.url),
   crouchToStand: new URL('../assets/models/detective/Crouch To Standing.fbx', import.meta.url),
-  throw: new URL('../assets/models/detective/Throw.fbx', import.meta.url)
+  throw: new URL('../assets/models/detective/Throw.fbx', import.meta.url),
+  salute: new URL('../assets/models/detective/Salute.fbx', import.meta.url)
 }
 
 const CROUCH_TRANSITIONS = new Set(['standToCrouch', 'crouchToStand'])
-const ONE_SHOTS = new Set(['cast', 'throw'])
+const ONE_SHOTS = new Set(['cast', 'throw', 'salute'])
 // Throw.fbx's forward hand swing, sampled at 30 fps (frame 24).
 const THROW_RELEASE_TIME = 24 / 30
 
 function firstClip(fbx, name) {
-  const clip = fbx?.animations?.[0]
+  const clip = fbx?.animations?.[0]?.clone()
   if (!clip) return null
   clip.name = name
   return clip
@@ -181,7 +183,7 @@ function trimJumpAnticipation(clip) {
     fps
   )
   trimmed.name = clip.name
-  console.log(
+  if (import.meta.env?.DEV) console.log(
     `[detective] ${clip.name} skipped ${start.toFixed(3)}s crouch wind-up ` +
     `(${clip.duration.toFixed(3)}s → ${trimmed.duration.toFixed(3)}s)`
   )
@@ -303,32 +305,51 @@ function prepareModel(model) {
   }
 }
 
+const sources = new WeakMap()
+
+function loadSource(assets) {
+  if (!sources.has(assets)) {
+    const ready = Promise.all(Object.entries(FILES).map(async ([name, url]) =>
+      [name, name === 'idle' ? await assets.loadFbx(url.href) : await loadOptionalFbx(assets, url.href)]
+    )).then(entries => {
+      const files = Object.fromEntries(entries)
+      return { files, info: prepareModel(files.idle) }
+    }).catch(error => {
+      sources.delete(assets)
+      throw error
+    })
+    sources.set(assets, ready)
+  }
+  return sources.get(assets)
+}
+
 // `crouchSpeed` is the player's crouched ground speed (m/s) and
 // `crouchSettleTime` how long player.js takes to settle into or out of the
 // crouch (s). Both come from player.js so the clips follow its tuning.
 export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettleTime = 0 } = {}) {
-  const [
-    idleFbx, runFbx, jumpIdleFbx, jumpRunFbx, castFbx,
-    standToCrouchFbx, crouchIdleFbx, crouchWalkFbx, crouchToStandFbx, throwFbx, walkFbx, pressFbx, pullFbx, pickupFbx
-  ] = await Promise.all([
-    assets.loadFbx(FILES.idle.href),
-    loadOptionalFbx(assets, FILES.run.href),
-    loadOptionalFbx(assets, FILES.jumpIdle.href),
-    loadOptionalFbx(assets, FILES.jumpRun.href),
-    loadOptionalFbx(assets, FILES.cast.href),
-    loadOptionalFbx(assets, FILES.standToCrouch.href),
-    loadOptionalFbx(assets, FILES.crouchIdle.href),
-    loadOptionalFbx(assets, FILES.crouchWalk.href),
-    loadOptionalFbx(assets, FILES.crouchToStand.href),
-    loadOptionalFbx(assets, FILES.throw.href),
-    loadOptionalFbx(assets, FILES.walk.href),
-    loadOptionalFbx(assets, FILES.press.href),
-    loadOptionalFbx(assets, FILES.pull.href),
-    loadOptionalFbx(assets, FILES.pickup.href)
-  ])
-
-  const info = prepareModel(idleFbx)
-  console.log(
+  const source = await loadSource(assets)
+  const { run: runFbx, jumpIdle: jumpIdleFbx, jumpRun: jumpRunFbx, cast: castFbx,
+    standToCrouch: standToCrouchFbx, crouchIdle: crouchIdleFbx, crouchWalk: crouchWalkFbx,
+    crouchToStand: crouchToStandFbx, throw: throwFbx, walk: walkFbx, press: pressFbx,
+    pull: pullFbx, pickup: pickupFbx, salute: saluteFbx } = source.files
+  const wrapper = cloneSkinned(source.info.wrapper)
+  wrapper.traverse(node => {
+    if (!node.isMesh) return
+    // Each visual owns its geometry/materials so ghost teardown cannot dispose
+    // the player's resources. Textures are read-only shared source assets.
+    node.geometry = node.geometry.clone()
+    const materials = Array.isArray(node.material) ? node.material : [node.material]
+    const cloned = materials.map(material => {
+      for (const value of Object.values(material)) {
+        if (value?.isTexture) value.userData.sharedTexture = true
+      }
+      return material.clone()
+    })
+    node.material = Array.isArray(node.material) ? cloned : cloned[0]
+  })
+  const info = { ...source.info, wrapper }
+  const idleFbx = wrapper.children[0]
+  if (import.meta.env?.DEV) console.log(
     `[detective] scale=${info.scale} rawHeight=${info.rawHeight.toFixed(1)} ` +
     `worldHeight=${info.worldHeight.toFixed(2)}m feetY=${info.wrapper.position.y.toFixed(3)} ` +
     `rootRot=(${info.rotation.x.toFixed(3)}, ${info.rotation.y.toFixed(3)}, ${info.rotation.z.toFixed(3)})`
@@ -349,7 +370,8 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     crouchIdle: firstClip(crouchIdleFbx, 'crouchIdle'),
     crouchWalk: firstClip(crouchWalkFbx, 'crouchWalk'),
     crouchToStand: firstClip(crouchToStandFbx, 'crouchToStand'),
-    throw: firstClip(throwFbx, 'throw')
+    throw: firstClip(throwFbx, 'throw'),
+    salute: firstClip(saluteFbx, 'salute')
   }
 
   const crouchWalkTravel = rootTravel(clips.crouchWalk, info.scale)
@@ -369,7 +391,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     const extras = clip.tracks
       .filter((track) => track.name.endsWith('.position') && !HIPS_POSITION.test(track.name))
       .map((track) => track.name)
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[detective] ${name} root motion: ` +
       (notes.length ? notes.join('; ') : 'no Hips.position tracks') +
       (extras.length ? ` | other position tracks left as-is: ${extras.join(', ')}` : '')
@@ -384,7 +406,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     const touchdown = jumpTouchdownTime(clips.jumpIdle, takeoff)
     jumpIdleAirborneEnd = Math.max(0.05, (takeoff > 0 ? touchdown - takeoff : touchdown))
     clips.jumpIdle = trimJumpAnticipation(clips.jumpIdle)
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[detective] jumpIdle phases airborne=${jumpIdleAirborneEnd.toFixed(3)}s ` +
       `landing=${Math.max(0, clips.jumpIdle.duration - jumpIdleAirborneEnd).toFixed(3)}s (plays at 1.0x)`
     )
@@ -398,7 +420,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
       console.warn(`[detective] clip ${name}: MISSING`)
       continue
     }
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[detective] clip ${name}: duration=${clip.duration.toFixed(3)}s tracks=${clip.tracks.length}`
     )
     const action = mixer.clipAction(clip)
@@ -433,13 +455,13 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
 
   applyJumpTimeScale(JUMP_AIR_TIME)
   if (actions.jumpIdle) {
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[detective] jumpIdle airborne timeScale=${jumpIdleAirborneScale.toFixed(2)} ` +
       `(${jumpIdleAirborneEnd.toFixed(2)}s clip → ${JUMP_AIR_TIME.toFixed(2)}s air) landing=1.0x`
     )
   }
   if (actions.jumpRun && clips.jumpRun) {
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[detective] jumpRun LoopOnce timeScale=${actions.jumpRun.timeScale.toFixed(2)} ` +
       `(clip ${clips.jumpRun.duration.toFixed(2)}s → assumed airtime ${JUMP_AIR_TIME.toFixed(2)}s)`
     )
@@ -450,7 +472,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   if (actions.crouchWalk) {
     if (crouchWalkTravel && crouchWalkTravel.speed > 0 && crouchSpeed > 0) {
       actions.crouchWalk.timeScale = crouchSpeed / crouchWalkTravel.speed
-      console.log(
+      if (import.meta.env?.DEV) console.log(
         `[detective] crouchWalk timeScale=${actions.crouchWalk.timeScale.toFixed(3)} ` +
         `(player ${crouchSpeed.toFixed(3)} m/s ÷ clip ${crouchWalkTravel.speed.toFixed(3)} m/s = ` +
         `${crouchWalkTravel.distance.toFixed(3)}m over ${crouchWalkTravel.span.toFixed(3)}s)`
@@ -470,7 +492,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     if (!action || !clip?.duration) continue
     if (crouchSettleTime > 0) {
       action.timeScale = clip.duration / crouchSettleTime
-      console.log(
+      if (import.meta.env?.DEV) console.log(
         `[detective] ${name} timeScale=${action.timeScale.toFixed(2)} ` +
         `(clip ${clip.duration.toFixed(3)}s → crouch settle ${crouchSettleTime.toFixed(3)}s)`
       )
@@ -720,7 +742,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
 
   if (actions.idle) {
     fadeTo('idle', 0)
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[detective] idle started playing=${actions.idle.isRunning()} ` +
       `weight=${actions.idle.getEffectiveWeight().toFixed(2)}`
     )
@@ -740,7 +762,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   function noteCrouchState(why) {
     const next = crouchTransition ?? (lastCrouching ? crouchLoop(lastMoving) : 'standing')
     if (next === crouchState) return
-    console.log(`[detective] crouch ${crouchState} → ${next} (${why}, moving=${lastMoving})`)
+    if (import.meta.env?.DEV) console.log(`[detective] crouch ${crouchState} → ${next} (${why}, moving=${lastMoving})`)
     crouchState = next
   }
 
@@ -852,7 +874,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
       airborneJump === 'jumpIdle'
         ? `airborne=${jumpIdleAirborneScale.toFixed(2)} landing=1.00`
         : `nextTimeScale=${jumpAction.timeScale.toFixed(2)}`
-    console.log(
+    if (import.meta.env?.DEV) console.log(
       `[detective] ${airborneJump ?? 'jump'} airtime measured=${seconds.toFixed(3)}s ` +
       `clipTime=${clipTime.toFixed(3)}s (raw clip timeline, not wall clock) ` +
       `wallPlayed=${wallPlayed.toFixed(3)}s (clipTime/timeScale) ` +
@@ -936,7 +958,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     syncJumpIdleTimeScale()
     updatePoint(delta)
     mixerFrames += 1
-    if (mixerFrames === 1 || mixerFrames % 60 === 0) {
+    if (import.meta.env?.DEV && (mixerFrames === 1 || mixerFrames % 60 === 0)) {
       const w = (name) => (actions[name]?.getEffectiveWeight() ?? 0).toFixed(2)
       console.log(
         `[detective] mixer.update #${mixerFrames} delta=${delta.toFixed(4)} ` +

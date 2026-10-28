@@ -656,20 +656,35 @@ export function createTrain() {
     const scissorTest = renderer.getScissorTest()
     const visible = train.visible
     const saved = []
+    const layerMasks = new Map()
+    // Keep world lighting, but do not upload or skin unrelated characters/rooms.
+    warmCamera.layers.set(31)
+    scene.traverseVisible(node => {
+      if (node.isLight) {
+        layerMasks.set(node, node.layers.mask)
+        node.layers.enable(31)
+      }
+    })
     train.traverse(node => {
-      if (node.isMesh) { saved.push([node, node.frustumCulled]); node.frustumCulled = false }
+      if (node.isMesh) {
+        saved.push([node, node.frustumCulled])
+        node.frustumCulled = false
+        layerMasks.set(node, node.layers.mask)
+        node.layers.enable(31)
+      }
     })
     const angles = hinges.map(({ hinge }) => hinge.rotation.y)
     try {
       train.visible = true
       hinges.forEach(({ hinge, side }) => { hinge.rotation.y = side * DOOR_OPEN_ANGLE })
       scene.updateMatrixWorld(true)
-      renderer.compile(scene, warmCamera)
+      renderer.compile(train, warmCamera, scene)
       renderer.setRenderTarget(target)
-      renderer.render(scene, warmCamera) // Upload buffers/textures behind the loading overlay.
+      renderer.render(scene, warmCamera) // Upload buffers/textures behind the station-entry fade.
     } finally {
       hinges.forEach(({ hinge }, i) => { hinge.rotation.y = angles[i] })
       for (const [node, culling] of saved) node.frustumCulled = culling
+      for (const [node, mask] of layerMasks) node.layers.mask = mask
       train.visible = visible
       renderer.setRenderTarget(previousTarget)
       renderer.setViewport(viewport)

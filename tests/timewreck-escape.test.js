@@ -13,6 +13,16 @@ import { createRespawnSystem } from '../src/systems/respawn.js'
 import { securityCrossingLayout } from '../src/levels/timewreck-security.js'
 import { WRECK_VIGNETTES } from '../src/levels/timewreck-feedback.js'
 
+// The brake hand-off now owns a DOM veil; keep the existing canvas shim.
+const canvasDocument = globalThis.document
+globalThis.document = { ...canvasDocument,
+  body: { appendChild(node) { node.parentNode = this }, removeChild(node) { node.parentNode = null } },
+  createElement(tag) {
+    if (tag === 'canvas') return canvasDocument.createElement(tag)
+    return { style: {}, remove() { this.parentNode?.removeChild(this) } }
+  }
+}
+
 function levelHarness(start = 'mechanical', fps = 60) {
   globalThis.window = { devicePixelRatio: 1, innerWidth: 1280 }
   let advanced = 0
@@ -27,7 +37,7 @@ function levelHarness(start = 'mechanical', fps = 60) {
   const time = createTimeSystem({ scene, player, hud })
   const respawn = createRespawnSystem({ player, hud, timeSystem: time, camera: { snap() {} } })
   const interactions = new Map()
-  const level = createTimewreckLevel({ scene, player, hud, timeSystem: time, respawn,
+  const level = createTimewreckLevel({ debrisSeed: 12345, scene, player, hud, timeSystem: time, respawn,
     interaction: { register: (object, options) => { interactions.set(object.name, options); return () => interactions.delete(object.name) }, registerBlocker: () => () => {}, flashPrompt() {} },
     camera: { snap() {} }, advance() { advanced++ }, startCarriage: start
   })
@@ -56,6 +66,50 @@ function levelHarness(start = 'mechanical', fps = 60) {
   const dispose = () => { respawn.dispose(); level.dispose(); time.dispose() }
   return { hud, setProbe(fn) { probe = fn }, get elapsed() { return elapsed }, get skipFinale() { return skipFinale }, get advanced() { return advanced }, scene, player, time, respawn, level, center, layout, interactions, tick, dispose, messages }
 }
+
+test('L3 atmosphere holds through ordinary Freeze and resumes without jumping to wall-clock time', () => {
+  const h = levelHarness('mechanical')
+  try {
+    h.tick(0.5)
+    const root = h.scene.getObjectByName('train-interior-wrecked')
+    const pose = () => [...root.position.toArray(), root.rotation.z,
+      ...root.getObjectByName('storm-debris-field').children.flatMap(node =>
+        [...node.position.toArray(), ...node.rotation.toArray().slice(0, 3)])]
+    const held = pose()
+    h.time.triggerFreeze(); h.tick(0.5)
+    assert.deepEqual(pose(), held)
+    h.time.triggerFreeze(); h.tick(1 / 60)
+    assert.ok(pose().every((value, i) => Math.abs(value - held[i]) < 0.05))
+  } finally { h.dispose() }
+})
+
+test('torn wreck ownership: rear cutoff retires world hazards, retains Passenger, and checkpoint restores them', () => {
+  const h=levelHarness('passenger')
+  try {
+    const root=h.scene.getObjectByName('train-interior-wrecked')
+    const cargo=root.getObjectByName('cargo-loop-door')
+    const mechanical=root.getObjectByName('runaway-pistons')
+    const fork=root.getObjectByName('convergence-route-fork')
+    const relay=root.getObjectByName('carriage-relay')
+    const passenger=root.getObjectByName('carriage-passenger')
+    const originalParent=cargo.parent
+    h.tick(1.3)
+    for(const node of [cargo,mechanical,fork,relay])assert.equal(node.visible,false,node.name)
+    assert.equal(passenger.visible,true)
+    assert.deepEqual(h.level.getCarriageVolumes().map(v=>v.key).sort(),['cab','passenger'])
+    assert.equal(cargo.parent,originalParent,'registered motion stays in world coordinates')
+    h.level.checkpoint.restore()
+    assert.equal(h.level.getCarriageVolumes().length,8)
+    for(const node of [cargo,mechanical,fork,relay])assert.equal(node.visible,true,node.name)
+    assert.equal(root.getObjectByName('sky-dome'),undefined,'sky is scene-owned')
+    const sky=h.scene.getObjectByName('sky-dome')
+    h.time.setMode('NORMAL');h.tick(0.1)
+    const clock=sky.material.uniforms.uTime.value
+    h.time.triggerFreeze();h.tick(0.1)
+    assert.equal(sky.material.uniforms.uTime.value,clock)
+  } finally {h.dispose()}
+  assert.equal(h.scene.getObjectByName('sky-dome'),undefined)
+})
 
 test('N7: live approach/depleted repair, three falls/retries, Mechanical checkpoint and steam remain safe', () => {
   for (const fps of [30, 60, 144, [1/144, 1/30, 0.1, 1/60]]) {
@@ -141,6 +195,7 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
         move('z', gate.position.z + 1.4)
         waitUntil(() => gate.getObjectByName('vault-clearance-signal').material.color.getHex() === 0x42dfad)
         h.time.triggerFreeze(); move('z', gate.position.z - 1.3)
+        move('x', 0) // recharge between the straight panel lanes
         recharge()
       }
       stage = 'convergence'
@@ -153,7 +208,7 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       move('x', 0.65) // open end of the diagonal trolley
       move('z', center(stage) + 10)
       if (route === 'direct') {
-        move('x', -0.6)
+        move('x', 0.4) // dodge brown panels in the left lane, staying clear of the partition
         move('z', center(stage) + 6.2)
         const surge = h.scene.getObjectByName('convergence-electrical-surge')
         assert.ok(surge)
@@ -167,7 +222,7 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
         move('z', center(stage) + 3.4, { duck: true })
         h.time.setMode('NORMAL')
         move('z', center(stage) - 1.3, { duck: true })
-        move('x', -0.6)
+        move('x', 0.4)
       }
       // Open-floor carts past the fork — Freeze holds every direction of roll.
       h.time.triggerFreeze()
@@ -183,7 +238,11 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       assert.equal(trunks.length, 3)
       waitUntil(() => trunks[0].position.x < -1)
       h.time.triggerFreeze(); move('z', center(stage) + 4.6)
-      h.time.setMode('NORMAL'); move('z', center(stage) + 2.7)
+      h.time.setMode('NORMAL'); move('z', center(stage) + 2.7, { duck: true })
+      move('x', 0, { duck: true }) // crouch below the denser high right-hand stream before waiting
+      h.tick(1 / fps)
+      if (h.player.isCrouching()) h.tick(1 / fps, { duck: true })
+      h.tick(1 / fps)
       repair(h, 'mechanical-rewind-shutter')
       move('z', center(stage) - 2)
       recharge(); move('x', 0)
@@ -219,8 +278,8 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       h.time.resetGhost()
       stage = 'security'
       move('z', center(stage) + 7.15)
-      move('x', -0.9); recharge()
-      h.time.triggerFreeze(); h.tick(0.23)
+      recharge(); h.time.triggerFreeze()
+      move('x', -0.9); h.tick(0.23)
       h.tick(0.62, {forward:true}); h.tick(0.5, {forward:true,right:true}); h.tick(0.7,{forward:true}); h.tick(0.05)
       check(); recharge()
       // Retry on the island in the same run: no stale Relay echo or old powers.
@@ -233,13 +292,16 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       check(); h.time.setMode('NORMAL'); move('x', 0)
       stage = 'passenger'
       move('z', center(stage) + 8.4)
-      h.tick(0.7,{forward:true,run:true,right:true}); h.tick(0.2,{forward:true,run:true})
-      h.time.triggerFreeze(); h.tick(0.3); h.tick(0.37,{left:true,run:true}); h.tick(1.6,{forward:true,run:true})
+      // Take the narrow right lane; the flying luggage makes the wall-side sprint lethal.
+      h.tick(0.14,{forward:true,run:true,right:true}); h.tick(0.76,{forward:true,run:true,jump:true})
+      h.time.triggerFreeze(); h.tick(0.3); h.tick(0.05,{left:true,run:true}); h.tick(1.6,{forward:true,run:true,jump:true})
       check(); h.time.setMode('NORMAL')
       move('z', h.scene.getObjectByName('emergency-brake').position.z + 1.5, {run:true})
       h.interactions.get('emergency-brake').onInteract()
       assert.equal(h.level.isCinematic,true)
-      h.tick(4.9)
+      h.tick(1.49)
+      assert.equal(h.advanced,0,'hand-off waits for the complete fade')
+      h.tick(0.02)
       assert.equal(h.advanced,1)
     } finally { h.dispose() }
   }
@@ -269,7 +331,7 @@ test('N8/N9: each live event pauses, holds Freeze without taking control, and re
         manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud, timeSystem: h.time,
           respawn: h.respawn, camera: { snap() {} }, loadingScreen: { show() {}, hide() {} },
           interaction: { register: () => () => {}, registerBlocker: () => () => {}, setEnabled() {} },
-          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ ...ctx, startCarriage: spec.key }) }] })
+          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ debrisSeed: 12345, ...ctx, startCarriage: spec.key }) }] })
         manager.adopt('Timewreck', h.level)
         if (action === 'restart') {
           manager.restart()
@@ -311,7 +373,7 @@ test('N9: caught recovery and game-over restart during every vignette restore pr
         manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud, timeSystem: h.time,
           respawn: h.respawn, camera: { snap() {} }, loadingScreen: { show() {}, hide() {} },
           interaction: { register: () => () => {}, registerBlocker: () => () => {}, setEnabled() {} },
-          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ ...ctx, startCarriage: spec.key }) }] })
+          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ debrisSeed: 12345, ...ctx, startCarriage: spec.key }) }] })
         manager.adopt('Timewreck', h.level)
         h.respawn.resetLives(1)
         h.respawn.setGameOverHandler(() => { gameOvers++; manager.restart() })
@@ -452,12 +514,14 @@ test('Mechanical: Slow first bank, safe switching recess, Rewind/Freeze shutter 
       assert.equal(h.respawn.isFailing(), false, JSON.stringify({fps, pos:h.player.mesh.position, messages:h.messages}))
       assert.ok(h.player.mesh.position.z < h.center + 5)
       h.time.setMode('NORMAL'); h.tick(0.6, { forward: true })
+      h.time.triggerFreeze(); h.tick(0.375, { left: true })
+      h.time.setMode('NORMAL') // step out of the randomized right-side flight before observing the shutter
       const shutter = repair(h, 'mechanical-rewind-shutter')
       h.tick(1.25, { forward: true })
       assert.ok(h.player.mesh.position.z < h.center - 1.5)
       assert.ok(shutter.position.y > 3.5)
       assert.ok(h.time.getEnergy() > 35)
-      h.time.setMode('NORMAL'); h.tick(0.375, {left: true}); h.tick(4)
+      h.time.setMode('NORMAL'); h.tick(4)
       h.time.triggerSlow(); h.tick(2.4, { forward: true })
       assert.equal(h.respawn.isFailing(), false, JSON.stringify({fps, pos:h.player.mesh.position, messages:h.messages}))
       assert.ok(h.player.mesh.position.z < h.center - 11)
@@ -565,20 +629,20 @@ test('Convergence: four open-floor runaway carts move in all directions and Slow
   } finally { h.dispose() }
 })
 
-test('Passenger: warned rack, real separating floor, Freeze chase and controllable sprint reach brake', () => {
+test('Passenger: warned rack, real separating floor, Freeze chase and controllable sprint reach brake', t => {
   for (const fps of [30, 60, 144]) {
     const h = levelHarness('passenger', fps)
     try {
       h.tick(0.1, { forward: true, run: true })
-      h.tick(0.7, { forward: true, run: true, right: true })
+      h.tick(0.14, { forward: true, run: true, right: true })
       assert.ok(h.messages.some(m => m.includes('Rack bolts')))
-      h.tick(0.2, { forward: true, run: true })
+      h.tick(0.76, { forward: true, run: true, jump: true })
       const wave = h.scene.getObjectByName('time-wave')
       const waveZ = wave.position.z
       h.time.triggerFreeze(); h.tick(0.3)
       assert.equal(wave.position.z, waveZ)
-      h.tick(0.37, { left: true, run: true })
-      h.tick(1.6, { forward: true, run: true })
+      h.tick(0.05, { left: true, run: true })
+      h.tick(1.6, { forward: true, run: true, jump: true })
       assert.ok(h.player.mesh.position.z < h.center - 3)
       assert.ok(h.player.mesh.position.y >= -0.1)
       assert.equal(h.respawn.isFailing(), false, JSON.stringify({fps, pos:h.player.mesh.position, messages:h.messages}))
@@ -591,9 +655,10 @@ test('Passenger: warned rack, real separating floor, Freeze chase and controllab
       assert.equal(h.level.isCinematic, false, 'player owns the entire sprint')
       h.interactions.get('emergency-brake').onInteract()
       assert.equal(h.level.isCinematic, true)
-      h.tick(2.7)
+      h.tick(1.2)
       const scenery = h.scene.getObjectByName('trackside-infrastructure')
       const stopped = scenery.position.z
+      t.diagnostic(`Brake stop at ${fps} FPS: trackside z=${stopped}; stopped before the 1.5s hand-off`)
       h.tick(0.8)
       assert.equal(scenery.position.z, stopped, 'main scenery actually stops')
       assert.ok(h.scene.getObjectByName('broken-bridge-ahead'))
@@ -800,12 +865,16 @@ test('Passenger: minimum-energy carried entry and repeated checkpoint retries ca
           minGap = Math.min(minGap, h.scene.getObjectByName('time-wave').position.z - h.player.mesh.position.z)
           minEnergy = Math.min(minEnergy, h.time.getEnergy())
         })
-        if (attempt === 2) h.tick(0.05, { right: true, run: true }) // recover a small entry misalignment
+        if (attempt === 2) {
+          h.tick(0.05, { right: true, run: true })
+          h.tick(0.05, { left: true, run: true }) // recenter before the narrow luggage clearance
+        }
         h.tick(0.1,{forward:true,run:true})
-        h.tick(0.7,{forward:true,run:true,right:true})
-        h.tick(0.2,{forward:true,run:true})
+        h.tick(0.14,{forward:true,run:true,right:true})
+        h.tick(0.76,{forward:true,run:true,jump:true})
         h.time.triggerFreeze(); h.tick(0.3)
-        h.tick(0.37,{left:true,run:true}); h.tick(1.6,{forward:true,run:true})
+        h.tick(0.05,{left:true,run:true})
+        h.tick(1.6,{forward:true,run:true,jump:true})
         assert.equal(h.respawn.isFailing(),false,JSON.stringify({fps,attempt,pos:h.player.mesh.position,energy:h.time.getEnergy(),messages:h.messages.slice(-3)}))
         assert.ok(h.player.mesh.position.z<h.center-3)
         assert.ok(h.player.mesh.position.y>=-0.1)
@@ -830,13 +899,13 @@ test('Passenger: minimum-energy carried entry and repeated checkpoint retries ca
 test('N6: rebound movement/Freeze controls navigate both seats and reach the brake from minimum energy', () => {
   const h = levelHarness('passenger')
   const target = new EventTarget(); globalThis.window = target
-  const codes = { forward: 'KeyI', right: 'KeyL', left: 'KeyJ', run: 'KeyO', freeze: 'KeyP' }
+  const codes = { forward: 'KeyI', right: 'KeyL', left: 'KeyJ', run: 'KeyO', freeze: 'KeyP', jump: 'KeyM' }
   for (const [action, code] of Object.entries(codes)) { settings.setBinding(action, 0, code); settings.setBinding(action, 1, null) }
   const keyboard = createKeyboardState()
   const key = (type, code) => { const e = new Event(type); Object.assign(e, { code, repeat: false }); target.dispatchEvent(e) }
   keyboard.onAction('freeze', () => h.time.triggerFreeze())
   const walk = (seconds, actions = []) => {
-    for (const action of ['forward', 'right', 'left', 'run']) {
+    for (const action of ['forward', 'right', 'left', 'run', 'jump']) {
       const down = actions.includes(action)
       if (down !== Boolean(keyboard.state[action])) key(down ? 'keydown' : 'keyup', codes[action])
     }
@@ -846,10 +915,10 @@ test('N6: rebound movement/Freeze controls navigate both seats and reach the bra
   try {
     h.time.resetForCheckpoint({ ...h.time.captureCheckpointState(), energy: 0 })
     walk(0.1, ['forward', 'run'])
-    walk(0.7, ['forward', 'right', 'run']); walk(0.2, ['forward', 'run'])
+    walk(0.14, ['forward', 'right', 'run']); walk(0.76, ['forward', 'run', 'jump'])
     key('keydown', 'KeyF'); assert.equal(h.time.getMode(), 'NORMAL')
     key('keydown', codes.freeze); assert.equal(h.time.getMode(), 'FREEZE')
-    walk(0.3); walk(0.37, ['left', 'run']); walk(1.6, ['forward', 'run'])
+    walk(0.3); walk(0.05, ['left', 'run']); walk(1.6, ['forward', 'run', 'jump'])
     assert.ok(h.player.mesh.position.z < h.center - 3)
     h.time.setMode('NORMAL')
     const brake = h.scene.getObjectByName('emergency-brake')
@@ -873,7 +942,7 @@ test('Batches 4/5: full rebuild disposes routes and restores fresh ability and o
     assert.equal(fork.parent.parent, null)
     assert.equal(h.interactions.has('emergency-brake'), false)
     h.time.resetForLevel()
-    const fresh = createTimewreckLevel({ scene: h.scene, player: h.player, hud: new Proxy({}, {get:()=>()=>{}}), timeSystem: h.time,
+    const fresh = createTimewreckLevel({ debrisSeed: 12345, scene: h.scene, player: h.player, hud: new Proxy({}, {get:()=>()=>{}}), timeSystem: h.time,
       respawn: h.respawn, camera: {snap(){}}, advance(){}, startCarriage: 'passenger',
       interaction: {register:()=>()=>{}, registerBlocker:()=>()=>{}} })
     try {
@@ -955,7 +1024,7 @@ test('Finale: native skip completes once; natural completion and checkpoint reco
       startFinale(h)
       const skip = h.skipFinale
       if (finish === 'skip') skip()
-      else if (finish === 'automatic') h.tick(4.9)
+      else if (finish === 'automatic') h.tick(1.51)
       else { h.respawn.cancel(); h.respawn.respawn() }
       assert.equal(h.skipFinale, null)
       assert.equal(h.level.isCinematic, false)
@@ -987,7 +1056,7 @@ test('Finale: real level manager restart/quit cancels reveal and stale completio
         registerBlocker: () => () => {}, setEnabled(){}, flashPrompt(){}
       },
       levels: [
-        {state:'Timewreck',create: ctx => createTimewreckLevel({...ctx,startCarriage:'passenger'})},
+        {state:'Timewreck',create: ctx => createTimewreckLevel({ debrisSeed: 12345,...ctx,startCarriage:'passenger'})},
         {state:'Complete',keepPrevious:true,create: () => {completeEntries++; return {dispose(){}}}}
       ]
     })
@@ -1132,7 +1201,7 @@ test('Restart: real level manager rebuilds every L3 start and quit cancels a pen
           register:(object,options)=>{h.interactions.set(object.name,options);return()=>h.interactions.delete(object.name)},
           registerBlocker:()=>()=>{},setEnabled(){},flashPrompt(){}
         },levels:[
-          {state:'Timewreck',create:ctx=>createTimewreckLevel({...ctx,startCarriage:start})},
+          {state:'Timewreck',create:ctx=>createTimewreckLevel({ debrisSeed: 12345,...ctx,startCarriage:start})},
           {state:'Complete',create:()=>({dispose(){}})}
         ]})
       try {
