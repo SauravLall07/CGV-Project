@@ -104,6 +104,14 @@ const assets = createAssetLoader()
 const hud = createHud()
 const startupTasks = createLoadingTasks(['detective', 'police', 'ghost', 'backdrop', 'presentation'])
 const loadingScreen = createLoadingScreen(assets, { tasks: startupTasks })
+// The Level 2 → 3 story beat builds Level 3 while its own panel is on screen,
+// so the level manager's loading overlay is suppressed for that one build.
+let quietLevelLoad = false
+const levelLoadingScreen = {
+  show() { if (!quietLevelLoad) loadingScreen.show() },
+  hide() { loadingScreen.hide() },
+  setError() { quietLevelLoad = false; loadingScreen.show(); loadingScreen.setError?.() }
+}
 
 // The player persists across levels; the level manager repositions it to
 // each level's checkpoint on load.
@@ -323,7 +331,7 @@ const levelManager = createLevelManager({
   respawn,
   renderer,
   timeSystem,
-  loadingScreen,
+  loadingScreen: levelLoadingScreen,
   onEnter: (state) => {
     if (gameStarted && !storyPlayer?.active && !awaitingIntro) playMusicForState(state)
     // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
@@ -354,7 +362,7 @@ const levelManager = createLevelManager({
       return ctx => createBoardingLevel({ ...ctx, renderCamera: camera })
     } },
     // Level 2's Core ending calls advance(); it now plays the Level 2 → 3
-    // story beat, which builds Level 3 itself under black.
+    // story beat, which builds Level 3 itself while panel 1 plays.
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
       .then(({ createMovingHeistLevel }) => ctx => {
         prepareLevel3Transition()
@@ -362,7 +370,9 @@ const levelManager = createLevelManager({
         return createMovingHeistLevel({ ...ctx, post, advance: beginLevel3Transition })
       }) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
-    { state: 'Ending', load: () => import('./levels/ending.js')
+    // Prefetched during Level 3; held until the Level 2 → 3 beat has finished
+    // so its module/painting decode cannot stutter the cutscene.
+    { state: 'Ending', load: () => afterStoryBeat().then(() => import('./levels/ending.js'))
       .then(({ createEndingLevel, prefetchEndingPaintings }) => {
         // Paintings prefetch during Timewreck, but cannot hold the transition hostage.
         prefetchEndingPaintings().catch(error => {
@@ -866,13 +876,57 @@ function prepareLevel3Transition() {
       // Already silent under the master fade; now actually stop them.
       stopLevelMusic()
       disposeGameplayDrone()
-      // Builds Level 3 (energy carried over) behind the opaque black.
+    },
+    onBuild() {
+      // Builds Level 3 (energy carried over) while panel 1 plays; panel 1
+      // stays on screen instead of the loading overlay.
+      if (storyPlayer !== owner) return
+      quietLevelLoad = true
       levelManager.advance()
+      // Fetch/decode Level 3's music in the background (shared cache), so it
+      // starts instantly when the blue clears instead of decoding then.
+      const music = new LevelMusicPlayer(loadTrack(LEVEL_TRACKS.Timewreck.file))
+      music.load().catch(() => {}).finally(() => music.dispose())
+    },
+    onPrewarm() {
+      // Right after the build, while panel 1 holds still: run and draw one
+      // real Level 3 frame through the normal pipeline (post-processing), at
+      // the spawn view. Its shader compiles, texture uploads and render
+      // buffers happen here instead of when the cutscene ends. The player
+      // draws panel 1 over it before the browser shows the frame.
+      quietLevelLoad = false
+      if (storyPlayer !== owner || levelManager.getState() !== 'Timewreck') return
+      updateGameFrame(0, true)
+      scene.updateMatrixWorld(true)
+      // Everything, not just what the spawn view sees: parts of Level 3 that
+      // come into view later would otherwise upload on their first frame.
+      const textures = new Set(), culled = []
+      scene.traverse(node => {
+        if (node.frustumCulled && (node.isMesh || node.isPoints || node.isLine || node.isSprite)) { culled.push(node); node.frustumCulled = false }
+        const materials = Array.isArray(node.material) ? node.material : node.material ? [node.material] : []
+        for (const material of materials) {
+          for (const value of Object.values(material)) if (value?.isTexture && !value.isRenderTargetTexture) textures.add(value)
+          for (const uniform of Object.values(material.uniforms ?? {})) if (uniform?.value?.isTexture && !uniform.value.isRenderTargetTexture) textures.add(uniform.value)
+        }
+      })
+      if (scene.background?.isTexture && !scene.background.isRenderTargetTexture) textures.add(scene.background)
+      if (scene.environment?.isTexture && !scene.environment.isRenderTargetTexture) textures.add(scene.environment)
+      try {
+        for (const texture of textures) renderer.initTexture(texture)
+        post.render(scene, camera)
+      } finally {
+        for (const node of culled) node.frustumCulled = true
+      }
+      if (import.meta.env?.DEV) console.log(`[perf] level3 warm-up: ${textures.size} textures, ${culled.length} objects drawn once`)
+    },
+    onReveal() {
+      // The blue surge is clearing onto Level 3: bring its music in with it.
+      if (storyPlayer === owner) playMusicForState(levelManager.getState())
     },
     onComplete() {
+      quietLevelLoad = false
       if (storyPlayer !== owner) return
       storyPlayer = null
-      playMusicForState(levelManager.getState())
       hud.root.style.visibility = ''
       hud.setVisible(true)
       syncInputState()
@@ -893,6 +947,15 @@ function beginLevel3Transition() {
   syncInputState()
 }
 
+// Resolves at once when no story beat is playing; otherwise shortly after it ends.
+function afterStoryBeat(settleMs = 1500) {
+  if (!storyPlayer?.active) return Promise.resolve()
+  return new Promise(resolve => {
+    const check = () => { if (storyPlayer?.active) requestAnimationFrame(check); else setTimeout(resolve, settleMs) }
+    requestAnimationFrame(check)
+  })
+}
+
 // A level teardown (restart, quit) drops an unused prepared beat; the next
 // Level 2 build prepares a fresh one.
 function releaseIdleLevel3Transition() {
@@ -907,7 +970,7 @@ function startDevLevel3Cutscene() {
   devLevel3CutRun = storyRun
   const check = () => {
     if (levelManager.getState() !== 'MovingHeist') return
-    if (levelManager.isTransitioning()) { requestAnimationFrame(check); return }
+    if (levelManager.isTransitioning() || !level3Transition?.prepared) { requestAnimationFrame(check); return }
     beginLevel3Transition()
   }
   requestAnimationFrame(check)

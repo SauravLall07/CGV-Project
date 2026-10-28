@@ -5,32 +5,41 @@ import { createStoryFilm, FX_NONE, FX_TREMOR, FX_ROCKSLIDE, FX_TIMEWARP } from '
 import { typewriterProgress } from './story-player.js'
 import {
   TREMOR_SHAKE, TREMOR_SHAKE_IN, TREMOR_SHAKE_END, RIPPLE_CENTER, RIPPLE_SQUASH, RIPPLE_MAX_RADIUS, RIPPLES,
-  ROCK_SHAKE, ROCK_SHAKE_VERTICAL, ROCK_SHAKE_KEYS, DUST_STRENGTH, WARP_PULSE_HZ,
-  SLIP_EVERY, SLIP_DURATION_S, SLIP_BAND, SLIP_MIN_Y, SLIP_MAX_Y
+  ROCK_SHAKE, ROCK_SHAKE_VERTICAL, ROCK_SHAKE_KEYS, DUST_STRENGTH, WARP_PULSE_HZ
 } from '../story/l3-transition-beat.js'
 
 // Mid-game narrated cutscene (Level 2 → Level 3). Owns the same slot in
 // main.js as the intro's story player, so STORY input, pause blocking, music
-// gating and minimap rules apply unchanged. Phases:
-//   fadeOut  game still drawn, black veil 0 → 1, master volume fades with it
-//   build    opaque black (also over the loading screen); main.js swaps levels
-//   panels   3 ink panels with narration, captions and panel effects
-//   darken   last panel → black
-//   warm     opaque black over the LIVE new level until frames are steady
-//   reveal   black veil 1 → 0, then hand control back
+// gating and minimap rules apply unchanged.
+//
+// The next level's constructor and its first frames block the main thread.
+// Neither may show as a freeze:
+//   fadeOut  the film's panel 1 crossfades in over the frozen Level 2 frame;
+//            music fades with it
+//   build    panel 1 holds perfectly still (no zoom/effects yet) while its
+//            line plays on the audio clock and main.js builds + compiles
+//            Level 3 — a blocked frame of a still picture looks the same
+//   panels   3 panels, captions, effects; the clock is wall time, so the
+//            pictures stay in sync with the voice after a blocked frame
+//   surge    panel 3's cracks flood the screen chrono-blue (a page layer
+//            animated by the compositor, so it keeps pulsing through jank)
+//   blue     Level 3 runs live under the blue until its frames are steady
+//   reveal   the blue clears onto Level 3, then control is handed back
 const log = (...args) => { if (import.meta.env?.DEV) console.log('[story]', ...args) }
 const FX_IDS = { none: FX_NONE, tremor: FX_TREMOR, rockslide: FX_ROCKSLIDE, timewarp: FX_TIMEWARP }
+// The film keeps animating at its peak while the snapshot encodes.
+const CAPTURE_TIMEOUT_MS = 1500
 const smooth = x => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t) }
 
-// Panel i: [start, end). The line starts narrationDelay after the panel
-// appears; the next panel starts after the line plus its hold.
+// Panel i: [start, end). Its line starts after the panel's narration delay;
+// the next panel starts after the line plus its hold.
 export function buildTransitionTimeline(beat, clipDurations) {
   let cursor = 0
   return beat.panels.map((panel, i) => {
     const clip = clipDurations[i] ?? beat.timings.fallbackClip
     const last = i === beat.panels.length - 1
     const start = cursor
-    const clipStart = start + beat.timings.narrationDelay
+    const clipStart = start + (panel.narrationDelay ?? beat.timings.narrationDelay)
     cursor = clipStart + clip + (last ? beat.timings.lastHold : beat.timings.hold)
     return { start, end: cursor, clipStart, clip }
   })
@@ -64,23 +73,8 @@ export function shakeOffset(t, amount, vertical = 1, target = { x: 0, y: 0 }) {
   return target
 }
 
-// Deterministic glitch schedule over one panel: [{ at, y, height }].
-export function slipSchedule(duration, seed = 7) {
-  let state = seed
-  const random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646 }
-  const slips = []
-  let at = SLIP_EVERY[0] * 0.5
-  while (at < duration - SLIP_DURATION_S) {
-    const height = SLIP_BAND[0] + (SLIP_BAND[1] - SLIP_BAND[0]) * random()
-    const y = SLIP_MIN_Y + (SLIP_MAX_Y - height - SLIP_MIN_Y) * random()
-    slips.push({ at, y, height })
-    at += SLIP_EVERY[0] + (SLIP_EVERY[1] - SLIP_EVERY[0]) * random()
-  }
-  return slips
-}
-
-export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isLevelReady = () => true,
-  onComplete = () => {}, onRendererRestore = () => {},
+export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, onBuild = () => {}, onPrewarm = () => {},
+  onReveal = () => {}, isLevelReady = () => true, onComplete = () => {}, onRendererRestore = () => {},
   context = getContext, master = getMasterGain, doc = globalThis.document, keys = globalThis.window,
   loadImage = url => new THREE.ImageLoader().loadAsync(url),
   loadAudio = async (url, ctx, signal) => {
@@ -93,13 +87,15 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
   const black = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1); black.needsUpdate = true
   const size = new THREE.Vector2(), savedViewport = new THREE.Vector4(), shake = { x: 0, y: 0 }
   let disposed = false, active = false, prepared = false, readyPromise = null, warmed = false, loadTimer, hardTimer
-  let phase = '', phaseTime = 0, time = 0, index = -1, skipped = false, veil = 0, darkenFrom = 1
-  let timeline = null, slips = [], savedRenderer = null
-  let root = null, strip = null, cover = null, button = null, blocks = []
+  let phase = '', phaseStartedAt = 0, origin = 0, time = 0, index = 0, skipped = false
+  let timeline = null, savedRenderer = null, zoomFrom = Infinity, surgeSeconds = 0, warpFrom = 0
+  let settled = false, settleCount = 0, lastUpdateAt = 0, fxShift = 0
+  let root = null, strip = null, surge = null, frame = null, button = null, blocks = []
+  let captureWanted = false, captureState = '', captureTimer
   let bus = null, limiter = null, narrationGain = null, narration = null, rumbleGain = null, rumble = null
   let narrationIndex = -1, rumbleStarted = false, rumbleFading = false
-  let masterSaved = null, buildStartedAt = 0, goodFrames = 0, warmWall = 0, warmStartedAt = 0
-  const warmFrames = []
+  let masterSaved = null, buildStartedAt = 0, goodFrames = 0
+  const gameFrames = []
   let enterHeld = false, enterReady = true
 
   // ---- renderer ownership (same contract as the intro's story player) ----
@@ -154,15 +150,17 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
     try { node.stop() } catch { /* already ended */ }
     node.disconnect()
   }
-  function playNarration(i) {
+  // Scheduled on the audio clock, so it starts on time even if the main
+  // thread is blocked by the level build when it is due.
+  function playNarration(i, delay = 0) {
     const ctx = context(), buffer = clips[i]
     narrationIndex = i
     if (!buffer || ctx?.state !== 'running' || !ensureBus()) return
     try {
       stopSource(narration)
       narration = ctx.createBufferSource(); narration.buffer = buffer
-      narration.connect(narrationGain); narration.start()
-      log('l3 line', i + 1)
+      narration.connect(narrationGain); narration.start(ctx.currentTime + Math.max(0, delay))
+      log('l3 line', i + 1, delay > 0 ? `in ${delay.toFixed(2)}s` : '')
     } catch (error) { log('l3 line failed', error.message); narration = null }
   }
   function startRumble(spec, buffer) {
@@ -231,8 +229,9 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
     })]).then(() => { clearTimer(loadTimer); if (!disposed) prepared = true })
     return readyPromise
   }
+  // GPU uploads/compiles for the film itself, done before anything shows.
   function warm() {
-    if (disposed || warmed) return
+    if (disposed || warmed || !prepared) return
     warmed = true
     for (const texture of textures) if (texture) renderer.initTexture(texture)
     renderer.initTexture(black)
@@ -246,15 +245,36 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
       span.style.visibility = 'hidden'; parent.appendChild(span); return span
     })
   }
+  // Holds the surge's peak frame (a snapshot of the film) above the game
+  // while Level 3's first frames run. Only opacity/transform animate, so the
+  // compositor keeps it moving even while those frames block the main thread.
+  function buildSurge() {
+    const layer = doc.createElement('div'); layer.id = 'story-surge'
+    Object.assign(layer.style, { position: 'absolute', inset: '0', opacity: '0', overflow: 'hidden', pointerEvents: 'none', willChange: 'transform, opacity',
+      transformOrigin: '50% 52%',
+      // Fallback look if the snapshot is unavailable: the same blue grade.
+      background: 'radial-gradient(ellipse at 50% 52%, #dff5ff 0%, #7fd3f8 16%, #2a9fd8 42%, #0b4f7a 75%, #052238 100%)' })
+    const style = doc.createElement('style')
+    style.textContent = '@keyframes l3-surge-pull{from{transform:scale(1)}to{transform:scale(1.1)}}'
+      + '@keyframes l3-surge-core{from{opacity:.25}to{opacity:.7}}'
+    layer.appendChild(style)
+    // A 2D canvas: the snapshot is copied in on the GPU (no readback/encode).
+    frame = doc.createElement('canvas')
+    Object.assign(frame.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', willChange: 'transform', transformOrigin: '50% 52%' })
+    layer.appendChild(frame)
+    const core = doc.createElement('div')
+    Object.assign(core.style, { position: 'absolute', inset: '0', willChange: 'opacity',
+      background: 'radial-gradient(ellipse at 50% 52%, rgba(235,249,255,0.85) 0%, rgba(150,220,252,0.35) 22%, rgba(56,189,248,0) 50%)',
+      animation: 'l3-surge-core 0.9s ease-in-out infinite alternate' })
+    layer.appendChild(core)
+    return layer
+  }
   function buildDom() {
     root = doc.createElement('div'); root.id = 'story-transition'
     Object.assign(root.style, { position: 'fixed', inset: '0', zIndex: '11000', pointerEvents: 'auto', fontFamily: THEME.serif })
-    // Hides the level manager's loading screen while Level 3 is built.
-    cover = doc.createElement('div')
-    Object.assign(cover.style, { position: 'absolute', inset: '0', background: '#000', display: 'none' })
-    root.appendChild(cover)
+    surge = buildSurge(); root.appendChild(surge)
     strip = doc.createElement('div'); strip.id = 'story-captions'
-    Object.assign(strip.style, { position: 'absolute', bottom: `${beat.captions.bottomVh}vh`, left: '50%', transform: 'translateX(-50%)', width: 'min(980px, 92vw)', maxWidth: '980px', textAlign: 'center', visibility: 'hidden' })
+    Object.assign(strip.style, { position: 'absolute', bottom: `${beat.captions.bottomVh}vh`, left: '50%', transform: 'translateX(-50%)', width: 'min(980px, 92vw)', maxWidth: '980px', textAlign: 'center', visibility: 'hidden', opacity: '0', willChange: 'opacity' })
     const caption = doc.createElement('div')
     Object.assign(caption.style, { color: '#f3ead6', fontFamily: 'Georgia, serif', fontSize: 'clamp(18px, 1.91vw, 26px)', lineHeight: '1.4', textShadow: '0 0 2px #000, 0 2px 6px #000, 0 0 14px rgba(0,0,0,0.85)' })
     blocks = beat.panels.map(panel => panel.captions.map(chunk => {
@@ -279,6 +299,30 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
       }
     }))
   }
+  // Snapshot of the canvas, taken right after the film drew its surge peak
+  // (same task, so no preserveDrawingBuffer is needed). createImageBitmap
+  // keeps it on the GPU; drawing it into the 2D canvas is a GPU copy, so
+  // there is no pixel readback or JPEG encode stalling the frame.
+  function captureFrame() {
+    captureWanted = false
+    const canvas = renderer.domElement
+    const createBitmap = globalThis.createImageBitmap
+    if (!canvas || typeof createBitmap !== 'function' || !frame?.getContext) { captureState = 'failed'; return }
+    captureState = 'pending'
+    const done = ok => { if (captureState === 'pending') captureState = ok ? 'ready' : 'failed' }
+    captureTimer = setTimer(() => done(false), CAPTURE_TIMEOUT_MS)
+    const at = now()
+    try {
+      createBitmap(canvas).then(bitmap => {
+        if (disposed || !frame) { bitmap.close?.(); return done(false) }
+        frame.width = bitmap.width; frame.height = bitmap.height
+        frame.getContext('2d').drawImage(bitmap, 0, 0)
+        bitmap.close?.()
+        if (import.meta.env?.DEV) console.log(`[perf] l3 snapshot ${(now() - at).toFixed(1)}ms`)
+        done(true)
+      }, error => { log('l3 snapshot failed', error?.message); done(false) })
+    } catch { done(false) }
+  }
 
   // ---- input ----
   function swallow(event) { event.stopPropagation() }
@@ -292,7 +336,13 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
   function blur() { enterHeld = false; enterReady = true }
 
   // ---- lifecycle ----
-  function setPhase(next) { phase = next; phaseTime = 0; log('l3', next) }
+  function setPhase(next) { phase = next; phaseStartedAt = now(); log('l3', next) }
+  const phaseTime = () => (now() - phaseStartedAt) / 1000
+  function setTexture(i, uniform, dimensions) {
+    const texture = textures[i] || black
+    uniform.value = texture
+    dimensions.value.set(texture.image?.width || 16, texture.image?.height || 9)
+  }
   function start() {
     if (disposed || active) return
     active = true; enterReady = !enterHeld
@@ -300,62 +350,120 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
     keys.addEventListener('keyup', keyup, true)
     keys.addEventListener('blur', blur)
     keys.addEventListener('resize', storyResolution)
+    prefetch(); warm()
+    timeline = buildTransitionTimeline(beat, beat.panels.map((_, i) => clips[i]?.duration))
     buildDom()
-    prefetch()
-    u.uRain.value = 0; u.uFade.value = 1; u.uOpacity.value = 0; u.uImage.value = 0; u.uMix.value = 1
+    u.uRain.value = 0; u.uFade.value = 1; u.uOpacity.value = 0; u.uImage.value = 1; u.uMix.value = 1
     u.uPaperOpacity.value = 0; u.uSteam.value = 0; u.uTrainHeight.value = 0; u.uSmokeClear.value = 0
     u.uBand.value.set(0, 1)
     u.uRingCenter.value.set(RIPPLE_CENTER[0], RIPPLE_CENTER[1]); u.uRingSquash.value = RIPPLE_SQUASH
     u.uWarpPulseHz.value = WARP_PULSE_HZ
-    setTexture(0, u.uTexA, u.uSizeA); setTexture(0, u.uTexB, u.uSizeB)
+    resetFx()
     fadeMasterOut(t.startFade)
-    hardTimer = setTimer(() => { if (active) { log('l3 hard timeout'); finish() } }, t.timeout * 1000)
+    origin = now(); time = 0; index = 0
+    setPanel(0, u.uTexA, u.uSizeA, u.uZoomA, u.uPanA); setPanel(0, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
+    // Generous while Level 3 builds (slow machines); reset once panels move.
+    armHardTimeout(t.timeout * 2)
     setPhase('fadeOut')
   }
-  function setTexture(i, uniform, dimensions) {
-    const texture = textures[i] || black
-    uniform.value = texture
-    dimensions.value.set(texture.image?.width || 16, texture.image?.height || 9)
-  }
-  function enterBlack() {
-    veil = 1; cover.style.display = 'block'
-    setPhase('build'); buildStartedAt = now()
-    // Music and the gameplay drone are silent at this point; stop them, then
-    // give the narration its normal master level back.
+  function enterBuild() {
+    u.uOpacity.value = 1
+    // Music and the gameplay drone are silent now; stop them and give the
+    // narration its normal master level back.
     onBlack()
     restoreMaster()
-  }
-  function beginPanels() {
-    cover.style.display = 'none'
+    acquireRenderer() // panel 1 is opaque from here: full story resolution
+    if (!skipped) {
+      // Line 1 and its first caption are queued on the audio clock / the
+      // compositor, so both run on time through the blocking build.
+      const entry = timeline[0]
+      playNarration(0, entry.clipStart - time)
+      strip.style.visibility = 'visible'
+      showCaption(0, 0, beat.panels[0].captions[0].text.length)
+      strip.style.transition = `opacity ${t.captionFade}s linear ${Math.max(0, entry.clipStart - time).toFixed(3)}s`
+      strip.style.opacity = '1'
+    }
     warm()
-    timeline = buildTransitionTimeline(beat, beat.panels.map((_, i) => clips[i]?.duration))
-    const last = timeline[timeline.length - 1]
-    slips = slipSchedule(last.end - last.start)
-    acquireRenderer()
-    time = 0; index = -1
-    strip.style.visibility = 'visible'
-    setPhase('panels')
+    setPhase('build'); buildStartedAt = now()
+    onBuild()
   }
-  function beginWarm() {
-    stopSource(narration); narration = null; fadeRumble(0.1)
-    strip.style.visibility = 'hidden'; cover.style.display = 'none'
+  function armHardTimeout(seconds) {
+    clearTimer(hardTimer)
+    hardTimer = setTimer(() => { if (active) { log('l3 hard timeout'); finish() } }, seconds * 1000)
+  }
+  function afterBuild() {
+    if (import.meta.env?.DEV) console.log(`[load] level3 built ${(now() - buildStartedAt).toFixed(1)}ms (on panel 1)`)
+    const at = now()
+    warm() // in case the panels finished loading during the build
+    // Level 3's first real frame is drawn now, with the game's own renderer
+    // settings, so its shaders/textures/buffers are created behind panel 1;
+    // the film is drawn over it before the browser shows anything.
     releaseRenderer()
-    resetFx()
-    u.uImage.value = 0; veil = 1; goodFrames = 0; warmWall = 0; warmStartedAt = now(); warmFrames.length = 0
-    setPhase('warm')
+    onPrewarm()
+    acquireRenderer()
+    if (import.meta.env?.DEV) console.log(`[perf] level3 first frame ${(now() - at).toFixed(1)}ms (on panel 1)`)
+    // Panel 1 stays still until frames are steady again (see settle()).
+    settled = false; settleCount = 0
+    strip.style.transition = 'none'
+    armHardTimeout(t.timeout)
+    if (skipped) beginSurge(t.skipSurge)
+    else setPhase('panels')
+  }
+  // Frames are steady again after the build/first-frame stall: panel 1 starts
+  // zooming and its effects begin. If that is late, panel 1 is lengthened so
+  // its ring/shake still get their moment, and later panels move back.
+  function settle() {
+    settled = true
+    zoomFrom = time
+    if (index !== 0) return
+    fxShift = Math.max(0, time + 0.3 - RIPPLES[0].at)
+    const extra = RIPPLES[0].at + fxShift + t.panel1FxMin - timeline[0].end
+    if (extra > 0) {
+      timeline[0].end += extra
+      for (let i = 1; i < timeline.length; i++) { timeline[i].start += extra; timeline[i].end += extra; timeline[i].clipStart += extra }
+    }
+    log('l3 settled', time.toFixed(2), fxShift > 0 ? `effects +${fxShift.toFixed(2)}s, panel 1 +${Math.max(0, extra).toFixed(2)}s` : '')
+  }
+  function beginSurge(seconds) {
+    surgeSeconds = seconds; warpFrom = u.uWarp.value
+    setPhase('surge')
+  }
+  function beginBlue() {
+    // The page layer now shows exactly the film's last frame (or, if the
+    // snapshot failed, the same blue grade), then slowly pushes in. The film
+    // stops drawing and Level 3 starts running underneath at game
+    // resolution; its heavy first frames are invisible behind the layer.
+    clearTimer(captureTimer)
+    if (captureState === 'ready') frame.style.animation = `l3-surge-pull ${t.blueMax + t.revealFade}s cubic-bezier(.2,.6,.3,1) forwards`
+    else frame.style.display = 'none'
+    surge.style.transition = 'none' // instant: the film below stops drawing this frame
+    surge.style.opacity = '1'
+    if (narrationGain) ramp(narrationGain.gain, 0, 0.25)
+    fadeRumble(0.25)
+    strip.style.transition = 'none'; strip.style.visibility = 'hidden'
+    releaseRenderer()
+    goodFrames = 0; gameFrames.length = 0
+    log('l3 blue', captureState === 'ready' ? '(snapshot)' : '(gradient)')
+    setPhase('blue')
+  }
+  function beginReveal() {
+    if (import.meta.env?.DEV) console.log(`[perf] level3 frames under blue ${gameFrames.map(ms => ms.toFixed(1)).join(' ')}`)
+    // The blue rushes towards the camera and clears onto Level 3.
+    surge.style.transition = `opacity ${t.revealFade}s ease-in, transform ${t.revealFade}s ease-in`
+    surge.style.opacity = '0'
+    surge.style.transform = 'scale(1.18)'
+    onReveal()
+    setPhase('reveal')
   }
   function skip() {
-    // darken/warm/reveal are already on the way out.
+    // surge/blue/reveal are already on the way out.
     if (!active || skipped || !['fadeOut', 'build', 'panels'].includes(phase)) return
     skipped = true; log('l3 skip')
-    if (phase === 'panels') {
-      if (narrationGain) ramp(narrationGain.gain, 0, t.skipAudioFade)
-      fadeRumble(t.skipAudioFade)
-      darkenFrom = u.uImage.value
-      strip.style.visibility = 'hidden'
-      setPhase('darken')
-    }
-    // fadeOut/build: the level still has to be built; panels are skipped.
+    if (narrationGain) ramp(narrationGain.gain, 0, t.skipAudioFade)
+    fadeRumble(t.skipAudioFade)
+    strip.style.transition = 'none'; strip.style.visibility = 'hidden'
+    if (phase === 'panels') beginSurge(t.skipSurge)
+    // fadeOut/build: Level 3 still has to be built; the surge follows it.
   }
   function finish() {
     if (!active) return
@@ -366,7 +474,8 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
   function dispose() {
     if (disposed) return
     disposed = true; active = false
-    clearTimer(loadTimer); clearTimer(hardTimer); abort.abort()
+    clearTimer(loadTimer); clearTimer(hardTimer); clearTimer(captureTimer); abort.abort()
+    if (frame) { frame.width = frame.height = 0 } // release the snapshot's memory
     stopSource(narration); narration = null; stopRumble()
     narrationGain?.disconnect(); bus?.disconnect(); limiter?.disconnect()
     narrationGain = bus = limiter = null
@@ -378,7 +487,7 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
     keys.removeEventListener('resize', storyResolution)
     button?.removeEventListener('click', skip)
     root?.removeEventListener('click', swallow); root?.removeEventListener('pointerdown', swallow)
-    root?.remove(); root = strip = cover = button = null; blocks = []
+    root?.remove(); root = strip = surge = frame = button = null; blocks = []
     textures.forEach(texture => texture?.dispose()); textures.length = 0
     clips.length = 0; sfx.length = 0; timeline = null
     black.dispose(); film.dispose()
@@ -388,7 +497,8 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
   function resetFx() {
     u.uFx.value = FX_NONE; u.uFxShake.value.set(0, 0)
     u.uRingA.value.set(0, 0); u.uRingB.value.set(0, 0)
-    u.uWarp.value = 0; u.uSlip.value.set(0, 0, 0); u.uDust.value = 0
+    u.uWarp.value = 0; u.uDust.value = 0
+    if (phase !== 'surge') u.uSurge.value = 0
   }
   function rippleAt(spec, local, target) {
     const p = (local - spec.at) / spec.duration
@@ -410,8 +520,6 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
       u.uDust.value = DUST_STRENGTH
     } else if (panel.fx === 'timewarp') {
       u.uWarp.value = smooth(local / 1.0)
-      const slip = slips.find(s => local >= s.at && local < s.at + SLIP_DURATION_S)
-      if (slip) u.uSlip.value.set(1, slip.y, slip.height)
     }
     u.uFxShake.value.set(shake.x, shake.y)
     shake.x = shake.y = 0
@@ -419,81 +527,91 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
   function setPanel(i, tex, dimensions, zoom, pan) {
     const panel = beat.panels[i], entry = timeline[i]
     setTexture(i, tex, dimensions)
-    const progress = Math.min(1, Math.max(0, (time - entry.start) / (entry.end - entry.start)))
+    // Panel 1 holds its first frame until Level 3 is built.
+    const from = i === 0 ? Math.max(entry.start, zoomFrom) : entry.start
+    const progress = Math.min(1, Math.max(0, (time - from) / Math.max(0.1, entry.end - from)))
     zoom.value = panel.zoom[0] + (panel.zoom[1] - panel.zoom[0]) * progress
     pan.value.set(panel.pan[0] * progress, panel.pan[1] * progress)
   }
-  function updatePanels(delta) {
-    time += delta
+  function updatePanels() {
     const end = timeline[timeline.length - 1].end
-    if (time >= end) { darkenFrom = u.uImage.value; strip.style.visibility = 'hidden'; setPhase('darken'); return }
+    const clamped = Math.min(time, end - 1e-3)
     let next = 0
-    while (next + 1 < timeline.length && time >= timeline[next + 1].start) next++
+    while (next + 1 < timeline.length && clamped >= timeline[next + 1].start) next++
+    // However long Level 3's first frame takes, panel 1 waits for it;
+    // settle() then moves the rest of the cutscene back.
+    if (!settled) next = 0
     if (next !== index) { index = next; log('l3 panel', index + 1) }
-    const entry = timeline[index], panel = beat.panels[index], local = time - entry.start
-    if (narrationIndex < index && time >= entry.clipStart) playNarration(index)
-    if (panel.sfx && !rumbleStarted) startRumble(panel.sfx, sfx[index])
+    const entry = timeline[index], panel = beat.panels[index], local = clamped - entry.start
+    if (!skipped && narrationIndex < index && time >= entry.clipStart) playNarration(index)
+    if (!skipped && panel.sfx && !rumbleStarted) startRumble(panel.sfx, sfx[index])
     if (rumbleStarted && !rumbleFading && !panel.sfx) fadeRumble(beat.panels.find(p => p.sfx)?.sfx.fade ?? 0.6)
     setPanel(Math.max(0, index - 1), u.uTexA, u.uSizeA, u.uZoomA, u.uPanA)
     setPanel(index, u.uTexB, u.uSizeB, u.uZoomB, u.uPanB)
     u.uMix.value = index === 0 ? 1 : Math.min(1, local / t.crossfade)
-    u.uImage.value = Math.min(1, time / t.firstPanelFade)
-    updateFx(panel, local, entry.end - entry.start)
+    if (index === 0 && !settled) { resetFx() } // perfectly still until steady
+    else if (index === 0) updateFx(panel, local - fxShift, entry.end - entry.start - fxShift)
+    else updateFx(panel, local, entry.end - entry.start)
+    if (skipped) return
     // Captions follow the line's own clock.
     const clipLocal = time - entry.clipStart
     if (clipLocal < 0) { strip.style.opacity = 0; showCaption(index, 0, 0); return }
     const chunk = captionAt(panel, entry.clip, clipLocal)
     const text = panel.captions[chunk.index].text
-    showCaption(index, chunk.index, Math.floor(text.length * typewriterProgress(chunk.local, chunk.spoken, t.typewriterFraction)))
-    strip.style.opacity = Math.min(1, clipLocal / t.captionFade, Math.max(0, (entry.end - time) / t.captionFade))
+    // Panel 1's first line was already shown whole during the build.
+    const count = index === 0 && chunk.index === 0 ? text.length
+      : Math.floor(text.length * typewriterProgress(chunk.local, chunk.spoken, t.typewriterFraction))
+    showCaption(index, chunk.index, count)
+    strip.style.opacity = Math.min(1, index === 0 && chunk.index === 0 ? 1 : clipLocal / t.captionFade, Math.max(0, (entry.end - time) / t.captionFade))
   }
   function update(delta) {
     if (!active) return
-    delta = Math.min(Math.max(0, delta), t.maxFrame)
-    phaseTime += delta
-    u.uTime.value += delta
+    u.uTime.value += Math.min(Math.max(0, delta), 0.25)
+    // Wall clock: after a blocked frame, pictures catch up with the voice.
+    time = (now() - origin) / 1000
+    const gap = now() - lastUpdateAt; lastUpdateAt = now()
     if (phase === 'fadeOut') {
-      veil = Math.min(1, phaseTime / t.startFade)
-      if (veil >= 1) enterBlack()
+      u.uOpacity.value = smooth(phaseTime() / t.startFade)
+      if (phaseTime() >= t.startFade) enterBuild()
     } else if (phase === 'build') {
-      if (prepared && isLevelReady()) {
-        if (import.meta.env?.DEV) console.log(`[load] level3 built under black ${(now() - buildStartedAt).toFixed(1)}ms`)
-        if (skipped) beginWarm()
-        else beginPanels()
-      }
+      if (prepared && isLevelReady()) afterBuild()
     } else if (phase === 'panels') {
-      updatePanels(delta)
-    } else if (phase === 'darken') {
-      const duration = skipped ? t.skipDarken : t.endDarken
-      u.uImage.value = darkenFrom * (1 - smooth(phaseTime / duration))
-      if (phaseTime >= duration) beginWarm()
-    } else if (phase === 'warm') {
-      warmWall = Math.max(phaseTime, (now() - warmStartedAt) / 1000)
-      if (goodFrames >= t.warmGoodFrames || warmWall >= t.warmMax) {
-        if (import.meta.env?.DEV) console.log(`[perf] level3 warm frames ${warmFrames.map(ms => ms.toFixed(1)).join(' ')} good=${goodFrames} after ${warmWall.toFixed(2)}s`)
-        setPhase('reveal')
+      if (!settled) {
+        settleCount = gap < t.settleFrameMs ? settleCount + 1 : 0
+        if (settleCount >= t.settleFrames) settle()
       }
+      updatePanels()
+      if (settled && time >= timeline[timeline.length - 1].end - t.surge) beginSurge(t.surge)
+    } else if (phase === 'surge') {
+      updatePanels()
+      // The cracks blaze and the frame floods blue (all in the film shader).
+      const p = smooth(phaseTime() / surgeSeconds)
+      if (beat.panels[index].fx === 'timewarp') u.uWarp.value = Math.max(warpFrom, 1) + (t.surgeWarp - Math.max(warpFrom, 1)) * p
+      u.uSurge.value = p
+      if (p >= 1 && !captureState) captureWanted = true
+      if (captureState === 'ready' || captureState === 'failed') beginBlue()
+    } else if (phase === 'blue') {
+      if ((phaseTime() >= t.blueMin && goodFrames >= t.warmGoodFrames) || phaseTime() >= t.blueMax) beginReveal()
     } else if (phase === 'reveal') {
-      veil = 1 - smooth(phaseTime / t.revealFade)
-      if (phaseTime >= t.revealFade) finish()
+      if (phaseTime() >= t.revealFade) finish()
     }
   }
   function render() {
-    if (!active) return
-    const overGame = phase === 'fadeOut' || phase === 'warm' || phase === 'reveal'
-    if (phase === 'panels' || phase === 'darken') { u.uOpacity.value = 1; storyResolution() }
-    else { u.uImage.value = 0; u.uOpacity.value = phase === 'build' ? 1 : veil }
+    if (!active || phase === 'blue' || phase === 'reveal') return // page layer covers / clears onto the game
+    const overGame = phase === 'fadeOut'
+    if (!overGame) storyResolution()
     renderer.getDrawingBufferSize(size); u.uResolution.value.copy(size)
     const autoClear = renderer.autoClear
     if (overGame) renderer.autoClear = false
     try { renderer.setRenderTarget(null); renderer.render(film.scene, film.camera) }
     finally { renderer.autoClear = autoClear }
+    if (captureWanted) captureFrame()
   }
   return { prefetch, start, update, render, skip, cancel, dispose,
     unlockAudio() { try { return Promise.resolve(context()?.resume()) } catch { return Promise.resolve() } },
     recordFrame(ms, fullGameFrame = true) {
-      if (!active || phase !== 'warm') return
-      if (warmFrames.length < 120) warmFrames.push(ms)
+      if (!active || phase !== 'blue') return
+      if (gameFrames.length < 180) gameFrames.push(ms)
       goodFrames = fullGameFrame && Number.isFinite(ms) && ms >= 0 && ms < t.warmFrameMs ? goodFrames + 1 : 0
     },
     resources() {
@@ -504,10 +622,10 @@ export function createTransitionPlayer({ beat, renderer, onBlack = () => {}, isL
     get phase() { return phase },
     get active() { return active },
     get prepared() { return prepared },
-    // main.js draws the game under the veil in these phases…
-    get showGame() { return active && (phase === 'fadeOut' || phase === 'warm' || phase === 'reveal') },
-    // …but only runs it (presentation frames) once Level 3 exists.
-    get liveGame() { return active && (phase === 'warm' || phase === 'reveal') },
+    // main.js draws the game under the beat in these phases…
+    get showGame() { return active && (phase === 'fadeOut' || phase === 'blue' || phase === 'reveal') },
+    // …and runs it (presentation frames) once Level 3 exists.
+    get liveGame() { return active && (phase === 'blue' || phase === 'reveal') },
     get lookAroundAngle() { return 0 },
     get underSmoke() { return false },
     get showQuad() { return active }
