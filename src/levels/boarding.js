@@ -222,6 +222,7 @@ export function createBoardingLevel({
   const floodIntensity = lights.spotLights.map((spot) => spot.intensity)
   function onZoneChange(zone) {
     if (import.meta.env?.DEV && isBoardingCinematic) logBoarding('zone', zone.name)
+    if (zone.name !== 'plaza') ensureSkyEnvironment()
     const onPlatform = zone.name === 'platform'
     // Leaving the platform restores the established look immediately, including
     // direct dev teleports to the forecourt. Entry blends over one real second.
@@ -395,16 +396,16 @@ export function createBoardingLevel({
   scene.add(sky.mesh, outdoorEnv.group, platformBackdrop, station, hallDressing, train, stationSteam, landing.group, ...lights)
   scene.add(surroundings.group)
 
-  // Capture each look once. Retain the original environment map everywhere
-  // outside the platform; no per-frame capture or forecourt reflection change.
+  // The plaza uses no environment map. Capture these once when leaving it.
   let skyTarget = null
   let platformSkyTarget = null
-  if (renderer) {
+  function ensureSkyEnvironment() {
+    if (!renderer || skyTarget) return
+    sky.setPreset('boarding')
     skyTarget = captureSkyEnvironment(renderer, sky.mesh)
     sky.setPreset('boarding-platform')
     platformSkyTarget = captureSkyEnvironment(renderer, sky.mesh)
     sky.setPreset('boarding')
-    scene.environment = skyTarget.texture
     scene.environmentIntensity = 0.4
   }
 
@@ -733,7 +734,8 @@ export function createBoardingLevel({
     sentry.group.rotation.y = sentry.facing
   }
 
-  if (import.meta.env?.DEV) {
+  if (import.meta.env?.DEV && new URLSearchParams(window.location.search).has('checkCover')) {
+    // Opt-in geometry audit: its two 0.1 m flood fills must not run on every boot.
     // Test the sheltered face of EVERY opaque piece against all routine guard
     // route positions. An isolated prop cannot hide someone on its exposed face.
     // Conservatively aim each guard directly at the probe (superset of its FOV).
@@ -1136,6 +1138,7 @@ export function createBoardingLevel({
   const FADE_SECONDS = 0.6
 
   function arriveInside() {
+    warmTrain()
     enteredStation = true
     player.setPose(passage1CheckpointPos, Math.PI / 2)
     camera?.setYaw?.(Math.PI / 2)
@@ -1178,20 +1181,26 @@ export function createBoardingLevel({
     }
   })
 
-  // Compile and render the open vestibule while the level loading overlay owns
-  // the screen; nothing new is constructed or uploaded during the walk-in.
-  const savedFog = scene.fog, savedEnvironment = scene.environment
-  try {
-    scene.fog = platformFog
-    scene.environment = platformSkyTarget?.texture ?? savedEnvironment
-    warmBoardingVisuals(renderer, scene)
-  } finally {
-    scene.fog = savedFog
-    scene.environment = savedEnvironment
+  // The train is hidden from the plaza. Prepare it under the station-entry
+  // fade instead of making every launch wait for an unseen vestibule.
+  function warmTrain() {
+    ensureSkyEnvironment()
+    const savedFog = scene.fog, savedEnvironment = scene.environment
+    try {
+      scene.fog = platformFog
+      scene.environment = platformSkyTarget?.texture ?? savedEnvironment
+      warmBoardingVisuals(renderer, scene)
+    } finally {
+      scene.fog = savedFog
+      scene.environment = savedEnvironment
+    }
   }
 
   return {
     objective: 'Enter the station',
+    get minimapVisible() {
+      return Boolean(zones.zone && zones.zone.name !== 'plaza')
+    },
     checkpoint: {
       position: new THREE.Vector3(LANDING_FIGURE.x, LANDING_FIGURE.y, LANDING_FIGURE.z),
       yaw: LANDING_FIGURE.yaw,

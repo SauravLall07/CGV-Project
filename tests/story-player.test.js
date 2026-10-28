@@ -632,7 +632,7 @@ test('real main render callback bypasses composer for story quad and preserves p
     const h = harness(); await h.player.prepare(); h.player.start()
     let postCalls = 0
     const post = { enabled, render() { postCalls++ } }
-    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
+    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
     render({}, {}); assert.equal(postCalls, 0)
     assert.equal(h.stats.renders, 1)
     h.player.skip(); render({}, {})
@@ -747,7 +747,7 @@ test('real render callback draws only story before coverage, game plus one quad 
   assert.ok(start >= 0 && end > start)
   const h = harness(); await h.player.prepare(); h.player.start()
   let games = 0
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
   h.player.update(endStart()); render({}, {})
   assert.equal(games, 0); assert.equal(h.stats.renders, 1)
   h.player.update(endBeats().title - endStart() + 0.1); render({}, {})
@@ -973,7 +973,7 @@ test('arrival-view warm-up uploads textures and renders once without changing vi
   const initial = []; world.traverse(node => initial.push([node, node.visible, node.frustumCulled]))
   const initialPosition = view.position.clone(), initialRotation = view.quaternion.clone()
   const events = []
-  const warm = new Function('scene', 'camera', 'renderer', 'post', 'storyPlayer', 'setArrivalStartCamera', `${main.slice(start, end)}; return warmLevel1`)(
+  const warm = new Function('scene', 'camera', 'renderer', 'post', 'storyPlayer', 'setArrivalStartCamera', `const preparedBoarding={updateAtmosphere(){}},timeSystem={warmGhost(){}}; ${main.slice(start, end)}; return warmLevel1`)(
     world, view, h.renderer, { render() {
       for (const [node, visible, culled] of initial) { assert.equal(node.visible, visible); assert.equal(node.frustumCulled, culled) }
       assert.deepEqual(view.position.toArray(), [9, 8, 7])
@@ -991,7 +991,7 @@ test('arrival-view warm-up uploads textures and renders once without changing vi
   const uploads = h.stats.uploads, compiled = h.stats.compiled
   h.player.update(endBeats().reveal + 0.001)
   const renderStart = main.indexOf('render(world, view) {'), renderEnd = main.indexOf('\n  },', renderStart)
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}};let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}};let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
     h.player, { render() { events.push('first live') } }, { getCinematicView: () => null }, null)
   render(world, view)
   assert.equal(events.at(-1), 'first live')
@@ -1014,7 +1014,7 @@ test('arrival-view warm-up leaves visibility/culling unchanged and restores came
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(), hidden = new THREE.Group()
   hidden.visible = false; hidden.frustumCulled = false; scene.add(hidden)
   const position = camera.position.clone(), rotation = camera.quaternion.clone()
-  const warm = new Function('scene', 'camera', 'renderer', 'post', 'storyPlayer', 'setArrivalStartCamera', `${main.slice(start, end)}; return warmLevel1`)(
+  const warm = new Function('scene', 'camera', 'renderer', 'post', 'storyPlayer', 'setArrivalStartCamera', `const preparedBoarding={updateAtmosphere(){}},timeSystem={warmGhost(){}}; ${main.slice(start, end)}; return warmLevel1`)(
     scene, camera, { compile() {
       assert.equal(hidden.visible, false); assert.equal(hidden.frustumCulled, false)
       assert.equal(scene.visible, true); assert.equal(scene.frustumCulled, true)

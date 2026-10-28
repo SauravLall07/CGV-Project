@@ -22,6 +22,8 @@ import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
 import { createWreckHazardAudio } from '../systems/wreck-hazard-audio.js'
 import { createExpansionHazards } from './timewreck-expansion-hazards.js'
+import { createDebrisCollision } from './timewreck-debris.js'
+import { createFlyingPanels } from './timewreck-flying-panels.js'
 import { signMaterial } from '../environment/textures.js'
 import { addPassengerGuidance } from '../environment/passenger-guidance.js'
 import { cargoGangwayLayout, cargoLoopPose, cutCargoGangwayFloor, createCargoGangway } from './timewreck-cargo.js'
@@ -177,7 +179,7 @@ function createEmergencyBrake() {
 
 export function createTimewreckLevel({
   scene, interaction, timeSystem, hud, player, camera, respawn, advance, beginCinematic, startCarriage = null,
-  renderer = null
+  renderer = null, debrisSeed
 }) {
   // Level 3 is the "unstable" end of the scale — the shaders read this.
   if (timeSystem?.setLevelMultiplier) timeSystem.setLevelMultiplier(1.8)
@@ -2039,6 +2041,7 @@ export function createTimewreckLevel({
   ]
   const chunks = []
   let chunkSeed = 0
+  let passengerDebris = null
 
   // Cannon world for thrown passenger-car debris only. Gravity matches the
   // old ballistic 6.5; floor restitution stands in for the old y=0.12 bounce.
@@ -2062,15 +2065,19 @@ export function createTimewreckLevel({
   ]
 
   function respawnChunk(c) {
+    passengerDebris?.reset(c.mesh)
     const s = ++chunkSeed
     c.x = skew(s + 11) * (INTERIOR_HALF_WIDTH * 0.78)
     c.y = 0.5 + Math.abs(skew(s + 3)) * 1.5
-    c.z = spans.passenger.maxZ + 3
+    c.z = spans.passenger.minZ - 4
     c.vx = skew(s + 5) * 0.9
     c.vy = 0.3 + Math.abs(skew(s + 7)) * 1.4
-    c.vz = -(7 + Math.abs(skew(s + 9)) * 6)
+    c.vz = 7 + Math.abs(skew(s + 9)) * 6
     c.life = 4.0
     c.mesh.visible = true
+    c.mesh.position.set(c.x, c.y, c.z)
+    c.mesh.quaternion.identity()
+    c.mesh.scale.setScalar(0)
     if (!c.body) return
     c.body.position.set(c.x, c.y, c.z)
     c.body.velocity.set(c.vx, c.vy, c.vz)
@@ -2080,6 +2087,7 @@ export function createTimewreckLevel({
   }
   for (let i = 0; i < 8; i++) {
     const mesh = new THREE.Mesh(chunkGeos[i % 3], chunkMats[i % 3])
+    mesh.name = i % 3 === 1 ? 'passenger-debris-splinter' : 'passenger-debris-panel'
     mesh.castShadow = true
     chunkGroup.add(mesh)
     const body = new CANNON.Body({
@@ -2192,6 +2200,7 @@ export function createTimewreckLevel({
   const luggageShape = new CANNON.Box(new CANNON.Vec3(0.26, 0.15, 0.34))
   for (let i = 0; i < 2; i++) {
     const mesh = new THREE.Mesh(luggageGeo, luggageMat)
+    mesh.name = 'passenger-debris-luggage'
     mesh.castShadow = true
     mesh.visible = false
     mesh.userData.noCameraCollision = true
@@ -2206,6 +2215,11 @@ export function createTimewreckLevel({
     debrisWorld.addBody(body)
     burstDebris.push({ mesh, body })
   }
+
+  passengerDebris = createDebrisCollision(player, [
+    ...chunks.filter((_, i) => i % 3 !== 1).map(c => c.mesh),
+    ...burstDebris.map(c => c.mesh)
+  ])
 
   function sleepChunk(c) {
     c.life = 0
@@ -2287,6 +2301,9 @@ export function createTimewreckLevel({
           c.x = c.body.position.x
           c.y = c.body.position.y
           c.z = c.body.position.z
+          c.mesh.scale.setScalar(THREE.MathUtils.clamp(Math.min(
+            (c.z - spans.passenger.minZ + 4) / 4,
+            (spans.passenger.maxZ + 4 - c.z) / 4), 0, 1))
         }
       }
       if (burstSim) {
@@ -2354,10 +2371,12 @@ export function createTimewreckLevel({
     failBurstT = 0
     failBurstSettled = false
     burstDebris.forEach((c, i) => {
+      passengerDebris.reset(c.mesh)
       c.mesh.visible = true
       c.body.wakeUp()
-      c.body.position.set(1.18 + i * 0.12, 1.45 + i * 0.2, FAIL_BURST_Z + 0.15 - i * 0.4)
-      c.body.velocity.set(0.55 + i * 0.2, 3.2, -1.6 - i * 0.4)
+      // Leave the rack's required right-hand lane clear of the initial volley.
+      c.body.position.set(1.6 + i * 0.12, 1.45 + i * 0.2, FAIL_BURST_Z + 0.15 - i * 0.4)
+      c.body.velocity.set(0.55 + i * 0.2, 3.2, 1.6 + i * 0.4)
       c.body.angularVelocity.set(5.5, 3.4 * (i ? -1 : 1), 4.8)
       c.body.quaternion.set(0, 0, 0, 1)
     })
@@ -2692,6 +2711,9 @@ export function createTimewreckLevel({
       if (kind === 'freight') showLevelToast(`Freight straps creaking! Wait for the case to swing aside; ${bindingLabel(settings.getBinding('slow'))} Slow or ${bindingLabel(settings.getBinding('freeze'))} Freeze can hold a clear route.`, 4500)
     } })
 
+  const flyingPanels = createFlyingPanels({ root, spans, player, timeSystem, unregisters,
+    fail: message => failSoft(message, 'debris'), seed: debrisSeed })
+
   const feedback = createWreckFeedback({ root, spans, player, timeSystem, unregisters,
     cue: kind => wreckAudio.debris(kind),
     playbackScale: brakeMotionScale
@@ -2787,6 +2809,7 @@ export function createTimewreckLevel({
       wreckAudio.reset()
       hazardAudio.reset()
       expansionHazards.reset()
+      flyingPanels.reset()
       feedback.restore(saved.feedback)
       brakeComplete = false
       hud.hideCinematicSkip?.()
@@ -2797,11 +2820,17 @@ export function createTimewreckLevel({
       lampMotion.reset()
       grabHandles.reset()
       chunkGroup.visible = breakupT >= 0
-      chunks.forEach((chunk) => {
+      chunkSeed = 0
+      chunks.forEach((chunk, i) => {
         respawnChunk(chunk)
+        chunk.life = 0.4 * i
+        chunk.body.velocity.set(0, 0, 0)
+        chunk.body.angularVelocity.set(0, 0, 0)
+        chunk.body.sleep()
         chunk.mesh.position.copy(chunk.body.position)
         chunk.mesh.quaternion.copy(chunk.body.quaternion)
       })
+      passengerDebris.reset()
 
       wasFinaleFreeze = false
       finalePulseT = -1
@@ -2949,6 +2978,10 @@ export function createTimewreckLevel({
       expansionHazards.update(!braking && !respawn.isFailing())
       connector.update(!braking && !respawn.isFailing())
       feedback.update(!braking && !brakeComplete && !respawn.isFailing())
+      flyingPanels.update(!braking && !brakeComplete && !respawn.isFailing())
+      if (passengerDebris.update(!braking && !brakeComplete && !respawn.isFailing())) {
+        failSoft('Struck by flying wreckage! Dodge the large panels and luggage, or Slow/Freeze them before crossing.', 'debris')
+      }
       if (pp.z > connector.gap.minZ && pp.z < connector.gap.maxZ && pp.y < -0.65) {
         failSoft('The connector folded. Rewind from solid floor, then Freeze its flat hinges.', 'fell')
       }
@@ -3161,6 +3194,8 @@ export function createTimewreckLevel({
         }
       }
 
+      hint('brown-panels', pp.z, spans.vault.maxZ,
+        `Large brown debris is lethal in EVERY carriage. Watch ahead for a warning flash and oncoming wreckage: sidestep, ${bindingLabel(settings.getBinding('jump'))} jump, or use ${bindingLabel(settings.getBinding('slow'))}/${bindingLabel(settings.getBinding('freeze'))} Slow/Freeze. Touching frozen wreckage still kills.`, 6500)
       hint('vault-lasers', pp.z, spans.vault.center + 0.6,
         `Teal pads are safe to observe. A horizontal green lamp means standing clearance; upright amber means wait. ${bindingLabel(settings.getBinding('slow'))} slows the racks; ${bindingLabel(settings.getBinding('freeze'))} holds their current pose.`, 5500)
       hint('vault-reassess', pp.z, spans.vault.center - 2.7,
@@ -3182,7 +3217,7 @@ export function createTimewreckLevel({
       }
       if (Math.abs(pp.x - 1.75) < 0.55 && Math.abs(pp.z - wreckRoutes.recessZ) < 0.8) {
         hint('mechanical-recess', pp.z, Infinity,
-          `Safe switching recess: release time control to recharge. ${bindingLabel(settings.getBinding('rewind'))} restores the shutter; switch to ${bindingLabel(settings.getBinding('freeze'))} while it is open.`, 4500)
+          `Safe switching recess: ${bindingLabel(settings.getBinding('duck'))} crouch beneath high flying debris while recharging. ${bindingLabel(settings.getBinding('rewind'))} restores the shutter; switch to ${bindingLabel(settings.getBinding('freeze'))} while it is open.`, 4500)
       }
       hint('cargo', pp.z, spans.cargo.maxZ,
         'Cargo — the gangway is buckling. Its pale frame shows the earlier pose; moving brass rails meet the fixed hinge stops when restored.', 4400)
@@ -3197,7 +3232,7 @@ export function createTimewreckLevel({
       hint('security-island', pp.z, spans.security.center + 0.8,
         `Safe island: release Freeze and recharge; assess the right-hand path. ${bindingLabel(settings.getBinding('freeze'))} settles it. Paired brass bars mark takeoff and landing: ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across the break.`, 6000)
       hint('passenger', pp.z, spans.passenger.maxZ,
-        `Falling rack ahead: amber marks its landing. Keep right, then centre for the broken floor. ${bindingLabel(settings.getBinding('freeze'))} holds obstacles AND the pursuing wave.`, 6500)
+        `Keep right of the falling rack, clear of the luggage by the wall. Large wreckage is lethal: ${bindingLabel(settings.getBinding('jump'))} jump low panels. ${bindingLabel(settings.getBinding('freeze'))} holds debris AND the wave; frozen wreckage still kills on contact.`, 6500)
 
       if (failBurstArmed && pp.z < FAIL_BURST_TRIGGER_Z) startFailBurst()
 

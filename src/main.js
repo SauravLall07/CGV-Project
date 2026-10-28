@@ -112,17 +112,19 @@ const policeReady = startupTasks.track('police', preloadPoliceVisual(assets))
 // Ghost Mixamo load starts after createTimeSystem() below; charactersReady
 // is assigned there so the menu waits for player, police, and ghost visuals.
 let charactersReady = Promise.all([detectiveReady, policeReady])
+let startupPrepared = false
 
 const minimap = createMinimap({
   scene,
-  hudRoot: hud.root,
+  hudRoot: hud.minimapRoot,
   mainCamera: camera,
   player,
   // levelManager is created below; these are only called from the render loop.
   getObstacles: () => levelManager.obstacles,
   getGuards: () => levelManager.guards,
   getLevelState: () => levelManager.getState(),
-  getCarriageVolumes: () => levelManager.carriageVolumes
+  getCarriageVolumes: () => levelManager.carriageVolumes,
+  getRange: () => settings.get('minimapRange')
 })
 
 const keyboard = createKeyboardState()
@@ -458,8 +460,12 @@ function warmLevel1() {
   // Loading is still opaque in levelManager.onEnter. Exercise the SAME
   // renderer, shadows, bloom and output targets that the reveal will use.
   const spawnPosition = camera.position.clone(), spawnRotation = camera.quaternion.clone()
+  setArrivalStartCamera()
+  // Establish plaza visibility and lighting before any GPU preparation. The
+  // hidden train and station reflections remain deferred until station entry.
+  preparedBoarding.updateAtmosphere?.(0, camera.position)
   const textures = new Set()
-  scene.traverse(node => {
+  scene.traverseVisible(node => {
     const materials = Array.isArray(node.material) ? node.material : node.material ? [node.material] : []
     for (const material of materials) {
       if (!material.isMaterial) continue
@@ -470,10 +476,10 @@ function warmLevel1() {
   if (scene.background?.isTexture && !scene.background.isRenderTargetTexture) textures.add(scene.background)
   if (scene.environment?.isTexture && !scene.environment.isRenderTargetTexture) textures.add(scene.environment)
   try {
+    timeSystem.warmGhost(renderer, camera)
     for (const texture of textures) renderer.initTexture(texture)
     storyPlayer.warm(); storyPlayer.renderPrepared()
     scene.updateMatrixWorld(true)
-    setArrivalStartCamera()
     renderer.compile(scene, camera); post.render(scene, camera)
   } finally {
     camera.position.copy(spawnPosition); camera.quaternion.copy(spawnRotation)
@@ -536,7 +542,6 @@ async function buildTitleBackdrop() {
   playerView.setYaw(checkpoint.yaw ?? 0); playerView.setPitch(checkpoint.pitch)
   playerView.snap(); playerView.update(0, player.mesh, null)
   if (import.meta.env?.DEV) console.log(`[load] level1 built ${performance.now().toFixed(1)}ms`)
-  timeSystem.warmGhost(renderer, camera)
   warmLevel1()
   hud.setVisible(false)
   return createTitleBackdrop({ renderer, onRendererRestore: () => post.resize() })
@@ -897,6 +902,7 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
       loadingScreen.hide()
       titleBackdrop.show()
       menu.show()
+      startupPrepared = true
       if (import.meta.env?.DEV) console.log(`[load] title ready ${performance.now().toFixed(1)}ms since page start`)
       if (benchTarget) {
         menu.hide()
@@ -973,12 +979,14 @@ const loop = createLoop({
   clock,
   instrumentation: loopInstrumentation,
   render(world, view) {
+    // Avoid rendering partial scenes while startup assets and lighting settle.
+    if (!startupPrepared) return
     if (storyPlayer?.active) {
       if (storyPlayer.showGame) {
         post.render(world, view)
         // Warm the real icon pools and their draw BEFORE the smoke quad,
         // otherwise the inset would paint over the opaque cover.
-        minimap.setVisible(false)
+        minimap.setVisible(levelManager.minimapVisible)
         let mapStarted = 0
         if (import.meta.env?.DEV) mapStarted = performance.now()
         minimap.render(renderer)
@@ -1003,8 +1011,11 @@ const loop = createLoop({
   },
 
   afterRender: (gl) => {
-    const show = gameStarted && !storyPlayer?.active && !credits.isOpen
-    minimap.setVisible(show)
+    const show = gameStarted && !storyPlayer?.active && !credits.isOpen && startupPrepared && levelManager.minimapVisible
+    // During the smoke, HUD visibility hides the frame while its layout and
+    // icon pools are prepared by the render branch above. Do not reset them.
+    const warming = startupPrepared && gameStarted && storyPlayer?.active && storyPlayer.showGame && !credits.isOpen && levelManager.minimapVisible
+    minimap.setVisible(show || warming)
 
     if (show) {
       let mapStarted = 0
@@ -1024,6 +1035,7 @@ const loop = createLoop({
 
 const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
+  if (!startupPrepared) return
   frameIntervalMs = frameStartedAt ? performance.now() - frameStartedAt : 0
   frameStartedAt = performance.now()
   ranFullGameFrame = false

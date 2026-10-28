@@ -7,17 +7,43 @@ import { carriageVolumeAt, listCarriageWallBoxes, listCarriageInteriorBoxes } fr
 // icon layer (see minimap-icons.js) — not the lit world mesh — because
 // station lighting is built for first-person, not a top-down frustum.
 //
-// Level 1 (Boarding): follow-cam with a fixed square window around the player.
-// Levels 2/3 (MovingHeist / Timewreck): frustum snaps to the single carriage
-// whose Z-span contains the player. Icon filtering uses the same AABB.
+// A local, player-following view with uniform world scale in every level.
 
-const VIEW_HALF = 14
+const DEFAULT_RANGE = 16
 const HEIGHT = 48
-const SIZE_PX = 150
-const PAD_RIGHT = 24
-const PAD_TOP = 96
-const CARRIAGE_FRUSTUM_PAD = 1.2
 const CARRIAGE_LEVELS = new Set(['MovingHeist', 'Timewreck'])
+
+// Simplified footprints from real floors, not a rectangle painted over the map.
+export function collectMinimapFloors(root) {
+  const floors = []
+  if (!root) return floors
+  root.updateWorldMatrix(true, true)
+  const normal = new THREE.Vector3()
+  const normalMatrix = new THREE.Matrix3()
+  root.traverse(node => {
+    if (!node.isMesh || node.isInstancedMesh || node.material?.transparent) return
+    const normals = node.geometry?.attributes.normal
+    if (!normals) return
+    if (!node.userData.minimapFloor) {
+      normalMatrix.getNormalMatrix(node.matrixWorld)
+      for (let i = 0; i < normals.count; i++) {
+        normal.fromBufferAttribute(normals, i).applyNormalMatrix(normalMatrix)
+        if (normal.y < 0.995) return
+      }
+    }
+    const box = new THREE.Box3().setFromObject(node)
+    if (!box.isEmpty()) floors.push({
+      minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z,
+      y: box.max.y, source: node
+    })
+  })
+  return floors
+}
+
+function visibleInWorld(node) {
+  for (; node; node = node.parent) if (!node.visible) return false
+  return true
+}
 
 export function createMinimap({
   scene,
@@ -27,7 +53,8 @@ export function createMinimap({
   getObstacles,
   getGuards,
   getLevelState,
-  getCarriageVolumes
+  getCarriageVolumes,
+  getRange = () => DEFAULT_RANGE
 }) {
   // Main view stays on the default world layer. Icons live on MINIMAP_LAYER
   // so they never appear in the gameplay camera.
@@ -35,8 +62,8 @@ export function createMinimap({
   mainCamera.layers.disable(MINIMAP_LAYER)
 
   const camera = new THREE.OrthographicCamera(
-    -VIEW_HALF, VIEW_HALF,
-    VIEW_HALF, -VIEW_HALF,
+    -DEFAULT_RANGE / 2, DEFAULT_RANGE / 2,
+    DEFAULT_RANGE / 2, -DEFAULT_RANGE / 2,
     1,
     80
   )
@@ -50,100 +77,129 @@ export function createMinimap({
   // flip the light count to zero and back each frame, which makes every lit
   // material re-validate its shader program on the next main render.
   const iconScene = new THREE.Scene()
+  iconScene.background = new THREE.Color(0x090e19)
   const icons = createMinimapIcons({ scene: iconScene, player, getObstacles, getGuards })
 
   const frame = document.createElement('div')
   frame.id = 'minimap-frame'
   Object.assign(frame.style, {
-    position: 'absolute',
-    top: `${PAD_TOP}px`,
-    right: `${PAD_RIGHT}px`,
-    width: `${SIZE_PX}px`,
-    height: `${SIZE_PX}px`,
+    position: 'relative',
     boxSizing: 'border-box',
     display: 'none',
     pointerEvents: 'none',
     border: '2px solid rgba(176, 141, 63, 0.8)',
     borderRadius: '8px',
     boxShadow: '0 8px 28px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(0, 0, 0, 0.35)',
-    background: 'rgba(6, 8, 16, 0.55)'
+    background: 'transparent'
   })
+  const heading = document.createElement('div')
+  const orientation = document.createElement('div')
+  const scale = document.createElement('div')
+  for (const label of [heading, orientation, scale]) Object.assign(label.style, {
+    position: 'absolute', zIndex: '1', fontSize: '9px', letterSpacing: '1px',
+    color: '#cbd5e1', background: 'rgba(9, 14, 25, 0.85)', padding: '3px 5px', borderRadius: '3px'
+  })
+  Object.assign(heading.style, { top: '8px', left: '8px' })
+  Object.assign(orientation.style, { top: '8px', right: '8px', color: '#d0b978' })
+  Object.assign(scale.style, { bottom: '8px', left: '12px', padding: '2px 0', borderBottom: '2px solid #94a3b8' })
+  scale.textContent = '5 m'
+  frame.append(heading, orientation, scale)
   hudRoot.appendChild(frame)
+  let visible = false
+  let lastTime = null
+  let lastState = null
+  let stationRoot = null
+  let stationFloors = []
+  const center = new THREE.Vector2()
 
-  function applyFollowFrustum(p) {
-    camera.left = -VIEW_HALF
-    camera.right = VIEW_HALF
-    camera.top = VIEW_HALF
-    camera.bottom = -VIEW_HALF
-    camera.updateProjectionMatrix()
-    camera.position.set(p.x, p.y + HEIGHT, p.z)
-    camera.lookAt(p.x, p.y, p.z)
-  }
-
-  // Square ortho window, same as Level 1: uniform X/Z scale from the
-  // carriage's longer axis so a long thin car is not stretched to fill the HUD.
-  function applyCarriageFrustum(p, volume) {
-    const cx = (volume.minX + volume.maxX) * 0.5
-    const cz = (volume.minZ + volume.maxZ) * 0.5
-    const halfX = (volume.maxX - volume.minX) * 0.5
-    const halfZ = (volume.maxZ - volume.minZ) * 0.5
-    const half = Math.max(halfX, halfZ) + CARRIAGE_FRUSTUM_PAD
-    camera.left = -half
-    camera.right = half
-    camera.top = half
-    camera.bottom = -half
-    camera.updateProjectionMatrix()
-    camera.position.set(cx, p.y + HEIGHT, cz)
-    camera.lookAt(cx, p.y, cz)
-  }
-
-  function follow() {
+  function follow(width, height) {
     const p = player.mesh.position
     const state = getLevelState?.() ?? null
     const carriageMode = CARRIAGE_LEVELS.has(state)
     const volumes = carriageMode ? (getCarriageVolumes?.() ?? null) : null
     const volume = volumes ? carriageVolumeAt(p.z, volumes) : null
+    // The wreck escapes toward the locomotive at -Z; the heist runs toward +Z.
+    const forward = state === 'Timewreck' ? -1 : 1
+    const range = getRange()
+    const halfWidth = range / 2
+    const halfHeight = halfWidth * height / width
 
-    if (volume) {
-      applyCarriageFrustum(p, volume)
-      // Same AABB icon pool as Boarding — perimeter boxes plus any level
-      // obstacles (L2 crates). Clip filters that combined list to this car.
-      icons.update({
-        clip: volume,
-        extraObstacles: [
-          ...listCarriageWallBoxes(volume),
-          ...listCarriageInteriorBoxes(volume)
-        ]
-      })
-      return
+    const now = performance.now()
+    const snap = lastTime === null || state !== lastState ||
+      Math.hypot(center.x - p.x, center.y - p.z) > Math.min(halfWidth, halfHeight)
+    const blend = snap ? 1 : 1 - Math.exp(-Math.min((now - lastTime) / 1000, 0.1) * 10)
+    center.x = THREE.MathUtils.lerp(center.x, p.x, blend)
+    center.y = THREE.MathUtils.lerp(center.y, p.z + forward * halfHeight * 0.18, blend)
+    // Fast movement, respawns and resizing must never leave the marker offscreen.
+    center.x = THREE.MathUtils.clamp(center.x, p.x - halfWidth * 0.65, p.x + halfWidth * 0.65)
+    center.y = THREE.MathUtils.clamp(center.y, p.z - halfHeight * 0.65, p.z + halfHeight * 0.65)
+    camera.left = -halfWidth
+    camera.right = halfWidth
+    camera.top = halfHeight
+    camera.bottom = -halfHeight
+    camera.up.set(0, 0, forward)
+    camera.position.set(center.x, p.y + HEIGHT, center.y)
+    camera.lookAt(center.x, p.y, center.y)
+    camera.updateProjectionMatrix()
+    lastTime = now
+    lastState = state
+    const clip = {
+      minX: center.x - halfWidth, maxX: center.x + halfWidth,
+      minZ: center.y - halfHeight, maxZ: center.y + halfHeight
     }
-
-    applyFollowFrustum(p)
-    icons.update({ clip: null })
-  }
-
-  function viewportRect(renderer) {
-    const width = renderer.domElement.clientWidth
-    const height = renderer.domElement.clientHeight
-    const x = width - PAD_RIGHT - SIZE_PX
-    const y = height - PAD_TOP - SIZE_PX
-    return { x, y, width, height, size: SIZE_PX }
+    const nearby = volumes?.filter(v => v.maxZ >= clip.minZ && v.minZ <= clip.maxZ) ?? null
+    if (!carriageMode) {
+      const root = scene.getObjectByName('station') ?? null
+      if (root !== stationRoot) {
+        stationRoot = root
+        stationFloors = collectMinimapFloors(root)
+      }
+    }
+    const floorVolumes = nearby ?? stationFloors.filter(f =>
+      Math.abs(f.y - p.y) < 1.5 && visibleInWorld(f.source) &&
+      f.maxX >= clip.minX && f.minX <= clip.maxX && f.maxZ >= clip.minZ && f.minZ <= clip.maxZ)
+    heading.textContent = volume ? volume.key.replaceAll('-', ' ').toUpperCase() : 'STATION'
+    orientation.textContent = carriageMode ? 'FRONT ↑' : 'N ↑'
+    scale.style.width = `${width * 5 / range}px`
+    icons.update({
+      clip,
+      floorVolumes,
+      detailClip: volume,
+      unitsPerPixel: halfHeight * 2 / height,
+      doors: nearby?.flatMap(v => [
+        ...(!v.sealedMin ? [{ x: 0, z: v.minZ }] : []),
+        ...(!v.sealedMax ? [{ x: 0, z: v.maxZ }] : [])
+      ]),
+      extraObstacles: nearby ? [
+        ...nearby.flatMap(listCarriageWallBoxes),
+        ...listCarriageInteriorBoxes(volume)
+      ] : null
+    })
   }
 
   // Called after the main camera render. Scissor keeps the inset from
   // clearing the rest of the canvas; viewport is reset for the next frame
   // at the start of the loop tick.
   function render(renderer) {
-    if (getLevelState?.() === 'Ending') return
-    follow()
-    const { x, y, width, height, size } = viewportRect(renderer)
+    if (!visible || getLevelState?.() === 'Ending') return
+    const environment = CARRIAGE_LEVELS.has(getLevelState?.()) ? 'train' : 'station'
+    if (frame.dataset.environment !== environment) frame.dataset.environment = environment
+    // DOM bounds are the single source for both layout and the GL viewport.
+    const rect = frame.getBoundingClientRect()
+    const canvas = renderer.domElement.getBoundingClientRect()
+    const width = renderer.domElement.clientWidth
+    const height = renderer.domElement.clientHeight
+    if (!rect.width || !rect.height) return
+    const mapWidth = Math.max(1, Math.round(rect.width - 4))
+    const mapHeight = Math.max(1, Math.round(rect.height - 4))
+    const x = Math.round((rect.left + 2 - canvas.left) * width / canvas.width)
+    const y = Math.round((canvas.bottom - rect.bottom + 2) * height / canvas.height)
+    follow(mapWidth, mapHeight)
 
     renderer.setScissorTest(true)
-    renderer.setScissor(x, y, size, size)
-    renderer.setViewport(x, y, size, size)
+    renderer.setScissor(x, y, mapWidth, mapHeight)
+    renderer.setViewport(x, y, mapWidth, mapHeight)
     renderer.clear(true, true, false)
-    // Same backdrop the inset had when it rendered the world scene.
-    iconScene.background = scene.background
     renderer.render(iconScene, camera)
 
     renderer.setScissorTest(false)
@@ -151,8 +207,14 @@ export function createMinimap({
     renderer.setScissor(0, 0, width, height)
   }
 
-  function setVisible(visible) {
-    frame.style.display = visible && getLevelState?.() !== 'Ending' ? 'block' : 'none'
+  function setVisible(value) {
+    if (!value) {
+      lastTime = null
+      stationRoot = null
+      stationFloors.length = 0
+    }
+    visible = value && getLevelState?.() !== 'Ending'
+    frame.style.display = visible ? 'block' : 'none'
   }
 
   function dispose() {

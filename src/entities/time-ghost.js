@@ -117,8 +117,7 @@ export function createTimeGhost() {
     rightLeg.visible = visible
   }
 
-  // Separate FBX load + mixer from the player so materials and animation
-  // state never leak between them. Textures may be shared read-only.
+  // Shared source assets, with independent skeletons, materials and mixers.
   async function loadVisual(assets) {
     if (visual) return visual
     try {
@@ -169,8 +168,13 @@ export function createTimeGhost() {
     if (!renderer || !camera) return
     const previous = group.visible
     group.visible = true
-    renderer.compile(scene, camera)
-    group.visible = previous
+    try {
+      // Compile only the echo, using the world's lights/environment. Compiling
+      // the world also prepares every hidden room and stalls startup/transitions.
+      renderer.compile(group, camera, scene)
+    } finally {
+      group.visible = previous
+    }
   }
 
   function stop() {
