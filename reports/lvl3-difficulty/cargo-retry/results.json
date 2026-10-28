@@ -1,0 +1,182 @@
+{
+  "errors": [],
+  "events": [
+    {
+      "name": "cargo-blind-fall",
+      "position": [
+        6.112423083843201e-16,
+        -0.5798602800000122,
+        -7.491172220511989
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": true,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "cargoRetry": {
+        "position": [
+          0,
+          0,
+          -2.5
+        ],
+        "energy": 100,
+        "mode": "NORMAL",
+        "failed": false,
+        "level": "Timewreck",
+        "wave": 0,
+        "crouching": false
+      }
+    },
+    {
+      "slow": {
+        "position": [
+          0,
+          0,
+          -2.5
+        ],
+        "energy": 93.09880000000005,
+        "mode": "SLOW",
+        "failed": false,
+        "level": "Timewreck",
+        "wave": 0,
+        "crouching": false
+      }
+    },
+    {
+      "freezeAfterSlow": {
+        "position": [
+          0,
+          0,
+          -2.5
+        ],
+        "energy": 87.83460000000005,
+        "mode": "FREEZE",
+        "failed": false,
+        "level": "Timewreck",
+        "wave": 0,
+        "crouching": false
+      }
+    },
+    {
+      "name": "01-protected-observation-third",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "02-protected-observation-first",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "03-right-burst",
+      "position": [
+        1.8128800000000393,
+        0,
+        -4.7684799999999905
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "04-clear-reposition",
+      "position": [
+        -1.8142399999999705,
+        0,
+        -4.7684799999999905
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "05-left-burst",
+      "position": [
+        -1.8142399999999705,
+        0,
+        -4.7684799999999905
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "06-repaired-gangway-landing",
+      "position": [
+        0.33932000000005863,
+        0.1,
+        -12.02135999999997
+      ],
+      "energy": 52.196799999999804,
+      "mode": "FREEZE",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "07-freight-exit",
+      "position": [
+        0.33932000000005863,
+        0.1,
+        -24.034240000000004
+      ],
+      "energy": 86.88620000000007,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "cargo-keyboard-restart",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "quit": {
+        "level": null,
+        "wreckRoots": 0
+      }
+    }
+  ]
+}

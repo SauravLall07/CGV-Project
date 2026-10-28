@@ -1,0 +1,103 @@
+{
+  "errors": [],
+  "events": [
+    {
+      "name": "01-protected-observation-third",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "02-protected-observation-first",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "03-right-burst",
+      "position": [
+        1.7006800000000146,
+        0,
+        -4.6735999999999915
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "04-clear-reposition",
+      "position": [
+        -1.811519999999986,
+        0,
+        -4.6735999999999915
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "05-left-burst",
+      "position": [
+        -1.811519999999986,
+        0,
+        -4.6735999999999915
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "06-repaired-gangway-landing",
+      "position": [
+        0.22712000000000887,
+        0.1,
+        -12.040719999999952
+      ],
+      "energy": 53.79400000000014,
+      "mode": "FREEZE",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "07-freight-exit",
+      "position": [
+        0.22712000000000887,
+        0.1,
+        -24.16987999999997
+      ],
+      "energy": 87.13540000000013,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    }
+  ]
+}

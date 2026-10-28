@@ -2729,7 +2729,7 @@ export function createTimewreckLevel({
   const passengerRack = createPassengerRack({ root, span: spans.passenger, player, timeSystem, unregisters, obstacles: blastObstacles,
     warn: () => {
       wreckAudio.warning()
-      showLevelToast('Rack bolts snapping! Amber brackets mark the fall zone — keep RIGHT, then return to CENTRE for the floor crossing.', 3200)
+      showLevelToast('Rack bolts snapping! Keep RIGHT of the rack, LEFT of the broad seat, then CENTRE for the floor crossing.', 3200)
     } })
 
   const expansionHazards = createExpansionHazards({ root, spans, player, timeSystem, unregisters,
@@ -2740,6 +2740,10 @@ export function createTimewreckLevel({
     } })
 
   const flyingPanels = createFlyingPanels({ root, spans, player, timeSystem, unregisters,
+    warn: stage => {
+      wreckAudio.warning()
+      showLevelToast(`Loose roof panels! ${stage.endsWith('right') ? 'RIGHT' : 'LEFT'} lane open. Flat brass arm = recovery. Observe behind the floor bar; frozen panels still kill.`, 2400)
+    },
     fail: message => failSoft(message, 'debris'), seed: debrisSeed })
 
   const feedback = createWreckFeedback({ root, spans, player, timeSystem, unregisters,
@@ -2749,6 +2753,7 @@ export function createTimewreckLevel({
 
   const retiredVisuals = [ramBank,cargoTracks,cargoLanding,cargoGangway.group,loopDoor,loopBeam,
     loopRing,loopRingHalo,loopRingLight,securityCrossing.group,walkwayGlow,
+    root.getObjectByName('cargo-burst-signals'),
     blastDoors,releasePlatform,manualCatch,slamSparks.points,expansionHazards.group,
     ...electricalSurges.map(s=>s.group),...runawayCarts.map(c=>c.group),
     debrisGroup,debrisLaunchLight,debrisSafePad,...debrisTrails,
@@ -3304,6 +3309,14 @@ export function createTimewreckLevel({
         `Safe island: release Freeze and recharge; assess the right-hand path. ${bindingLabel(settings.getBinding('freeze'))} settles it. Paired brass bars mark takeoff and landing: ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across the break.`, 6000)
       hint('passenger', pp.z, spans.passenger.maxZ,
         `Keep right of the falling rack, clear of the luggage by the wall. Large wreckage is lethal: ${bindingLabel(settings.getBinding('jump'))} jump low panels. ${bindingLabel(settings.getBinding('freeze'))} holds debris AND the wave; frozen wreckage still kills on contact.`, 6500)
+      if (pp.z < collapseMinZ - 0.25 && !braking && !brakeComplete && !hintsShown.has('passenger-exit')) {
+        // The floor instruction has served its purpose once the player lands.
+        collapseHintHoldUntil = -1
+        pendingToast = null
+        hud.setObjective(sprintObjective())
+        hint('passenger-exit', pp.z, collapseMinZ - 0.25,
+          `${bindingLabel(settings.getBinding('duck'))} duck the short brass beam; stand clear of it, then ${bindingLabel(settings.getBinding('jump'))} jump the low wooden rail. Release Freeze on solid floor to recharge before the brake.`, 4000)
+      }
 
       if (failBurstArmed && pp.z < FAIL_BURST_TRIGGER_Z) startFailBurst()
 
