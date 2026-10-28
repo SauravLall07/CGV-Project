@@ -161,7 +161,7 @@ function levelHarness(start, fps = 60) {
   const hud = new Proxy({ showToast: m => messages.push(m) }, { get: (t, k) => t[k] ?? (() => {}) })
   const time = createTimeSystem({ scene, player, hud })
   const respawn = createRespawnSystem({ player, hud, timeSystem: time, camera: { snap() {} } })
-  const level = createTimewreckLevel({ scene, player, hud, timeSystem: time, respawn, startCarriage: start,
+  const level = createTimewreckLevel({ debrisSeed: 12345, scene, player, hud, timeSystem: time, respawn, startCarriage: start,
     interaction: { register: () => () => {}, registerBlocker: () => () => {}, flashPrompt() {} }, camera: { snap() {} }, advance() {} })
   player.setPose(level.checkpoint.position, Math.PI); respawn.setCheckpoint(level.checkpoint.position, Math.PI, level.checkpoint)
   const volume = level.getCarriageVolumes().find(v => v.key === start), center = (volume.minZ + volume.maxZ) / 2

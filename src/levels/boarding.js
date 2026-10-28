@@ -1268,6 +1268,9 @@ export function createBoardingLevel({
 
   return {
     objective: 'Enter the station',
+    get minimapVisible() {
+      return Boolean(zones.zone && zones.zone.name !== 'plaza')
+    },
     checkpoint: {
       position: new THREE.Vector3(LANDING_FIGURE.x, LANDING_FIGURE.y, LANDING_FIGURE.z),
       yaw: LANDING_FIGURE.yaw,
