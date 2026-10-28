@@ -27,7 +27,7 @@ import { createSkyDome } from '../environment/sky-dome.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
-import { createSteamPlume } from '../environment/steam-plumes.js'
+import { createInstancedSteam } from '../environment/instanced-steam.js'
 
 // Level 2 — "The Moving Heist".
 //
@@ -812,28 +812,11 @@ export function createMovingHeistLevel({
         steamGroup.add(nozzle)
       }
     }
-    bank.plume = createSteamPlume({
-      count: 4 * STEAM_PUFFS,
-      life: 1.9,
-      opacity: 0.76,
-      emission: (time) => steamDensity((time + bank.offset) % STEAM_PERIOD),
-      sample(progress, seed, density, out, index) {
-        const nozzle = index % 4
-        const r = seed
-        const side = nozzle < 2 ? -1 : 1
-        const y = STEAM_HEIGHTS[nozzle % 2]
-        const reach = 0.35 + 1.15 * density
-        const spread = (r - 0.5) * (0.12 + progress * 0.62)
-        const swirl = Math.sin(progress * 13 + seed * 39) * progress * 0.16
-        out.set(
-          side * (STEAM_NOZZLE_X - 0.17 - progress * reach),
-          y + progress * (0.12 + density * 0.28) + spread + swirl,
-          bank.z + Math.cos(progress * 15 + seed * 31) * progress * (0.08 + density * 0.24)
-        )
-      }
-    })
+    bank.puff = new THREE.Object3D()
+    bank.steam = createInstancedSteam(4 * STEAM_PUFFS)
+    bank.steam.mesh.name = 'security-steam-plume'
     bank.density = 0
-    steamGroup.add(bank.plume.points)
+    steamGroup.add(bank.steam.mesh)
   }
   root.add(steamGroup)
 
@@ -848,7 +831,41 @@ export function createMovingHeistLevel({
     for (const bank of steamBanks) {
       const phase = (steamT + bank.offset) % STEAM_PERIOD
       bank.density = steamDensity(phase)
-      bank.plume.update(steamT)
+      const { mesh, life, layer } = bank.steam
+      mesh.material.uniforms.uStrength.value = 0.82
+      mesh.visible = true
+      const puff = bank.puff
+      for (let i = 0; i < 4 * STEAM_PUFFS; i++) {
+        const nozzle = i % 4
+        const side = nozzle < 2 ? -1 : 1
+        const y = STEAM_HEIGHTS[nozzle % 2]
+        const seed = (i * 0.173 + 0.11) % 1
+        const u = ((seed + i * 0.019 + steamT * 0.95) % 1 + 1) % 1
+        const bornAt = steamT - u * 1.9
+        const ageDensity = steamDensity(((bornAt + bank.offset) % STEAM_PERIOD + STEAM_PERIOD) % STEAM_PERIOD)
+        const core = Math.floor(i / 4) < 15
+        life[i] = ageDensity > 0 ? u : 0
+        layer[i] = core ? 1 : 0
+        const along = core ? u * (0.28 + 0.72 * u) : u
+        const cone = (core ? 0.4 : 1) * (0.08 + along * along * (ageDensity > 0.5 ? 1 : 0.22))
+        const turb = Math.sin(along * 10.5 + seed * 24 + steamT * 2.6)
+        const turb2 = Math.cos(along * 6.4 + seed * 15 - steamT * 1.8)
+        const reach = 0.35 + 1.15 * ageDensity
+        puff.position.set(
+          side * (STEAM_NOZZLE_X - 0.17) - side * along * reach + turb * cone * 0.1,
+          y + along * (0.12 + ageDensity * 0.28) + turb * cone * 0.36,
+          bank.z + turb2 * 0.32 * cone * 1.05
+        )
+        const length = (core ? 0.7 : 0.95) + along * (ageDensity > 0.5 ? 1.05 : 0.22)
+        const girth = (core ? 0.42 : 0.58) + along * cone * (ageDensity > 0.5 ? 0.85 : 0.16)
+        puff.scale.set(length, girth, 1)
+        puff.rotation.set(0, 0, 0)
+        puff.updateMatrix()
+        mesh.setMatrixAt(i, puff.matrix)
+      }
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.geometry.attributes.aLife.needsUpdate = true
+      mesh.geometry.attributes.aLayer.needsUpdate = true
     }
   }
   applySteam()
@@ -2203,28 +2220,9 @@ export function createMovingHeistLevel({
       vents.add(hinge)
       lids.push(hinge)
     }
-    const steamPlume = createSteamPlume({
-      count: 3 * VENT_PUFFS,
-      life: 1.65,
-      opacity: 0.84,
-      emission(time) {
-        const u = ((time / VENT_PERIOD) % 1 + 1) % 1
-        return u < 0.2 ? 0 : u < 0.32 ? 0.2 : u < 0.9 ? 1 : 0.3
-      },
-      sample(progress, seed, density, out, index) {
-        const vent = index % 3
-        const r = seed
-        const x = [-1.6, 0, 1.6][vent]
-        const spread = (0.12 + progress * 0.5) * (r - 0.5)
-        const sway = Math.sin(progress * 11 + seed * 44) * progress * 0.18
-        out.set(
-          x + spread + sway,
-          0.15 + progress * (1.75 + density * 0.85),
-          Math.cos(progress * 12 + seed * 28) * (0.12 + progress * 0.3)
-        )
-      }
-    })
-    vents.add(steamPlume.points)
+    const roofSteam = createInstancedSteam(3 * VENT_PUFFS)
+    roofSteam.mesh.name = 'roof-vent-steam'
+    vents.add(roofSteam.mesh)
     vents.position.set(0, ROOF_Y, VENT_Z)
     root.add(vents)
     registerCargoHazard(vents, (t) => {
@@ -2233,7 +2231,41 @@ export function createMovingHeistLevel({
       const lift = u < 0.2 ? 0 : u < 0.32 ? (u - 0.2) / 0.12 : u < 0.9 ? 1 : 1 - (u - 0.9) / 0.1
       ventSteam = u < 0.32 ? (u < 0.2 ? 0 : 0.2) : u < 0.9 ? 1 : 0.3
       for (const hinge of lids) hinge.rotation.x = -lift * 1.1
-      steamPlume.update(t)
+      const { mesh, life, layer } = roofSteam
+      mesh.material.uniforms.uStrength.value = 0.82
+      mesh.visible = true
+      const puff = roofSteam.puff ??= new THREE.Object3D()
+      for (let i = 0; i < 3 * VENT_PUFFS; i++) {
+        const vent = i % 3
+        const seed = (i * 0.173 + 0.11) % 1
+        const u = ((seed + i * 0.019 + t * 0.95) % 1 + 1) % 1
+        const bornAt = t - u * 1.65
+        const emissionPhase = (((bornAt / VENT_PERIOD) % 1) + 1) % 1
+        const density = emissionPhase < 0.2 ? 0 : emissionPhase < 0.32 ? 0.2 : emissionPhase < 0.9 ? 1 : 0.3
+        const core = Math.floor(i / 3) < 24
+        life[i] = density > 0 ? u : 0
+        layer[i] = core ? 1 : 0
+        const along = core ? u * (0.28 + 0.72 * u) : u
+        const cone = (core ? 0.4 : 1) * (0.08 + along * along * (density > 0.5 ? 1 : 0.22))
+        const turb = Math.sin(along * 10.5 + seed * 24 + t * 2.6)
+        const turb2 = Math.cos(along * 6.4 + seed * 15 - t * 1.8)
+        const x = vent * 1.6 - 1.6
+        const reach = 1.75 + density * 0.85
+        puff.position.set(
+          x + turb * cone * 0.36 + (seed - 0.5) * (0.12 + along * 0.5),
+          0.15 + along * reach + turb * cone * 0.1,
+          turb2 * cone * 0.32
+        )
+        const length = (core ? 0.7 : 0.95) + along * (density > 0.5 ? 1.05 : 0.22)
+        const girth = (core ? 0.42 : 0.58) + along * cone * (density > 0.5 ? 0.85 : 0.16)
+        puff.scale.set(girth, length, 1)
+        puff.rotation.set(0, 0, 0)
+        puff.updateMatrix()
+        mesh.setMatrixAt(i, puff.matrix)
+      }
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.geometry.attributes.aLife.needsUpdate = true
+      mesh.geometry.attributes.aLayer.needsUpdate = true
     })
   }
 
