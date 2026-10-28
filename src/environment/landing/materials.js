@@ -126,18 +126,19 @@ function glassMaterial(color, intensity) {
   })
 }
 
-export function createLandingMaterials() {
+// Shared by the exterior facade and Level 1's interior ashlar walls.
+export function createLandingStoneMaterial() {
   const stoneColor = ashlarCanvas(256)
-  const stoneNormal = normalFromCanvas(stoneColor, 2.2)
-  const stoneMap = canvasTexture(stoneColor, [1, 1], true)
-  const stoneNorm = canvasTexture(stoneNormal, [1, 1], false)
-
-  const stone = new THREE.MeshStandardMaterial({
-    map: stoneMap,
-    normalMap: stoneNorm,
+  return new THREE.MeshStandardMaterial({
+    map: canvasTexture(stoneColor, [1, 1], true),
+    normalMap: canvasTexture(normalFromCanvas(stoneColor, 2.2), [1, 1], false),
     roughness: 0.78,
     metalness: 0.04
   })
+}
+
+export function createLandingMaterials() {
+  const stone = createLandingStoneMaterial()
   const stoneTrim = stone.clone()
   stoneTrim.roughness = 0.7
 

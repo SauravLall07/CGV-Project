@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { createLandingStoneMaterial } from '../landing/materials.js'
 import { carpetMaterial, plasterMaterial, signMaterial, woodMaterial } from '../textures.js'
 import {
   drawChecker,
@@ -102,6 +103,7 @@ function createMaterials() {
   return {
     // Walls and floors.
     plaster: plasterMaterial({ repeat: [1, 1], seed: 72, base: 0xd6c6a2, roughness: 0.86 }),
+    stationStone: createLandingStoneMaterial(),
     ceiling: plasterMaterial({ repeat: [1, 1], seed: 73, base: 0x6f6656, roughness: 0.92 }),
     wainscot: woodMaterial({ repeat: [1, 1], seed: 14, light: 0x5a3720, dark: 0x2a170c, roughness: 0.48 }),
     checker: textured(drawChecker, 'checker', [1, 1], { roughness: 0.32, metalness: 0.02 }, 1.2),
