@@ -82,6 +82,40 @@ export function createBoardingLevel({
   hud?.setChronoVisible?.(false)
   resetKitMaterials()
   const { group: station, wallColliders, hallDressing, platform, track, coverCores } = createStationBlockout({ includePlaceholders: false })
+  // Camera-only walls for the entire upper approach (after Passageway 3), its
+  // three security gates, and the full train-facing platform. Use the SAME
+  // solid rectangles as player movement rather than a hand-placed patch at
+  // one corner; door openings remain open because they have no wall collider.
+  // These meshes are invisible but raycastable. Mark as decoration for guard
+  // line-of-sight/interaction so they affect ONLY the follow camera.
+  const cameraWalls = new THREE.Group()
+  cameraWalls.name = 'upper-station-camera-collision'
+  const cameraWallMaterial = new THREE.MeshBasicMaterial({
+    visible: false,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  })
+  for (const obstacle of wallColliders) {
+    const { minX, maxX, minZ, maxZ } = obstacle
+    if (![minX, maxX, minZ, maxZ].every(Number.isFinite)) continue
+    if (obstacle.enabled === false) continue
+    // Only the upper station wing and the platform, not outdoor world bounds.
+    if (minX < APPROACH_START_X - 2 || maxX > 7 || minZ < -30 || maxZ > PLATFORM_MAX_Z + 2) continue
+    const width = maxX - minX
+    const depth = maxZ - minZ
+    if (width <= 0 || depth <= 0) continue
+    // Thin structural walls also include short sections around door openings.
+    // Leave bulkier cover props to their existing scene geometry.
+    if (Math.min(width, depth) > 0.7) continue
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, 6, depth), cameraWallMaterial)
+    mesh.position.set((minX + maxX) / 2, 3, (minZ + maxZ) / 2)
+    mesh.name = 'upper-station-solid-wall-camera'
+    mesh.userData.decor = true
+    mesh.userData.noInteractionBlocker = true
+    mesh.userData.cameraClearance = 0.45
+    cameraWalls.add(mesh)
+  }
+  station.add(cameraWalls)
   // East of the rails, outside the walkable bounds. Not a child of `station`,
   // so it is not an interaction blocker and guards do not treat it as cover.
   const landing = createLandingScene()
