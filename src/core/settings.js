@@ -48,7 +48,7 @@ export const OPTION_DEFS = [
   {
     id: 'brightness',
     label: 'Brightness',
-    hint: 'Tone-mapping exposure. 100% matches the previous maximum; higher values brighten further.',
+    hint: 'Tone-mapping exposure.',
     group: 'Display',
     type: 'slider',
     min: 0,
