@@ -40,12 +40,34 @@ test('N2: zero-energy waiting, Slow and Freeze allow real freight traversal at f
         h.time.setMode('NORMAL')
       } else h.time.resetForCheckpoint({ energy: 50 })
       // Observe from outside the swept slice; start at a repeatable side pose.
-      for (let i = 0; i < 600 && (h.hazards.getState().freightClock < 4.8 || Math.abs(freightAngle(h.hazards.getState().freightClock)) < 0.8); i++) h.tick(1 / 60)
+      // Centre the 1.1 m approach at walking speed on the next swing peak.
+      const lead = 1.1 / 4 * (mode === 'NORMAL' ? 1 : mode === 'SLOW' ? 0.2 : 0)
+      for (let i = 0; i < 600; i++) {
+        const clock = h.hazards.getState().freightClock
+        if (clock > FREIGHT.warning && Math.abs(freightAngle(clock + lead)) > FREIGHT.amplitude - 0.0001) break
+        h.tick(1 / 60)
+      }
       h.time.setMode(mode)
       h.tick(0.6, { forward: true })
       assert.ok(h.player.mesh.position.z < FREIGHT.offset - 1, `${fps}/${mode}: player clears case`)
       assert.equal(h.failures.length, 0, `${fps}/${mode}: ${h.failures}`)
       assert.ok(h.time.getEnergy() > 0)
+    } finally { h.dispose() }
+  }
+})
+
+test('N2: freight is already swaying visibly before a sprint reaches the crossing', () => {
+  for (const schedule of schedules) {
+    const h = harness(schedule)
+    try {
+      h.pose(0, FREIGHT.offset + 7.8); h.tick(0.01)
+      assert.equal(h.hazards.getState().freightStarted, true)
+      h.tick(0.9, { forward: true, run: true })
+      const angle = h.scene.getObjectByName('freight-pendulum').rotation.z
+      assert.ok(Math.abs(angle - FREIGHT.amplitude) > 0.2, 'motion is visible on approach')
+      assert.ok(h.player.mesh.position.z > FREIGHT.offset + 1, 'sway starts before arrival')
+      assert.deepEqual(h.warnings, ['freight'])
+      assert.equal(h.failures.length, 0)
     } finally { h.dispose() }
   }
 })

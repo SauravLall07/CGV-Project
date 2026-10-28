@@ -690,7 +690,8 @@ function syncInputState() {
   }
   keyboard.setEnabled(enabled)
   interaction.setEnabled(enabled)
-  playerView.setEnabled(enabled)
+  // The caught overlay freezes gameplay without releasing mouse capture.
+  playerView.setEnabled(enabled || state === 'CAUGHT')
 }
 
 function setPaused(value) {
@@ -722,7 +723,7 @@ function setPaused(value) {
 // Escape while the mouse was captured — browsers consume that keydown — so it
 // doubles as a pause trigger.
 playerView.onLockLost(() => {
-  if (getInputState() === 'PLAYING' && !settingsMenu.isOpen && !benchmark?.isHolding()) setPaused(true)
+  if (['PLAYING', 'CAUGHT'].includes(getInputState()) && !settingsMenu.isOpen && !benchmark?.isHolding()) setPaused(true)
 })
 
 function showCompleteCredits() {

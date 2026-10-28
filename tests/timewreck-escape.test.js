@@ -85,7 +85,7 @@ test('L3 wave pursues from every carriage start before depletion', () => {
         assert.ok(z <= vault.maxZ - 0.5, 'opening field is inside the first carriage, ahead of its rear wall')
       }
       h.tick(0.2)
-      const speed = start === 'vault' ? 4.5 : start === 'convergence' ? 5 : 5.5
+      const speed = start === 'vault' ? 3.6 : start === 'convergence' ? 4 : 4.4
       assert.ok(Math.abs(z - wave.position.z - speed * 0.2) < 1e-6, start)
       assert.equal(h.respawn.isFailing(), false, start)
       assert.equal(h.time.getAbilityAvailability().REWIND, true, start)
@@ -101,15 +101,15 @@ test('L3 wave steps up through the first two carriages and restores normal pursu
     const exitZ = volumes.find(v => v.key === 'vault').minZ
     const initial = wave.position.z
     h.tick(0.1)
-    assert.ok(Math.abs(initial - wave.position.z - 0.45) < 1e-6)
+    assert.ok(Math.abs(initial - wave.position.z - 0.36) < 1e-6)
     h.player.setPose(new THREE.Vector3(0, 0, exitZ - 0.1), Math.PI)
     const beforeExit = wave.position.z
     h.tick(0.1)
-    assert.ok(Math.abs(beforeExit - wave.position.z - 0.5) < 1e-6)
+    assert.ok(Math.abs(beforeExit - wave.position.z - 0.4) < 1e-6)
     h.player.setPose(new THREE.Vector3(0, 0, volumes.find(v => v.key === 'mechanical').maxZ - 2.5), Math.PI)
     const beforeThird = wave.position.z
     h.tick(0.1)
-    assert.ok(Math.abs(beforeThird - wave.position.z - 0.55) < 1e-6)
+    assert.ok(Math.abs(beforeThird - wave.position.z - 0.44) < 1e-6)
     assert.equal(h.respawn.isFailing(), false)
   } finally { h.dispose() }
 })
@@ -122,7 +122,7 @@ test('L3 wave maintains its chase speed while stopped, walking and farther ahead
       const measure = keys => {
         const before = wave.position.z
         h.tick(0.2, keys)
-        assert.ok(Math.abs(before - wave.position.z - 1) < 1e-6)
+        assert.ok(Math.abs(before - wave.position.z - 0.8) < 1e-6)
       }
       measure({})
       measure({ forward: true })
@@ -141,10 +141,10 @@ test('L3 constant-speed wave respects Slow, Freeze, snapshot Rewind and repeated
       const wave = h.scene.getObjectByName('time-wave')
       const start = wave.position.z
       h.tick(0.2)
-      assert.ok(Math.abs(start - wave.position.z - 1) < 1e-6)
+      assert.ok(Math.abs(start - wave.position.z - 0.8) < 1e-6)
       const normal = wave.position.z
       h.time.triggerSlow(); h.tick(0.2)
-      assert.ok(Math.abs(normal - wave.position.z - 0.2) < 1e-6)
+      assert.ok(Math.abs(normal - wave.position.z - 0.16) < 1e-6)
       const slowed = wave.position.z
       const clock = wave.material.customUniforms.uTime.value
       h.time.triggerFreeze(); h.tick(0.1)
@@ -154,7 +154,7 @@ test('L3 constant-speed wave respects Slow, Freeze, snapshot Rewind and repeated
       assert.ok(wave.position.z > slowed + 0.05, 'rewinds real recorded pursuit')
       h.time.setMode('NORMAL')
       for (let attempt = 0; attempt < 3; attempt++) {
-        h.tick(1.1)
+        h.tick(1.5)
         assert.equal(h.respawn.isFailing(), true, 'observation floor is no refuge from time')
         assert.ok(h.messages.includes('Time caught up with you!'))
         const caught = wave.position.z
@@ -165,7 +165,7 @@ test('L3 constant-speed wave respects Slow, Freeze, snapshot Rewind and repeated
         assert.equal(h.time.getMode(), 'NORMAL')
         assert.ok(h.time.getEnergy() >= 50)
         h.time.triggerRewind(); h.tick(0.1)
-        assert.ok(wave.position.z >= h.player.mesh.position.z + 5.5 - 5 * 0.1 - 1e-6, 'retry history contains the restored wave')
+        assert.ok(wave.position.z >= h.player.mesh.position.z + 5.5 - 4 * 0.1 - 1e-6, 'retry history contains the restored wave')
         h.time.setMode('NORMAL')
       }
     } finally { h.dispose() }
@@ -183,7 +183,7 @@ test('L3 depletion preserves the existing wave and final chase speed without tel
     assert.equal(h.scene.getObjectByName('time-wave'), wave)
     assert.equal(wave.position.z, before)
     h.tick(0.1)
-    assert.ok(Math.abs(before - wave.position.z - 0.62) < 1e-6)
+    assert.ok(Math.abs(before - wave.position.z - 0.5) < 1e-6)
   } finally { h.dispose() }
 })
 
@@ -378,8 +378,10 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       h.time.triggerRewind(); h.tick(0.55); h.time.triggerFreeze()
       move('z', center(stage) + 3.15, {run:true})
       recharge()
-      waitUntil(() => h.scene.getObjectByName('cargo-loop-door').position.y > 3.49)
-      h.time.triggerFreeze(); move('z', center(stage) - 3, {run:true})
+      waitUntil(() => h.scene.getObjectByName('cargo-loop-door').position.y > 3.49 &&
+        h.scene.getObjectByName('cargo-loop-trunk').position.y < 0.19)
+      h.time.triggerFreeze(); move('z', center(stage) - 0.75, {run:true})
+      h.tick(0.65, {forward:true,run:true,jump:true}); check()
       h.time.setMode('NORMAL')
       move('z', center(stage) - 5)
       recharge()

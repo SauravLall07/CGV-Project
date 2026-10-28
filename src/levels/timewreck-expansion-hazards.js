@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // N2/N3 only. Geometry and contact tests derive from these same analytic clocks.
 export const FREIGHT = Object.freeze({ offset: -7, length: 1.8, anchorY: 3.15,
-  halfX: 0.85, halfY: 0.575, halfZ: 0.45, amplitude: 0.82, period: 4.4, warning: 0.8 })
+  halfX: 0.85, halfY: 0.575, halfZ: 0.45, amplitude: 0.82, period: 3.2, warning: 0.5 })
 export const STEAM = Object.freeze({ offset: 11, period: 5, warnAt: 1.6,
   activeAt: 2.35, clearAt: 3.65, halfZ: 0.32, minY: 0.2, maxY: 2.3 })
 
@@ -266,7 +266,7 @@ export function createExpansionHazards({ root, spans, player, timeSystem, unregi
       const nearLoad = Math.abs(p.z - load.position.z) < 6
       const nearSteam = Math.abs(p.z - vent.position.z) < 5
       if (enabled && mode !== 'REWIND') {
-        if (!freightStarted && p.z < load.position.z + 2.5 && p.z > load.position.z - 2.5) {
+        if (!freightStarted && p.z < load.position.z + 8 && p.z > load.position.z - 2.5) {
           freightStarted = true; warn('freight')
         }
         if (!steamStarted && p.z < vent.position.z + 2.3 && p.z > vent.position.z - 2) {

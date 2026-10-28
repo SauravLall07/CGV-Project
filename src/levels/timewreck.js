@@ -1643,7 +1643,7 @@ export function createTimewreckLevel({
     loopBeamDown = pose.beam
     const colour = pose.colour
     loopDoor.position.y = 1.15 + loopDoorOpen * 2.35
-    loopBeam.position.y = 2.25 - loopBeamDown * 1.85
+    loopBeam.position.y = 2.25 - loopBeamDown * 2.07
     loopRingMat.color.setHex(colour)
     loopRingMat.emissive.setHex(colour)
     loopRingHalo.material.color.setHex(colour)
@@ -2568,10 +2568,10 @@ export function createTimewreckLevel({
   let resumeFlashT = -1
 
   const DEPLETE_Z = spans.passenger.maxZ - 1.8
-  const WAVE_SPEED = 6.2 // below the actual 6.8 m/s sprint
-  const PURSUIT_SPEED = 5.5
-  const FIRST_CARRIAGE_SPEED = 4.5
-  const SECOND_CARRIAGE_SPEED = 5
+  const WAVE_SPEED = 5 // below the actual 6.8 m/s sprint
+  const PURSUIT_SPEED = 4.4
+  const FIRST_CARRIAGE_SPEED = 3.6
+  const SECOND_CARRIAGE_SPEED = 4
   const WAVE_LEAD = 12
   // Start inside the Vault, just beyond the default third-person camera.
   const PUZZLE_WAVE_LEAD = 5.5
@@ -3321,7 +3321,7 @@ export function createTimewreckLevel({
       hint('cargo-gangway', pp.z, cargoGap.maxZ + 1.3,
         `${bindingLabel(settings.getBinding('rewind'))} restores the gangway: align the brass rails with the fixed stops, then ${bindingLabel(settings.getBinding('freeze'))} hold it. Early Freeze can also save the intact deck. Rest on the landing before the bulkhead.`, 6500)
       hint('cargo-landing', pp.z, cargoGap.minZ - 0.25,
-        'Intact landing — recharge here. Watch the bulkhead ring; green means the door and overhead load are clear.', 4800)
+        `Intact landing — recharge here. Green means the bulkhead is open. Watch the trunk drop, then ${bindingLabel(settings.getBinding('jump'))} jump over it on the floor.`, 4800)
       hint('relay-emergency-release', pp.z, releasePos.z + 2,
         `Weight the brass platform to pull the door linkage. Summon ${bindingLabel(settings.getBinding('ghost'))} Ghost: the eight bars drain with its hold. Walk right around the cabinet, return to the centre seam, then ${bindingLabel(settings.getBinding('interact'))} latch the far-side catch; it works even after the echo fades.`, 6500)
       hint('security', pp.z, gapMaxZ + 3,
@@ -3363,7 +3363,7 @@ export function createTimewreckLevel({
         }
         if (loopBeam.position.y - 0.16 < bodyTop && loopBeam.position.y + 0.21 > pp.y &&
             Math.abs(pp.x) < 1.5 && Math.abs(pp.z - loopBeamZ) < 0.4) {
-          failSoft('Crushed by the falling girder!')
+          failSoft(`Caught by the falling trunk! Let it land, then ${bindingLabel(settings.getBinding('jump'))} jump over it.`)
         }
       }
 
