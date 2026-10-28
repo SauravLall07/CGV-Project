@@ -563,21 +563,6 @@ export function createMovingHeistLevel({
 
   let section = 'interior' // interior | roof | vault
 
-  // Per-carriage briefings.
-  //
-  // House rule for everything in here: state the GOAL and the CONSTRAINT, never
-  // the solution. "The pad is a long way from the gate" is a goal. "Use the
-  // Time Ghost on the pad" is a walkthrough, and the room stops being a puzzle.
-  const hintsShown = new Set()
-  function hint(key, playerZ, enterZ, lines) {
-    if (hintsShown.has(key) || playerZ < enterZ) return
-
-    hintsShown.add(key)
-    hud.showBriefing?.(lines)
-  }
-
-  let introShown = false
-
   // Rolling corridor checkpoints; the player always progresses toward +Z.
   let lastCheckpointZ = spans.passenger.minZ + 2.2
   const corridorCheckpoints = [
@@ -1191,7 +1176,6 @@ export function createMovingHeistLevel({
   let relayLogged = false
   let relaySolved = false
   let routeEngaged = 0 // eased 0..1 while the operator platform is weighted
-  let routeEverEngaged = false
   let routeReadT = 0 // seconds spent reading the turned board up close
   const ROUTE_READ_SECONDS = 1.0
   const ROUTE_READ_RANGE = 4.5
@@ -2683,11 +2667,6 @@ export function createMovingHeistLevel({
     gustPhase = 0
     streakFlow = 0
     hud.setObjective('Cross the roof to the Vault drop hatch')
-    hud.showBriefing?.([
-      'You are outside. The roof runs across an open freight wagon to the Vault.',
-      'Watch your footing — the gaps between the cars are real, and so is the drop over the sides.',
-      'Crosswinds gust across the deck. Watch the wind gauge, and crouch to brace when one hits.'
-    ])
   }
 
   const zipHandle = new THREE.Group()
@@ -2734,9 +2713,6 @@ export function createMovingHeistLevel({
       beginCinematic?.()
       interaction.flashPrompt('Chrono Core secured!')
       hud.setObjective('TEMPORAL CONTAINMENT LOST — the train is destabilising')
-      hud.showBriefing?.([
-        'You have it. Containment is gone and the whole train is going with it — hold on.'
-      ])
     }
   }))
 
@@ -2758,10 +2734,6 @@ export function createMovingHeistLevel({
     camera.snap()
 
     hud.setObjective('The Chrono Core is exposed — take it')
-    hud.showBriefing?.([
-      'Vault car. Convergence is behind you.',
-      'The Core is exposed ahead.'
-    ])
   }
 
   // [z, depth, lane] per hazard — see addChokepoint.
@@ -2923,8 +2895,6 @@ export function createMovingHeistLevel({
       rewindPickup.setCollected(true)
       unlockAbility('REWIND')
     }
-    for (const key of STAGES.slice(0, startStage)) hintsShown.add(key)
-    introShown = true
     startObjective = `Dev start: ${STAGES[startStage]}`
     if (STAGES[startStage] === 'vault') {
       switchDoor.latched = true
@@ -3014,14 +2984,6 @@ export function createMovingHeistLevel({
       const ghost = timeSystem.getGhost()
       const topY = playerTopY()
 
-      if (!introShown) {
-        introShown = true
-        hud.showBriefing?.([
-          'Comms check. You are on the 03:14 Chrono Express, and the clock in the vault car is the only reason anyone robs this train.',
-          'Work your way to the front. I will tell you what each car wants from you — figuring out how is your job.'
-        ])
-      }
-
       // A replaying echo reads as a person to anything that watches for one,
       // so the Passenger guard can react to a moving temporal decoy.
       corridorStealth.setDistraction(ghost.isPlaying() ? ghost.getPosition() : null)
@@ -3037,16 +2999,6 @@ export function createMovingHeistLevel({
       platformLampMat.color.setHex(platformHeld ? 0x7ee08a : 0xffb454)
       platformLampMat.emissive.setHex(platformHeld ? 0x3fbf5a : 0xff9a2a)
       gearSpin.rotation.z -= delta * routeEngaged * 1.8
-
-      // Say once that the hold worked, and state the constraint — the board
-      // is at the front and the hold ends when the platform is clear.
-      if (platformHeld && !routeEverEngaged) {
-        routeEverEngaged = true
-        hud.showBriefing?.([
-          'Operator hold engaged — the route system is live.',
-          'The route board over the front door has turned its plates. It turns back the moment the platform is clear.'
-        ])
-      }
 
       // Board plates flip in a short cascade; once logged they stay turned.
       const boardTarget = routeEngaged > 0.5 || relayLogged ? 1 : 0
@@ -3134,67 +3086,6 @@ export function createMovingHeistLevel({
       }
 
       if (section === 'interior') {
-        hint(
-          'passenger',
-          pp.z,
-          spans.passenger.minZ + 2,
-          [
-            'You’re aboard. Seven cars between you and the Chrono Core, and the Express does not stop for anyone.',
-            'Every bulkhead on this train opens from the rear only. Once you’re through one, forward is the only direction left.',
-            'First-class carriage. The conductor walks the aisle end to end and pauses at each end — and you have no chrono gear yet.',
-            'Duck into the booths while he passes, move while his back is turned, and make for the front door.',
-            'The porter left his station unattended: a service trolley on squeaky wheels, his luggage, and a cabinet with room for one.',
-            'Most of his beat is open lounge floor — room to get round him, if he is looking the other way.'
-          ]
-        )
-        hint(
-          'security',
-          pp.z,
-          spans.security.minZ,
-          [
-            'Security car. There is a maintenance interface in here wired straight into the train’s Chrono Core.',
-            'Take it and you can start bending the clock. Past that point the systems run faster than anyone can react to.'
-          ]
-        )
-        hint(
-          'relay',
-          pp.z,
-          spans.relay.minZ,
-          [
-            'Route Control. The forward door stays locked until the relays are thrown in the right order.',
-            'The order is posted on the route board over the door, but the board only turns while the operator platform at the back is held down.',
-            'There is one more module in here. You will want it before you try.'
-          ]
-        )
-        hint(
-          'cargo',
-          pp.z,
-          spans.cargo.minZ,
-          [
-            'Cargo. Every load in this car is moving — crates on the ceiling rails, luggage on the floor, gates and panels on the walls.',
-            'Nothing in here waits for you. Read each cycle before you step in. The last stretch runs three of them at once.'
-          ]
-        )
-        hint(
-          'mechanical',
-          pp.z,
-          spans.mechanical.minZ,
-          [
-            'Mechanical. The machinery in here springs shut as you approach — crates, floor sections, doors and wall panels.',
-            'Install Rollback. REWIND runs a machine back to where it was; the pale outline shows where that is.',
-            'It springs again the moment time runs forward, so be ready to move.'
-          ]
-        )
-        hint(
-          'convergence',
-          pp.z,
-          spans.convergence.minZ,
-          [
-            'Convergence — the last car before the Core. Every Chrono ability, once each, then all four together.',
-            'The roof ladder is past the exit door at the far end. That door only opens while its switch is held.'
-          ]
-        )
-
         for (const z of corridorCheckpoints) {
           if (pp.z > z && z > lastCheckpointZ) {
             lastCheckpointZ = z

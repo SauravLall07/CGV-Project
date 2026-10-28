@@ -406,7 +406,7 @@ test('Level 2 Passenger: pushing the trolley lures the conductor to it while the
     const beat = conductor.waypoints.map((point) => point.z)
     const cabinetZ = scene.getObjectByName('luggage-cabinet').position.z
     assert.ok(cabinetZ > Math.min(...beat) && cabinetZ < Math.max(...beat), 'he walks past the cabinet every lap')
-    // Let the briefing fire and the conductor reach the rear of his beat.
+    // Let the conductor start his beat.
     player.mesh.position.set(home.x, 0, home.z - 0.8)
     tick(0.1)
 
