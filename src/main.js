@@ -20,7 +20,7 @@ import { createPlayerView } from './cameras/player-view.js'
 import { createInteractionSystem } from './systems/interaction.js'
 import { createRespawnSystem } from './systems/respawn.js'
 import { createTimeSystem } from './systems/time-system.js'
-import { loadTrack, startLevelMusic, stopLevelMusic } from './systems/level-music.js'
+import { loadTrack, startLevelMusic, stopLevelMusic, LevelMusicPlayer } from './systems/level-music.js'
 import { MusicSystem } from './systems/music-system.js'
 import { createHud } from './ui/hud.js'
 import { createMinimap } from './ui/minimap.js'
@@ -29,8 +29,11 @@ import { createMainMenu } from './ui/main-menu.js'
 import { createSettingsMenu } from './ui/settings-menu.js'
 import { createPauseMenu } from './ui/pause-menu.js'
 import { createCredits } from './ui/credits.js'
+import { createStoryPlayer } from './ui/story-player.js'
+import { createTitleBackdrop } from './ui/title-backdrop.js'
+import { introBeat } from './story/intro-beat.js'
 import { createBoardingLevel } from './levels/boarding.js'
-import { LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
+import { LANDING_CAMERA, LANDING_FIGURE, LANDING_VIEW } from './environment/landing/layout.js'
 import { loadBoardingAssets } from './environment/nature-props.js'
 import { createCompleteLevel } from './levels/complete.js'
 import { createModelEditor } from './dev/model-editor.js'
@@ -180,7 +183,7 @@ function playMusicForState(state) {
   }
   // Sampled tracks swap per level; the drone is one bed under L1–L3 only.
   if (state === 'Complete') disposeGameplayDrone()
-  else ensureGameplayDrone()
+  else ensureGameplayDrone()?.setTimeDilation(1)
   startLevelMusic(loadTrack(spec.file), { loop: spec.loop })
 }
 
@@ -193,6 +196,8 @@ async function playMenuMusic() {
 function unlockAudio({ menuMusic = true } = {}) {
   if (import.meta.env?.DEV) console.log('unlockAudio() called')
   initAudio()
+  // The title invokes this synchronously inside its New Game gesture.
+  storyPlayer?.unlockAudio?.()
   const preloading = preloadAbilitySfx()
   if (preloading && typeof preloading.then === 'function') {
     preloading.then(() => {
@@ -320,14 +325,14 @@ const levelManager = createLevelManager({
   timeSystem,
   loadingScreen,
   onEnter: (state) => {
-    playMusicForState(state)
+    if (gameStarted && !storyPlayer?.active && !awaitingIntro) playMusicForState(state)
     // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
     // Workshop remaps its stable scene keys here so saved dev-layout overrides
     // are reapplied before the loading overlay hands control back to the player.
     modelEditor?.sceneChanged?.()
     if (state === 'Complete') showCompleteCredits()
     else if (state === 'Ending') hud.setVisible(false)
-    else timeSystem.warmGhost(renderer, camera)
+    else if (!awaitingIntro) timeSystem.warmGhost(renderer, camera)
     // Start the next module after presentation, never alongside boot FBXs.
     // Prefetch failure is optional; enter() will retry under the loading screen.
     const next = state === 'Boarding' ? 'MovingHeist' : state === 'MovingHeist' ? 'Timewreck' : state === 'Timewreck' ? 'Ending' : null
@@ -336,9 +341,15 @@ const levelManager = createLevelManager({
     }))
   },
   onLeave: stopLevelMusic,
-  onInputStateChange: () => syncInputState(),
+  onInputStateChange: () => {
+    startPreparedIntro()
+    syncInputState()
+  },
   levels: [
-    { state: 'Boarding', create: ctx => createBoardingLevel({ ...ctx, renderCamera: camera }) },
+    { state: 'Boarding', load: async () => {
+      await loadBoardingAssets()
+      return ctx => createBoardingLevel({ ...ctx, renderCamera: camera })
+    } },
     { state: 'MovingHeist', load: () => import('./levels/moving-heist.js')
       .then(({ createMovingHeistLevel }) => ctx => createMovingHeistLevel({ ...ctx, post })) },
     { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(({createTimewreckLevel}) => ctx => createTimewreckLevel({...ctx,post})) },
@@ -392,24 +403,105 @@ if (import.meta.env?.DEV) {
 // ---------------------------------------------------------------
 // Main Menu
 // ---------------------------------------------------------------
-// The station scene is built behind the loading screen so the menu
-// has a live 3D backdrop. The menu then owns the camera until the
-// player clicks NEW GAME, at which point the third-person camera
-// takes over and gameplay begins.
+// Boarding and the intro are prepared behind loading, before the title opens.
 
 let gameStarted = false
 let arrival = null
 let paused = false
 let elapsed = 0 // run clock, frozen while paused or in a menu
-let titleBackdrop = null // the silently-built station behind the title screen
+let titleBackdrop = null // independent scenery, never a gameplay level
 let titleReturnPromise = null // coalesce returns and hold New Game until its backdrop is ready
 let modelEditor = null // DEV-only live scene/model workshop (F2)
+let storyPlayer = null
+let storyRun = 0
+let awaitingIntro = false
+let introReady = Promise.resolve()
+let boardingFilesReady = null
+let preparedBoarding = null
+let newGameClickedAt = 0
+let firstLiveFramePending = false
+let frameStartedAt = 0
+let frameIntervalMs = 0
+let ranFullGameFrame = false
+let firstPlayableFramePending = false
+let firstHiddenSystemsPending = true
+
+function prepareIntro() {
+  initAudio()
+  const run = storyRun
+  const owner = createStoryPlayer({ beat: introBeat, renderer,
+    getRenderScale: () => settings.get('renderScale'), onRendererRestore: () => post.resize(), onCrossfade() {
+    if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
+    warmGameplayAudio()
+    // Keep HUD layout/paint preparation live under the smoke, without showing
+    // it. display:none would defer layout until the first playable frame.
+    hud.root.style.display = 'block'
+    hud.root.style.visibility = 'hidden'
+    beginForecourtArrival()
+    firstLiveFramePending = true
+  }, onComplete() {
+    if (run !== storyRun || !gameStarted || storyPlayer !== owner) return
+    storyPlayer = null
+    firstPlayableFramePending = true
+    playMusicForState(levelManager.getState())
+    hud.root.style.visibility = ''
+    hud.setVisible(true)
+    syncInputState()
+  } })
+  storyPlayer = owner
+  return owner.prefetch()
+}
+
+function setArrivalStartCamera() {
+  const home = LANDING_CAMERA.position, aim = LANDING_CAMERA.target
+  camera.position.set(home.x, home.y + Math.sin(0.6) * LANDING_CAMERA.driftY, home.z + LANDING_CAMERA.driftZ)
+  camera.lookAt(aim.x, aim.y, aim.z)
+}
+
+function warmLevel1() {
+  // Loading is still opaque in levelManager.onEnter. Exercise the SAME
+  // renderer, shadows, bloom and output targets that the reveal will use.
+  const spawnPosition = camera.position.clone(), spawnRotation = camera.quaternion.clone()
+  setArrivalStartCamera()
+  // Establish plaza visibility and lighting before any GPU preparation. The
+  // hidden train and station reflections remain deferred until station entry.
+  preparedBoarding.updateAtmosphere?.(0, camera.position)
+  const textures = new Set()
+  scene.traverseVisible(node => {
+    const materials = Array.isArray(node.material) ? node.material : node.material ? [node.material] : []
+    for (const material of materials) {
+      if (!material.isMaterial) continue
+      for (const value of Object.values(material)) if (value?.isTexture && !value.isRenderTargetTexture) textures.add(value)
+      for (const uniform of Object.values(material.uniforms ?? {})) if (uniform.value?.isTexture && !uniform.value.isRenderTargetTexture) textures.add(uniform.value)
+    }
+  })
+  if (scene.background?.isTexture && !scene.background.isRenderTargetTexture) textures.add(scene.background)
+  if (scene.environment?.isTexture && !scene.environment.isRenderTargetTexture) textures.add(scene.environment)
+  try {
+    timeSystem.warmGhost(renderer, camera)
+    for (const texture of textures) renderer.initTexture(texture)
+    storyPlayer.warm(); storyPlayer.renderPrepared()
+    scene.updateMatrixWorld(true)
+    renderer.compile(scene, camera); post.render(scene, camera)
+  } finally {
+    camera.position.copy(spawnPosition); camera.quaternion.copy(spawnRotation)
+  }
+  if (import.meta.env?.DEV) console.log(`[load] level1 warmed ${performance.now().toFixed(1)}ms`)
+}
+
+function startPreparedIntro() {
+  if (!awaitingIntro || !gameStarted || levelManager.getState() !== 'Boarding' || levelManager.isTransitioning()) return
+  awaitingIntro = false
+  setArrivalStartCamera()
+  if (import.meta.env?.DEV) console.log(`[load] new game → intro ${(performance.now() - newGameClickedAt).toFixed(1)}ms`)
+  storyPlayer.start()
+}
 
 // Large walkthrough popups freeze gameplay and silence actions, but keep the
 // rendered scene visible behind the guide. The HUD captures Enter/Space itself
 // so those keys dismiss the guide without also triggering a gameplay action.
 hud.onTutorialStateChange((open) => {
-  const controlsEnabled = gameStarted && !paused && !open
+  const controlsEnabled = getInputState() === 'PLAYING' && !open
   keyboard.setEnabled(controlsEnabled)
   interaction.setEnabled(controlsEnabled)
   playerView.setEnabled(controlsEnabled)
@@ -423,27 +515,38 @@ hud.setVisible(false)
 playerView.setEnabled(false)
 keyboard.setEnabled(false)
 
-// Build the first level silently (no loading-screen flash) so the
-// station geometry, lighting and outdoor environment render behind
-// the menu overlay.
+// The manager adopts this exact instance on New Game; no second build.
+function prefetchBoardingMusic() {
+  const owner = new LevelMusicPlayer(loadTrack(LEVEL_TRACKS.Boarding.file))
+  return owner.load().finally(() => owner.dispose())
+}
+
+function warmGameplayAudio() {
+  let started = 0
+  if (import.meta.env?.DEV) started = performance.now()
+  const ctx = getContext(), drone = ensureGameplayDrone()
+  if (!ctx || !drone) return
+  // Construct the pink-noise PCM and nodes under cover, without an audible bed.
+  drone.output.gain.cancelScheduledValues(ctx.currentTime)
+  drone.output.gain.setValueAtTime(0, ctx.currentTime)
+  if (import.meta.env?.DEV) console.log(`[perf] first hidden audio ${(performance.now() - started).toFixed(2)}ms`)
+}
+
 async function buildTitleBackdrop() {
-  await loadBoardingAssets()
-  const ctx = {
-    scene, interaction, assets, hud, timeSystem, renderer,
-    player, camera: playerView, renderCamera: camera, respawn,
-    advance: () => levelManager.advance(),
-    beginCinematic() {
-      respawn.cancel()
-      syncInputState()
-    }
-  }
-  // Nothing is interactable behind the title screen, and the player is parked
-  // back on the level's spawn — otherwise quitting mid-run would leave the
-  // figure standing wherever the run ended, in shot of the cinematic camera.
-  interaction.setEnabled(false)
-  const level = createBoardingLevel(ctx)
-  if (level.checkpoint) player.setPose(level.checkpoint.position, level.checkpoint.yaw)
-  return level
+  introReady = prepareIntro()
+  boardingFilesReady = loadBoardingAssets()
+  await Promise.all([introReady, charactersReady, boardingFilesReady, prefetchBoardingMusic()])
+  preparedBoarding = createBoardingLevel({ scene, interaction, assets, hud, player,
+    camera: playerView, renderCamera: camera, respawn, timeSystem, renderer,
+    advance: () => levelManager.advance(), beginCinematic() { respawn.cancel(); syncInputState() } })
+  const checkpoint = preparedBoarding.checkpoint
+  player.setPose(checkpoint.position, checkpoint.yaw)
+  playerView.setYaw(checkpoint.yaw ?? 0); playerView.setPitch(checkpoint.pitch)
+  playerView.snap(); playerView.update(0, player.mesh, null)
+  if (import.meta.env?.DEV) console.log(`[load] level1 built ${performance.now().toFixed(1)}ms`)
+  warmLevel1()
+  hud.setVisible(false)
+  return createTitleBackdrop({ renderer, onRendererRestore: () => post.resize() })
 }
 
 const settingsMenu = createSettingsMenu()
@@ -471,7 +574,7 @@ const menu = createMainMenu({
 
 const pauseMenu = createPauseMenu({
   settingsMenu,
-  canPause: () => gameStarted && !credits.isOpen && !modelEditor?.isOpen(),
+  canPause: () => gameStarted && !storyPlayer?.active && !credits.isOpen && !modelEditor?.isOpen(),
   getStatus: () => ({
     level: levelManager.getState(),
     objective: hud.getObjective(),
@@ -513,6 +616,7 @@ if (import.meta.env?.DEV) {
     getContextLabel: () => levelManager.getState() ?? 'Scene',
     canOpen: () => (
       gameStarted &&
+      !storyPlayer?.active &&
       !paused &&
       !credits.isOpen &&
       !levelManager.isTransitioning() &&
@@ -542,9 +646,10 @@ if (import.meta.env?.DEV) {
 function getInputState() {
   return resolveInputState({
     gameStarted,
+    story: Boolean(storyPlayer?.active),
     creditsOpen: credits.isOpen,
     paused,
-    transitioning: levelManager.isTransitioning(),
+    transitioning: awaitingIntro || levelManager.isTransitioning(),
     caught: respawn.isFailing(),
     cinematic: levelManager.isCinematic() || Boolean(arrival),
     editor: Boolean(modelEditor?.isOpen())
@@ -553,6 +658,7 @@ function getInputState() {
 
 function syncInputState() {
   const state = getInputState()
+  respawn.setPaused(paused || state === 'STORY')
   levelManager.setPresentationPaused(state !== 'PLAYING' && state !== 'CINEMATIC')
   const enabled = state === 'PLAYING' && !benchmark?.isHolding()
   if (!enabled) {
@@ -661,6 +767,10 @@ function startGame() {
     titleReturnPromise.then(startGame)
     return
   }
+  if (gameStarted) return
+  newGameClickedAt = performance.now()
+  firstHiddenSystemsPending = true
+  firstPlayableFramePending = false
   respawn.reset()
   timeSystem.resetForRun()
   gameStarted = true
@@ -675,22 +785,31 @@ function startGame() {
   keyboardLock.engage()
   const devStart = devStartOptions()
   if (devStart) {
+    storyRun++
+    storyPlayer?.cancel()
+    storyPlayer = null
     // A skipped start still rebuilds through the level manager.
     if (titleBackdrop) {
       titleBackdrop.dispose()
       titleBackdrop = null
     }
+    preparedBoarding?.dispose(); preparedBoarding = null
     levelManager.enter(devStart.state, { levelOptions: devStart.levelOptions })
     return
   }
+  stopLevelMusic()
+  disposeGameplayDrone()
+  awaitingIntro = true
+  hud.setVisible(false)
+  document.exitPointerLock?.()
   if (titleBackdrop) {
-    const level = titleBackdrop
+    titleBackdrop.dispose()
     titleBackdrop = null
-    levelManager.adopt('Boarding', level)
-    beginForecourtArrival()
-    return
   }
-  levelManager.enter('Boarding')
+  const boarding = preparedBoarding; preparedBoarding = null
+  levelManager.adopt('Boarding', boarding)
+  startPreparedIntro()
+  syncInputState()
 }
 
 // Dev builds only: ?start=<target> makes NEW GAME skip ahead for playtesting.
@@ -721,6 +840,11 @@ function devStartOptions() {
 // without a page refresh.
 async function quitToTitle() {
   if (titleReturnPromise) return titleReturnPromise
+  storyRun++
+  awaitingIntro = false
+  storyPlayer?.cancel()
+  storyPlayer = null
+  arrival = null
   gameStarted = false
   paused = false
   elapsed = 0
@@ -733,6 +857,7 @@ async function quitToTitle() {
   // title screen's cinematic shot needs it back.
   playerView.reset()
   hud.setVisible(false)
+  hud.root.style.visibility = ''
   hud.setSuspicion(0)
   hud.setObjective('')
   hud.resetRunTimer()
@@ -750,11 +875,14 @@ async function quitToTitle() {
     // Let the opaque veil paint before synchronous scene disposal/construction.
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     levelManager.unload()
+    preparedBoarding?.dispose(); preparedBoarding = null
     disposeGameplayDrone()
     // unload stops the outgoing track; request title music afterwards.
     playMenuMusic()
     titleBackdrop = await buildTitleBackdrop()
+    titleBackdrop.show()
     menu.show()
+    if (import.meta.env?.DEV) console.log(`[load] title ready ${performance.now().toFixed(1)}ms since page start`)
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     veil.style.transition = 'opacity 400ms linear'
     veil.style.opacity = '0'
@@ -764,26 +892,20 @@ async function quitToTitle() {
 }
 
 // Defer by two animation frames: the first paints the loading screen,
-// the second starts asset preparation and the station build. This matches the
+// the second starts asset preparation and title scenery. This matches the
 // pattern used by levelManager.enter() — see core/level-manager.js.
 requestAnimationFrame(() => requestAnimationFrame(async () => {
   try {
     titleBackdrop = await startupTasks.track('backdrop', buildTitleBackdrop())
 
-    await charactersReady
-
-    menu.show()
-    menu.updateCinematicCamera(0)
-    titleBackdrop.updateAtmosphere?.(0, camera.position)
-    // Compile Ghost materials/lights after the Mixamo visual is attached so
-    // first Ghost press does not pay that shader cost in-game.
-    timeSystem.warmGhost(renderer, camera)
-    startupPrepared = true
-
     // Keep the existing extra frame before revealing the title scene.
     requestAnimationFrame(() => {
       startupTasks.complete('presentation')
       loadingScreen.hide()
+      titleBackdrop.show()
+      menu.show()
+      startupPrepared = true
+      if (import.meta.env?.DEV) console.log(`[load] title ready ${performance.now().toFixed(1)}ms since page start`)
       if (benchTarget) {
         menu.hide()
         startGame()
@@ -797,16 +919,93 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
   }
 }))
 
+let loopInstrumentation = renderOverlay
+let devMinimapCpuMs = 0
+let devParts = null, devPartAt = 0, devPlayerX = 0, devPlayerZ = 0, devSpeed = 0, devRunning = false
+if (import.meta.env?.DEV) {
+  devParts = new Float64Array(8)
+  let detector = null, previous = 0, started = 0, interval = 0
+  let updateStarted = 0, updateMs = 0, drawStarted = 0, drawMs = 0
+  let lastLevel = null, levelStarted = 0
+  let sceneCpuMs = 0
+  const drawWorld = renderer.render
+  renderer.render = function (world, view) {
+    if (!view?.isPerspectiveCamera) return drawWorld.call(this, world, view)
+    const at = performance.now()
+    try { return drawWorld.call(this, world, view) }
+    finally { sceneCpuMs += performance.now() - at }
+  }
+  // Count only when a spike line is emitted, never on ordinary frames.
+  // Zero-intensity visible lights still participate in shader light counts.
+  const renderState = new Float64Array(3)
+  function countLight(node) {
+    if (!node.isLight || !node.layers.test(camera.layers)) return
+    renderState[0]++
+    if (node.castShadow) renderState[1]++
+  }
+  function getRenderState() {
+    renderState.fill(0)
+    scene.traverseVisible(countLight)
+    renderState[2] = renderer.info.programs?.length ?? 0
+    return renderState
+  }
+  import('./dev/lag-detector.js').then(({ createLagDetector }) => { detector = createLagDetector({ getRenderState }) })
+  // Same boundaries as the overlay; sampleFrame() clones, so do not poll it.
+  loopInstrumentation = {
+    beginFrame(timestamp) {
+      renderOverlay?.beginFrame(timestamp)
+      started = performance.now(); interval = previous ? timestamp - previous : 0; previous = timestamp
+      devMinimapCpuMs = 0
+      devParts.fill(0)
+      sceneCpuMs = 0
+    },
+    beginUpdate() { renderOverlay?.beginUpdate(); updateStarted = performance.now() },
+    endUpdate() { updateMs = performance.now() - updateStarted; renderOverlay?.endUpdate() },
+    beginDraw() { renderOverlay?.beginDraw(); drawStarted = performance.now() },
+    endDraw() { drawMs = performance.now() - drawStarted; renderOverlay?.endDraw() },
+    endFrame() {
+      const now = performance.now(), level = levelManager.getState()
+      if (level !== lastLevel) { lastLevel = level; levelStarted = now }
+      detector?.record(now, Math.max(interval, now - started), updateMs, drawMs, devMinimapCpuMs,
+        getInputState(), level ?? 'none', (now - levelStarted) / 1000, sceneCpuMs,
+        devParts, player.mesh.position.x, player.mesh.position.z, devSpeed, devRunning)
+      renderOverlay?.endFrame()
+    }
+  }
+}
+
 const loop = createLoop({
   renderer,
   scene,
   camera,
   clock,
-  instrumentation: renderOverlay,
+  instrumentation: loopInstrumentation,
   render(world, view) {
-    // The opaque loader covers boot. Avoid uploading/compiling partial scenes
-    // while character loads and lighting setup are still changing.
+    // Avoid rendering partial scenes while startup assets and lighting settle.
     if (!startupPrepared) return
+    if (storyPlayer?.active) {
+      if (storyPlayer.showGame) {
+        post.render(world, view)
+        // Warm the real icon pools and their draw BEFORE the smoke quad,
+        // otherwise the inset would paint over the opaque cover.
+        minimap.setVisible(levelManager.minimapVisible)
+        let mapStarted = 0
+        if (import.meta.env?.DEV) mapStarted = performance.now()
+        minimap.render(renderer)
+        if (import.meta.env?.DEV) devMinimapCpuMs = performance.now() - mapStarted
+      }
+      storyPlayer.render()
+      storyPlayer.recordFrame(Math.max(frameIntervalMs, performance.now() - frameStartedAt), ranFullGameFrame, performance.now())
+      if (firstLiveFramePending && storyPlayer.showGame) {
+        firstLiveFramePending = false
+        if (import.meta.env?.DEV) console.log(`[perf] first live frame ${(performance.now() - frameStartedAt).toFixed(2)}ms frame time`)
+      }
+      return
+    }
+    if (!gameStarted && titleBackdrop) {
+      titleBackdrop.render()
+      return
+    }
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
@@ -814,19 +1013,56 @@ const loop = createLoop({
   },
 
   afterRender: (gl) => {
-    const show = gameStarted && !credits.isOpen && levelManager.minimapVisible
-    minimap.setVisible(show)
+    const show = gameStarted && !storyPlayer?.active && !credits.isOpen && startupPrepared && levelManager.minimapVisible
+    // During the smoke, HUD visibility hides the frame while its layout and
+    // icon pools are prepared by the render branch above. Do not reset them.
+    const warming = startupPrepared && gameStarted && storyPlayer?.active && storyPlayer.showGame && !credits.isOpen && levelManager.minimapVisible
+    minimap.setVisible(show || warming)
 
     if (show) {
+      let mapStarted = 0
+      if (import.meta.env?.DEV) mapStarted = performance.now()
       minimap.render(gl)
+      if (import.meta.env?.DEV) devMinimapCpuMs = performance.now() - mapStarted
     }
     benchmark?.afterRender()
+    if (import.meta.env?.DEV) {
+      if (firstPlayableFramePending && ranFullGameFrame && getInputState() === 'PLAYING') {
+        firstPlayableFramePending = false
+        console.log(`[perf] first playable frame ${Math.max(frameIntervalMs, performance.now() - frameStartedAt).toFixed(2)}ms`)
+      }
+    }
   }
 })
 
 const cinematicParentRotation = new THREE.Quaternion()
 loop.add((delta) => {
   if (!startupPrepared) return
+  frameIntervalMs = frameStartedAt ? performance.now() - frameStartedAt : 0
+  frameStartedAt = performance.now()
+  ranFullGameFrame = false
+  if (storyPlayer?.active) {
+    storyPlayer.update(delta)
+    if (storyPlayer?.showGame) ranFullGameFrame = updateGameFrame(delta, true)
+    return
+  }
+  if (!gameStarted && titleBackdrop) {
+    titleBackdrop.update(delta, window.innerWidth, window.innerHeight)
+    return
+  }
+  ranFullGameFrame = updateGameFrame(delta)
+})
+
+const presentationKeyboard = Object.freeze({ forward: false, back: false, left: false, right: false,
+  run: false, duck: false, jump: false, interact: false })
+const arrivalFramePosition = new THREE.Vector3(), arrivalFrameRotation = new THREE.Quaternion()
+
+function updateGameFrame(delta, presentation = false) {
+  let measureFirst = false, stageAt = 0, setupMs = 0, timeMs = 0, levelMs = 0, playerMs = 0, cameraMs = 0, interactionMs = 0
+  if (import.meta.env?.DEV) {
+    measureFirst = presentation && firstHiddenSystemsPending
+    if (measureFirst) stageAt = performance.now()
+  }
   renderQuality.update(performance.now())
   benchmark?.update()
   // Mixer tick is independent of gameplay input state. Title / transition /
@@ -834,7 +1070,9 @@ loop.add((delta) => {
   // left the detective frozen in bind pose after the first frame.
   player.updateVisual(delta)
 
+  if (import.meta.env?.DEV) devPartAt = performance.now()
   hud.updateStats(delta)
+  if (import.meta.env?.DEV) devParts[6] += performance.now() - devPartAt
   renderOverlay?.update(delta)
 
   // The model workshop owns the same render camera while open. Gameplay is
@@ -849,15 +1087,13 @@ loop.add((delta) => {
 
   // While the menu is visible, drift the camera and skip gameplay.
   if (!gameStarted) {
-    menu.updateCinematicCamera(delta)
-    titleBackdrop?.updateAtmosphere?.(delta, camera.position)
     return
   }
 
   // Walkthrough tutorials completely freeze gameplay while the scene remains
   // rendered behind the overlay. Check this before syncInputState() so the
   // tutorial's disabled controls cannot accidentally be re-enabled.
-  if (hud.isTutorialOpen()) return
+  if (hud.isTutorialOpen() && !presentation) return false
 
   syncInputState()
 
@@ -872,33 +1108,41 @@ loop.add((delta) => {
   }
 
   const heistComplete = levelManager.getState() === 'Complete' || levelManager.getState() === 'Ending'
-  if (!heistComplete) elapsed += delta
+  if (!heistComplete && !presentation) elapsed += delta
 
+  if (import.meta.env?.DEV) devPartAt = performance.now()
   hud.updateRunTimer({
     elapsed,
     delta,
     mode: timeSystem.getMode(),
     ghostActive: timeSystem.getGhost().isPlaying(),
-    running: !heistComplete
+    running: !heistComplete && !presentation
   })
+  if (import.meta.env?.DEV) devParts[6] += performance.now() - devPartAt
 
+  if (import.meta.env?.DEV) { if (measureFirst) { setupMs = performance.now() - stageAt; stageAt = performance.now() } }
+  if (import.meta.env?.DEV) devPartAt = performance.now()
   timeSystem.update(delta)
+  if (import.meta.env?.DEV) { devParts[1] = performance.now() - devPartAt; devPartAt = performance.now() }
+  if (import.meta.env?.DEV) { if (measureFirst) { timeMs = performance.now() - stageAt; stageAt = performance.now() } }
   levelManager.update(delta)
+  if (import.meta.env?.DEV) { devParts[0] = performance.now() - devPartAt; devPartAt = performance.now() }
+  if (import.meta.env?.DEV) { if (measureFirst) { levelMs = performance.now() - stageAt; stageAt = performance.now() } }
 
   // A level update may have opened a tutorial this frame. Stop immediately
   // so the player cannot move one extra frame into a hazard under the popup.
-  if (hud.isTutorialOpen()) return
+  if (hud.isTutorialOpen() && !presentation) return false
 
   // New Game keeps the title framing and eases down behind the detective
   // before the third-person camera takes over.
-  if (arrival && !updateForecourtArrival(delta)) {
+  if (arrival && !updateForecourtArrival(delta) && !presentation) {
     syncInputState()
     return
   }
 
   // Cinematics and other non-playing states may still need level animation,
   // but movement and interaction must not resume during the same frame.
-  if (getInputState() !== 'PLAYING') {
+  if (getInputState() !== 'PLAYING' && !presentation) {
     const view = player.getCinematicView()
     if (view?.mode === 'fixed') {
       view.moveElapsed = Math.min(view.moveSeconds, view.moveElapsed + delta)
@@ -919,10 +1163,11 @@ loop.add((delta) => {
     return
   }
 
+  if (import.meta.env?.DEV) { devPartAt = performance.now(); devPlayerX = player.mesh.position.x; devPlayerZ = player.mesh.position.z }
   player.update(delta, {
-    keyboard: keyboard.state,
-    crouchPressed: keyboard.consumePress('duck'),
-    runPressed: keyboard.consumePress('run'),
+    keyboard: presentation ? presentationKeyboard : keyboard.state,
+    crouchPressed: !presentation && keyboard.consumePress('duck'),
+    runPressed: !presentation && keyboard.consumePress('run'),
     cameraYaw: playerView.getYaw(),
     bounds: levelManager.bounds,
     obstacles: levelManager.obstacles,
@@ -930,14 +1175,38 @@ loop.add((delta) => {
     supports: levelManager.supports,
     voids: levelManager.voids
   })
+  if (import.meta.env?.DEV) {
+    devParts[2] = performance.now() - devPartAt
+    devSpeed = delta > 0 ? Math.hypot(player.mesh.position.x - devPlayerX, player.mesh.position.z - devPlayerZ) / delta : 0
+    devRunning = player.isRunning(); devPartAt = performance.now()
+  }
+  if (import.meta.env?.DEV) { if (measureFirst) { playerMs = performance.now() - stageAt; stageAt = performance.now() } }
 
+  if (presentation && arrival) {
+    arrivalFramePosition.copy(camera.position); arrivalFrameRotation.copy(camera.quaternion)
+  }
+  const arrivalYaw = playerView.getYaw()
+  const lookAngle = presentation ? storyPlayer?.lookAroundAngle || 0 : 0
+  if (lookAngle) playerView.setYaw(arrivalYaw + lookAngle)
   playerView.update(delta, player.mesh, scene, {
     crouching: player.isCrouching(),
     stabilizeCollision: levelManager.getState() === 'Timewreck'
   })
+  if (lookAngle) playerView.setYaw(arrivalYaw)
+  if (presentation && arrival) {
+    if (!lookAngle) { camera.position.copy(arrivalFramePosition); camera.quaternion.copy(arrivalFrameRotation) }
+  }
+  if (import.meta.env?.DEV) { devParts[3] = performance.now() - devPartAt; devPartAt = performance.now() }
+  if (import.meta.env?.DEV) { if (measureFirst) { cameraMs = performance.now() - stageAt; stageAt = performance.now() } }
 
-  interaction.update(player.mesh, playerView.getYaw(), delta)
+  // Keyboard remains disabled; only candidate selection is exercised here.
+  if (presentation) interaction.setEnabled(true)
+  try { interaction.update(player.mesh, playerView.getYaw(), delta) }
+  finally { if (presentation) interaction.setEnabled(false) }
+  if (import.meta.env?.DEV) { devParts[4] = performance.now() - devPartAt; devPartAt = performance.now() }
   respawn.update()
+  if (import.meta.env?.DEV) { devParts[5] = performance.now() - devPartAt; devPartAt = performance.now() }
+  if (import.meta.env?.DEV) { if (measureFirst) { interactionMs = performance.now() - stageAt; stageAt = performance.now() } }
 
   hud.updateTimeState({
     mode: timeSystem.getMode(),
@@ -951,6 +1220,14 @@ loop.add((delta) => {
     strainEnabled: timeSystem.isStrainEnabled(),
     freezeLockout: timeSystem.getFreezeLockout()
   })
-})
+  if (import.meta.env?.DEV) devParts[6] += performance.now() - devPartAt
+  if (import.meta.env?.DEV) {
+    if (measureFirst) {
+      firstHiddenSystemsPending = false
+      console.log(`[perf] first hidden systems visual/hud=${setupMs.toFixed(2)} time=${timeMs.toFixed(2)} level=${levelMs.toFixed(2)} player=${playerMs.toFixed(2)} camera=${cameraMs.toFixed(2)} interaction/respawn=${interactionMs.toFixed(2)} hud-state=${(performance.now() - stageAt).toFixed(2)}`)
+    }
+  }
+  return true
+}
 
 loop.start()
