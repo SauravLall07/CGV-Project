@@ -808,7 +808,7 @@ const loop = createLoop({
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
-    post.render(world, view)
+    post.render(world, view, { antialias: levelManager.getState() === 'Timewreck' })
   },
 
   afterRender: (gl) => {
@@ -930,7 +930,8 @@ loop.add((delta) => {
   })
 
   playerView.update(delta, player.mesh, scene, {
-    crouching: player.isCrouching()
+    crouching: player.isCrouching(),
+    stabilizeCollision: levelManager.getState() === 'Timewreck'
   })
 
   interaction.update(player.mesh, playerView.getYaw(), delta)

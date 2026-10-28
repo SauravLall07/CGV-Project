@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { disposeObject } from '../core/dispose.js'
 import { createCarriageEnvironment, CARRIAGE_CEILING_Y, listCarriageVolumes } from '../environment/carriages.js'
@@ -93,7 +94,7 @@ function createEmergencyBrake() {
   })
 
   // Stepped pedestal — same approximate height as the old housing.
-  const base = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.14, 0.58), pedestalMat)
+  const base = new THREE.Mesh(new RoundedBoxGeometry(0.72, 0.14, 0.58, 1, 0.025), pedestalMat)
   base.position.y = 0.07
   base.castShadow = true
   brake.add(base)
@@ -101,7 +102,7 @@ function createEmergencyBrake() {
   baseTrim.position.y = 0.15
   brake.add(baseTrim)
 
-  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.78, 0.38), pedestalMat)
+  const housing = new THREE.Mesh(new RoundedBoxGeometry(0.52, 0.78, 0.38, 1, 0.025), pedestalMat)
   housing.position.y = 0.58
   housing.castShadow = true
   brake.add(housing)
@@ -221,7 +222,7 @@ export function createTimewreckLevel({
       stormSky.uniforms.uSkyGain.value = 0.045
       stormEnvTarget = captureSkyEnvironment(renderer, stormSky.mesh)
       scene.environment = stormEnvTarget.texture
-      scene.environmentIntensity = 0.34
+      scene.environmentIntensity = 0.42
     } finally {
       stormSky.dispose()
     }
@@ -230,11 +231,11 @@ export function createTimewreckLevel({
   // Damaged PBR surfaces are very dark; short-range emergency points leave most
   // of each car on ambient alone, which ACES tone mapping crushes to near-black.
   // One soft directional key (no shadows) lights the aisle and player.
-  const aisleKey = new THREE.DirectionalLight(0xb8c8e0, 1.75)
-  aisleKey.position.set(1.6, 13, spans.vault.maxZ + 8)
+  const aisleKey = new THREE.DirectionalLight(0xb8c8e0, 1.45)
+  aisleKey.position.set(6, 11, spans.vault.maxZ + 8)
   scene.add(aisleKey)
   const aisleKeyTarget = new THREE.Object3D()
-  aisleKeyTarget.position.set(0, 0.6, spans.cab.minZ - 6)
+  aisleKeyTarget.position.set(0, 0.6, spans.vault.maxZ - 4)
   scene.add(aisleKeyTarget)
   aisleKey.target = aisleKeyTarget
 
@@ -1287,14 +1288,14 @@ export function createTimewreckLevel({
     const head = new THREE.Group()
     head.name = 'mech-luggage-trunk'
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(RAM_HEAD_WIDTH, RAM_HEAD_HEIGHT, RAM_HEAD_DEPTH),
+      new RoundedBoxGeometry(RAM_HEAD_WIDTH, RAM_HEAD_HEIGHT, RAM_HEAD_DEPTH, 1, 0.035),
       trunkWoodMat
     )
     body.castShadow = true
     head.add(body)
     // Worn leather lid band across the top third.
     const lid = new THREE.Mesh(
-      new THREE.BoxGeometry(RAM_HEAD_WIDTH + 0.02, RAM_HEAD_HEIGHT * 0.28, RAM_HEAD_DEPTH + 0.02),
+      new RoundedBoxGeometry(RAM_HEAD_WIDTH + 0.02, RAM_HEAD_HEIGHT * 0.28, RAM_HEAD_DEPTH + 0.02, 1, 0.025),
       trunkLeatherMat
     )
     lid.position.y = RAM_HEAD_HEIGHT * 0.28
@@ -1553,10 +1554,10 @@ export function createTimewreckLevel({
   const loopTrunkCyan = new THREE.MeshStandardMaterial({
     color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.65, roughness: 0.35
   })
-  const loopBody = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.32, 0.32), loopTrunkWood)
+  const loopBody = new THREE.Mesh(new RoundedBoxGeometry(2.6, 0.32, 0.32, 1, 0.025), loopTrunkWood)
   loopBody.castShadow = true
   loopBeam.add(loopBody)
-  const loopLid = new THREE.Mesh(new THREE.BoxGeometry(2.62, 0.1, 0.34), loopTrunkLeather)
+  const loopLid = new THREE.Mesh(new RoundedBoxGeometry(2.62, 0.1, 0.34, 1, 0.018), loopTrunkLeather)
   loopLid.position.y = 0.16
   loopBeam.add(loopLid)
   for (const x of [-1.15, -0.4, 0.4, 1.15]) {
@@ -2697,6 +2698,7 @@ export function createTimewreckLevel({
   // ============================================================
   const lever = brake.getObjectByName('brake-lever')
   let elapsed = 0
+  let atmosphereT = 0
 
   const passengerRack = createPassengerRack({ root, span: spans.passenger, player, timeSystem, unregisters, obstacles: blastObstacles,
     warn: () => {
@@ -2816,6 +2818,7 @@ export function createTimewreckLevel({
       brakeT = 0
       removeBrakeVeil()
       carriageShake.reset()
+      atmosphereT = 0
       stormDebris.reset()
       lampMotion.reset()
       grabHandles.reset()
@@ -2917,6 +2920,7 @@ export function createTimewreckLevel({
       const stopEnd = Math.min(BRAKE_HANDOFF_SECONDS, brakeT + delta)
       const brakeDelta = (stopEnd - stopStart) * (1 - (stopStart + stopEnd) / (2 * BRAKE_HANDOFF_SECONDS))
       const envDt = brakeComplete ? 0 : braking ? brakeDelta : motionScale * delta
+      atmosphereT += envDt
       // Visual storm ramp Vault→Cab; Freeze / brake still zero or ease as before.
       const stormProgress = stormProgressAlongTrain(player.mesh.position.z, spans)
       const exteriorScale = brakeComplete ? 0 : braking
@@ -3136,32 +3140,31 @@ export function createTimewreckLevel({
         if (brakeT >= BRAKE_HANDOFF_SECONDS + BRAKE_FADE_SECONDS - 1e-9) {
           finishBraking()
         }
+        lightPool.update(pp, delta)
         return
       }
 
       // --- Atmosphere: shake / debris / handles (each independently toggled) ---
-      const unrest = 1 + Math.min(1.5, elapsed * 0.02) + (breakupT >= 0 ? 1.2 : 0) +
+      const unrest = 1 + Math.min(1.5, Math.abs(atmosphereT) * 0.02) + (breakupT >= 0 ? 1.2 : 0) +
         stormProgress * STORM_PROGRESS.progressUnrest
       const slamKick = blastSlam
-      const shook = carriageShake.update(delta, {
-        elapsed,
+      const shook = carriageShake.update(envDt, {
+        elapsed: atmosphereT,
         unrest,
         slamKick,
         frozen: finaleFreeze
       })
       if (!shook && !finaleFreeze) {
         // Shake disabled: keep the train visually still (door slam feedback only).
-        root.rotation.z = Math.sin(elapsed * 52) * 0.018 * slamKick * slamKick
-        root.position.y = Math.sin(elapsed * 68) * 0.014 * slamKick * slamKick
-        root.position.x = Math.sin(elapsed * 41) * 0.008 * slamKick * slamKick
-      } else if (finaleFreeze) {
-        root.position.x = 0
+        root.rotation.z = Math.sin(atmosphereT * 18) * 0.012 * slamKick * slamKick
+        root.position.y = Math.sin(atmosphereT * 22) * 0.01 * slamKick * slamKick
+        root.position.x = Math.sin(atmosphereT * 16) * 0.006 * slamKick * slamKick
       }
-      stormDebris.update(envDt, { elapsed, frozen: finaleFreeze, unrest })
-      grabHandles.update(envDt, { elapsed, frozen: finaleFreeze, unrest, slamKick })
+      stormDebris.update(envDt, { elapsed: atmosphereT, frozen: finaleFreeze, unrest })
+      grabHandles.update(envDt, { elapsed: atmosphereT, frozen: finaleFreeze, unrest, slamKick })
       // After shake + env flicker: swing fixtures and gently modulate lamp intensity.
       lampMotion.update(envDt, {
-        elapsed,
+        elapsed: atmosphereT,
         frozen: finaleFreeze,
         unrest,
         shakeX: root.position.x,
@@ -3391,7 +3394,7 @@ export function createTimewreckLevel({
 
       // After all intensity/colour writes for this frame (env flicker, Freeze
       // glows, blast, wave/stasis) so nearby hazards win the nearest-12 set.
-      lightPool.update(pp)
+      lightPool.update(pp, delta)
     },
 
     dispose() {

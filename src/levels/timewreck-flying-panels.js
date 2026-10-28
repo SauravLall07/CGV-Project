@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createDebrisCollision } from './timewreck-debris.js'
+import { createWreckPanelGeometry } from '../environment/wreck-geometry.js'
 
 const WARNING = 0.9
 const RECOVERY = 3
@@ -21,7 +22,7 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
   const group = new THREE.Group()
   group.name = 'wreck-flying-panels'
   root.add(group)
-  const geometry = new THREE.BoxGeometry(1, 1, 1)
+  const geometries = [0, 1, 2].map(createWreckPanelGeometry)
   let enabled = true
   const panels = Object.entries(spans).flatMap(([key, span], carIndex) =>
     Array.from({ length: key === 'vault' || key === 'convergence' ? 6 : 8 }, (_, index) => {
@@ -31,7 +32,7 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
       color: 0x543316, roughness: 0.82, metalness: 0.28,
       emissive: 0x321306, emissiveIntensity: 0.18, transparent: true
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(geometries[index % 3], material)
     mesh.name = `${key}-flying-brown-panel${index ? `-${index + 1}` : ''}`
     mesh.userData.noCameraCollision = true
     group.add(mesh)
@@ -40,7 +41,7 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
       period: WARNING + (span.maxZ - span.minZ + RUN_IN * 2) / 4.5 + RECOVERY }
   }))
   const collision = createDebrisCollision(player, panels.map(p => p.mesh))
-  const scrapGeometry = new THREE.BoxGeometry(0.18, 0.04, 0.42)
+  const scrapGeometry = createWreckPanelGeometry(1).scale(0.18, 0.04, 0.42)
   const scrapMaterial = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.25 })
   const scrapPose = new THREE.Object3D()
   const scraps = panels.filter(p => p.index === 0).map(owner => {
@@ -84,7 +85,8 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
     if (panel.checkedCycle !== cycle) {
       // A seeded flight regenerates exactly when Rewind returns to this cycle.
       const random = randomSource(seed ^ Math.imul(panel.id + 1, 0x9e3779b1) ^ Math.imul(cycle + 1, 0x85ebca6b))
-      const dimensions = SHAPES[Math.floor(random() * SHAPES.length)]
+      const shapeIndex = Math.floor(random() * SHAPES.length)
+      const dimensions = SHAPES[shapeIndex]
       const size = 0.65 + random() * 0.5
       panel.mesh.scale.set(...dimensions.map(value => value * size))
       panel.mesh.material.color.setHex(COLORS[Math.floor(random() * COLORS.length)])

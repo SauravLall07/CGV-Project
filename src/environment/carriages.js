@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { addMechanicalReference } from './mechanical-reference.js'
 import { refineWreckLandmark } from './wreck-landmarks.js'
 import { addCargoWreckBenchmark } from './cargo-wreck-benchmark.js'
@@ -282,7 +283,7 @@ function addLuxuryCeilingRun(g, half, shared, name) {
 }
 
 function makeShared(damaged) {
-  return {
+  const materials = {
     steel: metalMaterial({
       repeat: [3, 2],
       base: damaged ? 0x6a727c : 0x6b7078,
@@ -324,6 +325,13 @@ function makeShared(damaged) {
       roughness: 0.25
     })
   }
+  if (damaged) {
+    // Keep the grime maps; brass should catch a tighter highlight than steel.
+    materials.steel.roughness = 0.9
+    materials.darkSteel.roughness = 0.94
+    materials.brass.roughness = 0.75
+  }
+  return materials
 }
 
 const WRECK_WOOD_SHEEN = { clearcoat: 0.16, clearcoatRoughness: 0.5 }
@@ -1082,6 +1090,7 @@ function addWreckage(g, half, shared, fx, key) {
 function addLight(g, fx, light, damaged) {
   g.add(light)
   if (!damaged) return
+  light.userData.wreckAtmosphereLamp = true
   light.intensity *= 1.45
   light.distance *= 1.35
   const i = fx.lights.length
@@ -1252,8 +1261,8 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
     spots.push([-(WALL_X - 0.5), 0.42, z, 0])
     spots.push([WALL_X - 0.5, 0.42, z, 1])
   }
-  const bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(0.72, 0.55, 0.95), trunkWood, spots.length)
-  const lids = new THREE.InstancedMesh(new THREE.BoxGeometry(0.74, 0.12, 0.97), trunkLeather, spots.length)
+  const bodies = new THREE.InstancedMesh(new RoundedBoxGeometry(0.72, 0.55, 0.95, 1, 0.035), trunkWood, spots.length)
+  const lids = new THREE.InstancedMesh(new RoundedBoxGeometry(0.74, 0.12, 0.97, 1, 0.025), trunkLeather, spots.length)
   const bands = new THREE.InstancedMesh(new THREE.BoxGeometry(0.76, 0.04, 0.99), shared.brass, spots.length)
   bodies.name = 'cargo-luggage-bodies'
   const dummy = new THREE.Object3D()
@@ -1293,7 +1302,7 @@ function dressDamagedCargoLuxury(g, half, shared, fx) {
 
   // Sparse floating luggage outside the hull (storm read — not walkable).
   const floatN = 6
-  const floatBody = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.4, 0.75), trunkWood, floatN)
+  const floatBody = new THREE.InstancedMesh(new RoundedBoxGeometry(0.55, 0.4, 0.75, 1, 0.025), trunkWood, floatN)
   floatBody.name = 'cargo-float-luggage'
   for (let i = 0; i < floatN; i++) {
     const s = i % 2 ? 1 : -1
@@ -3731,10 +3740,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
         const b = Math.sin(t * 2.7 + seed * 1.4)
         const c = Math.sin(t * 0.83 + seed)
         mul = 0.42 + 0.58 * Math.abs(a * b)
-        if (c > 0.78) mul *= 0.12
+        mul *= 1 - THREE.MathUtils.smoothstep(c, 0.7, 0.9) * 0.88
       } else if (entry.pattern === 1) {
         const drop = Math.sin(t * 0.55 + seed) * Math.sin(t * 1.21 + seed * 2)
-        mul = drop > 0.84 ? 0.08 : drop > 0.62 ? 0.38 : 0.88 + 0.12 * Math.sin(t * 4.2 + seed)
+        mul = (0.92 + 0.08 * Math.sin(t * 3.2 + seed)) *
+          (1 - THREE.MathUtils.smoothstep(drop, 0.52, 0.9) * 0.85)
       } else if (entry.pattern === 2) {
         mul = 0.55 + 0.45 * Math.abs(Math.sin(t * 8.4 + seed) * Math.sin(t * 3.05 + seed))
       } else {
@@ -3744,12 +3754,11 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
       // Convergence is the second car on the Timewreck run (after the Vault).
       // Extra irregular electrical flicker on its existing lamps only.
       if (entry.car === 'convergence') {
-        const buzz = Math.sin(t * 23 + seed * 4) * Math.sin(t * 9.4 + seed)
+        const buzz = Math.sin(t * 7 + seed * 4) * Math.sin(t * 3.4 + seed)
         const stutter = Math.sin(t * 1.7 + seed * 1.6)
-        let dip = 0.9 + 0.1 * buzz
-        if (stutter > 0.62 && buzz > 0.1) dip = 0.58
-        else if (stutter > 0.38) dip = 0.74
-        mul = Math.max(0.55, mul * dip)
+        const dip = 0.94 + 0.06 * buzz -
+          THREE.MathUtils.smoothstep(stutter, 0.3, 0.85) * 0.14
+        mul = Math.max(0.65, mul * dip)
       }
       entry.light.intensity = entry.base * mul
     }

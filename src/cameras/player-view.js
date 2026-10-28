@@ -68,7 +68,7 @@ export function createPlayerView({ camera, domElement, player, hud }) {
         crouching
       })
     } else {
-      third.update(delta, playerMesh, collidables, { crouching })
+      third.update(delta, playerMesh, collidables, { crouching, stabilizeCollision: options.stabilizeCollision })
       const orbitDistance = third.getDistance()
       if (wallOccludingAvatar) {
         if (orbitDistance >= AVATAR_SHOW_DISTANCE) wallOccludingAvatar = false

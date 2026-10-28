@@ -1,0 +1,15 @@
+import { createRequire } from 'node:module'
+import { mkdir, writeFile } from 'node:fs/promises'
+const require = createRequire(import.meta.url)
+const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'C:/Users/hpars/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright')
+const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--disable-background-timer-throttling'] })
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+page.on('pageerror', error => console.error(error.message))
+await page.goto('http://127.0.0.1:5175/?start=level3')
+await page.getByRole('button', { name: 'NEW GAME', exact: true }).click({ timeout: 120000 })
+await page.waitForFunction(() => window.levelManager?.getState() === 'Timewreck' && !window.levelManager.isTransitioning(), { timeout: 120000 })
+await page.waitForTimeout(3000)
+console.log(await page.locator('body').innerText())
+console.log(await page.evaluate(() => ({ keys: Object.keys(window).filter(x => /chrono|dev|player|camera|scene|renderer|model/i.test(x)), roots: window.scene.children.map(x => [x.name,x.type]) })))
+await page.screenshot({ path: 'reports/lvl3-browser-boot.png' })
+await browser.close()

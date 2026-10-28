@@ -67,6 +67,22 @@ function levelHarness(start = 'mechanical', fps = 60) {
   return { hud, setProbe(fn) { probe = fn }, get elapsed() { return elapsed }, get skipFinale() { return skipFinale }, get advanced() { return advanced }, scene, player, time, respawn, level, center, layout, interactions, tick, dispose, messages }
 }
 
+test('L3 atmosphere holds through ordinary Freeze and resumes without jumping to wall-clock time', () => {
+  const h = levelHarness('mechanical')
+  try {
+    h.tick(0.5)
+    const root = h.scene.getObjectByName('train-interior-wrecked')
+    const pose = () => [...root.position.toArray(), root.rotation.z,
+      ...root.getObjectByName('storm-debris-field').children.flatMap(node =>
+        [...node.position.toArray(), ...node.rotation.toArray().slice(0, 3)])]
+    const held = pose()
+    h.time.triggerFreeze(); h.tick(0.5)
+    assert.deepEqual(pose(), held)
+    h.time.triggerFreeze(); h.tick(1 / 60)
+    assert.ok(pose().every((value, i) => Math.abs(value - held[i]) < 0.05))
+  } finally { h.dispose() }
+})
+
 test('N7: live approach/depleted repair, three falls/retries, Mechanical checkpoint and steam remain safe', () => {
   for (const fps of [30, 60, 144, [1/144, 1/30, 0.1, 1/60]]) {
     const h = levelHarness('convergence', fps)

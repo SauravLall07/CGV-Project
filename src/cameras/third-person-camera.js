@@ -101,6 +101,7 @@ export function createThirdPersonCamera(camera, domElement) {
 
   let distance = settings.get('cameraDistance')
   let hasSnapped = false
+  let clearanceTime = 0
 
   // `collidables` is the scene (or any root) tested for camera obstruction.
   // Anything flagged userData.noCameraCollision is skipped, for decorative
@@ -148,8 +149,15 @@ export function createThirdPersonCamera(camera, domElement) {
       reverseRaycaster.set(desiredCameraPosition, reverseDirection)
       reverseRaycaster.far = maxDistance
 
-      const isCameraObstacle = (hit) =>
-        !isDescendantOf(hit.object, playerMesh) && !hit.object.userData.noCameraCollision
+      const isCameraObstacle = (hit) => {
+        if (isDescendantOf(hit.object, playerMesh) || hit.object.userData.noCameraCollision) return false
+        if (options.stabilizeCollision) {
+          for (let node = hit.object.parent; node; node = node.parent) {
+            if (node.userData.noCameraCollision) return false
+          }
+        }
+        return true
+      }
 
       const hits = raycaster.intersectObjects(nearbyCollidables, false)
       const reverseHits = reverseRaycaster.intersectObjects(nearbyCollidables, false)
@@ -171,6 +179,13 @@ export function createThirdPersonCamera(camera, domElement) {
 
     if (allowed < distance) {
       distance = allowed // snap in — never let geometry block the player
+      clearanceTime = 0
+    } else if (options.stabilizeCollision) {
+      // Brief gaps between wreck ribs should not repeatedly extend the camera.
+      clearanceTime += delta
+      if (clearanceTime >= 0.12 && allowed - distance > 0.06) {
+        distance += (allowed - distance) * (1 - Math.exp(-delta * COLLISION_EASE_OUT))
+      }
     } else {
       distance += (allowed - distance) * Math.min(1, delta * COLLISION_EASE_OUT)
     }
@@ -184,6 +199,7 @@ export function createThirdPersonCamera(camera, domElement) {
   // whole map would look wrong.
   function snap() {
     hasSnapped = false
+    clearanceTime = 0
     nearby.invalidate()
   }
 

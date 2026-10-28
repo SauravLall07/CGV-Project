@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { disposeObject } from '../core/dispose.js'
 import { CARRIAGE_CEILING_Y } from '../environment/carriages.js'
 import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { createWreckPanelGeometry } from '../environment/wreck-geometry.js'
 
 // ---------------------------------------------------------------------------
 // Level 3 atmospheric motion — five independent systems.
@@ -14,15 +16,15 @@ import { WRECK_WALL_X } from '../environment/carriage-bounds.js'
 export const CARRIAGE_SHAKE = {
   enabled: true,
   // Continuous vibration (radians / metres), scaled by unrest later.
-  ampRotZ: 0.016,
-  ampY: 0.016,
-  ampX: 0.0035,
+  ampRotZ: 0.009,
+  ampY: 0.01,
+  ampX: 0.0025,
   // Occasional impact.
-  joltChancePerSec: 0.42,
-  joltDuration: 0.14,
-  joltAmpRotZ: 0.028,
-  joltAmpY: 0.024,
-  joltAmpX: 0.008
+  joltChancePerSec: 0.24,
+  joltDuration: 0.32,
+  joltAmpRotZ: 0.018,
+  joltAmpY: 0.014,
+  joltAmpX: 0.005
 }
 
 // 2) Floating luggage / debris outside the aisle.
@@ -38,10 +40,9 @@ export const STORM_DEBRIS = {
 // 3) Lamp swing / storm flicker on existing fixtures (no new PointLights).
 export const LAMP_MOTION = {
   enabled: true,
-  swingAmp: 0.055, // radians
-  bobAmp: 0.018, // metres
-  // Phase-1 polish: slightly snappier storm breath; unrest still scales it.
-  stormFlicker: 0.16 // extra intensity mul amplitude on top of env flicker
+  swingAmp: 0.035, // radians
+  bobAmp: 0.012, // metres
+  stormFlicker: 0.08
 }
 
 // 4) Overhead grab handles / straps (decorative only).
@@ -49,7 +50,7 @@ export const GRAB_HANDLES = {
   enabled: true,
   // One pair every `spacing` metres along each listed span key.
   spacing: 3.6,
-  swayAmp: 0.26, // radians — stronger sway as unrest climbs toward the cab
+  swayAmp: 0.18, // radians — stronger sway as unrest climbs toward the cab
   hangY: CARRIAGE_CEILING_Y - 0.55,
   // Side offset — clear of centre aisle.
   sideX: 0.72
@@ -82,19 +83,14 @@ export const DASH_DOOR_TIMING = {
 }
 
 function noCam(obj) {
-  obj.userData.noCameraCollision = true
+  obj.traverse(node => { node.userData.noCameraCollision = true })
   return obj
 }
 
 // --- 1. Shake --------------------------------------------------------------
 
 export function createCarriageShake(root, config = CARRIAGE_SHAKE) {
-  let joltT = 0
-  let joltDir = 1
-  let joltPhase = 0
-
   function reset() {
-    joltT = 0
     if (!root) return
     root.rotation.z = 0
     root.position.y = 0
@@ -102,14 +98,12 @@ export function createCarriageShake(root, config = CARRIAGE_SHAKE) {
   }
 
   function update(delta, { elapsed, unrest, slamKick, frozen }) {
-    if (!config.enabled || frozen) {
-      if (frozen) {
-        root.rotation.z = 0
-        root.position.y = 0
-        root.position.x = 0
-      }
+    if (!config.enabled) {
+      reset()
       return false // caller may apply fallback / slam-only
     }
+    // Hold the current pose; snapping to neutral makes Freeze look like a cut.
+    if (frozen || delta === 0) return true
 
     // Irregular multi-frequency vibration (not a single sine).
     const t = elapsed
@@ -117,33 +111,28 @@ export function createCarriageShake(root, config = CARRIAGE_SHAKE) {
     const n2 = Math.sin(t * 2.4 + 0.3) * 0.5 + Math.sin(t * 6.8) * 0.35 + Math.sin(t * 13.1 + 2.1) * 0.15
     const n3 = Math.sin(t * 3.1 + 1.1) * 0.6 + Math.sin(t * 9.2 + 0.5) * 0.4
 
-    if (joltT > 0) {
-      joltT = Math.max(0, joltT - delta)
-    } else if (delta > 0 && Math.random() < config.joltChancePerSec * delta) {
-      joltT = config.joltDuration
-      joltDir = Math.random() < 0.5 ? -1 : 1
-      joltPhase = Math.random() * Math.PI * 2
-    }
-
-    const joltU = joltT > 0 ? (joltT / config.joltDuration) : 0
-    // Ease-out punch.
-    const jolt = joltU * joltU
+    // A repeatable, smooth impact envelope also runs continuously in Rewind.
+    const period = config.joltChancePerSec > 0 ? 1 / config.joltChancePerSec : Infinity
+    const phase = Number.isFinite(period) ? ((t % period) + period) % period : config.joltDuration
+    const joltU = phase / config.joltDuration
+    const jolt = joltU < 1 ? Math.sin(joltU * Math.PI) ** 2 : 0
+    const joltDir = Math.sin(Math.floor(t / period) * 2.4 + 1) < 0 ? -1 : 1
     const slam = slamKick * slamKick
 
     root.rotation.z =
       n1 * config.ampRotZ * unrest +
-      Math.sin(t * 52) * 0.02 * slam +
-      Math.sin(joltPhase + (1 - joltU) * 18) * config.joltAmpRotZ * jolt * joltDir
+      Math.sin(t * 18) * 0.012 * slam +
+      Math.sin(joltU * Math.PI * 2) * config.joltAmpRotZ * jolt * joltDir
 
     root.position.y =
       n2 * config.ampY * unrest +
-      Math.sin(t * 68) * 0.016 * slam +
-      Math.abs(Math.sin(joltPhase * 1.3)) * config.joltAmpY * jolt
+      Math.sin(t * 22) * 0.01 * slam +
+      config.joltAmpY * jolt
 
     root.position.x =
       n3 * config.ampX * unrest +
-      Math.sin(t * 41) * 0.01 * slam +
-      Math.sin(joltPhase * 2.1) * config.joltAmpX * jolt * joltDir
+      Math.sin(t * 16) * 0.006 * slam +
+      config.joltAmpX * jolt * joltDir
 
     return true
   }
@@ -173,7 +162,7 @@ function buildLuggageTrunk(mats, variant) {
   const g = new THREE.Group()
   g.name = 'storm-luggage'
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(0.42, 0.24, 0.58),
+    new RoundedBoxGeometry(0.42, 0.24, 0.58, 1, 0.025),
     variant % 2 ? mats.leather : mats.leatherDark
   )
   body.castShadow = true
@@ -204,7 +193,7 @@ function buildLuggageTrunk(mats, variant) {
 
 function buildWoodFragment(mats, i) {
   const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08 + (i % 5) * 0.025, 0.04, 0.35 + (i % 4) * 0.06),
+    createWreckPanelGeometry(1).scale(0.08 + (i % 5) * 0.025, 0.04, 0.35 + (i % 4) * 0.06),
     mats.wood
   )
   mesh.name = 'storm-wood-frag'
@@ -264,17 +253,22 @@ export function createStormDebris(root, spans, config = STORM_DEBRIS) {
       const p = item.phase
       const bob = Math.sin(t * item.drift + p) * 0.12 * storm
       const sway = Math.sin(t * (item.drift * 0.7) + p * 1.3) * 0.18 * item.turbulence
-      const gust = Math.sin(t * 2.8 + p) > 0.92 ? 0.15 * item.turbulence : 0
+      const gust = THREE.MathUtils.smoothstep(Math.sin(t * 2.8 + p), 0.8, 1) * 0.15 * item.turbulence
       item.mesh.position.x = item.x + sway
       item.mesh.position.y = item.y + bob + gust
       item.mesh.position.z = item.z + Math.sin(t * 0.35 + p) * 0.4
-      item.mesh.rotation.x += delta * item.spinX * config.tumbleSpeed * 0.35 * storm
-      item.mesh.rotation.y += delta * item.spinY * config.tumbleSpeed * 0.4 * storm
-      item.mesh.rotation.z += delta * item.spinZ * config.tumbleSpeed * 0.25 * storm
+      item.mesh.rotation.set(p * 0.2 + t * item.spinX * config.tumbleSpeed * 0.35,
+        p * 0.3 + t * item.spinY * config.tumbleSpeed * 0.4,
+        p * 0.15 + t * item.spinZ * config.tumbleSpeed * 0.25)
     }
   }
 
-  function reset() {}
+  function reset() {
+    for (const item of items) {
+      item.mesh.position.set(item.x, item.y, item.z)
+      item.mesh.rotation.set(item.phase * 0.2, item.phase * 0.3, item.phase * 0.15)
+    }
+  }
 
   function dispose() {
     root.remove(group)
@@ -304,7 +298,7 @@ export function createLampMotion(root, config = LAMP_MOTION) {
       }
       // Carriage lamps only — skip pool lights and named finale/hazard sources.
       if (
-        node.isPointLight &&
+        node.isPointLight && node.userData.wreckAtmosphereLamp &&
         !String(node.name || '').startsWith('light-pool') &&
         !/wave|stasis|burst|fracture|aisle|slam/i.test(node.name || '')
       ) {
@@ -324,7 +318,7 @@ export function createLampMotion(root, config = LAMP_MOTION) {
   }
 
   function update(delta, { elapsed, frozen, unrest = 1, shakeX = 0, shakeY = 0 }) {
-    if (!config.enabled || frozen) return
+    if (!config.enabled || frozen || delta === 0) return
     const t = elapsed
     const shakeBoost = 1 + Math.min(1.5, Math.abs(shakeX) * 40 + Math.abs(shakeY) * 25)
 
@@ -339,7 +333,7 @@ export function createLampMotion(root, config = LAMP_MOTION) {
       if (mat && mat.emissiveIntensity !== undefined) {
         if (entry.baseEmissive === undefined) entry.baseEmissive = mat.emissiveIntensity
         const flick = 1 + Math.sin(t * 6.4 + s) * config.stormFlicker
-          + (Math.sin(t * 1.1 + s) > 0.9 ? -config.stormFlicker * 0.7 : 0)
+          - THREE.MathUtils.smoothstep(Math.sin(t * 1.1 + s), 0.75, 1) * config.stormFlicker * 0.7
         mat.emissiveIntensity = entry.baseEmissive * THREE.MathUtils.clamp(flick, 0.75, 1.2)
       }
     }
@@ -352,7 +346,7 @@ export function createLampMotion(root, config = LAMP_MOTION) {
       entry.light.position.y = entry.baseY + bob
       // Soft mul on the already-flickered intensity from env.update (same frame).
       const storm = 1 + Math.sin(t * 7.2 + s) * config.stormFlicker * 0.85 * unrest
-        + (Math.sin(t * 0.9 + s) > 0.9 ? -config.stormFlicker * 0.6 : 0)
+        - THREE.MathUtils.smoothstep(Math.sin(t * 0.9 + s), 0.75, 1) * config.stormFlicker * 0.6
       entry.light.intensity *= THREE.MathUtils.clamp(storm, 0.85, 1.1)
     }
   }
@@ -361,6 +355,7 @@ export function createLampMotion(root, config = LAMP_MOTION) {
     for (const entry of fixtures) {
       entry.mesh.rotation.z = entry.baseRotZ
       entry.mesh.rotation.x = entry.baseRotX
+      if (entry.baseEmissive !== undefined) entry.mesh.material.emissiveIntensity = entry.baseEmissive
     }
     for (const entry of lights) {
       entry.light.position.set(entry.baseX, entry.baseY, entry.baseZ)
@@ -440,7 +435,7 @@ export function createGrabHandles(root, spans, config = GRAB_HANDLES) {
   }
 
   function update(delta, { elapsed, frozen, unrest = 1, slamKick = 0 }) {
-    if (!config.enabled || frozen) return
+    if (!config.enabled || frozen || delta === 0) return
     const t = elapsed
     const kick = slamKick * slamKick
     for (const h of handles) {
