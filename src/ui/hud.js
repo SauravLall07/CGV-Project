@@ -753,8 +753,8 @@ export function createHud() {
 
   timeDeck.append(energyRow, strainRow, abilitySlots)
 
-  // Heist completion timer — real elapsed time; Chrono modes only restyle
-  // or hold the digits, they never change the underlying clock.
+  // Per-level countdown. Total run elapsed stays in main for credits only.
+  // Chrono abilities must never warp this display.
   const runTimer = document.createElement('div')
   Object.assign(runTimer.style, {
     position: 'absolute',
@@ -773,7 +773,7 @@ export function createHud() {
   })
 
   const runTimerLabel = document.createElement('div')
-  runTimerLabel.textContent = 'TIME'
+  runTimerLabel.textContent = 'TIME REMAINING'
   Object.assign(runTimerLabel.style, {
     fontSize: '10px',
     fontWeight: '700',
@@ -783,7 +783,7 @@ export function createHud() {
   })
 
   const runTimerDigits = document.createElement('div')
-  runTimerDigits.textContent = '00:00.0'
+  runTimerDigits.textContent = '00:00'
   Object.assign(runTimerDigits.style, {
     fontSize: '18px',
     fontWeight: '700',
@@ -876,100 +876,45 @@ export function createHud() {
   let toastTimer = null
   let objectiveText = ''
   let suspicionValue = 0
-  let displaySeconds = 0
-  let timerMode = 'NORMAL'
-  let timerFrozenAt = null
+  let displayRemaining = 0
 
   function formatRunClock(seconds) {
-    const tenths = Math.max(0, Math.floor(seconds * 10 + 1e-6))
-    const minutes = Math.floor(tenths / 600)
-    const secs = Math.floor((tenths % 600) / 10)
-    const tenth = tenths % 10
-    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${tenth}`
+    const total = Math.max(0, Math.ceil(seconds - 1e-9))
+    const minutes = Math.floor(total / 60)
+    const secs = total % 60
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
   }
 
-  function styleRunTimer(mode, ghostActive) {
-    const ghostLook = ghostActive && mode === 'NORMAL'
-    if (mode === 'SLOW') {
-      runTimer.style.borderColor = 'rgba(56, 189, 248, 0.55)'
-      runTimer.style.boxShadow = '0 0 10px rgba(56, 189, 248, 0.18)'
+  function styleRunTimer(urgent = false) {
+    if (urgent) {
+      runTimer.style.borderColor = 'rgba(239, 68, 68, 0.7)'
+      runTimer.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.28)'
       runTimer.style.opacity = '1'
-      runTimerLabel.style.color = '#7dd3fc'
-      runTimerDigits.style.color = '#bae6fd'
-      runTimerDigits.style.opacity = '0.88'
-      runTimerDigits.style.textShadow = '0 0 8px rgba(56, 189, 248, 0.45)'
-    } else if (mode === 'FREEZE') {
-      runTimer.style.borderColor = 'rgba(96, 165, 250, 0.65)'
-      runTimer.style.boxShadow = '0 0 12px rgba(96, 165, 250, 0.22)'
-      runTimer.style.opacity = '1'
-      runTimerLabel.style.color = '#93c5fd'
-      runTimerDigits.style.color = '#dbeafe'
-      runTimerDigits.style.opacity = '0.92'
-      runTimerDigits.style.textShadow = '0 0 10px rgba(147, 197, 253, 0.5)'
-    } else if (mode === 'REWIND') {
-      runTimer.style.borderColor = 'rgba(168, 85, 247, 0.55)'
-      runTimer.style.boxShadow = '0 0 10px rgba(168, 85, 247, 0.2)'
-      runTimer.style.opacity = '1'
-      runTimerLabel.style.color = '#d8b4fe'
-      runTimerDigits.style.color = '#e9d5ff'
-      runTimerDigits.style.opacity = '0.9'
-      runTimerDigits.style.textShadow = '0 0 8px rgba(168, 85, 247, 0.45)'
-    } else if (ghostLook) {
-      runTimer.style.borderColor = 'rgba(168, 85, 247, 0.32)'
-      runTimer.style.boxShadow = 'none'
-      runTimer.style.opacity = '0.72'
-      runTimerLabel.style.color = '#c4b5fd'
-      runTimerDigits.style.color = '#ddd6fe'
-      runTimerDigits.style.opacity = '0.7'
-      runTimerDigits.style.textShadow = '0 0 6px rgba(139, 92, 246, 0.35)'
-    } else {
-      runTimer.style.borderColor = 'rgba(0, 212, 255, 0.22)'
-      runTimer.style.boxShadow = 'none'
-      runTimer.style.opacity = '1'
-      runTimerLabel.style.color = '#38bdf8'
-      runTimerDigits.style.color = '#f1f5f9'
+      runTimerLabel.style.color = '#fca5a5'
+      runTimerDigits.style.color = '#fecaca'
       runTimerDigits.style.opacity = '1'
-      runTimerDigits.style.textShadow = '0 1px 4px rgba(0, 0, 0, 0.7)'
-    }
-  }
-
-  function resetRunTimer() {
-    displaySeconds = 0
-    timerMode = 'NORMAL'
-    timerFrozenAt = null
-    runTimerDigits.textContent = formatRunClock(0)
-    styleRunTimer('NORMAL', false)
-  }
-
-  function updateRunTimer({ elapsed, delta = 0, mode = 'NORMAL', ghostActive = false, running = true }) {
-    const trueElapsed = Math.max(0, elapsed)
-    if (!running) {
-      displaySeconds = trueElapsed
-      timerFrozenAt = null
-      timerMode = 'NORMAL'
-      runTimerDigits.textContent = formatRunClock(displaySeconds)
-      styleRunTimer('NORMAL', false)
+      runTimerDigits.style.textShadow = '0 0 10px rgba(239, 68, 68, 0.55)'
       return
     }
+    runTimer.style.borderColor = 'rgba(0, 212, 255, 0.22)'
+    runTimer.style.boxShadow = 'none'
+    runTimer.style.opacity = '1'
+    runTimerLabel.style.color = '#38bdf8'
+    runTimerDigits.style.color = '#f1f5f9'
+    runTimerDigits.style.opacity = '1'
+    runTimerDigits.style.textShadow = '0 1px 4px rgba(0, 0, 0, 0.7)'
+  }
 
-    if (mode === 'FREEZE') {
-      if (timerMode !== 'FREEZE') timerFrozenAt = displaySeconds
-      displaySeconds = timerFrozenAt ?? displaySeconds
-    } else if (mode === 'REWIND') {
-      timerFrozenAt = null
-      displaySeconds = Math.max(0, displaySeconds - delta * 1.5)
-    } else {
-      timerFrozenAt = null
-      if (displaySeconds + 0.02 < trueElapsed) {
-        displaySeconds = Math.min(trueElapsed, displaySeconds + delta * 10)
-      } else {
-        displaySeconds = trueElapsed
-      }
-    }
+  function resetRunTimer(seconds = 0) {
+    displayRemaining = Math.max(0, seconds)
+    runTimerDigits.textContent = formatRunClock(displayRemaining)
+    styleRunTimer(displayRemaining > 0 && displayRemaining <= 30)
+  }
 
-    timerMode = mode
-    runTimerDigits.textContent = formatRunClock(displaySeconds)
-    styleRunTimer(mode, ghostActive)
+  function updateRunTimer({ remaining = 0, urgent = false } = {}) {
+    displayRemaining = Math.max(0, remaining)
+    runTimerDigits.textContent = formatRunClock(displayRemaining)
+    styleRunTimer(Boolean(urgent) || (displayRemaining > 0 && displayRemaining <= 30))
   }
 
   function setObjective(text) {
