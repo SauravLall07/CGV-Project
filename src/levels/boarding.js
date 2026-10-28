@@ -57,7 +57,7 @@ const FINAL_PLATFORM_CHECKPOINT = {
   // Respawn clear of the junction wall and the first luggage stack. The
   // checkpoint still activates at the entrance, but the camera now has room
   // behind the player and faces the long platform in the +Z direction.
-  position: new THREE.Vector3(2.4, 0, -22.3),
+  position: new THREE.Vector3(2.4, 0, -19.2),
   yaw: 0
 }
 
@@ -748,6 +748,8 @@ export function createBoardingLevel({
   function resetPlatformGuards() {
     stealth.reset()
     platformGuards.forEach((guard, i) => {
+      // Restore visuals if this checkpoint is reset before boarding completes.
+      guard.visionCone.visible = true
       const route = platformPatrols[i]
       guard.waypoints = route.waypoints
       guard.group.position.copy(route.waypoints[0])
@@ -1022,6 +1024,10 @@ export function createBoardingLevel({
     onHoldComplete: () => {
       if (isBoardingCinematic || respawn.isFailing()) return
       isBoardingCinematic = true
+      // Boarding is committed: remove the large yellow patrol overlays from
+      // the departure shot, without affecting guards in earlier station rooms.
+      // The cinematic no longer needs detection feedback from platform patrols.
+      platformGuards.forEach(guard => { guard.visionCone.visible = false })
       boardingStartedAt = performance.now()
       if (import.meta.env?.DEV) watchBoardingOverlays()
       applyForecourtFill(BOARDING_PLATFORM_ANCHOR)
