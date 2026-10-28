@@ -49,10 +49,17 @@ const BOARDING_CAMERA_POSITION = new THREE.Vector3(-2.8, 2.6, 35.5)
 const BOARDING_CAMERA_LOOK = new THREE.Vector3(5.8, 1.5, 45.5)
 const BOARDING_CAMERA_MOVE_SECONDS = 1.0
 const BOARDING_PLATFORM_ANCHOR = new THREE.Vector3(3.8, 0, 43.2)
-const PLATFORM_CHECKPOINTS = [
-  { threshold: -6, position: new THREE.Vector3(-1.3, 0, -5.7) },
-  { threshold: 18, position: new THREE.Vector3(-1.3, 0, 19.2) }
-]
+// Final Level 1 checkpoint: the safe start of the open train platform,
+// immediately beyond the station's upper approach/junction. Never superseded
+// by checkpoints deeper along the exposed platform.
+const FINAL_PLATFORM_CHECKPOINT = {
+  threshold: -21.5,
+  // Respawn clear of the junction wall and the first luggage stack. The
+  // checkpoint still activates at the entrance, but the camera now has room
+  // behind the player and faces the long platform in the +Z direction.
+  position: new THREE.Vector3(2.4, 0, -19.2),
+  yaw: 0
+}
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -82,6 +89,40 @@ export function createBoardingLevel({
   hud?.setChronoVisible?.(false)
   resetKitMaterials()
   const { group: station, wallColliders, hallDressing, platform, track, coverCores } = createStationBlockout({ includePlaceholders: false })
+  // Camera-only walls for the entire upper approach (after Passageway 3), its
+  // three security gates, and the full train-facing platform. Use the SAME
+  // solid rectangles as player movement rather than a hand-placed patch at
+  // one corner; door openings remain open because they have no wall collider.
+  // These meshes are invisible but raycastable. Mark as decoration for guard
+  // line-of-sight/interaction so they affect ONLY the follow camera.
+  const cameraWalls = new THREE.Group()
+  cameraWalls.name = 'upper-station-camera-collision'
+  const cameraWallMaterial = new THREE.MeshBasicMaterial({
+    visible: false,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  })
+  for (const obstacle of wallColliders) {
+    const { minX, maxX, minZ, maxZ } = obstacle
+    if (![minX, maxX, minZ, maxZ].every(Number.isFinite)) continue
+    if (obstacle.enabled === false) continue
+    // Only the upper station wing and the platform, not outdoor world bounds.
+    if (minX < APPROACH_START_X - 2 || maxX > 7 || minZ < -30 || maxZ > PLATFORM_MAX_Z + 2) continue
+    const width = maxX - minX
+    const depth = maxZ - minZ
+    if (width <= 0 || depth <= 0) continue
+    // Thin structural walls also include short sections around door openings.
+    // Leave bulkier cover props to their existing scene geometry.
+    if (Math.min(width, depth) > 0.7) continue
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, 6, depth), cameraWallMaterial)
+    mesh.position.set((minX + maxX) / 2, 3, (minZ + maxZ) / 2)
+    mesh.name = 'upper-station-solid-wall-camera'
+    mesh.userData.decor = true
+    mesh.userData.noInteractionBlocker = true
+    mesh.userData.cameraClearance = 0.45
+    cameraWalls.add(mesh)
+  }
+  station.add(cameraWalls)
   // East of the rails, outside the walkable bounds. Not a child of `station`,
   // so it is not an interaction blocker and guards do not treat it as cover.
   const landing = createLandingScene()
@@ -707,6 +748,8 @@ export function createBoardingLevel({
   function resetPlatformGuards() {
     stealth.reset()
     platformGuards.forEach((guard, i) => {
+      // Restore visuals if this checkpoint is reset before boarding completes.
+      guard.visionCone.visible = true
       const route = platformPatrols[i]
       guard.waypoints = route.waypoints
       guard.group.position.copy(route.waypoints[0])
@@ -779,7 +822,7 @@ export function createBoardingLevel({
     console.assert(table.every(row => row.result === 'correct'), 'Cover core fails sheltered-side LOS test')
     // These checkpoints promise safety at respawn, with guards reset to their
     // initial positions/facings, rather than permanent immunity during patrol.
-    for (const checkpoint of PLATFORM_CHECKPOINTS) {
+    for (const checkpoint of [FINAL_PLATFORM_CHECKPOINT]) {
       let safe = true
       for (const guard of stealth.getGuards()) for (const height of [0.72, 1.2]) {
         eye.copy(guard.group.position); eye.y += 1.55
@@ -860,7 +903,7 @@ export function createBoardingLevel({
     }
     const reachable = flood(playerRadius), reachableWithSpare = flood(probeRadius)
     const destinations = [{ name: 'boarding spot', x: 4.1, z: 43.2 },
-      ...PLATFORM_CHECKPOINTS.map((checkpoint, i) => ({ name: `checkpoint-${i + 1}`, x: checkpoint.position.x, z: checkpoint.position.z }))]
+      { name: 'final-platform-checkpoint', x: FINAL_PLATFORM_CHECKPOINT.position.x, z: FINAL_PLATFORM_CHECKPOINT.position.z }]
     for (const point of destinations) {
       console.assert(reachable(point), 'Route blocked:', point)
       console.assert(reachableWithSpare(point), 'Route lacks 0.15 m spare clearance:', point)
@@ -981,6 +1024,10 @@ export function createBoardingLevel({
     onHoldComplete: () => {
       if (isBoardingCinematic || respawn.isFailing()) return
       isBoardingCinematic = true
+      // Boarding is committed: remove the large yellow patrol overlays from
+      // the departure shot, without affecting guards in earlier station rooms.
+      // The cinematic no longer needs detection feedback from platform patrols.
+      platformGuards.forEach(guard => { guard.visionCone.visible = false })
       boardingStartedAt = performance.now()
       if (import.meta.env?.DEV) watchBoardingOverlays()
       applyForecourtFill(BOARDING_PLATFORM_ANCHOR)
@@ -1010,7 +1057,6 @@ export function createBoardingLevel({
   ]
   let zoneIndex = -1
   let platformCheckpointActive = false
-  let platformCheckpointIndex = -1
 
   // The level manager needs an initial respawn position before any checkpoint
   // has been reached. Once the player reaches the old spawn/junction, this is
@@ -1330,13 +1376,12 @@ export function createBoardingLevel({
           if (hud) hud.showToast(zoneNames[zoneIndex], 2200)
           hud?.setObjective('Time the patrols and reach the last carriage — Force the door')
         }
-        const checkpointIndex = p.z >= PLATFORM_CHECKPOINTS[1].threshold ? 1 : p.z >= PLATFORM_CHECKPOINTS[0].threshold ? 0 : -1
-        if (checkpointIndex > platformCheckpointIndex) {
-          platformCheckpointIndex = checkpointIndex
+        if (!platformCheckpointActive && bridgePassage.isComplete() && p.z >= FINAL_PLATFORM_CHECKPOINT.threshold) {
           platformCheckpointActive = true
-          const checkpoint = PLATFORM_CHECKPOINTS[checkpointIndex]
-          respawn.setCheckpoint(checkpoint.position, 0, { restore: resetPlatformGuards })
-          hud?.showToast(`Checkpoint ${checkpointIndex + 1} reached — luggage shelter`, 2400)
+          respawn.setCheckpoint(FINAL_PLATFORM_CHECKPOINT.position.clone(), FINAL_PLATFORM_CHECKPOINT.yaw, {
+            restore: resetPlatformGuards
+          })
+          hud?.showToast?.('Final checkpoint reached — train platform', 2400)
         }
       }
 

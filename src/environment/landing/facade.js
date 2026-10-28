@@ -62,7 +62,7 @@ function archGlassGeometry() {
 
 function clockFace() {
   const face = new THREE.CircleGeometry(1.72, 40)
-  face.rotateY(Math.PI / 2)
+  face.rotateY(-Math.PI / 2)
   face.translate(FACADE_X - 0.08, ARCH_SPRING + 2.55, CENTER_Z)
   return face
 }
@@ -267,11 +267,11 @@ export function buildFacade(parent, materials, stats) {
   const handMat = materials.iron
   const hour = new THREE.Mesh(new THREE.BoxGeometry(0.045, 1.05, 0.07), handMat)
   hour.geometry.translate(0, 0.48, 0)
-  hour.rotation.x = -55 * Math.PI / 180
+  hour.rotation.x = -Math.PI / 12 // 11:30: halfway between 11 and 12
   hour.castShadow = false
   const minute = new THREE.Mesh(new THREE.BoxGeometry(0.035, 1.45, 0.06), handMat)
   minute.geometry.translate(0, 0.68, 0)
-  minute.rotation.x = 60 * Math.PI / 180
+  minute.rotation.x = Math.PI // 30 minutes: straight down
   const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.08, 10), materials.brass)
   pin.rotation.z = Math.PI / 2
   hands.add(hour, minute, pin)
