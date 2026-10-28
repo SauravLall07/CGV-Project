@@ -15,6 +15,12 @@ test('steam plume stays bounded and fades existing puffs after emission stops', 
   assert.equal(geometry.attributes.position.count, 24)
   assert.ok(geometry.attributes.aOpacity.array.some(value => value > 0))
   assert.ok([...geometry.attributes.position.array].every(Number.isFinite))
+  assert.equal(material.transparent, true)
+  assert.equal(material.depthTest, true)
+  assert.equal(material.depthWrite, false)
+  const positions = [...geometry.attributes.position.array]
+  plume.update(0.55)
+  assert.ok(geometry.attributes.position.array.some((value, i) => value !== positions[i]))
 
   plume.update(4)
   assert.ok(geometry.attributes.aOpacity.array.every(value => value === 0))

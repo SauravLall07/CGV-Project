@@ -45,6 +45,24 @@ const material = new THREE.ShaderMaterial({
   `
 })
 
+function smoothstep(edge0, edge1, value) {
+  const t = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+function noiseHash(seed, cycle, n, channel) {
+  const value = Math.sin(seed * 127.1 + cycle * 311.7 + n * 74.7 + channel * 19.19) * 43758.5453
+  return (value - Math.floor(value)) * 2 - 1
+}
+
+function drift(seed, cycle, age, channel, frequency) {
+  const t = age * frequency + seed * 13.7 + channel * 5.3
+  const cell = Math.floor(t)
+  const f = t - cell
+  const blend = f * f * (3 - 2 * f)
+  return THREE.MathUtils.lerp(noiseHash(seed, cycle, cell, channel), noiseHash(seed, cycle, cell + 1, channel), blend)
+}
+
 // Each point represents a short-lived puff. Its birth is evaluated against the
 // source's existing schedule, so closing a valve stops new puffs and lets old
 // ones fade without a separate particle simulation or per-frame allocations.
@@ -80,15 +98,17 @@ export function createSteamPlume({ count, life = 1.5, emission, sample, opacity 
       const particleLife = life * (0.72 + seed * 0.56)
       const age = ((time / particleLife + seed) % 1) * particleLife
       const bornAt = time - age
-      const fadeIn = Math.min(1, age / 0.12)
-      const fadeOut = Math.min(1, (particleLife - age) / 0.34)
-      const density = THREE.MathUtils.clamp(emission(bornAt), 0, 1)
       const progress = age / particleLife
+      const fadeIn = smoothstep(0, 0.14, progress)
+      const fadeOut = smoothstep(0, 0.28, 1 - progress)
+      const density = THREE.MathUtils.clamp(emission(bornAt), 0, 1)
       sample(progress, seed, density, out, i)
-      positions[i * 3] = out.x
-      positions[i * 3 + 1] = out.y
-      positions[i * 3 + 2] = out.z
-      sizes[i] = (0.2 + seed * 0.34) * (0.62 + progress * 0.9)
+      const cycle = Math.floor(time / particleLife)
+      const turbulence = progress * progress
+      positions[i * 3] = out.x + turbulence * (0.19 * drift(seed, cycle, age, 0, 2.6) + 0.045 * drift(seed, cycle, age, 0, 7.1))
+      positions[i * 3 + 1] = out.y + turbulence * (0.08 * drift(seed, cycle, age, 1, 2.1))
+      positions[i * 3 + 2] = out.z + turbulence * (0.19 * drift(seed, cycle, age, 2, 2.4) + 0.045 * drift(seed, cycle, age, 2, 6.4))
+      sizes[i] = (0.2 + seed * 0.34) * (0.62 + progress * 1.02)
       opacities[i] = density * fadeIn * fadeOut * opacity
     }
     geometry.attributes.position.needsUpdate = true
