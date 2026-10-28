@@ -88,7 +88,7 @@ function clockCanvas() {
   ctx.strokeStyle = '#c4a56a'
   ctx.stroke()
 
-  const numerals = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
+  const numerals = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']
   ctx.fillStyle = '#2a2118'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
