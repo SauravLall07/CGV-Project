@@ -1,9 +1,12 @@
 ﻿import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import * as THREE from 'three'
 import { createPlayerView } from '../src/cameras/player-view.js'
 import { createThirdPersonCamera } from '../src/cameras/third-person-camera.js'
 import { createCinematicSkip } from '../src/ui/cinematic-skip.js'
+import { createRespawnSystem } from '../src/systems/respawn.js'
+import { resolveInputState } from '../src/core/input-state.js'
 
 function installDocument() {
   const previous = globalThis.document
@@ -22,6 +25,60 @@ function installDocument() {
   globalThis.document = doc
   return { doc, restore() {globalThis.document=previous} }
 }
+
+test('death and automatic respawn retain mouse capture in both views; Escape still pauses', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const source = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+  const syncSource = source.slice(source.indexOf('function syncInputState()'), source.indexOf('\nfunction setPaused(value)'))
+  const lockStart = source.indexOf('playerView.onLockLost(() => {')
+  const lockSource = source.slice(lockStart, source.indexOf('\n})', lockStart) + 3)
+  for (const mode of ['first', 'third']) {
+    const { doc, restore } = installDocument()
+    const canvas = doc.createElement('canvas')
+    let requests = 0, releases = 0, paused = false, keyboardEnabled, interactionEnabled
+    canvas.requestPointerLock = () => { requests++; doc.pointerLockElement = canvas }
+    doc.exitPointerLock = () => { releases++; doc.pointerLockElement = null; doc.dispatchEvent(new Event('pointerlockchange')) }
+    const player = { mesh: new THREE.Group(), setPose(position) { this.mesh.position.copy(position) },
+      stopPress() {}, resetInteractionAnimation() {} }
+    const view = createPlayerView({ camera: new THREE.PerspectiveCamera(), domElement: canvas, player })
+    const getInputState = () => resolveInputState({ gameStarted: true, paused, caught: respawn.isFailing() })
+    const respawn = createRespawnSystem({ player, camera: view, onStateChange: () => sync() })
+    const sync = new Function('getInputState', 'respawn', 'levelManager', 'benchmark', 'player', 'keyboard', 'interaction', 'playerView', 'getPaused',
+      `return function() { const paused = getPaused(); return (${syncSource})() }`)(getInputState, respawn, { setPresentationPaused() {} }, null, player,
+      { setEnabled(value) { keyboardEnabled = value } }, { setEnabled(value) { interactionEnabled = value } }, view, () => paused)
+    new Function('playerView', 'getInputState', 'settingsMenu', 'benchmark', 'setPaused', lockSource)(
+      view, getInputState, { isOpen: false }, null, value => { paused = value; sync() })
+    const mouseMove = () => {
+      const event = new Event('mousemove')
+      Object.assign(event, { movementX: 20, movementY: 0 }); doc.dispatchEvent(event)
+    }
+    try {
+      view.setMode(mode, { announce: false }); sync(); view.requestLock()
+      respawn.setCheckpoint(new THREE.Vector3(0, 0, 3))
+      for (let attempt = 0; attempt < 3; attempt++) {
+        assert.equal(respawn.fail('caught'), true)
+        assert.equal(keyboardEnabled, false)
+        assert.equal(interactionEnabled, false)
+        assert.equal(doc.pointerLockElement, canvas)
+        t.mock.timers.tick(900)
+        assert.equal(respawn.isFailing(), false)
+        assert.equal(keyboardEnabled, true)
+        assert.equal(interactionEnabled, true)
+        assert.equal(doc.pointerLockElement, canvas)
+        const yaw = view.getYaw(); mouseMove()
+        assert.notEqual(view.getYaw(), yaw, 'mouse look works immediately without clicking')
+      }
+      assert.equal(requests, 1, 'respawning never needs to request capture again')
+      assert.equal(releases, 0, 'death never releases capture')
+      respawn.fail('caught')
+      doc.exitPointerLock()
+      assert.equal(paused, true, 'Escape during the caught overlay still opens pause')
+      t.mock.timers.tick(1000)
+      assert.equal(respawn.isFailing(), true, 'pause holds the pending respawn')
+      assert.equal(keyboardEnabled, false)
+    } finally { respawn.dispose(); view.dispose(); restore() }
+  }
+})
 
 test('wreck camera ignores decorative groups, holds brief clearances and still snaps before solid walls', () => {
   for (const fps of [30, 60, 144]) {
@@ -52,6 +109,28 @@ test('wreck camera ignores decorative groups, holds brief clearances and still s
       tick()
       assert.equal(view.getDistance(), blocked)
     } finally { view.dispose(); wall.geometry.dispose(); wall.material.dispose(); restore() }
+  }
+})
+
+test('chasing field remains two-sided while the follow camera stays on the player side', () => {
+  for (const fps of [30, 60, 144]) {
+    const { doc, restore } = installDocument()
+    const camera = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 100)
+    const view = createThirdPersonCamera(camera, doc.createElement('canvas'))
+    const player = new THREE.Group(), scene = new THREE.Scene()
+    const field = new THREE.Mesh(new THREE.PlaneGeometry(5, 3.5),
+      new THREE.MeshBasicMaterial({ color: 0xa855f7, side: THREE.DoubleSide, transparent: true, opacity: 0.6 }))
+    field.position.set(0, 1.75, 5.5); scene.add(field)
+    try {
+      view.setYaw(Math.PI); view.setPitch(0)
+      for (let i = 0; i < fps; i++) {
+        field.position.z = 5.5 - i / fps * 5
+        scene.updateMatrixWorld(true)
+        view.update(1 / fps, player, scene, { stabilizeCollision: true })
+        assert.ok(camera.position.z < field.position.z,
+          `field/camera ${fps}/${i}: ${field.position.z}/${camera.position.z}`)
+      }
+    } finally { view.dispose(); field.geometry.dispose(); field.material.dispose(); restore() }
   }
 })
 

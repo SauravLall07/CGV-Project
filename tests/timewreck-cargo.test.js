@@ -105,11 +105,22 @@ test('Cargo: floor opening reaches both walls and leaves intact approach/landing
   for (const clock of [-18, -9, 0, 9, 18]) {
     const pose = cargoLoopPose(clock)
     assert.equal(pose.door, 1)
-    assert.equal(pose.beam, 0)
   }
 })
 
-function levelHarness() {
+test('Cargo: trunk lands during the open bulkhead window and repeats independently', () => {
+  assert.equal(cargoLoopPose(0).beam, 0)
+  assert.ok(cargoLoopPose(0.8).beam > 0)
+  for (const clock of [0.95, 1.6, 2.5]) {
+    assert.equal(cargoLoopPose(clock).beam, 1)
+    assert.equal(cargoLoopPose(clock).door, 1)
+    assert.ok(Math.abs(cargoLoopPose(clock + 3.2).beam - 1) < 1e-9)
+  }
+  assert.ok(cargoLoopPose(2.9).beam < 1)
+  assert.ok(Math.abs(cargoLoopPose(3.2).beam) < 1e-9)
+})
+
+function levelHarness(schedule = 60) {
   globalThis.window = { devicePixelRatio: 1, innerWidth: 1280 }
   const scene = new THREE.Scene()
   const player = createPlayer()
@@ -128,9 +139,11 @@ function levelHarness() {
   const span = level.getCarriageVolumes().find((v) => v.key === 'cargo')
   const center = (span.minZ + span.maxZ) / 2
   const gap = cargoGangwayLayout(center, 2.6)
+  let frame = 0
   const tick = (seconds, keys = {}) => {
-    for (let t = 0; t < seconds - 1e-9; t += 1 / 60) {
-      const dt = Math.min(1 / 60, seconds - t)
+    for (let t = 0; t < seconds - 1e-9;) {
+      const dt = Math.min(Array.isArray(schedule) ? schedule[frame++ % schedule.length] : 1 / schedule, seconds - t)
+      t += dt
       time.update(dt)
       level.update(dt)
       player.update(dt, { keyboard: keys, cameraYaw: Math.PI, bounds: level.bounds,
@@ -161,20 +174,47 @@ test('Cargo integration: actual player crosses the repaired frozen deck, rests, 
     h.tick(0.9, { forward: true, run: true })
     assert.ok(h.player.mesh.position.z < h.gap.minZ, 'player reaches the intact landing')
     assert.ok(h.player.mesh.position.y >= 0, 'real support prevents falling')
-    assert.equal(h.respawn.isFailing(), false)
+    assert.equal(h.respawn.isFailing(), false, h.messages.join(';'))
     h.time.setMode('NORMAL')
     h.tick(4)
     assert.equal(h.time.getEnergy(), 100, 'landing allows full recharge')
     const door = h.scene.getObjectByName('cargo-loop-door')
-    for (let i = 0; i < 600 && door.position.y < 3.49; i++) h.tick(1 / 60)
+    const trunk = h.scene.getObjectByName('cargo-loop-trunk')
+    for (let i = 0; i < 600 && (door.position.y < 3.49 || trunk.position.y > 0.19); i++) h.tick(1 / 60)
     assert.ok(door.position.y > 3.49)
     h.time.triggerFreeze()
     const y = door.position.y
-    h.tick(1.15, { forward: true, run: true })
-    assert.ok(h.player.mesh.position.z < h.center - 2.7, 'player clears door and overhead load')
+    for (let i = 0; i < 120 && h.player.mesh.position.z > h.center - 0.75; i++) h.tick(1 / 60, { forward: true, run: true })
+    h.tick(0.65, { forward: true, run: true, jump: true })
+    assert.ok(h.player.mesh.position.z < h.center - 2.7, 'player clears door and jumps the fallen load')
     assert.equal(door.position.y, y, 'Freeze holds the open bulkhead')
     assert.equal(h.respawn.isFailing(), false)
   } finally { h.dispose() }
+})
+
+test('Cargo integration: floor trunk catches walking but real jumps clear it at fixed and mixed frame rates', () => {
+  for (const schedule of [30, 60, 144, [1 / 144, 1 / 30, 0.1, 1 / 60]]) for (const jump of [false, true]) for (const mode of ['NORMAL', 'FREEZE']) {
+    const h = levelHarness(schedule)
+    try {
+      const trunk = h.scene.getObjectByName('cargo-loop-trunk')
+      h.player.setPose(new THREE.Vector3(0, 0, h.center - 0.9), Math.PI)
+      h.tick(1.05)
+      assert.ok(Math.abs(trunk.position.y - 0.18) < 1e-9, 'trunk rests just above the floor')
+      h.time.setMode(mode)
+      h.tick(0.65, { forward: true, run: true, jump })
+      assert.equal(h.respawn.isFailing(), !jump, `${schedule}/${mode}: jump=${jump}: ${h.messages.join(';')}`)
+      if (jump) assert.ok(h.player.mesh.position.z < h.center - 3, 'actual jump crosses the trunk')
+      h.respawn.cancel(); h.respawn.respawn()
+      assert.equal(trunk.position.y, 2.25, 'checkpoint resets the trunk overhead')
+      h.player.setPose(new THREE.Vector3(0, 0, h.center - 0.9), Math.PI)
+      h.tick(0.8)
+      const y = trunk.position.y
+      h.time.triggerFreeze(); h.tick(0.3)
+      assert.equal(trunk.position.y, y, 'Freeze holds a falling trunk')
+      h.time.triggerRewind(); h.tick(0.25)
+      assert.ok(trunk.position.y > y, 'Rewind lifts the actual trunk toward its recorded pose')
+    } finally { h.dispose() }
+  }
 })
 
 test('Cargo integration: a partially shut frozen bulkhead still collides with the player body', () => {

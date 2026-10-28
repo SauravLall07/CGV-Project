@@ -1,0 +1,60 @@
+{
+  "errors": [],
+  "states": [
+    {
+      "name": "01-raised",
+      "position": [
+        0,
+        0,
+        -14.3
+      ],
+      "trunkY": 2.25,
+      "sway": 0.82,
+      "failed": false
+    },
+    {
+      "name": "02-floor-first",
+      "position": [
+        0,
+        0,
+        -14.3
+      ],
+      "trunkY": 0.18354705061225518,
+      "sway": 0.5409459644033129,
+      "failed": false
+    },
+    {
+      "name": "03-jump-cleared",
+      "position": [
+        2.99860157217146e-16,
+        0.96466654,
+        -18.348544
+      ],
+      "trunkY": 0.18354705061225518,
+      "sway": 0.5409459644033129,
+      "failed": false
+    },
+    {
+      "name": "04-sway-left",
+      "position": [
+        0,
+        0,
+        -19.2
+      ],
+      "trunkY": 0.18000000000000016,
+      "sway": -0.7099529155196278,
+      "failed": false
+    },
+    {
+      "name": "05-sway-right",
+      "position": [
+        0,
+        0,
+        -19.2
+      ],
+      "trunkY": 2.25,
+      "sway": 0.7099529155196288,
+      "failed": false
+    }
+  ]
+}

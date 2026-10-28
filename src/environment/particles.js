@@ -292,7 +292,7 @@ export function createChronoMoteField({
           const along = wave.count > 1 ? waveI / (wave.count - 1) : 0.5
           hz = waveZ + (playerZ - waveZ) * (0.08 + along * 0.72)
         } else {
-          hz = depleted && waveZ != null ? waveZ + waveOff[waveI] : 90
+          hz = waveZ != null ? waveZ + waveOff[waveI] : 90
         }
         waveI++
       }
