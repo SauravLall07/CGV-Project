@@ -29,6 +29,7 @@ import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
 import { createLevelOneMovementSfx } from '../systems/player-interaction-sfx.js'
 import { createLevelTwoAudio } from '../systems/level-two-sfx.js'
+import { createGhostCarriagePuzzleAudio } from '../systems/level-two-ghost-puzzle-sfx.js'
 
 // Level 2 — "The Moving Heist".
 //
@@ -931,11 +932,14 @@ export function createMovingHeistLevel({
   const relayStepOf = []
   relaySequence.forEach((relay, step) => { relayStepOf[relay] = step })
 
+  const ghostPuzzleAudio = createGhostCarriagePuzzleAudio(player, spans.relay)
   const relayInput = []
   let relayLogged = false
   let relaySolved = false
   let routeEngaged = 0 // eased 0..1 while the operator platform is weighted
   let routeEverEngaged = false
+  let previousPlatformHeld = false
+  let doorSoundStarted = false
   let routeReadT = 0 // seconds spent reading the turned board up close
   const ROUTE_READ_SECONDS = 1.0
   const ROUTE_READ_RANGE = 4.5
@@ -1159,6 +1163,7 @@ export function createMovingHeistLevel({
           return
         }
         if (relayInput.includes(i)) return
+        ghostPuzzleAudio.playDial(g.position)
         if (relaySequence[relayInput.length] !== i) {
           relayInput.length = 0
           hud.showToast('ROUTING REJECTED — the levers spring back. Start again from I.', 2400)
@@ -2510,6 +2515,8 @@ export function createMovingHeistLevel({
       relaySolved = saved.relaySolved
       relayInput.splice(0, relayInput.length, ...saved.relayInput)
       routeEngaged = 0
+      previousPlatformHeld = false
+      doorSoundStarted = relaySolved
       routeReadT = 0
       boardReveal = relayLogged ? 1 : 0
       relayGateOpen = relaySolved ? 1 : 0
@@ -2587,6 +2594,7 @@ export function createMovingHeistLevel({
       relaySolved = true
       boardReveal = 1
       relayGateOpen = 1
+      doorSoundStarted = true
       applyRouteDoor()
     }
     if (done('cargo')) {
@@ -2656,6 +2664,7 @@ export function createMovingHeistLevel({
       outdoorEnv.update(delta * sceneryMultiplier)
       env.update(delta)
       movementAudio.update(delta)
+      ghostPuzzleAudio.preload()
       carriageAudio.update(delta, targetSceneryMultiplier, scanBeam.getWorldPosition(new THREE.Vector3()), {scanT, slideX: scanBeam.position.x, banks: steamBanks})
       corridorStealth.update(delta)
       lightPool.update(player.mesh.position, delta)
@@ -2707,6 +2716,8 @@ export function createMovingHeistLevel({
       const platformHeld =
         ghost.isOccupying(platformPos, 0.56) ||
         playerOnPad(platformPos, 0.56)
+      if (platformHeld && !previousPlatformHeld) ghostPuzzleAudio.playPlate(platformPos)
+      previousPlatformHeld = platformHeld
       routeEngaged += ((platformHeld ? 1 : 0) - routeEngaged) * Math.min(1, delta * 4)
       platformPlate.position.y = platformHeld ? 0.075 : 0.1
       platformLever.rotation.x = -0.7 + routeEngaged * 1.4
@@ -2760,6 +2771,11 @@ export function createMovingHeistLevel({
       }
       gearGauge.userData.needle.rotation.z = 1.1 - routeEngaged * 1.7
 
+      // Sound starts on the first opening frame, never on repeated updates.
+      if (relaySolved && !doorSoundStarted && relayGateOpen < 0.999) {
+        doorSoundStarted = true
+        ghostPuzzleAudio.playDoor(new THREE.Vector3(0, 1.2, relayGateZ))
+      }
       // Front door slides apart once the route is set.
       relayGateOpen += ((relaySolved ? 1 : 0) - relayGateOpen) * Math.min(1, delta * 3)
       applyRouteDoor()
@@ -3096,6 +3112,7 @@ export function createMovingHeistLevel({
       corridorStealth.dispose()
       movementAudio.dispose()
       carriageAudio.dispose()
+      ghostPuzzleAudio.dispose()
       scene.remove(sky.mesh, outdoorEnv.group, root)
       disposeObject(root)
     }
