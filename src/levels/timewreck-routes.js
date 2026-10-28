@@ -98,11 +98,12 @@ export function createWreckRoutes({ root, spans, player, timeSystem, unregisters
   return { shutters, recessZ, update() {
     const p = player.mesh.position
     const inside = p.x > 1.1 && p.z > c - 0.2 && p.z < c + 7.95
+    const underExitBeam = Math.abs(p.z - (spans.passenger.center - 4.7)) < 0.265
     low.enabled = !player.isCrouching() && !inside
     // Keeping a low pose on release prevents standing into the visible roof;
     // movement is blocked at the entrance unless crouching.
-    player.mesh.userData.tightCrouchCamera = inside
-    player.mesh.userData.wreckLowCeiling = inside
+    player.mesh.userData.tightCrouchCamera = inside || underExitBeam
+    player.mesh.userData.wreckLowCeiling = inside || underExitBeam
     shutters.forEach(s => s.apply())
   }, reset() { shutters.forEach(s => s.reset()); player.mesh.userData.tightCrouchCamera = false; player.mesh.userData.wreckLowCeiling = false } }
 }

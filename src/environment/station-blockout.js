@@ -907,11 +907,12 @@ export function createStationLighting() {
   sunlight.shadow.normalBias = 0.045
   sunlight.target.position.set(0, 0, 0)
 
-  // A little more sky fill than the old 0.32, so shadowed faces keep a
-  // shape. The ground stays near-black and the warm lamps still lead.
-  const sky = new THREE.HemisphereLight(0x2a4068, 0x0a090e, 0.48)
+  // Sky fill keeps shadowed faces shaped; the ambient floor stops the
+  // underground passages between lamps falling to black. The warm lamps
+  // still lead.
+  const sky = new THREE.HemisphereLight(0x2a4068, 0x0f0e14, 0.58)
   sky.name = 'station-sky'
-  const fill = new THREE.AmbientLight(0x10131c, 0.06)
+  const fill = new THREE.AmbientLight(0x1a2030, 0.18)
   fill.name = 'station-fill'
 
   // -------------------------------------------------------------
