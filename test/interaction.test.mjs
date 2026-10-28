@@ -186,3 +186,40 @@ test('focusing a prop whose parts share a material leaves that material as it wa
   }
   system.dispose()
 })
+
+test('an infinite hold runs for as long as the key is down and shows no progress bar', () => {
+  const scene = new THREE.Scene()
+  const player = new THREE.Group()
+  const target = makeTarget(scene, { y: 0.5, z: 1 })
+  scene.add(player)
+  const input = { state: { interact: false }, onAction: () => () => {} }
+  const calls = []
+  // Keep hold of the DOM the system builds: prompt, then progress bar.
+  const elements = []
+  const createElement = document.createElement
+  document.createElement = () => { const element = createElement(); elements.push(element); return element }
+  const system = createInteractionSystem({ input })
+  document.createElement = createElement
+  const progressBar = elements[1]
+  system.register(target, {
+    prompt: 'Push trolley',
+    holdSeconds: Infinity,
+    onHoldStart: () => calls.push('start'),
+    onHoldCancel: ({ reset }) => calls.push(reset ? 'reset' : 'cancel'),
+    onHoldComplete: () => calls.push('complete')
+  })
+
+  input.state.interact = true
+  for (let i = 0; i < 600; i++) system.update(player, 0, 1 / 60)
+  assert.deepEqual(calls, ['start'], 'ten seconds of holding never completes')
+  assert.equal(progressBar.style.display, 'none', 'there is nothing to fill')
+
+  input.state.interact = false
+  system.update(player, 0, 1 / 60)
+  assert.deepEqual(calls, ['start', 'cancel'])
+
+  input.state.interact = true
+  system.update(player, 0, 1 / 60)
+  assert.deepEqual(calls, ['start', 'cancel', 'start'], 'pressing again grabs again')
+  system.dispose()
+})

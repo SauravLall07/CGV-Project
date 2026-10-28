@@ -20,8 +20,15 @@ import {
   MECH_PITS,
   CONV_PITS,
   ROOF_RUN,
-  routeControlLayout
+  SEAT_INNER_X,
+  routeControlLayout,
+  passengerCabinetLocal,
+  passengerLoungeRuns
 } from '../environment/carriage-bounds.js'
+import { createLuggageCabinet } from '../environment/luggage-cabinet.js'
+import { createServiceTrolley, createNoiseRings, CLATTER_RADIUS, TROLLEY_HALF_X } from './heist-trolley.js'
+import { createTrolleySfx } from '../systems/trolley-sfx.js'
+import { VIEW_MODES } from '../cameras/player-view.js'
 import { createOutdoorEnvironment } from '../environment/outdoor-environment.js'
 import { createSkyDome } from '../environment/sky-dome.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
@@ -360,6 +367,10 @@ export function createMovingHeistLevel({
   })
 
   const unregisters = [] // interaction + time-system unregister callbacks
+  // Guards walk the corridor's colliders too, except that a moving trolley
+  // gives them a body-padded box of its own. Filled once every collider has
+  // been placed (see the chokepoints below).
+  const guardObstacles = []
   const checkpointHazards = []
   function registerHazard(object, options) {
     checkpointHazards.push(options)
@@ -383,7 +394,7 @@ export function createMovingHeistLevel({
       respawn,
       hud,
       collidables: guardCollidables,
-      obstacles: corridorObstacles,
+      obstacles: guardObstacles,
       timeSystem,
       assets
     })
@@ -612,6 +623,240 @@ export function createMovingHeistLevel({
     waitTime: 2.6,
     initialWaypoint: 0
   })
+
+  // --------------------------------------------------------------------------
+  // PASSENGER — PORTER'S STATION
+  // Three answers besides waiting him out in a booth, all inside his beat:
+  //  - The lounge: most of his beat is open floor wall to wall, wide enough
+  //    to pass him with room to spare if he is looking the other way.
+  //  - The service trolley (Hold E). Held, it rolls quietly; let go, it
+  //    rattles, and a guard who hears it walks over, looks round it for a few
+  //    seconds, then goes back to his beat. Let go against a lounge wall, he
+  //    stands facing that wall; parked across the aisle, it turns his patrol
+  //    short.
+  //  - The luggage cabinet (E), which he walks past every lap. Shut inside,
+  //    nobody can see you at all.
+  // --------------------------------------------------------------------------
+  const TROLLEY_GUARD_RADIUS = 0.4 // stealth.js GUARD_BODY_RADIUS
+  const PLAYER_RADIUS = 0.18 // player.js PLAYER_COLLISION_RADIUS
+  const TROLLEY_INVESTIGATE_SECONDS = 5
+  // A loaded trolley goes at a slow walk.
+  const PUSH_SPEED_SCALE = 0.45
+  const passengerHalf = (spans.passenger.maxZ - spans.passenger.minZ) / 2
+  // Brass wheel stops: the rear one clears the spawn, the front one keeps the
+  // trolley out of the vestibule so it can never block the door.
+  const aisleZone = {
+    minX: -SEAT_INNER_X + 0.03,
+    maxX: SEAT_INNER_X - 0.03,
+    minZ: spans.passenger.minZ + 1.0,
+    maxZ: spans.passenger.maxZ - 1.4
+  }
+  // The lounge runs: from the aisle across to that wall, between the bench
+  // backs at either end. They overlap the aisle, so it rolls between them.
+  const loungeZones = passengerLoungeRuns(passengerHalf).map(({ s, minZ, maxZ }) => ({
+    minX: s < 0 ? -(WALL_X - 0.12) : aisleZone.minX,
+    maxX: s < 0 ? aisleZone.maxX : WALL_X - 0.12,
+    minZ: spans.passenger.center + minZ + 0.05,
+    maxZ: spans.passenger.center + maxZ - 0.05
+  }))
+  const serviceTrolley = createServiceTrolley({
+    position: new THREE.Vector3(-0.42, 0, spans.passenger.center - 4.4),
+    zones: [aisleZone, ...loungeZones],
+    guardPad: TROLLEY_GUARD_RADIUS
+  })
+  root.add(serviceTrolley.group)
+  corridorObstacles.push(serviceTrolley.playerBox)
+  for (const z of [aisleZone.minZ, aisleZone.maxZ]) {
+    const stop = new THREE.Mesh(new THREE.BoxGeometry(SEAT_INNER_X * 2, 0.025, 0.05), brassMat)
+    stop.name = 'trolley-wheel-stop'
+    stop.position.set(0, 0.0125, z)
+    stop.userData.noCameraCollision = true
+    root.add(stop)
+  }
+  const noiseRings = createNoiseRings(scene)
+  const trolleySfx = createTrolleySfx()
+
+  // Soft warm fill that travels behind the player through this car, so the
+  // detective, the trolley and the conductor read against dark panelling.
+  // Kept out of the light pool: one constant extra light, so no material
+  // recompiles for it; it simply fades out past the front door.
+  const passengerFill = new THREE.PointLight(0xffe0b8, 0, 7.5, 1.6)
+  passengerFill.name = 'passenger-fill'
+  scene.add(passengerFill)
+
+  let hidden = false // shut inside the luggage cabinet
+  // The push stance must be clear floor, or the player holds on from where
+  // they stand.
+  function canStandAt(x, z) {
+    if (x < bounds.minX || x > bounds.maxX || z < bounds.minZ || z > bounds.maxZ) return false
+    return !corridorObstacles.some((box) => box !== serviceTrolley.playerBox && box.enabled !== false &&
+      x > box.minX - PLAYER_RADIUS && x < box.maxX + PLAYER_RADIUS &&
+      z > box.minZ - PLAYER_RADIUS && z < box.maxZ + PLAYER_RADIUS)
+  }
+  function grabTrolley() {
+    if (serviceTrolley.isGrabbed() || hidden) return
+    serviceTrolley.grab(player.mesh.position, canStandAt)
+  }
+  function releaseTrolley() {
+    if (!serviceTrolley.isGrabbed()) return
+    serviceTrolley.release()
+    player.setMovementConstraint?.()
+  }
+  unregisters.push(interaction.register(serviceTrolley.group, {
+    prompt: 'Push trolley',
+    holdSeconds: Infinity,
+    range: 1.5,
+    isEligible: () => section === 'interior' && !hidden && !player.isAirborne?.(),
+    onHoldStart: grabTrolley,
+    onHoldCancel: releaseTrolley,
+    onHoldComplete() {}
+  }))
+
+  const cabinetLayout = passengerCabinetLocal(passengerHalf)
+  const cabinet = createLuggageCabinet({
+    depth: cabinetLayout.backX - cabinetLayout.frontX,
+    halfZ: cabinetLayout.halfZ,
+    height: cabinetLayout.height
+  })
+  // The carcass runs along local +X, which has to point at the wall.
+  cabinet.group.position.set(cabinetLayout.s * cabinetLayout.frontX, 0, spans.passenger.center + cabinetLayout.z)
+  cabinet.group.rotation.y = cabinetLayout.s > 0 ? 0 : Math.PI
+  root.add(cabinet.group)
+  for (const part of cabinet.group.children) if (part.isMesh) guardCollidables.push(part)
+  const cabinetFacing = -cabinetLayout.s * Math.PI / 2 // looking out at the aisle
+  const cabinetInside = new THREE.Vector3(cabinetLayout.s * (cabinetLayout.frontX + 0.55), 0, cabinet.group.position.z)
+  const cabinetOutside = new THREE.Vector3(cabinetLayout.s * (cabinetLayout.frontX - 0.42), 0, cabinet.group.position.z)
+
+  let viewBeforeHiding = null
+  let unregisterCabinet = null
+  // One registration per state, so the prompt says which way you're going.
+  // Stepping out targets the latch inside, so nothing is highlighted while
+  // the player peers through the louvres.
+  function registerCabinet() {
+    unregisterCabinet?.()
+    unregisterCabinet = hidden
+      ? interaction.register(cabinet.exitAnchor, {
+          prompt: 'Step out of the cabinet', gesture: 'none', range: 1.6, onInteract: () => leaveCabinet()
+        })
+      : interaction.register(cabinet.group, {
+          prompt: 'Hide in luggage cabinet',
+          gesture: 'none',
+          range: 1.6,
+          isEligible: () => section === 'interior' && !serviceTrolley.isGrabbed(),
+          onInteract: () => enterCabinet()
+        })
+  }
+  registerCabinet()
+  unregisters.push(() => unregisterCabinet?.())
+
+  function enterCabinet() {
+    if (hidden) return
+    hidden = true
+    viewBeforeHiding = camera.getMode?.() ?? null
+    cabinet.swing()
+    player.setPose(cabinetInside, cabinetFacing)
+    player.setMovementConstraint?.({ locked: true })
+    corridorStealth.setPlayerHidden(true)
+    // Peer out through the louvres.
+    camera.setMode?.(VIEW_MODES.FIRST, { announce: false })
+    camera.setYaw?.(cabinetFacing)
+    camera.snap?.()
+    registerCabinet()
+    hud.showToast?.('Shut in the luggage cabinet. Nobody can see you in here.', 2400)
+  }
+
+  // `restoring`: a checkpoint or teardown is moving the player itself.
+  function leaveCabinet({ restoring = false } = {}) {
+    if (!hidden) return
+    hidden = false
+    corridorStealth.setPlayerHidden(false)
+    player.setMovementConstraint?.()
+    if (viewBeforeHiding === VIEW_MODES.THIRD && camera.getMode?.() === VIEW_MODES.FIRST) {
+      camera.setMode?.(VIEW_MODES.THIRD, { announce: false })
+    }
+    viewBeforeHiding = null
+    if (!restoring) {
+      cabinet.swing()
+      player.setPose(cabinetOutside, cabinetFacing)
+      camera.snap?.()
+    }
+    registerCabinet()
+  }
+
+  let trolleyNoiseExplained = false
+  // Out of the aisle (against a lounge wall), he comes round to the aisle
+  // side of it and looks at it from there: square on to the wall, with his
+  // back to the far side of the lounge.
+  const LOOK_FROM = 1.25
+  const standAt = new THREE.Vector3()
+  function trolleyNoise({ position, radius, kind }) {
+    const alreadyLooking = corridorStealth.getGuards().some((guard) => guard.state === 'INVESTIGATE')
+    const atWall = Math.abs(position.x) > aisleZone.maxX - TROLLEY_HALF_X + 0.05
+    if (atWall) standAt.set(position.x - Math.sign(position.x) * LOOK_FROM, 0, position.z)
+    const heard = corridorStealth.investigate(position, {
+      radius,
+      duration: TROLLEY_INVESTIGATE_SECONDS,
+      standAt: atWall ? standAt : null
+    })
+    noiseRings.emit(position, radius, kind === 'clatter' ? 0xf97316 : 0xfbbf24)
+    if (kind === 'clatter') trolleySfx.clatter(1 / (1 + player.mesh.position.distanceTo(position) / 4))
+    if (heard > 0 && !alreadyLooking) {
+      hud.showToast?.('The conductor heard the trolley and is coming to look.', 2200)
+    } else if (!trolleyNoiseExplained && radius < CLATTER_RADIUS) {
+      trolleyNoiseExplained = true
+      hud.showToast?.('The trolley rattles when you let go — anyone close enough will come and look.', 2600)
+    }
+  }
+
+  const trolleyBlockers = []
+  const holdAt = { x: 0, z: 0 }
+  function updatePorterStation(delta) {
+    cabinet.update(delta)
+    noiseRings.update(delta)
+    const pp = player.mesh.position
+    const yaw = camera.getYaw?.() ?? 0
+    passengerFill.position.set(pp.x - Math.sin(yaw) * 1.4, pp.y + 2.1, pp.z - Math.cos(yaw) * 1.4)
+    passengerFill.intensity = 2.6 * THREE.MathUtils.clamp((spans.passenger.maxZ + 1 - pp.z) / 2, 0, 1)
+    if (serviceTrolley.isGrabbed() && player.isAirborne?.()) {
+      // Goes through the interaction system so holding E re-grabs on landing.
+      if (interaction.resetHold) interaction.resetHold()
+      else releaseTrolley()
+    }
+
+    const guards = corridorStealth.getGuards()
+    trolleyBlockers.length = guards.length
+    guards.forEach((guard, i) => {
+      trolleyBlockers[i] ??= { x: 0, z: 0, radius: TROLLEY_GUARD_RADIUS }
+      trolleyBlockers[i].x = guard.group.position.x
+      trolleyBlockers[i].z = guard.group.position.z
+    })
+    const events = serviceTrolley.update(delta, { playerPosition: pp, circles: trolleyBlockers })
+    if (serviceTrolley.isGrabbed()) {
+      // Hands on the bar. Stepping up to it, the player eases into the push
+      // stance; after that they go only where the trolley can follow.
+      serviceTrolley.holdPosition(holdAt)
+      const settling = serviceTrolley.isSettling()
+      const k = settling ? 1 - Math.exp(-delta * 28) : 1
+      pp.x += (holdAt.x - pp.x) * k
+      pp.z += (holdAt.z - pp.z) * k
+      player.setMovementConstraint?.({
+        locked: settling,
+        speedScale: PUSH_SPEED_SCALE,
+        faceYaw: serviceTrolley.getGrabYaw(),
+        pushHandles: serviceTrolley.getGrip()
+      })
+    }
+    for (const event of events) {
+      if (event.type === 'ram') {
+        releaseTrolley()
+        failSoft('You ran the trolley into the conductor.', 'guard-bump')
+        return
+      }
+      trolleyNoise(event)
+    }
+    const distance = pp.distanceTo(serviceTrolley.group.position)
+    trolleySfx.setSpeed(serviceTrolley.getSpeed(), 1 / (1 + distance / 4))
+  }
 
 
   // --------------------------------------------------------------------------
@@ -2542,6 +2787,7 @@ export function createMovingHeistLevel({
     [exitDoor.z, 0.8]
   ]
   for (const [z, depth, lane] of chokepoints) addChokepoint(z, depth, lane)
+  guardObstacles.push(...corridorObstacles.filter((box) => box !== serviceTrolley.playerBox), serviceTrolley.guardBox)
 
   // Initial section setup.
   setBounds(env.interiorBounds)
@@ -2564,6 +2810,11 @@ export function createMovingHeistLevel({
       hazards: checkpointHazards.map((hazard) => hazard.getSnapshot())
     }
     return () => {
+      leaveCabinet({ restoring: true })
+      releaseTrolley()
+      serviceTrolley.reset()
+      cabinet.reset()
+      noiseRings.clear()
       section = saved.section
       setBounds(saved.bounds)
       useObstacles(section === 'roof' ? roofObstacles : section === 'vault' ? vaultObstacles : corridorObstacles)
@@ -2710,6 +2961,8 @@ export function createMovingHeistLevel({
     get supports() { return section === 'roof' ? roofSupports : null },
     get voids() { return section === 'roof' ? roofVoids : null },
     getCarriageVolumes: () => listCarriageVolumes(spans),
+    // The conductor on the minimap, so a lured walk to the trolley reads there too.
+    getGuards: () => corridorStealth.getGuards(),
     get isCinematic() { return taken },
 
     update(delta) {
@@ -2727,6 +2980,7 @@ export function createMovingHeistLevel({
       sceneryMultiplier = sceneryFrom + (sceneryTarget - sceneryFrom) * sceneryEase
       outdoorEnv.update(delta * sceneryMultiplier)
       env.update(delta)
+      if (section === 'interior') updatePorterStation(delta)
       corridorStealth.update(delta)
       lightPool.update(player.mesh.position, delta)
       elapsed += delta
@@ -2888,7 +3142,9 @@ export function createMovingHeistLevel({
             'You’re aboard. Seven cars between you and the Chrono Core, and the Express does not stop for anyone.',
             'Every bulkhead on this train opens from the rear only. Once you’re through one, forward is the only direction left.',
             'First-class carriage. The conductor walks the aisle end to end and pauses at each end — and you have no chrono gear yet.',
-            'Duck into the booths while he passes, move while his back is turned, and make for the front door.'
+            'Duck into the booths while he passes, move while his back is turned, and make for the front door.',
+            'The porter left his station unattended: a service trolley on squeaky wheels, his luggage, and a cabinet with room for one.',
+            'Most of his beat is open lounge floor — room to get round him, if he is looking the other way.'
           ]
         )
         hint(
@@ -3211,10 +3467,17 @@ export function createMovingHeistLevel({
       post?.resetGrade()
       if (scene.onBeforeRender === cullBeforeRender) scene.onBeforeRender = previousBeforeRender
       if (scene.onAfterRender === cullAfterRender) scene.onAfterRender = previousAfterRender
+      leaveCabinet({ restoring: true })
+      releaseTrolley()
+      player.setMovementConstraint?.()
       unregisters.forEach((fn) => fn())
       timeSystem?.setStrainEnabled?.(false)
       outdoorEnv.dispose()
       sky.dispose()
+      trolleySfx.dispose()
+      noiseRings.dispose()
+      scene.remove(passengerFill)
+      passengerFill.dispose()
       corridorStealth.dispose()
       scene.remove(sky.mesh, outdoorEnv.group, root)
       disposeObject(root)

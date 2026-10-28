@@ -266,6 +266,25 @@ export function createPlayer() {
   let interactionPlanted = false
   let pickupHandle = null
   const interactionTarget = new THREE.Vector3()
+  // Level-imposed movement rules: `locked` holds the player still (hiding in
+  // a cabinet), `speedScale` slows the gait, `faceYaw` pins the body's heading
+  // and `pushHandles` ({ left, right }, player-local) puts the hands on a
+  // trolley's bar (all three while pushing). setPose() clears them.
+  const NO_CONSTRAINT = Object.freeze({ locked: false, speedScale: 1, faceYaw: null, pushHandles: null })
+  let constraint = NO_CONSTRAINT
+  let pushSpeed = 0
+
+  function pushPose() {
+    return constraint.pushHandles ? { handles: constraint.pushHandles, speed: pushSpeed } : null
+  }
+
+  function setMovementConstraint({ locked = false, speedScale = 1, faceYaw = null, pushHandles = null } = {}) {
+    constraint = { locked, speedScale, faceYaw, pushHandles }
+    if (faceYaw !== null) {
+      facing = faceYaw
+      group.rotation.y = faceYaw
+    }
+  }
 
   function startInteractionPull(target) {
     pickupHandle = null
@@ -408,6 +427,11 @@ export function createPlayer() {
   }
 
   function turnToward(dx, dz, delta) {
+    if (constraint.faceYaw !== null) {
+      facing = constraint.faceYaw
+      group.rotation.y = facing
+      return
+    }
     const target = Math.atan2(dx, dz)
     let difference = target - facing
 
@@ -469,6 +493,7 @@ export function createPlayer() {
     cancelScriptedWalk()
     scriptedTurn = null
     cinematicView = null
+    constraint = NO_CONSTRAINT
     visual?.setScriptedWalking(false)
     visual?.cancelThrow()
     group.position.copy(position)
@@ -576,11 +601,12 @@ export function createPlayer() {
       voids
     }
   ) {
-    if (interactionPlanted) {
+    if (interactionPlanted || constraint.locked) {
       moving = false
       running = false
       crouching = false
-      visual?.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false })
+      pushSpeed = 0
+      visual?.setLocomotion({ moving: false, airborne: false, crouching: false, jumpStarted: false, push: pushPose() })
       return
     }
     if (launched) {
@@ -740,6 +766,8 @@ export function createPlayer() {
       if (crouching) movementMultiplier = CROUCH_SPEED_MULTIPLIER
       else if (running) movementMultiplier = RUN_MULTIPLIER
 
+      movementMultiplier *= constraint.speedScale
+      pushSpeed = MOVE_SPEED * movementMultiplier
       const distance = MOVE_SPEED * movementMultiplier * delta
       walkVelocityX = dx * MOVE_SPEED * movementMultiplier
       walkVelocityZ = dz * MOVE_SPEED * movementMultiplier
@@ -759,6 +787,7 @@ export function createPlayer() {
       stridePhase *= Math.max(0, 1 - delta * 10)
       walkVelocityX = 0
       walkVelocityZ = 0
+      pushSpeed = 0
     }
 
     if (!airborne) {
@@ -799,7 +828,7 @@ export function createPlayer() {
       // running from the rAF loop even when this gameplay update is skipped
       // (title, transition, cinematic).
       // jumpStarted + moving picks Jump-Running vs Jump-Idle; mixer ticks in updateVisual().
-      visual.setLocomotion({ moving, airborne, crouching, jumpStarted })
+      visual.setLocomotion({ moving, airborne, crouching, jumpStarted, push: pushPose() })
     } else {
       const blend = Math.min(1, delta * 14)
 
@@ -869,8 +898,10 @@ export function createPlayer() {
       body.rotation.x += (torsoTarget - body.rotation.x) * Math.min(1, delta * 9)
 
       const armScale = THREE.MathUtils.lerp(1, CROUCH_ARM_SWING_SCALE, crouchAmount)
-      const leftArmTarget = -hipSwing * 0.8 * armScale + crouchAmount * 0.18
-      const rightArmTarget = hipSwing * 0.8 * armScale + crouchAmount * 0.18
+      // Pushing: both arms forward onto the bar instead of swinging.
+      const pushing = Boolean(constraint.pushHandles)
+      const leftArmTarget = pushing ? -1.25 : -hipSwing * 0.8 * armScale + crouchAmount * 0.18
+      const rightArmTarget = pushing ? -1.25 : hipSwing * 0.8 * armScale + crouchAmount * 0.18
 
       leftArm.rotation.x += (leftArmTarget - leftArm.rotation.x) * blend
       rightArm.rotation.x += (rightArmTarget - rightArm.rotation.x) * blend
@@ -910,6 +941,7 @@ export function createPlayer() {
     updateScriptedTurn,
     cancelScriptedWalk,
     onPoseReset: callback => { poseResetCallback = callback },
+    setMovementConstraint,
     setCinematicView: value => { cinematicView = value },
     getCinematicView: () => cinematicView,
     isCrouching: () => crouching,

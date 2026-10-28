@@ -400,7 +400,10 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     if (!holdEntry) return
     holdProgress = Math.max(0, Math.min(1, holdProgress + (holding ? 1 : -2) * delta / holdEntry.holdSeconds))
     holdEntry.onHoldProgress?.(holdProgress)
-    progress.style.display = enabled && (holdProgress > 0 || holding) ? 'block' : 'none'
+    // holdSeconds: Infinity is a continuous hold (push a trolley for as long
+    // as the key is down): it never completes, so it has no bar to fill.
+    const timed = Number.isFinite(holdEntry.holdSeconds)
+    progress.style.display = enabled && timed && (holdProgress > 0 || holding) ? 'block' : 'none'
     progressFill.style.width = `${holdProgress * 100}%`
     if (holdProgress >= 1 && holdActive) {
       const completed = holdEntry

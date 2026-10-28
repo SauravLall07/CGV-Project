@@ -26,6 +26,11 @@ const STRIDE_AMPLITUDE = 0.65
 const STRIDE_FREQUENCY = 2.4
 const BOB_HEIGHT = 0.03
 const GUARD_VISION_DISTANCE = 7.5
+// Field of view as dot(facing, toPlayer) thresholds: about 117° patrolling,
+// wider and further once locked on.
+const GUARD_FOV_DOT = 0.52
+const GUARD_ALERT_FOV_DOT = 0.3
+const GUARD_ALERT_VISION_DISTANCE = 10.0
 const GUARD_PATROL_TURN_SMOOTHING = 8
 const GUARD_BODY_RADIUS = 0.4
 const PLAYER_BODY_RADIUS = 0.32
@@ -61,6 +66,94 @@ const JUMP_SUSPICION_MULT = 2.0
 const DISTRACTION_RADIUS = 9.0
 const DISTRACTION_STOP_DISTANCE = 1.5
 
+// Vision fan: the guard's real field of view painted on the floor. The torch
+// cone is only a beam, far narrower than what he actually sees, so the fan
+// shows the detection angle and range, each ray cut short where cover would
+// hide a crouched body. Bright at the rim so its edge reads at a glance.
+const FAN_RAYS = 21
+const FAN_REFRESH = 1 / 20
+const FAN_RIM = 0.14
+// Fans further from the player than this are not worth re-tracing.
+const FAN_REFRESH_RANGE = 30
+
+function createVisionFan() {
+  // Vertex 0 is the guard. Each ray adds three: where the fill fades out,
+  // the inner edge of the rim (same place, opaque) and the outer edge.
+  const count = 1 + FAN_RAYS * 3
+  const positions = new Float32Array(count * 3)
+  const colours = new Float32Array(count * 4).fill(1)
+  colours[3] = 0.5
+  for (let i = 0; i < FAN_RAYS; i++) {
+    colours[(1 + i * 3) * 4 + 3] = 0.14
+    colours[(2 + i * 3) * 4 + 3] = 0.9
+    colours[(3 + i * 3) * 4 + 3] = 0.45
+  }
+  const index = []
+  for (let i = 0; i < FAN_RAYS - 1; i++) {
+    const a = 1 + i * 3
+    const b = a + 3
+    index.push(0, a, b)
+    index.push(a + 1, a + 2, b + 2, a + 1, b + 2, b + 1)
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colours, 4))
+  geometry.setIndex(index)
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xfacc15,
+    vertexColors: true,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2
+  })
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.name = 'vision-fan'
+  mesh.position.y = 0.025
+  mesh.renderOrder = 2
+  mesh.frustumCulled = false
+  mesh.userData.noCameraCollision = true
+  mesh.userData.noInteractionBlocker = true
+  return { mesh, material, positions, radii: new Float32Array(FAN_RAYS).fill(GUARD_VISION_DISTANCE) }
+}
+
+// A patrolling guard that makes almost no headway for this long (a trolley
+// parked across the aisle) gives up on that waypoint and turns back.
+const GUARD_PATROL_BLOCKED_SECONDS = 0.5
+
+// "?" over a guard checking a noise, "!" over one that has locked on. Canvas
+// glyphs on a camera-facing quad, skipped where there is no canvas (tests).
+const GUARD_MARK_Y = 2.45
+const GUARD_MARK_SIZE = 0.42
+const markCameraRotation = new THREE.Quaternion()
+const markParentRotation = new THREE.Quaternion()
+
+function createMarkTexture(glyph, colour) {
+  if (typeof document === 'undefined') return null
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = 128
+    canvas.height = 128
+    const ctx = canvas.getContext?.('2d')
+    if (!ctx) return null
+    ctx.font = 'bold 112px Georgia, serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.lineWidth = 12
+    ctx.strokeStyle = 'rgba(20, 14, 4, 0.85)'
+    ctx.strokeText(glyph, 64, 70)
+    ctx.fillStyle = colour
+    ctx.fillText(glyph, 64, 70)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    return texture
+  } catch {
+    return null
+  }
+}
+
 // Effective time scale a chrono mode applies to security hardware. Rewind is
 // clamped to a full stop rather than played backwards: guards walking their
 // patrol in reverse looks like a bug, and standing still reads the same to the
@@ -92,6 +185,41 @@ export function createStealthSystem({
   const laserGrids = []
   const guardCircles = []
   let bumpedGuardThisFrame = false
+  // Shut inside a hiding place: no detector sees, locks on to or bumps into
+  // the player until the level says they have stepped out.
+  let playerHidden = false
+  let markGeometry = null
+  const markMaterials = {}
+
+  function guardMarkMaterial(kind) {
+    if (!(kind in markMaterials)) {
+      const texture = kind === 'investigate' ? createMarkTexture('?', '#facc15') : createMarkTexture('!', '#ef4444')
+      markMaterials[kind] = texture
+        ? new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false })
+        : null
+    }
+    return markMaterials[kind]
+  }
+
+  function createGuardMark(kind) {
+    const material = guardMarkMaterial(kind)
+    if (!material) return null
+    markGeometry ??= new THREE.PlaneGeometry(GUARD_MARK_SIZE, GUARD_MARK_SIZE)
+    const mark = new THREE.Mesh(markGeometry, material)
+    mark.name = `guard-mark-${kind}`
+    mark.visible = false
+    mark.position.y = GUARD_MARK_Y
+    mark.userData.noCameraCollision = true
+    mark.userData.noInteractionBlocker = true
+    // Billboard: undo the guard's own turn, then take the camera's.
+    mark.onBeforeRender = (renderer, renderScene, renderCamera) => {
+      mark.parent.getWorldQuaternion(markParentRotation).invert()
+      renderCamera.getWorldQuaternion(markCameraRotation)
+      mark.quaternion.copy(markParentRotation).multiply(markCameraRotation)
+      mark.updateMatrixWorld()
+    }
+    return mark
+  }
 
   const raycaster = new THREE.Raycaster()
   const rayCandidates = []
@@ -171,11 +299,14 @@ export function createStealthSystem({
     coneGeo.rotateX(-Math.PI / 2)
     coneGeo.translate(0, 0, distance / 2)
 
+    // Outer faces only. Double-sided, the cone washed the whole screen in its
+    // colour whenever the camera stood inside it — which is exactly when the
+    // player most needs to see. From outside it reads the same.
     const coneMat = new THREE.MeshBasicMaterial({
       color: 0xfacc15,
       transparent: true,
-      opacity: 0.22,
-      side: THREE.DoubleSide,
+      opacity: 0.3,
+      side: THREE.FrontSide,
       depthWrite: false
     })
 
@@ -206,6 +337,8 @@ export function createStealthSystem({
     const { mesh: visionCone, coneMat } = createVisionConeMesh(GUARD_VISION_DISTANCE, Math.PI / 3.2)
     visionCone.position.set(0, GUARD_FALLBACK_LIGHT_Y, 0)
     group.add(visionCone)
+    const visionFan = createVisionFan()
+    group.add(visionFan.mesh)
 
     // Suspicion status beacon indicator above guard hat
     const statusBeacon = new THREE.Mesh(
@@ -214,6 +347,10 @@ export function createStealthSystem({
     )
     statusBeacon.position.set(0, 2.15, 0)
     group.add(statusBeacon)
+
+    const investigateMark = createGuardMark('investigate')
+    const alertMark = createGuardMark('alert')
+    for (const mark of [investigateMark, alertMark]) if (mark) group.add(mark)
 
     // Chrono shield: a visibly different guard, so "Freeze did nothing" reads
     // as a property of this guard rather than a broken ability.
@@ -267,7 +404,12 @@ export function createStealthSystem({
       coneMat,
       visionCone,
       coneDistance: GUARD_VISION_DISTANCE,
+      visionFan,
+      fanTimer: Math.random() * FAN_REFRESH,
       statusBeacon,
+      investigateMark,
+      alertMark,
+      markPhase: 0,
       waypoints,
       targetIdx: (initialWaypoint + 1) % waypoints.length,
       speed,
@@ -282,10 +424,15 @@ export function createStealthSystem({
       lookAroundTimer: 0,
       investigateTarget: null,
       investigateBuffer: new THREE.Vector3(),
+      // What he turns to face once he gets there, and how close he goes.
+      investigateLook: new THREE.Vector3(),
+      investigateStop: DISTRACTION_STOP_DISTANCE,
+      investigateFaced: false,
       investigateTimer: 0,
       investigateGiveUpTimer: 0,
       investigateArrived: false,
       investigateBlockedTime: 0,
+      patrolBlockedTime: 0,
       walkAnimationHold: 0,
       lastNoiseId: 0
     }
@@ -350,10 +497,23 @@ export function createStealthSystem({
     return guard
   }
 
+  // He has got as close as he is going to: look toward the noise from here.
+  function arriveToInvestigate(guard) {
+    const look = guard.investigateLook
+    const dx = look.x - guard.group.position.x
+    const dz = look.z - guard.group.position.z
+    guard.investigateArrived = true
+    guard.investigateFaced = false
+    guard.scanBase = dx * dx + dz * dz > 0.01 ? Math.atan2(dx, dz) : guard.facing
+    guard.lookAroundTimer = 0
+  }
+
   // Send guards who are close enough to a noise source to inspect it. ALERT
   // guards ignore distractions; PATROL/INVESTIGATE guards can be redirected.
   // The return value is useful feedback for the throwable system.
-  function investigate(position, { radius = 9, duration = 3.2 } = {}) {
+  // `standAt`: where to look from. A guard walks right up to it, then turns
+  // to face the noise; without it he stops a little short of the noise.
+  function investigate(position, { radius = 9, duration = 3.2, standAt = null } = {}) {
     if (!position) return 0
     let responders = 0
 
@@ -367,10 +527,18 @@ export function createStealthSystem({
       const dx = position.x - guard.group.position.x
       const dz = position.z - guard.group.position.z
       const dy = Math.abs((position.y ?? guard.group.position.y) - guard.group.position.y)
-      if (dy > 2.25 || dx * dx + dz * dz > radius * radius) return
+      if (dy > 2.25 || dx * dx + dz * dz > radius * radius) {
+        // Out of earshot: this noise is spent for them, so the general
+        // distraction lure below can't pull them in from further than `radius`.
+        guard.lastNoiseId = distraction.noiseId
+        return
+      }
 
       guard.state = 'INVESTIGATE'
-      guard.investigateTarget = guard.investigateBuffer.set(position.x, guard.group.position.y, position.z)
+      const stand = standAt ?? position
+      guard.investigateTarget = guard.investigateBuffer.set(stand.x, guard.group.position.y, stand.z)
+      guard.investigateLook.set(position.x, guard.group.position.y, position.z)
+      guard.investigateStop = standAt ? 0.05 : DISTRACTION_STOP_DISTANCE
       guard.investigateTimer = duration
       guard.investigateGiveUpTimer = Math.max(9, duration + 6)
       guard.investigateArrived = false
@@ -704,7 +872,7 @@ export function createStealthSystem({
     const dist = toPlayer.length()
     const maxDist =
       guard.state === 'ALERT'
-        ? 10.0
+        ? GUARD_ALERT_VISION_DISTANCE
         : GUARD_VISION_DISTANCE
 
     if (dist > maxDist || dist < 0.1) {
@@ -740,8 +908,8 @@ export function createStealthSystem({
 
     const fovThreshold =
       guard.state === 'ALERT'
-        ? 0.3
-        : 0.52
+        ? GUARD_ALERT_FOV_DOT
+        : GUARD_FOV_DOT
 
     if (dot < fovThreshold) {
       return false
@@ -888,6 +1056,63 @@ export function createStealthSystem({
     return true
   }
 
+  // Re-trace the fan a few times a second: one ray per spoke from the torch
+  // down to a crouched body's height at the edge of his sight. Reshaping it
+  // each frame from the stored radii keeps it glued to his turning head.
+  const fanEye = new THREE.Vector3()
+  const fanTarget = new THREE.Vector3()
+  const fanDir = new THREE.Vector3()
+  function updateVisionFan(guard, delta) {
+    const fan = guard.visionFan
+    fan.material.color.copy(guard.coneMat.color)
+    const alert = guard.state === 'ALERT'
+    const range = alert ? GUARD_ALERT_VISION_DISTANCE : GUARD_VISION_DISTANCE
+    const half = Math.acos(alert ? GUARD_ALERT_FOV_DOT : GUARD_FOV_DOT)
+    const origin = guard.group.position
+
+    guard.fanTimer -= delta
+    const near = !player?.mesh || player.mesh.position.distanceTo(origin) < FAN_REFRESH_RANGE
+    if (guard.fanTimer <= 0 && near) {
+      guard.fanTimer = FAN_REFRESH
+      guardLightOrigin(guard, fanEye)
+      for (let i = 0; i < FAN_RAYS; i++) {
+        const angle = guard.facing - half + (i / (FAN_RAYS - 1)) * half * 2
+        fanTarget.set(
+          origin.x + Math.sin(angle) * range,
+          origin.y + PLAYER_CROUCH_DETECTION_HEIGHT,
+          origin.z + Math.cos(angle) * range
+        )
+        fanDir.subVectors(fanTarget, fanEye)
+        const length = fanDir.length()
+        raycaster.set(fanEye, fanDir.divideScalar(length))
+        raycaster.far = length
+        let hit = length
+        for (const h of sightHits(guardBlockers(guard, fanEye), false)) {
+          if (h.distance < hit) hit = h.distance
+        }
+        fan.radii[i] = Math.max(0.3, range * hit / length)
+      }
+    }
+
+    // Spokes in the guard's own frame: he faces local +Z.
+    const p = fan.positions
+    for (let i = 0; i < FAN_RAYS; i++) {
+      const local = -half + (i / (FAN_RAYS - 1)) * half * 2
+      const sin = Math.sin(local)
+      const cos = Math.cos(local)
+      const outer = fan.radii[i]
+      const inner = Math.max(0, outer - FAN_RIM)
+      const v = (1 + i * 3) * 3
+      p[v] = sin * inner
+      p[v + 2] = cos * inner
+      p[v + 3] = sin * inner
+      p[v + 5] = cos * inner
+      p[v + 6] = sin * outer
+      p[v + 8] = cos * outer
+    }
+    fan.mesh.geometry.attributes.position.needsUpdate = true
+  }
+
   // How much faster suspicion should climb while the player is seen, based
   // on how loud/visible their current gait is.
   function movementSuspicionMultiplier() {
@@ -945,7 +1170,8 @@ export function createStealthSystem({
 
   function update(delta) {
     bumpedGuardThisFrame = false
-    const playerPos = player?.mesh?.position
+    // Every detector below treats a missing position as "nobody there".
+    const playerPos = playerHidden ? null : player?.mesh?.position
     let isDetectedThisFrame = false
     let detectionReason = null
 
@@ -1013,6 +1239,8 @@ export function createStealthSystem({
       } else if (lured && guard.state !== 'INVESTIGATE') {
         guard.state = 'INVESTIGATE'
         guard.investigateTarget = guard.investigateBuffer.copy(distraction.position)
+        guard.investigateLook.copy(distraction.position)
+        guard.investigateStop = DISTRACTION_STOP_DISTANCE
         guard.investigateTimer = 3.2
         guard.investigateGiveUpTimer = 9.2
         guard.investigateArrived = false
@@ -1043,6 +1271,12 @@ export function createStealthSystem({
         guard.coneMat.color.setHex(0xfacc15)
         guard.statusBeacon.material.color.setHex(0xfacc15)
       }
+      guard.markPhase += delta
+      for (const [mark, shown] of [[guard.investigateMark, guard.state === 'INVESTIGATE'], [guard.alertMark, guard.state === 'ALERT']]) {
+        if (!mark) continue
+        mark.visible = shown
+        if (shown) mark.position.y = GUARD_MARK_Y + Math.sin(guard.markPhase * 4) * 0.04
+      }
 
       // A distraction temporarily overrides the patrol target. The guard turns
       // and walks there using the same collision rules as normal patrol, scans
@@ -1054,7 +1288,7 @@ export function createStealthSystem({
         const gz = target.z - guard.group.position.z
         const distToTarget = Math.hypot(gx, gz)
 
-        if (!guard.investigateArrived && distToTarget > DISTRACTION_STOP_DISTANCE) {
+        if (!guard.investigateArrived && distToTarget > guard.investigateStop) {
           const moveAngle = Math.atan2(gx, gz)
           let diff = moveAngle - guard.facing
           while (diff > Math.PI) diff -= Math.PI * 2
@@ -1087,9 +1321,7 @@ export function createStealthSystem({
             }
             if (guard.investigateBlockedTime >= 0.35) {
               // Investigate from the last reachable spot, then resume patrol.
-              guard.investigateArrived = true
-              guard.scanBase = guard.facing
-              guard.lookAroundTimer = 0
+              arriveToInvestigate(guard)
               guard.stridePhase = 0
             } else if (travelled > 0.0001) {
               guard.stridePhase += travelled * STRIDE_FREQUENCY
@@ -1100,15 +1332,18 @@ export function createStealthSystem({
             guard.stridePhase *= Math.max(0, 1 - delta * 10)
           }
         } else {
-          if (!guard.investigateArrived) {
-            guard.investigateArrived = true
-            guard.scanBase = guard.facing
-            guard.lookAroundTimer = 0
-          }
+          if (!guard.investigateArrived) arriveToInvestigate(guard)
 
-          guard.lookAroundTimer += delta
-          guard.investigateTimer -= delta
-          guard.facing = guard.scanBase + Math.sin(guard.lookAroundTimer * 2.5) * (Math.PI / 2.8)
+          if (!guard.investigateFaced) {
+            // Turn to face what he came to look at before looking round it.
+            const diff = Math.atan2(Math.sin(guard.scanBase - guard.facing), Math.cos(guard.scanBase - guard.facing))
+            guard.facing += diff * Math.min(1, delta * GUARD_PATROL_TURN_SMOOTHING)
+            if (Math.abs(diff) <= GUARD_PATROL_TURN_TOLERANCE) guard.investigateFaced = true
+          } else {
+            guard.lookAroundTimer += delta
+            guard.investigateTimer -= delta
+            guard.facing = guard.scanBase + Math.sin(guard.lookAroundTimer * 2.5) * (Math.PI / 2.8)
+          }
           guard.group.rotation.y = guard.facing
           guard.stridePhase *= Math.max(0, 1 - delta * 10)
         }
@@ -1152,14 +1387,16 @@ export function createStealthSystem({
           const gz = target.z - guard.group.position.z
           const distToTarget = Math.hypot(gx, gz)
 
-          if (distToTarget < 0.08) {
+          const blocked = guard.patrolBlockedTime >= GUARD_PATROL_BLOCKED_SECONDS
+          if (distToTarget < 0.08 || blocked) {
             // -------------------------------------------------------
-            // ARRIVED
+            // ARRIVED (or as close as the aisle allows)
             // -------------------------------------------------------
 
             // Snap exactly to the waypoint so every patrol loop
-            // follows exactly the same route.
-            guard.group.position.copy(target)
+            // follows exactly the same route. A blocked guard stops
+            // where he is and turns back from there.
+            if (!blocked) guard.group.position.copy(target)
 
             guard.targetIdx =
               (guard.targetIdx + 1) % guard.waypoints.length
@@ -1167,6 +1404,7 @@ export function createStealthSystem({
             guard.waitTimer = guard.waitTime
             guard.scanBase = guard.facing
             guard.stridePhase = 0
+            guard.patrolBlockedTime = 0
           } else {
             // -------------------------------------------------------
             // TURN TOWARD NEXT WAYPOINT
@@ -1197,6 +1435,8 @@ export function createStealthSystem({
                 guard.speed * gd,
                 distToTarget
               )
+              const beforeX = guard.group.position.x
+              const beforeZ = guard.group.position.z
 
               guard.group.position.x +=
                 (gx / distToTarget) * step
@@ -1209,8 +1449,13 @@ export function createStealthSystem({
                 obstacles
               )
 
+              const progress = ((guard.group.position.x - beforeX) * gx +
+                (guard.group.position.z - beforeZ) * gz) / distToTarget
+              if (step > 0.00001 && progress < step * 0.15) guard.patrolBlockedTime += gd
+              else guard.patrolBlockedTime = 0
+
               guard.stridePhase +=
-                step * STRIDE_FREQUENCY
+                Math.max(0, progress) * STRIDE_FREQUENCY
             } else {
               guard.stridePhase *=
                 Math.max(0, 1 - gd * 10)
@@ -1252,6 +1497,7 @@ export function createStealthSystem({
         if (hit.distance < coneHitDist) coneHitDist = hit.distance
       }
       guard.visionCone.scale.setScalar(THREE.MathUtils.clamp(coneHitDist / guard.coneDistance, 0.05, 1))
+      updateVisionFan(guard, delta)
 
       // While the chrono field is up, the shield ring pulses hard — that is
       // the moment the player needs to understand this guard is exempt.
@@ -1374,9 +1620,14 @@ export function createStealthSystem({
       g.investigateTimer = 0
       g.investigateGiveUpTimer = 0
       g.investigateArrived = false
+      g.patrolBlockedTime = 0
       if (g.waypoints.length > 0) g.group.position.copy(g.waypoints[0])
     })
     if (hud && hud.setSuspicion) hud.setSuspicion(0)
+  }
+
+  function setPlayerHidden(hidden) {
+    playerHidden = Boolean(hidden)
   }
 
   function dispose() {
@@ -1400,6 +1651,7 @@ export function createStealthSystem({
     guards.length = 0
     cameras.length = 0
     laserGrids.length = 0
+    playerHidden = false
     if (hud && hud.setSuspicion) hud.setSuspicion(0)
   }
 
@@ -1409,6 +1661,8 @@ export function createStealthSystem({
     addLaserGrid,
     setDistraction,
     investigate,
+    setPlayerHidden,
+    isPlayerHidden: () => playerHidden,
     getSuspicion: () => suspicion,
     clearSuspicion,
     getGuards: () => guards,
