@@ -134,6 +134,8 @@ const minimap = createMinimap({
   getGuards: () => levelManager.guards,
   getLevelState: () => levelManager.getState(),
   getCarriageVolumes: () => levelManager.carriageVolumes,
+  getVoids: () => levelManager.voids,
+  getSupports: () => levelManager.supports,
   getRange: () => settings.get('minimapRange')
 })
 
@@ -369,7 +371,7 @@ const levelManager = createLevelManager({
         startDevLevel3Cutscene()
         return createMovingHeistLevel({ ...ctx, post, advance: beginLevel3Transition })
       }) },
-    { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(module => module.createTimewreckLevel) },
+    { state: 'Timewreck', load: () => import('./levels/timewreck.js').then(({createTimewreckLevel}) => ctx => createTimewreckLevel({...ctx,post})) },
     // Prefetched during Level 3; held until the Level 2 → 3 beat has finished
     // so its module/painting decode cannot stutter the cutscene.
     { state: 'Ending', load: () => afterStoryBeat().then(() => import('./levels/ending.js'))
@@ -913,7 +915,8 @@ function prepareLevel3Transition() {
       if (scene.environment?.isTexture && !scene.environment.isRenderTargetTexture) textures.add(scene.environment)
       try {
         for (const texture of textures) renderer.initTexture(texture)
-        post.render(scene, camera)
+        // Same pipeline as Level 3 gameplay (including its anti-aliasing pass).
+        post.render(scene, camera, { antialias: true })
       } finally {
         for (const node of culled) node.frustumCulled = true
       }
@@ -1126,7 +1129,9 @@ const loop = createLoop({
     if (!startupPrepared) return
     if (storyPlayer?.active) {
       if (storyPlayer.showGame) {
-        post.render(world, view)
+        // Same anti-aliasing choice as normal play, so a story beat that
+        // hands over to Level 3 has already used Level 3's exact pipeline.
+        post.render(world, view, { antialias: levelManager.getState?.() === 'Timewreck' })
         // Warm the real icon pools and their draw BEFORE the smoke quad,
         // otherwise the inset would paint over the opaque cover.
         minimap.setVisible(levelManager.minimapVisible)
@@ -1150,7 +1155,7 @@ const loop = createLoop({
     // A DEV benchmark can retain a pose after gameplay stops; it must not
     // overwrite the boarding shot immediately before rendering.
     if (!player.getCinematicView()) benchmark?.beforeRender()
-    post.render(world, view)
+    post.render(world, view, { antialias: levelManager.getState() === 'Timewreck' })
   },
 
   afterRender: (gl) => {
@@ -1331,7 +1336,8 @@ function updateGameFrame(delta, presentation = false) {
   const lookAngle = presentation ? storyPlayer?.lookAroundAngle || 0 : 0
   if (lookAngle) playerView.setYaw(arrivalYaw + lookAngle)
   playerView.update(delta, player.mesh, scene, {
-    crouching: player.isCrouching()
+    crouching: player.isCrouching(),
+    stabilizeCollision: levelManager.getState() === 'Timewreck'
   })
   if (lookAngle) playerView.setYaw(arrivalYaw)
   if (presentation && arrival) {

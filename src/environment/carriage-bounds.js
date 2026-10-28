@@ -1,4 +1,5 @@
 // Shared carriage XZ layout for gameplay spans and the minimap.
+import { WRECK_DAMAGE, retainedWallRuns } from './wreck-damage.js'
 // No Three.js — seats/crates/lockers here match the InstancedMesh loops in
 // carriages.js (local Z relative to the car centre, converted to world below).
 
@@ -195,10 +196,17 @@ const MINIMAP_BULKHEAD_THICK = 0.14
 export function listCarriageWallBoxes(volume) {
   if (!volume) return []
   const { minX, maxX, minZ, maxZ } = volume
-  const boxes = [
-    { kind: 'wall', minX, maxX: minX + MINIMAP_WALL_THICK, minZ, maxZ },
-    { kind: 'wall', minX: maxX - MINIMAP_WALL_THICK, maxX, minZ, maxZ }
-  ]
+  const boxes = []
+  const center = (minZ + maxZ) / 2, cut = volume.damaged && WRECK_DAMAGE[volume.key]
+  for (const side of [-1,1]) {
+    const x0 = side < 0 ? minX : maxX - MINIMAP_WALL_THICK
+    const x1 = side < 0 ? minX + MINIMAP_WALL_THICK : maxX
+    const runs = cut ? retainedWallRuns(volume.key,side,minZ-center,maxZ-center) : [[minZ-center,maxZ-center]]
+    for (const [a,b] of runs) boxes.push({ kind:'wall',minX:x0,maxX:x1,minZ:center+a,maxZ:center+b })
+    // Dashed low guard: movement boundary, with no full-height wall above it.
+    if (cut && side === cut.side) for (let z=center+cut.minZ;z<center+cut.maxZ;z+=0.85)
+      boxes.push({kind:'boundary',minX:x0,maxX:x1,minZ:z,maxZ:Math.min(z+0.36,center+cut.maxZ)})
+  }
 
   const doorMin = -DOOR_W / 2
   const doorMax = DOOR_W / 2

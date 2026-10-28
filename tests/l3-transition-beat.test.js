@@ -415,7 +415,7 @@ test('main.js: Level 2 ending plays the beat, builds Level 3 on panel 1 without 
   const section = main.slice(main.indexOf('function prepareLevel3Transition()'), main.indexOf('// Quit to title'))
   assert.match(section, /onBlack\(\) \{[\s\S]*stopLevelMusic\(\)[\s\S]*disposeGameplayDrone\(\)[\s\S]*\},\s*onBuild\(\) \{[\s\S]*levelManager\.advance\(\)/)
   // A real Level 3 frame through the game's pipeline, every texture and object, not a bare compile.
-  assert.match(section, /onPrewarm\(\) \{[\s\S]*updateGameFrame\(0, true\)[\s\S]*node\.frustumCulled = false[\s\S]*renderer\.initTexture\(texture\)[\s\S]*post\.render\(scene, camera\)[\s\S]*node\.frustumCulled = true/)
+  assert.match(section, /onPrewarm\(\) \{[\s\S]*updateGameFrame\(0, true\)[\s\S]*node\.frustumCulled = false[\s\S]*renderer\.initTexture\(texture\)[\s\S]*post\.render\(scene, camera, \{ antialias: true \}\)[\s\S]*node\.frustumCulled = true/)
   assert.doesNotMatch(section, /renderer\.compile\(/)
   // Level 3's music is decoded in the background before the reveal.
   assert.match(section, /onBuild\(\) \{[\s\S]*levelManager\.advance\(\)[\s\S]*new LevelMusicPlayer\(loadTrack\(LEVEL_TRACKS\.Timewreck\.file\)\)[\s\S]*music\.load\(\)/)
@@ -433,6 +433,8 @@ test('main.js: Level 2 ending plays the beat, builds Level 3 on panel 1 without 
   assert.match(section, /storyPlayer = owner\s*\n\s*hud\.setVisible\(false\)\s*\n\s*owner\.start\(\)/)
   assert.match(main, /canPause: \(\) => gameStarted && !storyPlayer\?\.active/)
   assert.match(main, /if \(storyPlayer\?\.showGame && storyPlayer\.liveGame !== false\) ranFullGameFrame = updateGameFrame\(delta, true\)/)
+  // Level 3 under the blue is drawn with the same anti-aliasing as gameplay.
+  assert.match(main, /if \(storyPlayer\.showGame\) \{[\s\S]*?post\.render\(world, view, \{ antialias: levelManager\.getState\?\.\(\) === 'Timewreck' \}\)/)
   assert.match(main, /onLeave: \(\) => \{\s*stopLevelMusic\(\)\s*releaseIdleLevel3Transition\(\)/)
   assert.match(main, /if \(target === 'l3cut'\) return \{ state: 'MovingHeist', levelOptions: \{ startAt: 'vault' \}, cutscene: 'l3' \}/)
   const credits = fs.readFileSync(new URL('../src/ui/credits.js', import.meta.url), 'utf8')

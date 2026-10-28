@@ -36,6 +36,7 @@ export function createTimewreckExterior({ minZ = -50, maxZ = 40, speed = 45 } = 
     streakMat,
     STREAK_N
   )
+  streakMesh.name = 'wreck-underfloor-sleepers'
   streakMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   noCam(streakMesh)
   streakMesh.castShadow = false
@@ -61,6 +62,7 @@ export function createTimewreckExterior({ minZ = -50, maxZ = 40, speed = 45 } = 
   })
   const SMEAR_N = 16
   const smearMesh = new THREE.InstancedMesh(smearGeo, smearMat, SMEAR_N)
+  smearMesh.name = 'wreck-underfloor-rail-smears'
   smearMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   noCam(smearMesh)
   for (let i = 0; i < SMEAR_N; i++) {
@@ -87,7 +89,7 @@ export function createTimewreckExterior({ minZ = -50, maxZ = 40, speed = 45 } = 
     const side = skew(n + 1) < 0 ? -1 : 1
     const close = Math.abs(skew(n + 4)) < closeBias
     return {
-      x: side * (close ? 2.22 + Math.abs(skew(n + 7)) * 0.35 : 3.4 + Math.abs(skew(n + 9)) * 2.4),
+      x: side * (close ? 4.5 + Math.abs(skew(n + 7)) * 0.35 : 5.2 + Math.abs(skew(n + 9)) * 2.4),
       y: close ? 1.15 + Math.abs(skew(n + 13)) * 0.9 : 0.35 + Math.abs(skew(n + 15)) * 2.2,
       z: wrapMin + Math.abs(skew(n + 19)) * wrapSpan,
       vz: speed * (0.72 + Math.abs(skew(n + 23)) * 0.7),
@@ -126,7 +128,7 @@ export function createTimewreckExterior({ minZ = -50, maxZ = 40, speed = 45 } = 
     count: 64,
     area: {
       halfX: 7.5,
-      minAbsX: 2.15,
+      minAbsX: 3.4,
       minY: 0.15,
       maxY: 2.9,
       minZ: minZ - 6,

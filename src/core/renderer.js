@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { settings, shadowMapSize } from '../core/settings.js'
+import { settings, shadowMapSize, brightnessToExposure } from '../core/settings.js'
 
 // Creates and owns the WebGLRenderer. Pixel ratio is capped at 1.25 so a
 // 2x display does not draw four times the pixels. The render-scale setting
@@ -63,7 +63,7 @@ export function createRenderer(canvas) {
   }
 
   function applySettings() {
-    renderer.toneMappingExposure = settings.get('brightness')
+    renderer.toneMappingExposure = brightnessToExposure(settings.get('brightness'))
 
     const quality = settings.get('shadowQuality')
     const enabled = quality !== 'off'

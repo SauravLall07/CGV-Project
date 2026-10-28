@@ -1,0 +1,45 @@
+{
+  "errors": [],
+  "events": [
+    {
+      "name": "passenger-held-floor-approach",
+      "position": [
+        0.7987999999999886,
+        0,
+        -73.59945599999998
+      ]
+    },
+    {
+      "name": "passenger-real-collapse-crossed",
+      "position": [
+        0.13200000000000023,
+        0,
+        -82.4149759999999
+      ]
+    },
+    {
+      "name": "brake-aim",
+      "position": [
+        0.13200000000000023,
+        0,
+        -91.04685600000002
+      ]
+    },
+    {
+      "name": "brake-handoff",
+      "position": [
+        0.13200000000000023,
+        0,
+        -91.04685600000002
+      ]
+    },
+    {
+      "name": "brake-into-ending",
+      "position": [
+        0,
+        0,
+        7.6
+      ]
+    }
+  ]
+}
