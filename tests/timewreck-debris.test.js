@@ -107,19 +107,18 @@ test('real passenger panels and luggage kill once, splinters stay harmless, and 
       // Time is held: the collision check must still protect a player touching wreckage.
       splinter.position.copy(h.player.mesh.position); splinter.position.y += 1
       h.level.update(0)
-      assert.equal(h.respawn.getLives(), 3, 'small splinter is decorative')
+      assert.equal(h.respawn.isFailing(), false, 'small splinter is decorative')
+      assert.deepEqual(h.messages, [])
       piece.visible = true
       piece.scale.setScalar(1)
       piece.position.copy(h.player.mesh.position); piece.position.y += 1
       h.level.update(0)
-      assert.equal(h.respawn.getLives(), 2, name)
-      assert.equal(h.respawn.isFailing(), true)
+      assert.equal(h.respawn.isFailing(), true, name)
       assert.deepEqual(h.messages, ['debris'])
       h.level.update(0)
-      assert.equal(h.respawn.getLives(), 2, 'one impact consumes one life')
+      assert.equal(h.respawn.isFailing(), true, 'one impact stays a single fail')
       h.respawn.cancel(); h.respawn.respawn(); h.level.update(0)
       assert.equal(h.respawn.isFailing(), false, 'restored checkpoint has no stale contact')
-      assert.equal(h.respawn.getLives(), 2)
     } finally { h.dispose() }
   }
 })
@@ -150,7 +149,7 @@ test('real L3 wires brown-panel death and safe checkpoint resets into every carr
   try {
     const volumes = h.level.getCarriageVolumes()
     for (const key of ['vault', 'convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger', 'cab']) {
-      h.respawn.cancel(); h.respawn.resetLives(); h.respawn.respawn()
+      h.respawn.cancel(); h.respawn.respawn()
       const span = volumes.find(v => v.key === key)
       h.player.setPose(new THREE.Vector3(0, 0, span.maxZ - 1.5), Math.PI)
       h.level.update(0)
@@ -159,7 +158,7 @@ test('real L3 wires brown-panel death and safe checkpoint resets into every carr
       mesh.material.opacity = 1
       mesh.position.copy(h.player.mesh.position); mesh.position.y += 1
       h.level.update(0)
-      assert.equal(h.respawn.getLives(), 2, key)
+      assert.equal(h.respawn.isFailing(), true, key)
       assert.equal(h.messages.at(-1), 'debris', key)
       h.respawn.cancel(); h.respawn.respawn()
       assert.ok(h.scene.getObjectByName('wreck-flying-panels').children.every(p => !p.visible))

@@ -484,12 +484,10 @@ export function createBoardingLevel({
   guardPassage.setupStealth(stealth)
   bridgePassage.setupStealth(stealth)
 
-  // Losing one of the first two lives keeps the current level instance alive,
-  // but suspicion should start fresh at the checkpoint. The third failure
-  // rebuilds the whole level anyway, so its new stealth system already starts
-  // at zero.
-  const unregisterRespawnSuspicionReset = respawn?.onFail?.((_reason, state) => {
-    if (!state?.gameOver) stealth.clearSuspicion()
+  // Deaths respawn at the checkpoint without ending the run; suspicion should
+  // start fresh each time so a prior alert does not carry over.
+  const unregisterRespawnSuspicionReset = respawn?.onFail?.(() => {
+    stealth.clearSuspicion()
   }) ?? (() => {})
 
   // Passageways 4 and 5 reuse the same finite distraction inventory as P2/P3.

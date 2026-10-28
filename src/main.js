@@ -40,6 +40,11 @@ import { loadBoardingAssets } from './environment/nature-props.js'
 import { createCompleteLevel } from './levels/complete.js'
 import { createModelEditor } from './dev/model-editor.js'
 import { mountRenderOverlay } from './dev/render-overlay.js'
+import {
+  LEVEL_TIME_URGENT_SECONDS,
+  getLevelTimeLimit,
+  levelTimeBriefing
+} from './core/level-time-limits.js'
 
 // Composition root. Everything persistent (renderer, camera, loop, input,
 // HUD, menus, asset loader, interaction/respawn/time systems) is created here
@@ -305,7 +310,6 @@ keyboard.onAction('ghost', () => triggerTimeAbilityOutsideBoarding(() => timeSys
 
 keyboard.onAction('restart', () => {
   if (gameStarted && !credits.isOpen) {
-    respawn.resetLives()
     levelManager.restart()
   }
 })
@@ -335,6 +339,7 @@ const levelManager = createLevelManager({
   timeSystem,
   loadingScreen: levelLoadingScreen,
   onEnter: (state) => {
+    beginLevelCountdown(state)
     if (gameStarted && !storyPlayer?.active && !awaitingIntro) playMusicForState(state)
     // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
     // Workshop remaps its stable scene keys here so saved dev-layout overrides
@@ -342,7 +347,10 @@ const levelManager = createLevelManager({
     modelEditor?.sceneChanged?.()
     if (state === 'Complete') showCompleteCredits()
     else if (state === 'Ending') hud.setVisible(false)
-    else if (!awaitingIntro) timeSystem.warmGhost(renderer, camera)
+    else if (!awaitingIntro) {
+      timeSystem.warmGhost(renderer, camera)
+      announceLevelCountdown(state)
+    }
     // Start the next module after presentation, never alongside boot FBXs.
     // Prefetch failure is optional; enter() will retry under the loading screen.
     const next = state === 'Boarding' ? 'MovingHeist' : state === 'MovingHeist' ? 'Timewreck' : state === 'Timewreck' ? 'Ending' : null
@@ -408,19 +416,6 @@ if (import.meta.env?.DEV) {
   }
 }
 
-// Disabled: running out of lives on Level 2 must not send the player back to
-// Level 1. With no game-over handler, the respawn system keeps using the
-// current checkpoint after every failure.
-// respawn.setGameOverHandler(() => {
-//   elapsed = 0
-//   resetCount = 0
-//   timeSystem.resetRun?.()
-//   playerView.reset()
-//   hud.setSuspicion(0)
-//   respawn.resetLives()
-//   levelManager.enter('Boarding')
-// })
-
 // ---------------------------------------------------------------
 // Main Menu
 // ---------------------------------------------------------------
@@ -429,8 +424,22 @@ if (import.meta.env?.DEV) {
 let gameStarted = false
 let arrival = null
 let paused = false
-let elapsed = 0 // run clock, frozen while paused or in a menu
+let elapsed = 0 // total run elapsed for credits only (not shown in HUD)
+let levelTimeRemaining = 0 // per-level countdown; death does not reset this
+let levelTimerExpired = false // one restart per expiry until onEnter resets
 let titleBackdrop = null // independent scenery, never a gameplay level
+
+function beginLevelCountdown(state) {
+  const limit = getLevelTimeLimit(state)
+  levelTimerExpired = false
+  levelTimeRemaining = limit
+  hud.resetRunTimer(limit)
+}
+
+function announceLevelCountdown(state) {
+  const line = levelTimeBriefing(state)
+  if (line) hud.showBriefing([line])
+}
 let titleReturnPromise = null // coalesce returns and hold New Game until its backdrop is ready
 let modelEditor = null // DEV-only live scene/model workshop (F2)
 let storyPlayer = null
@@ -467,6 +476,7 @@ function prepareIntro() {
     playMusicForState(levelManager.getState())
     hud.root.style.visibility = ''
     hud.setVisible(true)
+    announceLevelCountdown(levelManager.getState())
     syncInputState()
   } })
   storyPlayer = owner
@@ -604,8 +614,6 @@ const pauseMenu = createPauseMenu({
     maxEnergy: timeSystem.getMaxEnergy(),
     suspicion: hud.getSuspicion(),
     timeMode: timeSystem.getMode(),
-    lives: respawn.getLives(),
-    maxLives: respawn.getMaxLives(),
     resets: resetCount
   }),
   onPause: () => setPaused(true),
@@ -613,7 +621,6 @@ const pauseMenu = createPauseMenu({
   onRestart: () => {
     resetCount = 0
     elapsed = 0
-    respawn.resetLives()
     timeSystem.resetRun?.()
     levelManager.restart()
     setPaused(false)
@@ -797,11 +804,12 @@ function startGame() {
   gameStarted = true
   paused = false
   elapsed = 0
+  levelTimeRemaining = 0
+  levelTimerExpired = false
   resetCount = 0
-  respawn.resetLives()
   timeSystem.resetRun?.()
   playerView.reset() // every run opens in third person
-  hud.resetRunTimer()
+  hud.resetRunTimer(0)
   hud.setVisible(true)
   keyboardLock.engage()
   const devStart = devStartOptions()
@@ -1254,16 +1262,30 @@ function updateGameFrame(delta, presentation = false) {
     return
   }
 
-  const heistComplete = levelManager.getState() === 'Complete' || levelManager.getState() === 'Ending'
+  const levelState = levelManager.getState()
+  const heistComplete = levelState === 'Complete' || levelState === 'Ending'
   if (!heistComplete && !presentation) elapsed += delta
+
+  // Per-level countdown: real-time only, never warped by Chrono modes.
+  // Death/respawn leave levelTimeRemaining alone; only enter()/restart resets it.
+  if (
+    !presentation &&
+    !heistComplete &&
+    getLevelTimeLimit(levelState) > 0 &&
+    !levelTimerExpired
+  ) {
+    levelTimeRemaining = Math.max(0, levelTimeRemaining - delta)
+    if (levelTimeRemaining <= 0) {
+      levelTimeRemaining = 0
+      levelTimerExpired = true
+      levelManager.restart()
+    }
+  }
 
   if (import.meta.env?.DEV) devPartAt = performance.now()
   hud.updateRunTimer({
-    elapsed,
-    delta,
-    mode: timeSystem.getMode(),
-    ghostActive: timeSystem.getGhost().isPlaying(),
-    running: !heistComplete && !presentation
+    remaining: levelTimeRemaining,
+    urgent: levelTimeRemaining > 0 && levelTimeRemaining <= LEVEL_TIME_URGENT_SECONDS
   })
   if (import.meta.env?.DEV) devParts[6] += performance.now() - devPartAt
 
