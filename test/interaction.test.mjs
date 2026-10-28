@@ -224,34 +224,37 @@ test('an infinite hold runs for as long as the key is down and shows no progress
   system.dispose()
 })
 
-test('a sticky hold survives looking away, but not walking out of reach', () => {
+test('an entry that keeps focus answers E wherever you look, but not out of reach', () => {
   const scene = new THREE.Scene()
   const player = new THREE.Group()
   const target = makeTarget(scene, { y: 0.5, z: 1 })
   scene.add(player)
-  const input = { state: { interact: true }, onAction: () => () => {} }
-  const calls = []
-  const system = createInteractionSystem({ input })
+  let held = true
+  let presses = 0
+  const system = createInteractionSystem()
   system.register(target, {
-    prompt: 'Push trolley',
-    holdSeconds: Infinity,
-    stickyHold: true,
+    prompt: 'Let go of trolley',
+    gesture: 'none',
     range: 1.5,
-    onHoldStart: () => calls.push('start'),
-    onHoldCancel: () => calls.push('cancel'),
-    onHoldComplete() {}
+    keepFocus: () => held,
+    onInteract: () => { presses += 1 }
   })
-  system.update(player, 0, 1 / 60)
-  assert.deepEqual(calls, ['start'])
 
-  // Facing straight away from it: still holding.
-  for (let i = 0; i < 30; i++) system.update(player, Math.PI, 1 / 60)
-  assert.deepEqual(calls, ['start'])
+  // Facing straight away from it: still focused, and E still reaches it.
+  system.update(player, Math.PI, 1 / 60)
   assert.equal(system.getFocused(), target)
+  assert.equal(system.interact(), true)
+  assert.equal(presses, 1)
 
-  // Out of reach: let go.
+  // No longer kept: back to the usual facing test.
+  held = false
+  system.update(player, Math.PI, 1 / 60)
+  assert.equal(system.getFocused(), null)
+
+  // Kept, but out of reach: nothing.
+  held = true
   player.position.z = -2
   system.update(player, Math.PI, 1 / 60)
-  assert.deepEqual(calls, ['start', 'cancel'])
+  assert.equal(system.getFocused(), null)
   system.dispose()
 })

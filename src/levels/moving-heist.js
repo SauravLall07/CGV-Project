@@ -681,23 +681,38 @@ export function createMovingHeistLevel({
   function grabTrolley() {
     if (serviceTrolley.isGrabbed() || hidden) return
     serviceTrolley.grab(player.mesh.position, canStandAt)
+    registerTrolley()
   }
   function releaseTrolley() {
     if (!serviceTrolley.isGrabbed()) return
     serviceTrolley.release()
     player.setMovementConstraint?.()
+    registerTrolley()
   }
-  unregisters.push(interaction.register(serviceTrolley.group, {
-    prompt: 'Push trolley',
-    holdSeconds: Infinity,
-    // Steering swings it out to the side of the view; stay holding on.
-    stickyHold: true,
-    range: 1.5,
-    isEligible: () => section === 'interior' && !hidden && !player.isAirborne?.(),
-    onHoldStart: grabTrolley,
-    onHoldCancel: releaseTrolley,
-    onHoldComplete() {}
-  }))
+  // E takes hold, E again lets go. One registration per state, so the prompt
+  // says which; while held it keeps focus, since steering swings the trolley
+  // out to the side of the view.
+  let unregisterTrolley = null
+  function registerTrolley() {
+    unregisterTrolley?.()
+    unregisterTrolley = serviceTrolley.isGrabbed()
+      ? interaction.register(serviceTrolley.group, {
+          prompt: 'Let go of trolley',
+          gesture: 'none',
+          range: 1.5,
+          keepFocus: () => true,
+          onInteract: releaseTrolley
+        })
+      : interaction.register(serviceTrolley.group, {
+          prompt: 'Push trolley',
+          gesture: 'none',
+          range: 1.5,
+          isEligible: () => section === 'interior' && !hidden && !player.isAirborne?.(),
+          onInteract: grabTrolley
+        })
+  }
+  registerTrolley()
+  unregisters.push(() => unregisterTrolley?.())
 
   const cabinetLayout = passengerCabinetLocal(passengerHalf)
   const cabinet = createLuggageCabinet({
@@ -804,11 +819,7 @@ export function createMovingHeistLevel({
     const yaw = camera.getYaw?.() ?? 0
     passengerFill.position.set(pp.x - Math.sin(yaw) * 1.4, pp.y + 2.1, pp.z - Math.cos(yaw) * 1.4)
     passengerFill.intensity = 2.6 * THREE.MathUtils.clamp((spans.passenger.maxZ + 1 - pp.z) / 2, 0, 1)
-    if (serviceTrolley.isGrabbed() && player.isAirborne?.()) {
-      // Goes through the interaction system so holding E re-grabs on landing.
-      if (interaction.resetHold) interaction.resetHold()
-      else releaseTrolley()
-    }
+    if (serviceTrolley.isGrabbed() && player.isAirborne?.()) releaseTrolley()
 
     const guards = corridorStealth.getGuards()
     trolleyBlockers.length = guards.length
