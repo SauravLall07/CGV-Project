@@ -29,6 +29,7 @@ import {
   SEAT_BACK_DEPTH,
   SEAT_BACK_TOP,
   passengerBooths,
+  passengerStowageAt,
   BOOTH_BENCH_OFFSET,
   BOOTH_TABLE,
   windowBayZs,
@@ -490,12 +491,90 @@ function addWreckDoorLeaf(parent, shared, mats, { x = 0, y = DOOR_H / 2, z = 0, 
   return leaf
 }
 
+// Level 2's open doorway between two cars, dressed on this car's face of the
+// bulkhead: a wooden architrave with a brass bead, a lining through the
+// opening, a brass threshold, and — on the forward bulkhead — a pair of
+// glazed doors folded back against the wall with a plate over the door
+// naming the car beyond. Visual only; the colliders keep DOOR_W clear.
+const DOORWAY_TRIM = 0.09
+// Folded-back doors: how far open (just shy of flat against the wall) and
+// how far the hinge stands out from the opening.
+const DOOR_FOLD = Math.PI * 0.94
+const DOOR_HINGE_OUT = 0.03
+
+function addCarriageDoorway(group, z, shared, nextName) {
+  const inward = z > 0 ? -1 : 1
+  const face = z + inward * 0.07
+  const wood = woodMaterial({ repeat: [1, 2], light: 0x5a3418, dark: 0x2a160a })
+  const add = (parent, mesh, x, y, zz) => {
+    mesh.position.set(x, y, zz)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    noCam(mesh)
+    parent.add(mesh)
+    return mesh
+  }
+  const box = (w, h, d, material) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material)
+
+  // Architrave and bead round the opening, and a lining through the
+  // thickness of the bulkhead.
+  const outerH = DOOR_H + DOORWAY_TRIM
+  for (const s of [-1, 1]) {
+    add(group, box(DOORWAY_TRIM, outerH, 0.05, wood), s * (DOOR_W / 2 + DOORWAY_TRIM / 2), outerH / 2, face + inward * 0.025)
+    add(group, box(0.025, DOOR_H, 0.06, shared.brass), s * (DOOR_W / 2 + 0.012), DOOR_H / 2, face + inward * 0.03)
+    add(group, box(0.02, DOOR_H, 0.14, wood), s * (DOOR_W / 2 - 0.01), DOOR_H / 2, z)
+  }
+  add(group, box(DOOR_W + DOORWAY_TRIM * 2, DOORWAY_TRIM, 0.05, wood), 0, DOOR_H + DOORWAY_TRIM / 2, face + inward * 0.025)
+  add(group, box(DOOR_W, 0.025, 0.06, shared.brass), 0, DOOR_H - 0.012, face + inward * 0.03)
+  add(group, box(DOOR_W, 0.02, 0.14, wood), 0, DOOR_H - 0.01, z)
+  // Threshold plate, flush with the runner.
+  add(group, box(DOOR_W, 0.012, 0.3, shared.brass), 0, 0.006, z)
+
+  if (z <= 0) return
+
+  // Glazed doors folded back against this wall either side of the opening,
+  // standing just off it so they read as doors rather than panelling. Each
+  // hangs from a hinge on the jamb; closed, its leaf would span to the centre.
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x3a4a5a, emissive: 0x1a2430, emissiveIntensity: 0.6, roughness: 0.08, metalness: 0.3,
+    transparent: true, opacity: 0.55
+  })
+  const leafW = DOOR_W / 2 - 0.01
+  const leafH = DOOR_H - 0.04
+  const stile = 0.07
+  for (const s of [-1, 1]) {
+    const hinge = new THREE.Group()
+    hinge.name = 'carriage-door-leaf'
+    hinge.position.set(s * (DOOR_W / 2 + DOOR_HINGE_OUT), 0.02, face + inward * 0.06)
+    // Closed, the leaf runs from the hinge toward the centre (-s along X).
+    // Swinging it nearly flat folds it back over the wall beside the opening.
+    hinge.rotation.y = s * inward * DOOR_FOLD
+    group.add(hinge)
+    const cx = -s * leafW / 2
+    for (const e of [-1, 1]) add(hinge, box(stile, leafH, 0.045, wood), cx + e * (leafW / 2 - stile / 2), leafH / 2, 0)
+    for (const y of [stile / 2, leafH * 0.45, leafH - stile / 2]) add(hinge, box(leafW, stile, 0.045, wood), cx, y, 0)
+    // Lower panel, upper glazing, brass kick plate and pull handle.
+    add(hinge, box(leafW - stile * 2, leafH * 0.45 - stile, 0.03, wood), cx, leafH * 0.225 + stile / 4, 0)
+    add(hinge, box(leafW - stile * 2, leafH * 0.55 - stile * 1.5, 0.012, glass), cx, leafH * 0.725, 0)
+    add(hinge, box(leafW - 0.02, 0.16, 0.05, shared.brass), cx, 0.1, 0)
+    add(hinge, new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 8), shared.brass),
+      cx - s * (leafW / 2 - 0.12), leafH * 0.47, 0.04)
+  }
+
+  if (!nextName) return
+  // Name plate over the door, facing into this car.
+  add(group, box(1.06, 0.28, 0.02, shared.brass), 0, DOOR_H + 0.3, face + inward * 0.01)
+  const plate = add(group, box(1.0, 0.22, 0.02, signMaterial({ text: nextName, width: 512, height: 112 })),
+    0, DOOR_H + 0.3, face + inward * 0.03)
+  plate.rotation.y = inward > 0 ? 0 : Math.PI
+}
+
 // Two side panels and a lintel around a centred doorway, plus a brass surround.
 // `sealed` fills the doorway in with a solid plate — used at the two ends of
 // the train, where an open doorway would otherwise look straight out of the
 // train at the scrolling outdoor scenery.
 // When `damaged`, Level 3 uses teal/brass wreck-door styling (visual only).
-function addBulkhead(group, z, shared, sealed = false, damaged = false) {
+function addBulkhead(group, z, shared, sealed = false, damaged = false, nextName = null) {
   const sideW = (WALL_X * 2 - DOOR_W) / 2
   const panelMat = damaged
     ? liftAlbedo(woodMaterial({
@@ -521,10 +600,14 @@ function addBulkhead(group, z, shared, sealed = false, damaged = false) {
   if (damaged) lintel.userData.wreckOccluder = true
   group.add(lintel)
 
-  const surround = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W + 0.12, DOOR_H + 0.06, 0.05), shared.brass)
-  surround.name = damaged ? 'wreck-door-surround' : 'door-surround'
-  surround.position.set(0, DOOR_H / 2, z)
-  group.add(surround)
+  if (!damaged && !sealed) {
+    addCarriageDoorway(group, z, shared, nextName)
+  } else {
+    const surround = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W + 0.12, DOOR_H + 0.06, 0.05), shared.brass)
+    surround.name = damaged ? 'wreck-door-surround' : 'door-surround'
+    surround.position.set(0, DOOR_H / 2, z)
+    group.add(surround)
+  }
 
   // Warm overhead lamp cue on the lintel (emissive mesh — no new PointLight).
   if (damaged) {
@@ -570,7 +653,8 @@ function addBulkhead(group, z, shared, sealed = false, damaged = false) {
   }
 }
 
-function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeiling = true } = {}) {
+// `nextName`: the car ahead, for the plate over Level 2's forward door.
+function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeiling = true, nextName = null } = {}) {
   const g = new THREE.Group()
   g.name = `carriage-${key}`
   g.userData.type = key
@@ -765,7 +849,7 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
   }
 
   addBulkhead(g, -half, shared, Boolean(seals.min), damaged)
-  addBulkhead(g, half, shared, Boolean(seals.max), damaged)
+  addBulkhead(g, half, shared, Boolean(seals.max), damaged, nextName)
 
   return { group: g, half }
 }
@@ -1741,6 +1825,66 @@ function addWreckedSeatBays(g, half) {
   })
 }
 
+// Porter's luggage piled into a booth bay: a steamer trunk or a slatted crate
+// where each bench stands, cases stacked on top, and a trunk under the window
+// in place of the table. Footprints match the booth's (carriage-bounds.js),
+// so the space between the piles hides a crouched player the same way.
+function addLuggageBay(g, zc, s, shared) {
+  const width = WALL_X - 0.08 - SEAT_INNER_X
+  const cx = s * (SEAT_INNER_X + width / 2)
+  const depth = SEAT_DEPTH + SEAT_BACK_DEPTH
+  const leather = new THREE.MeshStandardMaterial({ color: 0x3b2518, roughness: 0.78, metalness: 0.05 })
+  const leatherRed = new THREE.MeshStandardMaterial({ color: 0x5a2219, roughness: 0.8, metalness: 0.05 })
+  const canvas = new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.92, metalness: 0 })
+  const crateWood = woodMaterial({ repeat: [1, 1], light: 0x8a6a3e, dark: 0x5a4022 })
+  const batten = new THREE.MeshStandardMaterial({ color: 0x4a3420, roughness: 0.85, metalness: 0 })
+  const add = (mesh, x, y, z, yaw = 0) => {
+    mesh.position.set(x, y, z)
+    mesh.rotation.y = yaw
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    g.add(mesh)
+    return mesh
+  }
+  const strapped = (w, h, d, mat, x, y, z, yaw = 0) => {
+    const body = add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat), x, y, z, yaw)
+    for (const o of [-0.3, 0.3]) {
+      const strap = new THREE.Mesh(new THREE.BoxGeometry(0.05, h + 0.02, d + 0.02), shared.brass)
+      strap.position.x = o * w
+      body.add(strap)
+    }
+    return body
+  }
+
+  for (const [pile, dir] of [-1, 1].entries()) {
+    const z = zc + dir * (BOOTH_BENCH_OFFSET + SEAT_BACK_DEPTH / 2)
+    if (pile === 0) {
+      strapped(width - 0.04, 0.52, depth - 0.03, leather, cx, 0.26, z)
+      strapped(0.92, 0.32, 0.56, leatherRed, cx + s * 0.12, 0.68, z, 0.12)
+      const hatbox = add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.26, 18), canvas), cx - s * 0.28, 0.97, z)
+      hatbox.add(new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.205, 0.05, 18), shared.brass))
+    } else {
+      // Slatted crate with dark battens on its edges.
+      const crate = add(new THREE.Mesh(new THREE.BoxGeometry(width - 0.1, 0.62, depth - 0.05), crateWood), cx, 0.31, z)
+      for (const [bx, bz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.64, 0.06), batten)
+        post.position.set(bx * ((width - 0.1) / 2 - 0.02), 0, bz * ((depth - 0.05) / 2 - 0.02))
+        crate.add(post)
+      }
+      for (const y of [-0.16, 0.16]) {
+        const band = new THREE.Mesh(new THREE.BoxGeometry(width - 0.08, 0.05, depth - 0.03), batten)
+        band.position.y = y
+        crate.add(band)
+      }
+      strapped(0.8, 0.3, 0.54, leather, cx - s * 0.1, 0.77, z, -0.1)
+      strapped(0.56, 0.22, 0.42, leatherRed, cx + s * 0.05, 1.03, z, 0.22)
+    }
+  }
+
+  // Under the window, where the table would be.
+  strapped(BOOTH_TABLE.halfX * 2, 0.5, BOOTH_TABLE.halfZ * 2, leather, s * (WALL_X - BOOTH_TABLE.inset), 0.25, zc)
+}
+
 // Level 2 first-class carriage — the stealth introduction. Booths of red
 // velvet benches face each other across window tables down both sides of a
 // red runner; brass luggage racks with suitcases run overhead; wood panelling,
@@ -1780,12 +1924,15 @@ function dressFirstClass(g, half, shared, fx) {
     [new THREE.BoxGeometry(0.06, SEAT_BACK_TOP + 0.08, 0.06), shared.brass, (SEAT_BACK_TOP + 0.08) / 2, backOut, -(width / 2 - 0.03)],
     [new THREE.BoxGeometry(0.07, 0.07, SEAT_DEPTH - 0.04), shared.brass, 0.62, 0, -(width / 2 - 0.035)]
   ]
+  // The porter's-station bays (carriage-bounds PASSENGER_STOWAGE) get trunks,
+  // the cabinet or open lounge floor instead of benches and a table.
   const benches = []
-  for (const zc of booths) {
+  booths.forEach((zc, k) => {
     for (const s of [-1, 1]) {
+      if (passengerStowageAt(k, s)) continue
       for (const dir of [-1, 1]) benches.push({ s, z: zc + dir * BOOTH_BENCH_OFFSET, dir })
     }
-  }
+  })
   const dummy = new THREE.Object3D()
   for (const [geometry, material, y, outward, towardAisle] of parts) {
     const mesh = new THREE.InstancedMesh(geometry, material, benches.length)
@@ -1805,8 +1952,10 @@ function dressFirstClass(g, half, shared, fx) {
   // walking the aisle; a standing player's head is above them. Invisible, and
   // only guards' vision rays meet them — they are not colliders.
   const coverGeo = new THREE.BoxGeometry(0.04, 1.0, BOOTH_BENCH_OFFSET * 2 - 0.4)
-  for (const zc of booths) {
+  for (const [k, zc] of booths.entries()) {
     for (const s of [-1, 1]) {
+      const stowage = passengerStowageAt(k, s)
+      if (stowage === 'cabinet' || stowage === 'lounge') continue
       const cover = new THREE.Mesh(coverGeo, shared.darkSteel)
       cover.name = 'booth-cover'
       cover.visible = false
@@ -1825,6 +1974,22 @@ function dressFirstClass(g, half, shared, fx) {
   const tableX = WALL_X - BOOTH_TABLE.inset
   booths.forEach((zc, k) => {
     for (const s of [-1, 1]) {
+      const stowage = passengerStowageAt(k, s)
+      if (stowage === 'luggage') addLuggageBay(g, zc, s, shared)
+      if (stowage === 'lounge') {
+        // No table lamp here, so a brass picture light over the window
+        // keeps the open floor as bright as the booths.
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.9), shared.brass)
+        bar.position.set(s * (WALL_X - 0.26), 2.36, zc)
+        noCam(bar)
+        const glow = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.02, 0.84), shadeMat)
+        glow.position.set(s * (WALL_X - 0.26), 2.325, zc)
+        noCam(glow)
+        const lamp = new THREE.PointLight(0xffd49a, 3.4, 4.6, 2)
+        lamp.position.set(s * (WALL_X - 0.5), 2.2, zc)
+        g.add(bar, glow, lamp)
+      }
+      if (stowage) continue
       const x = s * tableX
       const top = new THREE.Mesh(new THREE.BoxGeometry(BOOTH_TABLE.halfX * 2, 0.05, BOOTH_TABLE.halfZ * 2), tableWood)
       top.position.set(x, 0.74, zc)
@@ -3595,7 +3760,15 @@ function buildRoof(spans, shared, fx) {
 
 // Padding stands in for a body radius: player and guards collide as points.
 const COLLIDER_PAD = 0.2
-const COLLIDER_KINDS = new Set(['seat', 'trunk', 'relaybox', 'locker', 'crate', 'rack', 'wheel'])
+// Names on the plates over Level 2's forward doors.
+const CAR_NAMES = {
+  security: 'SECURITY',
+  relay: 'ROUTE CONTROL',
+  cargo: 'CARGO',
+  mechanical: 'MECHANICAL',
+  convergence: 'CONVERGENCE'
+}
+const COLLIDER_KINDS = new Set(['seat', 'trunk', 'relaybox', 'locker', 'crate', 'rack', 'wheel', 'luggage', 'cabinet'])
 
 function buildInteriorColliders(spans, layout) {
   const colliders = []
@@ -3663,7 +3836,8 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
       min: (index === 0 || cfg.key === 'vault') && !damaged,
       max: index === layout.length - 1 || (cfg.key === 'convergence' && !damaged)
     }
-    const { group, half } = buildShell(cfg.key, cfg.length, shared, damaged, seals)
+    const nextName = damaged ? null : CAR_NAMES[layout[index + 1]?.key] ?? null
+    const { group, half } = buildShell(cfg.key, cfg.length, shared, damaged, seals, { nextName })
     const center = cursor + half
     group.position.z = center
     root.add(group)

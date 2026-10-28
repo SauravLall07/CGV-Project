@@ -10,6 +10,7 @@ import {
   newspaperStand,
   pendantLamp,
   pottedPalm,
+  kbox,
   suitcase,
   ticketOffice,
   trunk,
@@ -27,6 +28,7 @@ import {
 const NORTH = -27.38
 const SOUTH = -21.62
 const PARTITION = -161.025
+const PASSAGE_ENTRY_FACE = -158.72
 const CENTER_Z = -24.5
 const CEILING = 5.1
 
@@ -34,10 +36,43 @@ function scaled(M, sx, sy, sz) {
   return M.multiply(new THREE.Matrix4().makeScale(sx, sy, sz))
 }
 
+function stationExit(decor, k, transform) {
+  const wood = (w, h, d, x, y, z) => decor.add(k.entranceWood, kbox(w, h, d, x, y, z), transform)
+  const glass = (w, h, x, y, z) => decor.add(k.entranceGlass, kbox(w, h, 0.04, x, y, z), transform)
+  const doorWidth = 1.38
+  const doorSpan = doorWidth + 0.42
+
+  // The same three glazed timber doors seen outside the main station entrance.
+  // These are decorative: the existing solid rear wall still controls collision
+  // and the exterior E interaction still handles entry into the station.
+  for (const center of [-doorSpan, 0, doorSpan]) {
+    for (const side of [-1, 1]) {
+      wood(0.12, 3.15, 0.12, center + side * doorWidth / 2, 1.575, 0.12)
+    }
+    wood(doorWidth, 0.1, 0.12, center, 3.1, 0.12)
+    wood(doorWidth - 0.18, 1.35, 0.1, center, 0.75, 0.15)
+    wood(0.06, 3.05, 0.09, center, 1.55, 0.17)
+    for (const offset of [-0.29, 0.29]) {
+      glass(0.51, 1.45, center + offset, 2.18, 0.19)
+    }
+    glass(doorWidth - 0.16, 0.42, center, 3.4, 0.19)
+    for (const offset of [-doorWidth / 6, doorWidth / 6]) {
+      wood(0.03, 0.42, 0.06, center + offset, 3.4, 0.22)
+    }
+  }
+
+  // A common surround makes the three doors read as one station entrance.
+  for (const side of [-1, 1]) {
+    wood(0.16, 3.8, 0.18, side * 2.61, 1.9, 0.09)
+  }
+  wood(5.38, 0.17, 0.18, 0, 3.78, 0.09)
+}
+
 export function dressArrivalHall(group, colliders) {
   const k = getKitMaterials()
   const kit = createKitBuilder()
   const decor = createKitBuilder()
+  const entrance = createKitBuilder()
   const solid = (minX, maxX, minZ, maxZ) => colliders.push({ minX, maxX, minZ, maxZ })
 
   // North wall, west to east: palm, bench, luggage, bench, newspaper stand,
@@ -83,6 +118,10 @@ export function dressArrivalHall(group, colliders) {
   framedPoster(decor, k, at(-154.2, 2.4, SOUTH - 0.005, Math.PI), 4, 0.62, 0.9)
   framedPoster(decor, k, at(PARTITION + 0.005, 2.0, -26.9, Math.PI / 2), 5, 0.55, 0.8)
   framedPoster(decor, k, at(PARTITION + 0.005, 2.0, -22.1, Math.PI / 2), 1, 0.55, 0.8)
+  // Keep the entrance style consistent with the landing facade.
+  // Put the return-facing doors on the ROOM side of the solid west wall.
+  // Previously they were behind the wall, making the whole entrance invisible.
+  stationExit(entrance, k, at(PASSAGE_ENTRY_FACE, 0, CENTER_Z, Math.PI / 2))
   wallClock(decor, k, at(-157.3, 3.2, NORTH, 0), 0.55)
   wallSign(decor, k, at(-159.6, 3.45, NORTH, 0), k.sign('TO PLATFORMS  \u2192'), 1.7, 0.34)
 
@@ -93,4 +132,11 @@ export function dressArrivalHall(group, colliders) {
 
   kit.build(group, 'arrival-hall-kit')
   decor.build(group, 'arrival-hall-decor', { decor: true })
+  // The entry doors must remain raycastable for the follow camera. Keep them
+  // decorative for guard sight and interaction, but unlike other wall dressing
+  // do NOT set noCameraCollision (which allowed the camera through the doors).
+  for (const mesh of entrance.build(group, 'arrival-hall-entrance')) {
+    mesh.userData.decor = true
+    mesh.userData.noInteractionBlocker = true
+  }
 }

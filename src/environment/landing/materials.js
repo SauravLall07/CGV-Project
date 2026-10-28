@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { brickMaterial, signMaterial } from '../textures.js'
+import { brickMaterial } from '../textures.js'
+import vaneCentralSignUrl from '../../assets/textures/landing/vane-central-sign.jpg?url'
 
 // One material per surface. Static architecture is merged onto these, and the
 // repeated bays instance them, so the facade is a handful of draws.
@@ -88,7 +89,7 @@ function clockCanvas() {
   ctx.strokeStyle = '#c4a56a'
   ctx.stroke()
 
-  const numerals = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
+  const numerals = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']
   ctx.fillStyle = '#2a2118'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
@@ -126,22 +127,52 @@ function glassMaterial(color, intensity) {
   })
 }
 
-export function createLandingMaterials() {
-  const stoneColor = ashlarCanvas(256)
-  const stoneNormal = normalFromCanvas(stoneColor, 2.2)
-  const stoneMap = canvasTexture(stoneColor, [1, 1], true)
-  const stoneNorm = canvasTexture(stoneNormal, [1, 1], false)
+export function createLandingDoorMaterials() {
+  return {
+    wood: new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 0.72, metalness: 0.08 }),
+    glass: glassMaterial(0xffb070, 0.42)
+  }
+}
 
-  const stone = new THREE.MeshStandardMaterial({
-    map: stoneMap,
-    normalMap: stoneNorm,
+// Shared by the exterior facade and Level 1's interior ashlar walls.
+export function createLandingStoneMaterial() {
+  const stoneColor = ashlarCanvas(256)
+  return new THREE.MeshStandardMaterial({
+    map: canvasTexture(stoneColor, [1, 1], true),
+    normalMap: canvasTexture(normalFromCanvas(stoneColor, 2.2), [1, 1], false),
     roughness: 0.78,
     metalness: 0.04
   })
+}
+
+export function createLandingMaterials() {
+  const stone = createLandingStoneMaterial()
   const stoneTrim = stone.clone()
   stoneTrim.roughness = 0.7
+  const door = createLandingDoorMaterials()
 
   const clockMap = canvasTexture(clockCanvas(), [1, 1], true)
+  const signMap = new THREE.TextureLoader().load(vaneCentralSignUrl)
+  signMap.colorSpace = THREE.SRGBColorSpace
+  signMap.generateMipmaps = true
+  signMap.minFilter = THREE.LinearMipmapLinearFilter
+  const sign = new THREE.MeshStandardMaterial({
+    map: signMap,
+    emissiveMap: signMap,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.55,
+    roughness: 0.5,
+    metalness: 0.2
+  })
+  // The renderer is first available at draw time. Both maps share the texture,
+  // which the normal landing material cleanup disposes once.
+  sign.onBeforeRender = (renderer) => {
+    const anisotropy = renderer.capabilities?.getMaxAnisotropy?.() ?? 1
+    if (signMap.anisotropy !== anisotropy) {
+      signMap.anisotropy = anisotropy
+      signMap.needsUpdate = true
+    }
+  }
 
   return {
     brickTile: BRICK_TILE,
@@ -157,7 +188,7 @@ export function createLandingMaterials() {
     stoneTrim,
     iron: new THREE.MeshStandardMaterial({ color: 0x1c1916, roughness: 0.42, metalness: 0.78 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.32, metalness: 0.86 }),
-    wood: new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 0.72, metalness: 0.08 }),
+    wood: door.wood,
     roof: new THREE.MeshStandardMaterial({ color: 0x243830, roughness: 0.48, metalness: 0.42 }),
     soffit: new THREE.MeshStandardMaterial({
       color: 0x3a2a18,
@@ -172,7 +203,7 @@ export function createLandingMaterials() {
       glassMaterial(0x100e0c, 0)
     ],
     archGlass: glassMaterial(0xc08048, 0.38),
-    entranceGlass: glassMaterial(0xffb070, 0.42),
+    entranceGlass: door.glass,
     clock: new THREE.MeshStandardMaterial({
       map: clockMap,
       emissiveMap: clockMap,
@@ -194,14 +225,7 @@ export function createLandingMaterials() {
     })(),
     shrub: new THREE.MeshStandardMaterial({ color: 0x243328, roughness: 0.92 }),
     crate: new THREE.MeshStandardMaterial({ color: 0x6a4630, roughness: 0.84 }),
-    sign: signMaterial({
-      text: 'CHRONO EXPRESS',
-      background: 0x121610,
-      foreground: 0xe6c56a,
-      width: 1024,
-      height: 160,
-      emissiveIntensity: 0.55
-    }),
+    sign,
     lantern: glassMaterial(0xffd7a2, 2.6)
   }
 }

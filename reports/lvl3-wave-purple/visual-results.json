@@ -1,0 +1,64 @@
+{
+  "errors": [],
+  "events": [
+    {
+      "start": {
+        "z": 81,
+        "wave": 86.45859999999999,
+        "mode": "NORMAL",
+        "energy": 100,
+        "failed": false
+      }
+    },
+    {
+      "frozen": {
+        "z": 81,
+        "wave": 86.09645349999998,
+        "mode": "FREEZE",
+        "energy": 88.33240000000009,
+        "failed": false
+      },
+      "held": {
+        "z": 81,
+        "wave": 86.09645349999998,
+        "mode": "FREEZE",
+        "energy": 76.2,
+        "failed": false
+      }
+    },
+    {
+      "paused": {
+        "z": 81,
+        "wave": 86.02052590000002,
+        "mode": "NORMAL",
+        "energy": 80.76680000000002,
+        "failed": false
+      },
+      "pausedAfter": {
+        "z": 81,
+        "wave": 86.02052590000002,
+        "mode": "NORMAL",
+        "energy": 80.76680000000002,
+        "failed": false
+      }
+    },
+    {
+      "caught": {
+        "z": 81,
+        "wave": 81.34576210000091,
+        "mode": "NORMAL",
+        "energy": 100,
+        "failed": true
+      }
+    },
+    {
+      "retry": {
+        "z": 81,
+        "wave": 86.4758638,
+        "mode": "NORMAL",
+        "energy": 100,
+        "failed": false
+      }
+    }
+  ]
+}

@@ -80,13 +80,13 @@ test('hidden, disabled and recycled debris cannot create phantom swept hits', ()
   } finally { h.dispose() }
 })
 
-function levelHarness() {
+function levelHarness(startCarriage = 'passenger') {
   globalThis.window = { devicePixelRatio: 1, innerWidth: 1280 }
   const scene = new THREE.Scene(), player = createPlayer(), messages = []
   const hud = new Proxy({ showCaughtScreen: reason => messages.push(reason) }, { get: (t, k) => t[k] ?? (() => {}) })
   const time = createTimeSystem({ scene, player, hud })
   const respawn = createRespawnSystem({ player, hud, timeSystem: time, camera: { snap() {} } })
-  const level = createTimewreckLevel({ debrisSeed: 12345, scene, player, hud, timeSystem: time, respawn, startCarriage: 'passenger',
+  const level = createTimewreckLevel({ debrisSeed: 12345, scene, player, hud, timeSystem: time, respawn, startCarriage,
     interaction: { register: () => () => {}, registerBlocker: () => () => {}, flashPrompt() {} }, camera: { snap() {} }, advance() {} })
   player.setPose(level.checkpoint.position, Math.PI)
   respawn.setCheckpoint(level.checkpoint.position, Math.PI, level.checkpoint)
@@ -107,19 +107,18 @@ test('real passenger panels and luggage kill once, splinters stay harmless, and 
       // Time is held: the collision check must still protect a player touching wreckage.
       splinter.position.copy(h.player.mesh.position); splinter.position.y += 1
       h.level.update(0)
-      assert.equal(h.respawn.getLives(), 3, 'small splinter is decorative')
+      assert.equal(h.respawn.isFailing(), false, 'small splinter is decorative')
+      assert.deepEqual(h.messages, [])
       piece.visible = true
       piece.scale.setScalar(1)
       piece.position.copy(h.player.mesh.position); piece.position.y += 1
       h.level.update(0)
-      assert.equal(h.respawn.getLives(), 2, name)
-      assert.equal(h.respawn.isFailing(), true)
+      assert.equal(h.respawn.isFailing(), true, name)
       assert.deepEqual(h.messages, ['debris'])
       h.level.update(0)
-      assert.equal(h.respawn.getLives(), 2, 'one impact consumes one life')
+      assert.equal(h.respawn.isFailing(), true, 'one impact stays a single fail')
       h.respawn.cancel(); h.respawn.respawn(); h.level.update(0)
       assert.equal(h.respawn.isFailing(), false, 'restored checkpoint has no stale contact')
-      assert.equal(h.respawn.getLives(), 2)
     } finally { h.dispose() }
   }
 })
@@ -146,23 +145,25 @@ test('passenger storm debris enters from ahead, grows outside the car and travel
 })
 
 test('real L3 wires brown-panel death and safe checkpoint resets into every carriage', () => {
-  const h = levelHarness()
-  try {
-    const volumes = h.level.getCarriageVolumes()
-    for (const key of ['vault', 'convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger', 'cab']) {
-      h.respawn.cancel(); h.respawn.resetLives(); h.respawn.respawn()
+  for (const key of ['vault', 'convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger', 'cab']) {
+    // Start upstream of the pursuing wave instead of teleporting behind it.
+    const h = levelHarness(key === 'cab' ? 'passenger' : key)
+    try {
+      const volumes = h.level.getCarriageVolumes()
+      h.respawn.cancel(); h.respawn.respawn()
       const span = volumes.find(v => v.key === key)
-      h.player.setPose(new THREE.Vector3(0, 0, span.maxZ - 1.5), Math.PI)
+      const entryZ = key === 'vault' ? h.level.checkpoint.position.z : span.maxZ - 1.5
+      h.player.setPose(new THREE.Vector3(0, 0, entryZ), Math.PI)
       h.level.update(0)
       const mesh = h.scene.getObjectByName(`${key}-flying-brown-panel`)
       assert.ok(mesh.visible, `${key}: a real flight is armed on entry`)
       mesh.material.opacity = 1
       mesh.position.copy(h.player.mesh.position); mesh.position.y += 1
       h.level.update(0)
-      assert.equal(h.respawn.getLives(), 2, key)
+      assert.equal(h.respawn.isFailing(), true, key)
       assert.equal(h.messages.at(-1), 'debris', key)
       h.respawn.cancel(); h.respawn.respawn()
       assert.ok(h.scene.getObjectByName('wreck-flying-panels').children.every(p => !p.visible))
-    }
-  } finally { h.dispose() }
+    } finally { h.dispose() }
+  }
 })

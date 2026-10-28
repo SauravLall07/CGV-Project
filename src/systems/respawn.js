@@ -1,26 +1,19 @@
 import { stopCameraAlarmSfx } from './level-one-security-sfx.js'
 import * as THREE from 'three'
 
-// Shared checkpoint / lives system.
+// Shared checkpoint / death system.
 //
-// Normal failures:
-// - consume one life
+// On failure:
 // - preserve the currently constructed level
 // - preserve opened doors, solved puzzles and collected/interacted state
-// - restore the active checkpoint
+// - restore the active checkpoint (or refuse fail if none is set)
 //
-// Third failure:
-// - consumes the final life
-// - invokes the game-over handler
-// - allows main.js to rebuild Level 1 from scratch
-//
-// This also keeps main's newer checkpoint-time-state, pause handling and
+// Lives are unlimited: death never ends the run or rebuilds Level 1.
+// This keeps main's checkpoint-time-state, pause handling and
 // generation-token protection for delayed respawn callbacks.
 
 const FALL_Y = -8
 const CAUGHT_FREEZE_DURATION = 900
-const GAME_OVER_FREEZE_DURATION = 1450
-const DEFAULT_LIVES = 3
 
 export function createRespawnSystem({
   player,
@@ -43,14 +36,6 @@ export function createRespawnSystem({
   // Prevents an old timeout from respawning the player after the level/run
   // has already changed.
   let generation = 0
-
-  let lives = DEFAULT_LIVES
-  let gameOverHandler = null
-  let pendingGameOver = false
-
-  function syncLives() {
-    hud?.setLives?.(lives, DEFAULT_LIVES)
-  }
 
   function setCheckpoint(position, yaw = 0, { restore = () => {}, afterTimeRestore = () => {} } = {}) {
     checkpoint = {
@@ -113,7 +98,6 @@ export function createRespawnSystem({
 
     failing = false
     failReason = null
-    pendingGameOver = false
 
     hud?.hideCaughtScreen?.()
 
@@ -125,7 +109,6 @@ export function createRespawnSystem({
   }
 
   // Reset transient respawn state when leaving/rebuilding a level.
-  // Lives are deliberately NOT reset here; resetLives() controls run lives.
   function reset() {
     cancel()
     checkpoint = null
@@ -145,46 +128,7 @@ export function createRespawnSystem({
 
     stopCameraAlarmSfx()
     const reason = failReason
-    const gameOver = isGameOver()
 
-    // ------------------------------------------------------------
-    // FINAL LIFE LOST
-    // ------------------------------------------------------------
-    if (gameOver) {
-      // Notify listeners before the level is rebuilt.
-      for (const listener of listeners) {
-        listener(reason, {
-          lives,
-          gameOver: true
-        })
-
-        // A listener may have reset/rebuilt the system.
-        if (expectedGeneration !== generation) {
-          return
-        }
-      }
-
-      hud?.hideCaughtScreen?.()
-
-      failing = false
-      failReason = null
-      pendingGameOver = false
-
-      if (setControlsEnabled) {
-        setControlsEnabled(true)
-      }
-
-      onStateChange?.()
-
-      // main.js / the current run owns the actual full restart.
-      gameOverHandler?.({ reason })
-
-      return
-    }
-
-    // ------------------------------------------------------------
-    // ORDINARY LIFE LOST
-    // ------------------------------------------------------------
     if (!respawn()) {
       cancel()
       return
@@ -192,7 +136,6 @@ export function createRespawnSystem({
 
     failing = false
     failReason = null
-    pendingGameOver = false
 
     hud?.hideCaughtScreen?.()
 
@@ -201,10 +144,7 @@ export function createRespawnSystem({
     }
 
     for (const listener of listeners) {
-      listener(reason, {
-        lives,
-        gameOver: false
-      })
+      listener(reason, { gameOver: false })
 
       // Listener may change/reset the current run.
       if (expectedGeneration !== generation) {
@@ -220,29 +160,12 @@ export function createRespawnSystem({
 
     const expectedGeneration = generation
 
-    hud?.showCaughtScreen?.(failReason, {
-      lives,
-      maxLives: DEFAULT_LIVES,
-      gameOver: isGameOver()
-    })
-
-    const duration = isGameOver()
-      ? GAME_OVER_FREEZE_DURATION
-      : CAUGHT_FREEZE_DURATION
+    hud?.showCaughtScreen?.(failReason, { gameOver: false })
 
     failTimer = setTimeout(
       () => finishFailure(expectedGeneration),
-      duration
+      CAUGHT_FREEZE_DURATION
     )
-  }
-
-  function resetLives(count = DEFAULT_LIVES) {
-    lives = Math.max(
-      1,
-      Math.floor(count || DEFAULT_LIVES)
-    )
-
-    syncLives()
   }
 
   function fail(reason = 'caught') {
@@ -256,11 +179,6 @@ export function createRespawnSystem({
 
     failing = true
     failReason = reason
-
-    lives = Math.max(0, lives - 1)
-    pendingGameOver = lives <= 0
-
-    syncLives()
 
     if (setControlsEnabled) {
       setControlsEnabled(false)
@@ -301,17 +219,9 @@ export function createRespawnSystem({
     }
   }
 
-  function setGameOverHandler(fn) {
-    gameOverHandler = typeof fn === 'function'
-      ? fn
-      : null
-  }
-
-  function isGameOver() {
-    // Losing the last life only ends a run when the owning game registers a
-    // game-over action. With no handler, failures continue to use checkpoints.
-    return pendingGameOver && Boolean(gameOverHandler)
-  }
+  // Kept as no-ops so older call sites (restart / New Game) stay valid.
+  function resetLives() {}
+  function setGameOverHandler() {}
 
   function update() {
     if (player.mesh.position.y < FALL_Y) {
@@ -322,10 +232,7 @@ export function createRespawnSystem({
   function dispose() {
     reset()
     listeners.clear()
-    gameOverHandler = null
   }
-
-  syncLives()
 
   return {
     setCheckpoint,
@@ -340,8 +247,8 @@ export function createRespawnSystem({
     resetLives,
     setGameOverHandler,
 
-    getLives: () => lives,
-    getMaxLives: () => DEFAULT_LIVES,
+    getLives: () => Infinity,
+    getMaxLives: () => Infinity,
 
     update,
     dispose,

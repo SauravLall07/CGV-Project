@@ -149,6 +149,10 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     onFocusChange,
     gesture,
     holdSeconds = 0,
+    // While this returns true the object keeps focus wherever the player
+    // looks, as long as it is eligible and in range — for something carried
+    // along (a trolley being steered) rather than worked on the spot.
+    keepFocus,
     onHoldStart,
     onHoldProgress,
     onHoldCancel,
@@ -168,6 +172,7 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
       aimMin,
       onFocusChange,
       gesture,
+      keepFocus,
       holdSeconds, onHoldStart, onHoldProgress, onHoldCancel, onHoldComplete
     }
     registry.set(object, entry)
@@ -379,11 +384,32 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     entry?.onHoldProgress?.(0)
   }
 
+  // An entry asking to keep focus gets it without the facing and line of
+  // sight tests, as long as it stays eligible and within reach.
+  function keptFocus(player) {
+    if (!enabled || !player) return null
+    for (const entry of registry.values()) {
+      if (!entry.keepFocus?.()) continue
+      if (!entry.object.parent || !isWorldVisible(entry.object)) continue
+      if (entry.isEligible && !entry.isEligible({ player, object: entry.object })) continue
+      player.getWorldPosition(playerPos)
+      entry.object.getWorldPosition(targetPos)
+      if (Math.hypot(targetPos.x - playerPos.x, targetPos.z - playerPos.z) > entry.range) continue
+      if (Math.abs(targetPos.y - playerPos.y) > entry.verticalTolerance) continue
+      return entry
+    }
+    return null
+  }
+
+  function pickFocus(player, yaw) {
+    return keptFocus(player) ?? findBestCandidate(player, yaw)
+  }
+
   function update(player, yaw, delta = 0) {
     lastPlayer = player ?? null
     lastYaw = yaw
 
-    setFocus(findBestCandidate(lastPlayer, lastYaw))
+    setFocus(pickFocus(lastPlayer, lastYaw))
     const holding = enabled && input?.state?.interact && focused?.holdSeconds > 0
     if (holdActive && (!holding || focused !== holdEntry)) {
       holdActive = false
@@ -400,7 +426,10 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     if (!holdEntry) return
     holdProgress = Math.max(0, Math.min(1, holdProgress + (holding ? 1 : -2) * delta / holdEntry.holdSeconds))
     holdEntry.onHoldProgress?.(holdProgress)
-    progress.style.display = enabled && (holdProgress > 0 || holding) ? 'block' : 'none'
+    // holdSeconds: Infinity is a continuous hold (push a trolley for as long
+    // as the key is down): it never completes, so it has no bar to fill.
+    const timed = Number.isFinite(holdEntry.holdSeconds)
+    progress.style.display = enabled && timed && (holdProgress > 0 || holding) ? 'block' : 'none'
     progressFill.style.width = `${holdProgress * 100}%`
     if (holdProgress >= 1 && holdActive) {
       const completed = holdEntry
@@ -422,7 +451,7 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
 
     // Do not trust focus from the previous rendered frame: the target may
     // have been hidden, made ineligible, moved behind a wall or unregistered.
-    setFocus(findBestCandidate(lastPlayer, lastYaw))
+    setFocus(pickFocus(lastPlayer, lastYaw))
     if (!focused) return false
 
     const entry = focused
