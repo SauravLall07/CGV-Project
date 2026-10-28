@@ -235,10 +235,11 @@ test('all six captions match the supplied script exactly', () => {
 test('composition freezes before gameplay updates and renders only story; credits retained', () => {
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
   assert.ok(main.indexOf('storyPlayer.update(delta)') < main.indexOf('player.updateVisual(delta)'))
-  assert.match(main, /if \(storyPlayer.showGame\) \{[\s\S]*?post.render\(world, view\)[\s\S]*?minimap.render\(renderer\)[\s\S]*?storyPlayer.render\(\)/)
+  assert.match(main, /if \(storyPlayer.showGame\) \{[\s\S]*?post.render\(world, view(, \{ antialias: [^}]+\})?\)[\s\S]*?minimap.render\(renderer\)[\s\S]*?storyPlayer.render\(\)/)
   assert.match(main, /if \(gameStarted && !storyPlayer\?\.active && !awaitingIntro\) playMusicForState\(state\)/)
   const credits = fs.readFileSync(new URL('../src/ui/credits.js', import.meta.url), 'utf8')
-  assert.ok(credits.includes('Story, menu and transition illustrations generated with ChatGPT (OpenAI)'))
+  assert.ok(credits.includes('Intro and cutscene illustrations generated with ChatGPT (OpenAI)'))
+  assert.ok(credits.includes('Title menu artwork generated with ChatGPT (OpenAI)'))
   assert.ok(credits.includes('Narration voice generated with ElevenLabs (voice: David) (elevenlabs.io)'))
   assert.ok(credits.includes('Rain ambience generated with ElevenLabs (elevenlabs.io)'))
   assert.ok(credits.includes('Steam whistle sound generated with ElevenLabs (elevenlabs.io)'))
@@ -632,7 +633,7 @@ test('real main render callback bypasses composer for story quad and preserves p
     const h = harness(); await h.player.prepare(); h.player.start()
     let postCalls = 0
     const post = { enabled, render() { postCalls++ } }
-    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
+    const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false,getState:()=>'Boarding'},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${method}`)(h.player, post, { getCinematicView: () => null }, null)
     render({}, {}); assert.equal(postCalls, 0)
     assert.equal(h.stats.renders, 1)
     h.player.skip(); render({}, {})
@@ -684,7 +685,7 @@ test('hidden handover runs the complete shared update with neutral input and a s
   assert.deepEqual(camera.position.toArray(), [10, 20, 30], 'warming collision must not replace the arrival shot')
   assert.deepEqual(calls.slice(0, 11), ['visual', 'hud stats', 'timer', 'time', 'level', 'player', 'camera collision', 'interaction', 'respawn', 'hud state', 'visual'])
   assert.equal(calls.filter(name => name === 'level').length, 10)
-  assert.match(main, /if \(storyPlayer\?\.showGame\) ranFullGameFrame = updateGameFrame\(delta, true\)/)
+  assert.match(main, /if \(storyPlayer\?\.showGame && storyPlayer\.liveGame !== false\) ranFullGameFrame = updateGameFrame\(delta, true\)/)
   const render = main.slice(main.indexOf('render(world, view) {'), main.indexOf('  afterRender:', main.indexOf('render(world, view) {')))
   assert.ok(render.indexOf('post.render(world, view)') < render.indexOf('minimap.render(renderer)'))
   assert.ok(render.indexOf('minimap.render(renderer)') < render.indexOf('storyPlayer.render()'))
@@ -747,7 +748,7 @@ test('real render callback draws only story before coverage, game plus one quad 
   assert.ok(start >= 0 && end > start)
   const h = harness(); await h.player.prepare(); h.player.start()
   let games = 0
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false,getState:()=>'Boarding'},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}}; let firstLiveFramePending=false; return function ${main.slice(start, end + 4)}`)(h.player, { render() { games++ } }, { getCinematicView: () => null }, null)
   h.player.update(endStart()); render({}, {})
   assert.equal(games, 0); assert.equal(h.stats.renders, 1)
   h.player.update(endBeats().title - endStart() + 0.1); render({}, {})
@@ -991,7 +992,7 @@ test('arrival-view warm-up uploads textures and renders once without changing vi
   const uploads = h.stats.uploads, compiled = h.stats.compiled
   h.player.update(endBeats().reveal + 0.001)
   const renderStart = main.indexOf('render(world, view) {'), renderEnd = main.indexOf('\n  },', renderStart)
-  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}};let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
+  const render = new Function('storyPlayer', 'post', 'player', 'benchmark', `const startupPrepared=true,levelManager={minimapVisible:false,getState:()=>'Boarding'},gameStarted=true,titleBackdrop=null,frameStartedAt=performance.now(),frameIntervalMs=16,ranFullGameFrame=true,renderer={},minimap={setVisible(){},render(){}};let firstLiveFramePending=false;return function ${main.slice(renderStart, renderEnd + 4)}`)(
     h.player, { render() { events.push('first live') } }, { getCinematicView: () => null }, null)
   render(world, view)
   assert.equal(events.at(-1), 'first live')
