@@ -33,7 +33,7 @@ export function createMovingHazardSfx(player, spans) {
   const registeredSlides = new WeakMap()
   let disposed = false
   const inCar = (car, z) => {
-    const area = spans[car]
+    const area = car === 'roof' ? { minZ: spans.convergence.maxZ, maxZ: spans.vault.minZ } : spans[car]
     return Boolean(area && z >= area.minZ && z <= area.maxZ)
   }
   function create(kind, object, car, { axis = 'x', radius = 9, volume = 0.13, openingSign = 1, referenceSpeed = 1.25, baseRate = 0.9 } = {}) {

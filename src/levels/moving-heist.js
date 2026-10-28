@@ -31,6 +31,8 @@ import { createLevelOneMovementSfx } from '../systems/player-interaction-sfx.js'
 import { createLevelTwoAudio } from '../systems/level-two-sfx.js'
 import { createGhostCarriagePuzzleAudio } from '../systems/level-two-ghost-puzzle-sfx.js'
 import { createMovingHazardSfx } from '../systems/level-two-moving-hazard-sfx.js'
+import { createRoofSfx } from '../systems/level-two-roof-sfx.js'
+import { createCoreFinaleSfx } from '../systems/level-two-core-finale-sfx.js'
 
 // Level 2 — "The Moving Heist".
 //
@@ -343,6 +345,9 @@ export function createMovingHeistLevel({
   const movementAudio = createLevelOneMovementSfx(player)
   const carriageAudio = createLevelTwoAudio(player, spans)
   const hazardAudio = createMovingHazardSfx(player, spans)
+  const roofAudio = createRoofSfx(player, { start: spans.convergence.maxZ, end: spans.vault.minZ })
+  const coreFinaleAudio = createCoreFinaleSfx()
+  void coreFinaleAudio.preload()
 
   scene.add(sky.mesh, outdoorEnv.group, root)
   // Night sky. Fog matches the horizon so the hills don't drop to black
@@ -2136,6 +2141,7 @@ export function createMovingHeistLevel({
     }
     panel.position.set(0, ROOF_Y, roofZ((a + b) / 2))
     root.add(panel)
+    hazardAudio.registerSlide(panel, 'roof', { axis: 'x', volume: 0.22, radius: 11, referenceSpeed: 2.5, baseRate: 0.9 })
     const outline = makeOutline(boards)
     const support = roofSupport()
     const parkedX = -(deckW + 0.6)
@@ -2180,6 +2186,7 @@ export function createMovingHeistLevel({
     registerCargoHazard(pair, (t) => {
       pair.position.x = dwell(tri(t + phase * period, period)) * 0.8
     })
+    hazardAudio.registerSlide(pair, 'roof', { axis: 'x', volume: 0.19, radius: 10, referenceSpeed: 1.6, baseRate: 0.85 })
     roofCrates.push({ pair, z })
   }
   addRoofCrates(9.0, 1.1, 0)
@@ -2204,6 +2211,7 @@ export function createMovingHeistLevel({
       }
       section.position.set(0, ROOF_Y, (z0 + z1) / 2)
       root.add(section)
+      roofAudio.watchFalling(section, () => section.position.y, 0.25)
       const outline = makeOutline(planks)
       const support = roofSupport()
       addRewindMachine({
@@ -2251,6 +2259,7 @@ export function createMovingHeistLevel({
     vents.add(puffs)
     vents.position.set(0, ROOF_Y, VENT_Z)
     root.add(vents)
+    roofAudio.setSteamSource(vents.position)
     const dummy = new THREE.Object3D()
     registerCargoHazard(vents, (t) => {
       const u = ((t / VENT_PERIOD) % 1 + 1) % 1
@@ -2279,6 +2288,7 @@ export function createMovingHeistLevel({
   const zipFrom = roofZ(ROOF_RUN.openings[2][0] - 0.45)
   const zipTo = roofZ(ROOF_RUN.openings[2][1] + 0.6)
   const leverPad = new THREE.Vector3(-1.8, ROOF_Y + 0.03, roofZ(20.3))
+  let previousLeverHeld = false
   unregisters.push(timeSystem.registerGhostPad(leverPad, 0.56))
   const leverBase = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 1.0), darkIron)
   leverBase.position.set(leverPad.x, ROOF_Y + 0.03, leverPad.z)
@@ -2336,6 +2346,7 @@ export function createMovingHeistLevel({
   // --- 6. Final drawbridge (Freeze, then Ghost) -------------------------------
   addRoofCrates(28.2, 1.1, 0.5)
   const bridgePlatePos = new THREE.Vector3(1.8, ROOF_Y + 0.03, roofZ(30.3))
+  let previousBridgePlateHeld = false
   unregisters.push(timeSystem.registerGhostPad(bridgePlatePos, 0.56))
   const bridgePlateBase = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 1.0), darkIron)
   bridgePlateBase.position.set(bridgePlatePos.x, ROOF_Y + 0.03, bridgePlatePos.z)
@@ -2361,6 +2372,7 @@ export function createMovingHeistLevel({
   drawbridge.position.set(0, ROOF_Y, gapFrom - 0.15)
   root.add(drawbridge)
   const drawbridgeSupport = roofSupport()
+  roofAudio.watchSlidingRotation(drawbridge, () => drawbridge.rotation.x, 0.18)
   let drawbridgeDown = 0
   let drawbridgeLatched = false
 
@@ -2391,6 +2403,9 @@ export function createMovingHeistLevel({
     camera.setYaw?.(0)
     camera.snap()
 
+    // Start roof wind on the ladder transition itself, before the next frame.
+    roofAudio.update(0, { onRoof: true, steam: 0, mode: timeSystem?.getMode?.() ?? 'NORMAL' })
+
     gustPhase = 0
     hud.setObjective('Cross the roof to the Vault drop hatch')
     hud.showBriefing?.([
@@ -2413,13 +2428,28 @@ export function createMovingHeistLevel({
         return
       }
       zipRide = 0
+      roofAudio.playZipline(zipHandle.position)
     }
   }))
 
   unregisters.push(interaction.register(roof.dropHatch, {
-    prompt: 'Drop into the forward Vault car',
-    isEligible: () => section === 'roof',
-    onInteract: () => enterVault()
+    prompt: 'Force the Vault hatch open',
+    holdSeconds: 5,
+    isEligible: () => section === 'roof' && zipRide < 0,
+    onHoldStart: () => {
+      player.startInteractionPull?.(roof.dropHatch)
+      roofAudio.startHatchHold()
+    },
+    onHoldCancel: ({ reset } = {}) => {
+      roofAudio.stopHatchHold()
+      if (reset) player.resetInteractionAnimation?.()
+      else player.returnInteractionPull?.()
+    },
+    onHoldComplete: () => {
+      roofAudio.stopHatchHold()
+      player.returnInteractionPull?.(true)
+      enterVault()
+    }
   }))
 
   // --------------------------------------------------------------------------
@@ -2440,7 +2470,9 @@ export function createMovingHeistLevel({
     onInteract: () => {
       if (taken) return
       taken = true
+      core.visible = true // Keep the Core present throughout the charge-up.
       beginCinematic?.()
+      coreFinaleAudio.start()
       interaction.flashPrompt('Chrono Core secured!')
       hud.setObjective('TEMPORAL CONTAINMENT LOST — the train is destabilising')
       hud.showBriefing?.([
@@ -2550,7 +2582,9 @@ export function createMovingHeistLevel({
       }
       rearmTimers.hatch = 0
       taken = false
+      core.visible = true // Respawns restore the Core before another attempt.
       destabT = 0
+      coreFinaleAudio.reset()
       failCooldown = 0
       gustPhase = 0
       zipRide = -1
@@ -2835,13 +2869,28 @@ export function createMovingHeistLevel({
       }
       // Removing the Core is the Level 2 ending, not the emergency brake.
       if (taken) {
-        destabT += delta
-        root.rotation.z = Math.sin(destabT * 7) * 0.012 * Math.min(2, destabT)
-        root.position.y = Math.sin(destabT * 11) * 0.012 * Math.min(1, destabT)
-        if (destabT > 2.6) {
+        // Audio is authoritative: charge plays in full, then the creaking,
+        // then the explosion. Only the explosion shakes the train.
+        const finale = coreFinaleAudio.update(delta)
+        // The Core vanishes at the exact charge -> creak transition, not on pickup.
+        // Leave the separate vault dais intact.
+        if (finale.phase === 'creak' || finale.phase === 'explosion' || finale.finished) {
+          core.visible = false
+        }
+        if (finale.shaking) {
+          destabT += delta
+          const ramp = Math.min(1, destabT / 0.22)
+          root.rotation.z = (Math.sin(destabT * 23) * 0.025 + Math.sin(destabT * 39) * 0.012) * ramp
+          root.position.y = (Math.sin(destabT * 31) * 0.045 + Math.sin(destabT * 47) * 0.016) * ramp
+        } else {
+          root.rotation.z = 0
+          root.position.y = 0
+        }
+        if (finale.finished) {
           taken = false
           root.rotation.z = 0
           root.position.y = 0
+          coreFinaleAudio.reset()
           advance()
         }
         return
@@ -3034,6 +3083,7 @@ export function createMovingHeistLevel({
         }
       }
 
+      roofAudio.update(delta, { onRoof: section === 'roof', steam: section === 'roof' ? ventSteam : 0, mode })
       roofSun.intensity = section === 'roof' ? ROOF_MOON_INTENSITY : 0
       roofSky.intensity = section === 'roof' ? ROOF_SKY_INTENSITY : 0
 
@@ -3074,6 +3124,8 @@ export function createMovingHeistLevel({
         // Zipline: the brake only releases while the lever plate is weighted.
         const leverHeld =
           ghost.isOccupying(leverPad, 0.56) || playerOnPad(leverPad, 0.56)
+        if (leverHeld && !previousLeverHeld) roofAudio.playPlate(leverPad)
+        previousLeverHeld = leverHeld
         leverPlate.position.y = leverHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
         releaseLever.rotation.x = leverHeld ? 0.9 : -0.3
         zipLampMat.color.setHex(leverHeld ? 0x7ee08a : 0xffb454)
@@ -3105,6 +3157,8 @@ export function createMovingHeistLevel({
         // the player is across.
         const plateHeld =
           ghost.isOccupying(bridgePlatePos, 0.56) || playerOnPad(bridgePlatePos, 0.56)
+        if (plateHeld && !previousBridgePlateHeld) roofAudio.playPlate(bridgePlatePos)
+        previousBridgePlateHeld = plateHeld
         bridgePlate.position.y = plateHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
         if (!drawbridgeLatched && pp.z > V0 + 0.6 && pp.y > ROOF_Y - 0.2) drawbridgeLatched = true
         const bridgeTarget = plateHeld || drawbridgeLatched ? 1 : 0
@@ -3126,6 +3180,8 @@ export function createMovingHeistLevel({
       movementAudio.dispose()
       carriageAudio.dispose()
       hazardAudio.dispose()
+      roofAudio.dispose()
+      coreFinaleAudio.dispose()
       ghostPuzzleAudio.dispose()
       convergencePlateAudio.dispose()
       scene.remove(sky.mesh, outdoorEnv.group, root)
