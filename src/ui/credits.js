@@ -150,7 +150,8 @@ function buildRollContent() {
   // --- PLACEHOLDER: third-party assets ---
   addBlock(roll, [
     label('Additional Assets'),
-    line('Story, menu and transition illustrations generated with ChatGPT (OpenAI)'),
+    line('Intro and cutscene illustrations generated with ChatGPT (OpenAI)'),
+    line('Title menu artwork generated with ChatGPT (OpenAI)'),
     line('Narration voice generated with ElevenLabs (voice: David) (elevenlabs.io)'),
     line('Rain ambience generated with ElevenLabs (elevenlabs.io)'),
     line('Steam whistle sound generated with ElevenLabs (elevenlabs.io)'),
