@@ -59,7 +59,7 @@ function installCanvasStub() {
   globalThis.window = { devicePixelRatio: 1, innerWidth: 1280 }
 }
 
-test('Trolley: grabbing steps up to a bar, then it follows the player rigidly and never leaves its zone', () => {
+test('Trolley: grabbing steps up to a bar, then the pair steers the way the player walks', () => {
   const trolley = createServiceTrolley({ position: new THREE.Vector3(0, 0, 0), zones: [ZONE] })
   trolley.grab(new THREE.Vector3(0.1, 0, -1.2))
   assert.equal(trolley.playerBox.enabled, false, 'the player must not collide with the trolley they are holding')
@@ -74,16 +74,32 @@ test('Trolley: grabbing steps up to a bar, then it follows the player rigidly an
   const hand = takeHold(trolley, new THREE.Vector3(0.1, 0, -1.2))
   assert.ok(trolley.group.position.length() < 1e-9, 'it waits while the player steps up')
 
-  // Strafe: it slides sideways with the player.
-  push(trolley, hand, 30, 0, 1 / 60)
-  assert.ok(Math.abs(trolley.group.position.x - 0.5) < 1e-9)
-  assert.ok(Math.abs(trolley.group.position.z) < 1e-9)
-  // Against the aisle edge it stops, and holds the player back with it.
-  push(trolley, hand, 150, 0, 1 / 60)
-  assert.ok(Math.abs(trolley.group.position.x - (ZONE.maxX - 0.31)) < 1e-9)
-  assert.ok(Math.abs(hand.x - trolley.group.position.x) < 1e-9)
-
   assert.ok(Math.abs(trolley.getGrabYaw()) < 1e-9, 'the player faces the handle they grabbed (+Z)')
+
+  // Straight ahead: a plain push, no turn.
+  push(trolley, hand, 0, 1, 0.5)
+  assert.ok(Math.abs(trolley.getYaw()) < 1e-9)
+  assert.ok(trolley.group.position.z > hand.z + 0.7)
+
+  // Walk left (+X): the pair swings round until the trolley leads that way.
+  push(trolley, hand, 1, 0, 1.5)
+  assert.ok(Math.abs(trolley.getGrabYaw() - Math.PI / 2) < 0.05, `heading ${trolley.getGrabYaw().toFixed(2)}`)
+  assert.ok(Math.abs(trolley.getYaw() - Math.PI / 2) < 0.05, 'the trolley itself turns to face left')
+  assert.ok(Math.abs(trolley.group.rotation.y - trolley.getYaw()) < 1e-9)
+  assert.ok(trolley.group.position.x > hand.x + 0.7 && Math.abs(trolley.group.position.z - hand.z) < 0.1,
+    'it leads the way, the player behind it')
+
+  // Back up: it is pulled straight back and keeps its heading.
+  const heading = trolley.getGrabYaw()
+  push(trolley, hand, -1, 0, 0.5)
+  assert.ok(Math.abs(trolley.getGrabYaw() - heading) < 1e-9, 'pulling does not turn it round')
+
+  // Against the aisle edge it stops — turned, its long side now spans the
+  // aisle — and holds the player back with it.
+  push(trolley, hand, 3, 0, 2)
+  const halfAcross = Math.abs(Math.cos(trolley.getYaw())) * 0.31 + Math.abs(Math.sin(trolley.getYaw())) * TROLLEY_HALF_Z
+  assert.ok(Math.abs(trolley.group.position.x - (ZONE.maxX - halfAcross)) < 1e-6)
+  assert.ok(trolley.group.position.x - hand.x > 0.7)
   trolley.release()
   assert.equal(trolley.playerBox.enabled, true)
 
@@ -92,6 +108,7 @@ test('Trolley: grabbing steps up to a bar, then it follows the player rigidly an
   const at = takeHold(side, new THREE.Vector3(-1, 0, 0.05))
   assert.ok(at.x < -0.31 - 0.18 && Math.abs(at.z) < 1e-9)
   assert.ok(Math.abs(side.getGrabYaw() - Math.PI / 2) < 1e-9)
+  assert.equal(side.getYaw(), 0, 'held by the side, it pushes broadside on')
   // Where the stance is blocked, the player holds on from where they stand.
   const blocked = createServiceTrolley({ position: new THREE.Vector3(0, 0, 0), zones: [ZONE] })
   blocked.grab(new THREE.Vector3(0, 0, -1.3), () => false)
@@ -103,14 +120,15 @@ test('Trolley: the lounge lets it reach the wall, and a shove into that wall cla
   const aisle = { minX: -1.2, maxX: 1.2, minZ: -10, maxZ: 10 }
   const lounge = { minX: -2.5, maxX: 2.5, minZ: 2, maxZ: 5 }
   const trolley = createServiceTrolley({ position: new THREE.Vector3(0, 0, 0), zones: [aisle, lounge] })
-  const hand = takeHold(trolley, new THREE.Vector3(-1, 0, 0))
-  push(trolley, hand, 2, 0, 1.5)
-  assert.ok(Math.abs(trolley.group.position.x - (aisle.maxX - 0.31)) < 1e-9, 'in the aisle, the booths stop it')
-  push(trolley, hand, 0, 2, 1.75)
-  push(trolley, hand, 2, 0, 1)
-  assert.ok(Math.abs(trolley.group.position.x - (lounge.maxX - 0.31)) < 1e-9, 'in the lounge, it reaches the wall')
-  push(trolley, hand, 0, 2, 2)
-  assert.ok(trolley.group.position.z <= lounge.maxZ - TROLLEY_HALF_Z + 1e-9, 'out of the aisle, the lounge ends it')
+  const hand = takeHold(trolley, new THREE.Vector3(0, 0, -0.8))
+  // Left in the aisle: it turns to lead that way, and the booths stop it.
+  push(trolley, hand, 2, 0, 2)
+  assert.ok(Math.abs(trolley.getYaw() - Math.PI / 2) < 0.05)
+  assert.ok(Math.abs(trolley.group.position.x - (aisle.maxX - TROLLEY_HALF_Z)) < 0.02, 'in the aisle, the booths stop it')
+  // Forward into the lounge, then left again: there, it reaches the wall.
+  for (let i = 0; i < 600 && trolley.group.position.z < 3.6; i++) push(trolley, hand, 0, 2, 1 / 60)
+  push(trolley, hand, 2, 0, 2)
+  assert.ok(Math.abs(trolley.group.position.x - (lounge.maxX - TROLLEY_HALF_Z)) < 0.02, 'in the lounge, it reaches the wall')
 
   // Back off, then shove it at the wall and let go.
   push(trolley, hand, -2, 0, 0.5)

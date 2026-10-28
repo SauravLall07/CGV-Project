@@ -149,6 +149,10 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     onFocusChange,
     gesture,
     holdSeconds = 0,
+    // Once a hold has started, keep it while the key is down and the object
+    // is in range, wherever the player looks — for something carried along
+    // (a trolley being steered) rather than worked on the spot.
+    stickyHold = false,
     onHoldStart,
     onHoldProgress,
     onHoldCancel,
@@ -168,7 +172,7 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
       aimMin,
       onFocusChange,
       gesture,
-      holdSeconds, onHoldStart, onHoldProgress, onHoldCancel, onHoldComplete
+      holdSeconds, stickyHold, onHoldStart, onHoldProgress, onHoldCancel, onHoldComplete
     }
     registry.set(object, entry)
 
@@ -379,11 +383,24 @@ export function createInteractionSystem({ camera, input, onTap } = {}) {
     entry?.onHoldProgress?.(0)
   }
 
+  // A sticky hold in progress keeps its focus without the facing and line of
+  // sight tests, as long as it stays eligible and within reach.
+  function stillHeld(player) {
+    const entry = holdEntry
+    if (!holdActive || !entry?.stickyHold || !enabled || !player) return false
+    if (!entry.object.parent || !isWorldVisible(entry.object)) return false
+    if (entry.isEligible && !entry.isEligible({ player, object: entry.object })) return false
+    player.getWorldPosition(playerPos)
+    entry.object.getWorldPosition(targetPos)
+    return Math.hypot(targetPos.x - playerPos.x, targetPos.z - playerPos.z) <= entry.range &&
+      Math.abs(targetPos.y - playerPos.y) <= entry.verticalTolerance
+  }
+
   function update(player, yaw, delta = 0) {
     lastPlayer = player ?? null
     lastYaw = yaw
 
-    setFocus(findBestCandidate(lastPlayer, lastYaw))
+    setFocus(stillHeld(lastPlayer) ? holdEntry : findBestCandidate(lastPlayer, lastYaw))
     const holding = enabled && input?.state?.interact && focused?.holdSeconds > 0
     if (holdActive && (!holding || focused !== holdEntry)) {
       holdActive = false

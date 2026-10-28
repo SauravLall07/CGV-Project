@@ -690,6 +690,8 @@ export function createMovingHeistLevel({
   unregisters.push(interaction.register(serviceTrolley.group, {
     prompt: 'Push trolley',
     holdSeconds: Infinity,
+    // Steering swings it out to the side of the view; stay holding on.
+    stickyHold: true,
     range: 1.5,
     isEligible: () => section === 'interior' && !hidden && !player.isAirborne?.(),
     onHoldStart: grabTrolley,

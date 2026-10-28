@@ -2,8 +2,9 @@ import * as THREE from 'three'
 
 // Level 2 Passenger: the dining-service trolley.
 //
-// Held (Hold E) it rides at a fixed offset from the player, so walking,
-// strafing and backing up push, slide and pull it. Grabbing steps the player
+// Held (Hold E) it rides at the end of the player's arms, and the two steer
+// as one: walk left and the pair swings round until the trolley leads the
+// way left; back up and it is pulled straight back. Grabbing steps the player
 // to a push bar (or the side rail) so the hands land on it. Let go while it is
 // moving and it rolls on under rolling friction. `zones` is the open floor
 // it may cover: rectangles that together make up the aisle and the lounge
@@ -38,6 +39,11 @@ const BAR = { y: 0.98, out: TROLLEY_HALF_Z + 0.02, spread: 0.2 }
 const RAIL = { y: 0.95, out: TROLLEY_HALF_X - 0.03, spread: 0.22 }
 // The grip point is the wrist, a palm's width short of the bar.
 const PALM = 0.06
+// How quickly a held trolley swings round to lead the way the player walks.
+const STEER_RATE = 4
+// Walking more than this far from straight back toward the player is a pull,
+// which keeps the heading rather than turning the pair round.
+const PULL_COS = -0.5
 
 // How far the wheels carry at a given speed. A crouched nudge is heard a few
 // metres away; a run is heard from most of the car.
@@ -128,13 +134,26 @@ export function createServiceTrolley({ position, zones, guardPad = 0.4 }) {
   const { group, casters, rattlers } = buildTrolley()
   group.name = 'service-trolley'
   const home = position.clone()
-  // Centre limits that keep the footprint inside each zone.
-  const limits = zones.map((zone) => ({
-    minX: zone.minX + TROLLEY_HALF_X,
-    maxX: zone.maxX - TROLLEY_HALF_X,
-    minZ: zone.minZ + TROLLEY_HALF_Z,
-    maxZ: zone.maxZ - TROLLEY_HALF_Z
-  }))
+  // The footprint turns with the trolley; collisions use its bounding box.
+  let yaw = 0
+  let halfX = TROLLEY_HALF_X
+  let halfZ = TROLLEY_HALF_Z
+  let limits = []
+  function setYaw(next) {
+    yaw = next
+    const c = Math.abs(Math.cos(yaw))
+    const n = Math.abs(Math.sin(yaw))
+    halfX = c * TROLLEY_HALF_X + n * TROLLEY_HALF_Z
+    halfZ = n * TROLLEY_HALF_X + c * TROLLEY_HALF_Z
+    // Centre limits that keep the footprint inside each zone.
+    limits = zones.map((zone) => ({
+      minX: zone.minX + halfX,
+      maxX: zone.maxX - halfX,
+      minZ: zone.minZ + halfZ,
+      maxZ: zone.maxZ - halfZ
+    }))
+  }
+  setYaw(0)
   const constrained = { x: 0, z: 0, hitX: false, hitZ: false }
 
   // The nearest centre position inside any zone, and which axes it stopped.
@@ -168,6 +187,11 @@ export function createServiceTrolley({ position, zones, guardPad = 0.4 }) {
   let grabbed = false
   let offX = 0
   let offZ = 0
+  // While held: the pair's heading (player toward trolley), how far apart
+  // they are, and how the trolley sits relative to that heading.
+  let steer = 0
+  let reach = 0
+  let yawOffset = 0
   let settle = 0
   // Hand targets in the player's frame (+X left, +Z toward the trolley).
   const grip = { left: new THREE.Vector3(), right: new THREE.Vector3() }
@@ -183,10 +207,11 @@ export function createServiceTrolley({ position, zones, guardPad = 0.4 }) {
 
   function place() {
     group.position.set(x, home.y, z)
-    playerBox.minX = x - TROLLEY_HALF_X
-    playerBox.maxX = x + TROLLEY_HALF_X
-    playerBox.minZ = z - TROLLEY_HALF_Z
-    playerBox.maxZ = z + TROLLEY_HALF_Z
+    group.rotation.y = yaw
+    playerBox.minX = x - halfX
+    playerBox.maxX = x + halfX
+    playerBox.minZ = z - halfZ
+    playerBox.maxZ = z + halfZ
     guardBox.minX = playerBox.minX - guardPad
     guardBox.maxX = playerBox.maxX + guardPad
     guardBox.minZ = playerBox.minZ - guardPad
@@ -194,8 +219,8 @@ export function createServiceTrolley({ position, zones, guardPad = 0.4 }) {
   }
 
   function hitsCircle(cx, cz, circle) {
-    const dx = circle.x - THREE.MathUtils.clamp(circle.x, cx - TROLLEY_HALF_X, cx + TROLLEY_HALF_X)
-    const dz = circle.z - THREE.MathUtils.clamp(circle.z, cz - TROLLEY_HALF_Z, cz + TROLLEY_HALF_Z)
+    const dx = circle.x - THREE.MathUtils.clamp(circle.x, cx - halfX, cx + halfX)
+    const dz = circle.z - THREE.MathUtils.clamp(circle.z, cz - halfZ, cz + halfZ)
     return dx * dx + dz * dz < circle.radius * circle.radius - 1e-6
   }
 
@@ -262,6 +287,19 @@ export function createServiceTrolley({ position, zones, guardPad = 0.4 }) {
       // Still stepping up to the bar: the trolley waits for the hands.
       settle = Math.max(0, settle - delta)
     } else if (grabbed && playerPosition) {
+      // Steer. The level left the player at x - offX last frame, so this is
+      // just where they walked since. Anything but a pull turns the pair.
+      const mx = playerPosition.x - (x - offX)
+      const mz = playerPosition.z - (z - offZ)
+      if (mx * mx + mz * mz > 1e-8) {
+        const turn = shortestAngle(steer, Math.atan2(mx, mz))
+        if (Math.cos(turn) > PULL_COS) {
+          steer += turn * Math.min(1, delta * STEER_RATE)
+          offX = Math.sin(steer) * reach
+          offZ = Math.cos(steer) * reach
+          setYaw(steer + yawOffset)
+        }
+      }
       const { x: tx, z: tz } = constrain(playerPosition.x + offX, playerPosition.z + offZ)
       if (blockedBy(tx, tz, circles)) {
         events.push({ type: 'ram' })
@@ -315,20 +353,31 @@ export function createServiceTrolley({ position, zones, guardPad = 0.4 }) {
   // side (gallery rail). `canStand(x, z)` says whether the push stance there
   // is clear floor; if not, the player holds on from where they are.
   function grab(playerPosition, canStand = () => true) {
-    const dx = x - playerPosition.x
-    const dz = z - playerPosition.z
-    const fromEnd = Math.abs(dz) / TROLLEY_HALF_Z >= Math.abs(dx) / TROLLEY_HALF_X
+    // Where the player is, in the trolley's own (turned) frame.
+    const rx = playerPosition.x - x
+    const rz = playerPosition.z - z
+    const cos = Math.cos(yaw)
+    const sin = Math.sin(yaw)
+    const lx = rx * cos - rz * sin
+    const lz = rx * sin + rz * cos
+    const fromEnd = Math.abs(lz) / TROLLEY_HALF_Z >= Math.abs(lx) / TROLLEY_HALF_X
     const hold = fromEnd ? BAR : RAIL
-    const reach = hold.out + PUSH_STANCE
-    const stanceX = fromEnd ? 0 : Math.sign(dx || 1) * reach
-    const stanceZ = fromEnd ? Math.sign(dz || 1) * reach : 0
-    const snap = canStand(x - stanceX, z - stanceZ)
-    offX = snap ? stanceX : dx
-    offZ = snap ? stanceZ : dz
+    const stance = hold.out + PUSH_STANCE
+    const sx = fromEnd ? 0 : Math.sign(lx || -1) * stance
+    const sz = fromEnd ? Math.sign(lz || -1) * stance : 0
+    // Back to world: the stance relative to the trolley centre.
+    const wx = sx * cos + sz * sin
+    const wz = -sx * sin + sz * cos
+    const snap = canStand(x + wx, z + wz)
+    offX = snap ? -wx : -rx
+    offZ = snap ? -wz : -rz
     settle = snap ? GRAB_SETTLE : 0
+    reach = Math.hypot(offX, offZ)
+    steer = Math.atan2(offX, offZ)
+    yawOffset = yaw - steer
     // Facing the trolley centre, the bar is straight ahead; the hands spread
     // along it either side.
-    const ahead = Math.hypot(offX, offZ) - hold.out - PALM
+    const ahead = reach - hold.out - PALM
     grip.left.set(hold.spread, hold.y, ahead)
     grip.right.set(-hold.spread, hold.y, ahead)
     grabbed = true
@@ -369,6 +418,8 @@ export function createServiceTrolley({ position, zones, guardPad = 0.4 }) {
     playerBox.enabled = true
     x = home.x
     z = home.z
+    setYaw(0)
+    steer = 0
     vx = 0
     vz = 0
     speed = 0
@@ -395,7 +446,8 @@ export function createServiceTrolley({ position, zones, guardPad = 0.4 }) {
     getSpeed: () => speed,
     getVelocity: () => ({ x: vx, z: vz }),
     // Heading from the player toward the handle they are holding.
-    getGrabYaw: () => Math.atan2(offX, offZ)
+    getGrabYaw: () => steer,
+    getYaw: () => yaw
   }
 }
 

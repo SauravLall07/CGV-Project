@@ -223,3 +223,35 @@ test('an infinite hold runs for as long as the key is down and shows no progress
   assert.deepEqual(calls, ['start', 'cancel', 'start'], 'pressing again grabs again')
   system.dispose()
 })
+
+test('a sticky hold survives looking away, but not walking out of reach', () => {
+  const scene = new THREE.Scene()
+  const player = new THREE.Group()
+  const target = makeTarget(scene, { y: 0.5, z: 1 })
+  scene.add(player)
+  const input = { state: { interact: true }, onAction: () => () => {} }
+  const calls = []
+  const system = createInteractionSystem({ input })
+  system.register(target, {
+    prompt: 'Push trolley',
+    holdSeconds: Infinity,
+    stickyHold: true,
+    range: 1.5,
+    onHoldStart: () => calls.push('start'),
+    onHoldCancel: () => calls.push('cancel'),
+    onHoldComplete() {}
+  })
+  system.update(player, 0, 1 / 60)
+  assert.deepEqual(calls, ['start'])
+
+  // Facing straight away from it: still holding.
+  for (let i = 0; i < 30; i++) system.update(player, Math.PI, 1 / 60)
+  assert.deepEqual(calls, ['start'])
+  assert.equal(system.getFocused(), target)
+
+  // Out of reach: let go.
+  player.position.z = -2
+  system.update(player, Math.PI, 1 / 60)
+  assert.deepEqual(calls, ['start', 'cancel'])
+  system.dispose()
+})
