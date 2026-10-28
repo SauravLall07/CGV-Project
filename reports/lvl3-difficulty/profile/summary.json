@@ -1,0 +1,265 @@
+{
+  "protocol": "Cargo active first person, fixed checkpoint, seed 12345, scenery seed 7143, 1280x720 DPR1 High exposure1.15. Separate Chrome per run, 10s shader warmup + 40s sample, ABBA order, no other task browser/tests/build running. Same existing diagnostic harness as the short captures. Samples exclude flagged frames and pending GPU tails.",
+  "summaries": [
+    {
+      "index": 0,
+      "variant": "baseline",
+      "frames": {
+        "frames": 1082,
+        "excludedFrames": 0,
+        "elapsedMs": 40300.100000000006,
+        "averageFps": 26.848568613973658,
+        "onePercentLowFps": 14.63349740587992,
+        "meanFrameMs": 37.24593345656193,
+        "p50FrameMs": 33.400000000001455,
+        "p95FrameMs": 50.19999999999709,
+        "p99FrameMs": 66.70000000000437,
+        "maxFrameMs": 83.5,
+        "over16_67Ms": 1009,
+        "over33_33Ms": 609,
+        "over50Ms": 162
+      },
+      "update": 1.7838262476598545,
+      "submission": 16.41977818855971,
+      "calls": 829.2070240295749,
+      "triangles": 169484.15526802218,
+      "gpu": {
+        "bloom": {
+          "samples": 1079,
+          "totalMs": 1147.6577630000024,
+          "meanMs": 1.0636309202965732
+        },
+        "scene": {
+          "samples": 1079,
+          "totalMs": 17624.263143000004,
+          "meanMs": 16.33388613809083
+        },
+        "shadow": {
+          "samples": 1080,
+          "totalMs": 0.06110000000000124,
+          "meanMs": 0.00005657407407407522
+        },
+        "minimap": {
+          "samples": 1079,
+          "totalMs": 106.68907200000005,
+          "meanMs": 0.09887773123262285
+        },
+        "final": {
+          "samples": 1079,
+          "totalMs": 2105.8420000000015,
+          "meanMs": 1.9516607970342923
+        }
+      },
+      "resources": {
+        "geometries": 845,
+        "textures": 75,
+        "programs": 40
+      },
+      "gpuStatus": {
+        "supported": true,
+        "pending": 14,
+        "dropped": 0,
+        "invalidated": 0,
+        "disjointEvents": 0,
+        "skipped": 0
+      },
+      "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "errors": []
+    },
+    {
+      "index": 1,
+      "variant": "new",
+      "frames": {
+        "frames": 1211,
+        "excludedFrames": 0,
+        "elapsedMs": 40216.50000000001,
+        "averageFps": 30.112018698792777,
+        "onePercentLowFps": 15.265382808830593,
+        "meanFrameMs": 33.20933113129646,
+        "p50FrameMs": 33.30000000000291,
+        "p95FrameMs": 50.099999999998545,
+        "p99FrameMs": 50.5,
+        "maxFrameMs": 83.19999999999709,
+        "over16_67Ms": 1070,
+        "over33_33Ms": 568,
+        "over50Ms": 99
+      },
+      "update": 1.61841453331608,
+      "submission": 14.706193228726738,
+      "calls": 832.5400495458299,
+      "triangles": 169449.79521056978,
+      "gpu": {
+        "minimap": {
+          "samples": 1208,
+          "totalMs": 95.58608500000007,
+          "meanMs": 0.07912755380794707
+        },
+        "final": {
+          "samples": 1208,
+          "totalMs": 2160.5381270000003,
+          "meanMs": 1.7885249395695366
+        },
+        "bloom": {
+          "samples": 1208,
+          "totalMs": 1121.6879160000015,
+          "meanMs": 0.9285495993377495
+        },
+        "scene": {
+          "samples": 1208,
+          "totalMs": 16986.757931000033,
+          "meanMs": 14.061885704470226
+        },
+        "shadow": {
+          "samples": 1209,
+          "totalMs": 0.05688800000000138,
+          "meanMs": 0.000047053763440861356
+        }
+      },
+      "resources": {
+        "geometries": 850,
+        "textures": 78,
+        "programs": 40
+      },
+      "gpuStatus": {
+        "supported": true,
+        "pending": 14,
+        "dropped": 0,
+        "invalidated": 0,
+        "disjointEvents": 0,
+        "skipped": 0
+      },
+      "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "errors": []
+    },
+    {
+      "index": 2,
+      "variant": "new",
+      "frames": {
+        "frames": 1126,
+        "excludedFrames": 0,
+        "elapsedMs": 40366.70000000001,
+        "averageFps": 27.89427919547547,
+        "onePercentLowFps": 13.590033975084882,
+        "meanFrameMs": 35.84964476021315,
+        "p50FrameMs": 33.39999999999418,
+        "p95FrameMs": 50.10000000000582,
+        "p99FrameMs": 66.5,
+        "maxFrameMs": 116.5,
+        "over16_67Ms": 1064,
+        "over33_33Ms": 598,
+        "over50Ms": 116
+      },
+      "update": 1.6057726465840534,
+      "submission": 15.22220248671093,
+      "calls": 832.5905861456483,
+      "triangles": 169453.86145648314,
+      "gpu": {
+        "shadow": {
+          "samples": 1124,
+          "totalMs": 0.06453200000000137,
+          "meanMs": 0.000057412811387901574
+        },
+        "bloom": {
+          "samples": 1123,
+          "totalMs": 1179.7593229999995,
+          "meanMs": 1.050542585040071
+        },
+        "scene": {
+          "samples": 1123,
+          "totalMs": 19034.424879000013,
+          "meanMs": 16.9496214416741
+        },
+        "minimap": {
+          "samples": 1123,
+          "totalMs": 103.13103700000012,
+          "meanMs": 0.09183529563668755
+        },
+        "final": {
+          "samples": 1123,
+          "totalMs": 2232.366198000002,
+          "meanMs": 1.9878594817453268
+        }
+      },
+      "resources": {
+        "geometries": 850,
+        "textures": 78,
+        "programs": 40
+      },
+      "gpuStatus": {
+        "supported": true,
+        "pending": 14,
+        "dropped": 0,
+        "invalidated": 0,
+        "disjointEvents": 0,
+        "skipped": 0
+      },
+      "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "errors": []
+    },
+    {
+      "index": 3,
+      "variant": "baseline",
+      "frames": {
+        "frames": 1100,
+        "excludedFrames": 0,
+        "elapsedMs": 40266.89999999999,
+        "averageFps": 27.31772249664117,
+        "onePercentLowFps": 13.744845682868936,
+        "meanFrameMs": 36.60627272727272,
+        "p50FrameMs": 33.39999999999782,
+        "p95FrameMs": 50.19999999999709,
+        "p99FrameMs": 66.59999999999854,
+        "maxFrameMs": 116.59999999999854,
+        "over16_67Ms": 1043,
+        "over33_33Ms": 588,
+        "over50Ms": 139
+      },
+      "update": 1.7301818182488735,
+      "submission": 15.748090909167447,
+      "calls": 829.3836363636364,
+      "triangles": 169497.83272727273,
+      "gpu": {
+        "shadow": {
+          "samples": 1098,
+          "totalMs": 0.06786000000000132,
+          "meanMs": 0.00006180327868852579
+        },
+        "minimap": {
+          "samples": 1097,
+          "totalMs": 110.94052700000016,
+          "meanMs": 0.10113083591613506
+        },
+        "final": {
+          "samples": 1097,
+          "totalMs": 2205.8086019999982,
+          "meanMs": 2.0107644503190505
+        },
+        "bloom": {
+          "samples": 1097,
+          "totalMs": 1220.8792230000008,
+          "meanMs": 1.1129254539653608
+        },
+        "scene": {
+          "samples": 1097,
+          "totalMs": 19439.273047999985,
+          "meanMs": 17.72039475660892
+        }
+      },
+      "resources": {
+        "geometries": 845,
+        "textures": 75,
+        "programs": 40
+      },
+      "gpuStatus": {
+        "supported": true,
+        "pending": 14,
+        "dropped": 0,
+        "invalidated": 0,
+        "disjointEvents": 0,
+        "skipped": 0
+      },
+      "hardware": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "errors": []
+    }
+  ]
+}

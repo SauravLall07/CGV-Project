@@ -1,0 +1,205 @@
+{
+  "errors": [],
+  "evidence": {
+    "vault": {
+      "windows": 3,
+      "intactPanes": 2,
+      "transparent": true,
+      "opacity": 0.18,
+      "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "viewport": [
+        1280,
+        720
+      ],
+      "pixelRatio": 1,
+      "exposure": 1.15,
+      "resources": {
+        "geometries": 1594,
+        "textures": 102,
+        "programs": 43
+      },
+      "render": {
+        "frame": 1391,
+        "calls": 219,
+        "triangles": 130370,
+        "points": 646,
+        "lines": 600
+      }
+    },
+    "convergence": {
+      "windows": 9,
+      "intactPanes": 8,
+      "transparent": true,
+      "opacity": 0.18,
+      "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "viewport": [
+        1280,
+        720
+      ],
+      "pixelRatio": 1,
+      "exposure": 1.15,
+      "resources": {
+        "geometries": 1361,
+        "textures": 98,
+        "programs": 42
+      },
+      "render": {
+        "frame": 2736,
+        "calls": 175,
+        "triangles": 130832,
+        "points": 646,
+        "lines": 600
+      }
+    },
+    "mechanical": {
+      "windows": 6,
+      "intactPanes": 5,
+      "transparent": true,
+      "opacity": 0.18,
+      "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "viewport": [
+        1280,
+        720
+      ],
+      "pixelRatio": 1,
+      "exposure": 1.15,
+      "resources": {
+        "geometries": 1124,
+        "textures": 85,
+        "programs": 41
+      },
+      "render": {
+        "frame": 4367,
+        "calls": 187,
+        "triangles": 120014,
+        "points": 646,
+        "lines": 612
+      }
+    },
+    "cargo": {
+      "windows": 5,
+      "intactPanes": 3,
+      "transparent": true,
+      "opacity": 0.18,
+      "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "viewport": [
+        1280,
+        720
+      ],
+      "pixelRatio": 1,
+      "exposure": 1.15,
+      "resources": {
+        "geometries": 873,
+        "textures": 80,
+        "programs": 40
+      },
+      "render": {
+        "frame": 6531,
+        "calls": 192,
+        "triangles": 122192,
+        "points": 646,
+        "lines": 600
+      }
+    },
+    "relay": {
+      "windows": 3,
+      "intactPanes": 2,
+      "transparent": true,
+      "opacity": 0.18,
+      "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "viewport": [
+        1280,
+        720
+      ],
+      "pixelRatio": 1,
+      "exposure": 1.15,
+      "resources": {
+        "geometries": 664,
+        "textures": 73,
+        "programs": 37
+      },
+      "render": {
+        "frame": 9501,
+        "calls": 186,
+        "triangles": 110824,
+        "points": 646,
+        "lines": 600
+      }
+    },
+    "security": {
+      "windows": 3,
+      "intactPanes": 2,
+      "transparent": true,
+      "opacity": 0.18,
+      "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "viewport": [
+        1280,
+        720
+      ],
+      "pixelRatio": 1,
+      "exposure": 1.15,
+      "resources": {
+        "geometries": 479,
+        "textures": 64,
+        "programs": 37
+      },
+      "render": {
+        "frame": 12484,
+        "calls": 144,
+        "triangles": 109054,
+        "points": 646,
+        "lines": 636
+      }
+    },
+    "passenger": {
+      "windows": 4,
+      "intactPanes": 3,
+      "transparent": true,
+      "opacity": 0.18,
+      "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "viewport": [
+        1280,
+        720
+      ],
+      "pixelRatio": 1,
+      "exposure": 1.15,
+      "resources": {
+        "geometries": 336,
+        "textures": 57,
+        "programs": 35
+      },
+      "render": {
+        "frame": 15532,
+        "calls": 118,
+        "triangles": 106802,
+        "points": 646,
+        "lines": 600
+      }
+    },
+    "cab": {
+      "windows": 1,
+      "intactPanes": 1,
+      "transparent": true,
+      "opacity": 0.18,
+      "gpu": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "viewport": [
+        1280,
+        720
+      ],
+      "pixelRatio": 1,
+      "exposure": 1.15,
+      "resources": {
+        "geometries": 351,
+        "textures": 57,
+        "programs": 35
+      },
+      "render": {
+        "frame": 18125,
+        "calls": 89,
+        "triangles": 85234,
+        "points": 646,
+        "lines": 600
+      }
+    }
+  }
+}

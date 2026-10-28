@@ -33,6 +33,7 @@ import { createGhostCarriagePuzzleAudio } from '../systems/level-two-ghost-puzzl
 import { createMovingHazardSfx } from '../systems/level-two-moving-hazard-sfx.js'
 import { createRoofSfx } from '../systems/level-two-roof-sfx.js'
 import { createCoreFinaleSfx } from '../systems/level-two-core-finale-sfx.js'
+import { createSteamPuffs, fract, puffSeed, puffFade } from '../environment/steam.js'
 
 // Level 2 — "The Moving Heist".
 //
@@ -424,6 +425,23 @@ export function createMovingHeistLevel({
     return obj
   }
 
+  // Ability consoles (makeConsole) stand in the middle of the aisle. A
+  // collider padded to arm's length stops the player walking into the
+  // cabinet, so the press animation reaches the screen instead of the body
+  // ending up inside it.
+  const CONSOLE_DEPTH = 0.34
+  const CONSOLE_REACH = 0.14
+  function addAbilityConsole(obj, z, width) {
+    addProp(obj, z, 0)
+    corridorObstacles.push({
+      minX: -width / 2 - CONSOLE_REACH,
+      maxX: width / 2 + CONSOLE_REACH,
+      minZ: z - CONSOLE_DEPTH / 2 - CONSOLE_REACH,
+      maxZ: z + CONSOLE_DEPTH / 2 + CONSOLE_REACH
+    })
+    return obj
+  }
+
   function addStaticBarrier({ z, x, width = 0.68, depth = 0.9, height = 0.95, color, target = corridorObstacles }) {
     const prop = makeBarrierProp({ width, depth, height, color })
     addProp(prop, z, x)
@@ -711,11 +729,14 @@ export function createMovingHeistLevel({
   interfaceBeacon.add(interfaceLight)
 
   chronoInterface.add(interfaceBeacon)
-  addProp(chronoInterface, spans.security.minZ + 3.0, 0)
+  addAbilityConsole(chronoInterface, spans.security.minZ + 3.0, 0.56)
 
   let interfaceTaken = false
   unregisters.push(interaction.register(chronoInterface, {
     prompt: 'Acquire Chrono Interface',
+    // The console's origin is on the floor, which would otherwise pick the
+    // floor-level pickup clip and bend the player into the cabinet.
+    gesture: 'press',
     onInteract: () => {
       if (interfaceTaken) return
       interfaceTaken = true
@@ -799,7 +820,7 @@ export function createMovingHeistLevel({
   const STEAM_PERIOD = 3.2
   const STEAM_BURST = 1.1
   const STEAM_WARN = 0.6
-  const STEAM_PUFFS = 10
+  const STEAM_PUFFS = 18
   const STEAM_NOZZLE_X = HAZARD_AISLE_X + 0.2
   const STEAM_HEIGHTS = [0.6, 1.4]
   const steamBanks = [
@@ -811,7 +832,6 @@ export function createMovingHeistLevel({
   flangeGeo.rotateZ(Math.PI / 2)
   const nozzleGeo = new THREE.CylinderGeometry(0.065, 0.085, 0.24, 14)
   nozzleGeo.rotateZ(Math.PI / 2)
-  const puffGeo = new THREE.IcosahedronGeometry(1, 1)
   const steamGroup = new THREE.Group()
   steamGroup.name = 'security-steam-vents'
   for (const bank of steamBanks) {
@@ -825,19 +845,12 @@ export function createMovingHeistLevel({
         steamGroup.add(nozzle)
       }
     }
-    bank.mat = new THREE.MeshLambertMaterial({
-      color: 0xe9e4da, transparent: true, opacity: 0, depthWrite: false
-    })
-    bank.puffs = new THREE.InstancedMesh(puffGeo, bank.mat, 2 * STEAM_HEIGHTS.length * STEAM_PUFFS)
-    bank.puffs.userData.noCameraCollision = true
-    bank.puffs.raycast = () => {} // steam never blocks interaction or vision rays
-    bank.puffs.frustumCulled = false
+    bank.steam = createSteamPuffs(2 * STEAM_HEIGHTS.length * STEAM_PUFFS, { color: 0xd6d0c4 })
     bank.density = 0
-    steamGroup.add(bank.puffs)
+    steamGroup.add(bank.steam.mesh)
   }
   root.add(steamGroup)
 
-  const steamDummy = new THREE.Object3D()
   let steamT = 0
   // 0 = clear, ~0.2 = warning plume, 1 = full burst.
   function steamDensity(phase) {
@@ -849,27 +862,30 @@ export function createMovingHeistLevel({
     for (const bank of steamBanks) {
       const phase = (steamT + bank.offset) % STEAM_PERIOD
       bank.density = steamDensity(phase)
-      bank.puffs.visible = bank.density > 0
-      if (!bank.puffs.visible) continue
-      bank.mat.opacity = 0.25 + 0.45 * bank.density
-      const reach = 0.25 + 0.75 * bank.density
+      bank.steam.mesh.visible = bank.density > 0
+      if (!bank.steam.mesh.visible) continue
+      const reach = 0.3 + 0.8 * bank.density
       let i = 0
       for (const s of [-1, 1]) {
         for (const y of STEAM_HEIGHTS) {
           for (let k = 0; k < STEAM_PUFFS; k++) {
-            const u = (k / STEAM_PUFFS + steamT * 1.8) % 1
-            steamDummy.position.set(
-              s * (STEAM_NOZZLE_X - 0.25 - u * reach),
-              y + u * 0.3 * bank.density,
-              bank.z + Math.sin(k * 1.7 + steamT * 3) * 0.14 * u
+            const seed = puffSeed(k + y * 7 + s * 3)
+            const u = fract(k / STEAM_PUFFS + seed * 0.05 + steamT * 1.6)
+            // Fast out of the nozzle, slowing as it billows.
+            const travel = 1 - (1 - u) * (1 - u)
+            const drift = Math.sin(seed * 40 + steamT * 2.6)
+            bank.steam.set(i++,
+              s * (STEAM_NOZZLE_X - 0.27 - travel * reach),
+              y + u * u * (0.2 + 0.35 * bank.density) + drift * 0.06 * u,
+              bank.z + Math.cos(seed * 23 + steamT * 2.1) * 0.16 * u,
+              (0.14 + u * 0.75) * (0.45 + 0.55 * bank.density),
+              puffFade(u) * (0.3 + 0.7 * bank.density),
+              seed * 6.28 + steamT * (seed - 0.5) * 1.4
             )
-            steamDummy.scale.setScalar((0.08 + u * 0.34) * (0.4 + 0.6 * bank.density))
-            steamDummy.updateMatrix()
-            bank.puffs.setMatrixAt(i++, steamDummy.matrix)
           }
         }
       }
-      bank.puffs.instanceMatrix.needsUpdate = true
+      bank.steam.commit()
     }
   }
   applySteam()
@@ -903,11 +919,12 @@ export function createMovingHeistLevel({
   powerPickups.push(ghostPickup)
   const ghostModule = ghostPickup.group
   ghostModule.name = 'ghost-module'
-  addProp(ghostModule, spans.relay.minZ + 2.2, 0)
+  addAbilityConsole(ghostModule, spans.relay.minZ + 2.2, 0.52)
 
   let ghostTaken = false
   unregisters.push(interaction.register(ghostModule, {
     prompt: 'Install Echo Synchronizer',
+    gesture: 'press',
     onInteract: () => {
       if (ghostTaken) return
       if (!abilityState.SLOW) {
@@ -1301,11 +1318,12 @@ export function createMovingHeistLevel({
 
   const freezeModule = freezePickup.group
   freezeModule.name = 'freeze-module'
-  addProp(freezeModule, spans.cargo.minZ + 3.0, 0)
+  addAbilityConsole(freezeModule, spans.cargo.minZ + 3.0, 0.5)
 
   let freezeTaken = false
   unregisters.push(interaction.register(freezeModule, {
     prompt: 'Install Cryo Phase module',
+    gesture: 'press',
     onInteract: () => {
       if (freezeTaken) return
       if (!relaySolved) {
@@ -1621,11 +1639,12 @@ export function createMovingHeistLevel({
   powerPickups.push(rewindPickup)
   const rewindModule = rewindPickup.group
   rewindModule.name = 'rewind-module'
-  addProp(rewindModule, spans.mechanical.minZ + 3.0, 0)
+  addAbilityConsole(rewindModule, spans.mechanical.minZ + 3.0, 0.5)
 
   let rewindTaken = false
   unregisters.push(interaction.register(rewindModule, {
     prompt: 'Install Rollback module',
+    gesture: 'press',
     onInteract: () => {
       if (rewindTaken) return
       if (!abilityState.FREEZE) {
@@ -2090,7 +2109,12 @@ export function createMovingHeistLevel({
   //      lowers while its plate is weighted — FREEZE, then GHOST.
   // --------------------------------------------------------------------------
   let gustPhase = 0
+  // Set when a crate throws the player off the roof; the fall check fails the
+  // run once they have dropped far enough to see it.
+  let knockedOff = false
   const ROOF_Y = CARRIAGE_ROOF_Y
+  // How far below the deck a fall runs before the death screen.
+  const ROOF_FALL_DEPTH = 2.8
   const F0 = spans.freight.minZ
   const V0 = spans.vault.minZ
   const roofZ = (f) => F0 + f
@@ -2112,6 +2136,52 @@ export function createMovingHeistLevel({
   ]
   const deckW = WALL_X * 2 + 0.3
   const roofWood = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.78, metalness: 0.04 })
+
+  // Nothing fences the deck: the player can walk (or be blown) off either
+  // side at any point. Bounds reach well past the edges, and beyond each edge
+  // is a ledge void that carries the player's stride out into the fall.
+  const ROOF_EDGE_X = deckW / 2 + 0.08
+  const roofPlayBounds = { ...env.roofBounds, minX: -8, maxX: 8 }
+  for (const s of [-1, 1]) {
+    roofVoids.push({
+      minX: s < 0 ? -99 : ROOF_EDGE_X,
+      maxX: s < 0 ? -ROOF_EDGE_X : 99,
+      minZ: roof.zStart - 2,
+      maxZ: roof.zEnd + 2,
+      keepMomentum: true
+    })
+  }
+
+  // Wind. Gusts run on a fixed cycle so they can be read and planned around:
+  // calm, a build-up the indicator warns about, the gust, then a fade. Each
+  // gust blows across the deck from one side toward the other edge, with a
+  // lighter headwind toward the rear. Crouching braces against it; in the air
+  // you catch more of it. SLOW calms it and FREEZE stills it.
+  const GUST_PERIOD = 7.5
+  const GUST_WARN = 2.4 // indicator warns from here
+  const GUST_BUILD = 3.6 // strength rises from here...
+  const GUST_PEAK = 4.8 // ...holds full from here...
+  const GUST_FADE = 6.2 // ...and fades back to calm from here
+  // A whole gust drifts an unbraced player ~2.1 m sideways: the middle of
+  // the deck rides it out, anywhere near an edge does not.
+  const GUST_CROSS = 0.8 // m/s across the deck at full strength
+  const GUST_HEAD = 0.3 // m/s toward the rear at full strength
+  const WIND_CALM = 0.08
+  const smooth = (k) => k * k * (3 - 2 * k)
+  const wind = { side: 1, strength: WIND_CALM, warning: false }
+  function sampleWind(clock) {
+    const n = Math.floor(clock / GUST_PERIOD)
+    const u = clock - n * GUST_PERIOD
+    // +1 blows toward +X. A per-gust hash, so the side can't be memorised.
+    wind.side = fract(Math.sin((n + 1) * 12.9898) * 43758.5453) < 0.5 ? -1 : 1
+    if (u < GUST_BUILD) wind.strength = WIND_CALM
+    else if (u < GUST_PEAK) wind.strength = WIND_CALM + (1 - WIND_CALM) * smooth((u - GUST_BUILD) / (GUST_PEAK - GUST_BUILD))
+    else if (u < GUST_FADE) wind.strength = 1
+    else wind.strength = 1 - (1 - WIND_CALM) * smooth((u - GUST_FADE) / (GUST_PERIOD - GUST_FADE))
+    wind.warning = u >= GUST_WARN && u < GUST_PEAK
+  }
+  let streakFlow = 0
+  let windHudShown = false
 
   function roofSupport() {
     const support = { minX: 0, maxX: -1, minZ: 0, maxZ: -1, y: ROOF_Y }
@@ -2147,12 +2217,12 @@ export function createMovingHeistLevel({
     const parkedX = -(deckW + 0.6)
     addRewindMachine({
       z: panel.position.z, handle: panel, activeIn: 'roof',
-      triggerFrom: roofZ(ROOF_RUN.shell[0] - 0.2), triggerTo: roofZ(b), delay: 0.25, duration: 0.7,
+      triggerFrom: roofZ(ROOF_RUN.shell[0] - 0.2), triggerTo: roofZ(b), delay: 0.05, duration: 0.4,
       outlines: [outline],
       apply(p) {
         panel.position.x = parkedX * p
         // Only a panel that is (nearly) home can be stood on.
-        placeSupport(support, panel.position.x, deckW / 2, roofZ(a), roofZ(b), p < 0.35)
+        placeSupport(support, panel.position.x, deckW / 2, roofZ(a), roofZ(b), p < 0.15)
       }
     })
   }
@@ -2214,9 +2284,11 @@ export function createMovingHeistLevel({
       roofAudio.watchFalling(section, () => section.position.y, 0.25)
       const outline = makeOutline(planks)
       const support = roofSupport()
+      // Both sections arm on the approach, so the player sees the bridge go
+      // before stepping onto it rather than falling with it.
       addRewindMachine({
         z: section.position.z, handle: section, activeIn: 'roof',
-        triggerFrom: z0, triggerTo: z1, delay: 0.08, duration: 0.55,
+        triggerFrom: roofZ(a) - 1.2 + k * 0.4, triggerTo: z1, delay: 0.08, duration: 0.55,
         outlines: [outline],
         apply(p) {
           section.position.y = ROOF_Y - p * 4.2
@@ -2230,7 +2302,7 @@ export function createMovingHeistLevel({
   // --- 4. Vent hatches (Freeze) ---------------------------------------------------
   const VENT_Z = roofZ(18.5)
   const VENT_PERIOD = 1.6
-  const VENT_PUFFS = 9
+  const VENT_PUFFS = 18
   let ventSteam = 0 // 0 clear .. 1 full blast, for the hit test
   {
     const grateMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.6, metalness: 0.8 })
@@ -2249,14 +2321,9 @@ export function createMovingHeistLevel({
       vents.add(hinge)
       lids.push(hinge)
     }
-    const steamMat = new THREE.MeshLambertMaterial({
-      color: 0xe9e4da, transparent: true, opacity: 0, depthWrite: false
-    })
-    const puffs = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), steamMat, 3 * VENT_PUFFS)
-    puffs.userData.noCameraCollision = true
-    puffs.raycast = () => {}
-    puffs.frustumCulled = false
-    vents.add(puffs)
+    // Moonlit rather than lamp-lit, so a cooler grey than the carriage steam.
+    const steam = createSteamPuffs(3 * VENT_PUFFS, { color: 0xb9c0c8 })
+    vents.add(steam.mesh)
     vents.position.set(0, ROOF_Y, VENT_Z)
     root.add(vents)
     roofAudio.setSteamSource(vents.position)
@@ -2267,19 +2334,27 @@ export function createMovingHeistLevel({
       const lift = u < 0.2 ? 0 : u < 0.32 ? (u - 0.2) / 0.12 : u < 0.9 ? 1 : 1 - (u - 0.9) / 0.1
       ventSteam = u < 0.32 ? (u < 0.2 ? 0 : 0.2) : u < 0.9 ? 1 : 0.3
       for (const hinge of lids) hinge.rotation.x = -lift * 1.1
-      steamMat.opacity = ventSteam * 0.6
-      puffs.visible = ventSteam > 0
+      steam.mesh.visible = ventSteam > 0
+      if (!steam.mesh.visible) return
       let i = 0
       for (const x of [-1.6, 0, 1.6]) {
         for (let k = 0; k < VENT_PUFFS; k++) {
-          const v = (k / VENT_PUFFS + t * 1.5) % 1
-          dummy.position.set(x + Math.sin(k * 2.1 + t * 3) * 0.2 * v, 0.2 + v * 2.4 * ventSteam, Math.cos(k * 1.3) * 0.2)
-          dummy.scale.setScalar((0.15 + v * 0.45) * Math.max(0.3, ventSteam))
-          dummy.updateMatrix()
-          puffs.setMatrixAt(i++, dummy.matrix)
+          const seed = puffSeed(k + x * 5)
+          const v = fract(k / VENT_PUFFS + seed * 0.05 + t * 1.2)
+          // Shoots up out of the grate, then slows and spreads; the train's
+          // headwind bends the top of each plume back toward the rear.
+          const rise = 1 - (1 - v) * (1 - v)
+          steam.set(i++,
+            x + Math.sin(seed * 40 + t * 2.4) * 0.25 * v,
+            0.15 + rise * 2.6 * ventSteam,
+            Math.cos(seed * 23 + t * 1.9) * 0.18 * v - v * v * 0.9 * ventSteam,
+            (0.25 + v * 1.1) * Math.max(0.35, ventSteam),
+            puffFade(v) * Math.max(0.3, ventSteam),
+            seed * 6.28 + t * (seed - 0.5) * 1.2
+          )
         }
       }
-      puffs.instanceMatrix.needsUpdate = true
+      steam.commit()
     })
   }
 
@@ -2392,7 +2467,7 @@ export function createMovingHeistLevel({
 
   function enterRoof() {
     section = 'roof'
-    setBounds(env.roofBounds)
+    setBounds(roofPlayBounds)
     useObstacles(roofObstacles)
 
     // The roof starts over Convergence and ends over the forward Vault car.
@@ -2407,10 +2482,12 @@ export function createMovingHeistLevel({
     roofAudio.update(0, { onRoof: true, steam: 0, mode: timeSystem?.getMode?.() ?? 'NORMAL' })
 
     gustPhase = 0
+    streakFlow = 0
     hud.setObjective('Cross the roof to the Vault drop hatch')
     hud.showBriefing?.([
       'You are outside. The roof runs across an open freight wagon to the Vault.',
-      'Watch your footing — the gaps between the cars are real, and so is the drop.'
+      'Watch your footing — the gaps between the cars are real, and so is the drop over the sides.',
+      'Crosswinds gust across the deck. Watch the wind gauge, and crouch to brace when one hits.'
     ])
   }
 
@@ -2587,6 +2664,8 @@ export function createMovingHeistLevel({
       coreFinaleAudio.reset()
       failCooldown = 0
       gustPhase = 0
+      streakFlow = 0
+      knockedOff = false
       zipRide = -1
       drawbridgeLatched = saved.drawbridgeLatched
       drawbridgeDown = drawbridgeLatched ? 1 : 0
@@ -2677,7 +2756,7 @@ export function createMovingHeistLevel({
       switchDoor.latched = true
       exitDoor.latched = true
       section = 'roof'
-      setBounds(env.roofBounds)
+      setBounds(roofPlayBounds)
       useObstacles(roofObstacles)
       startPos = new THREE.Vector3(0, CARRIAGE_ROOF_Y, roof.zStart + 0.8)
       lastRoofCheckpointZ = startPos.z
@@ -3086,18 +3165,65 @@ export function createMovingHeistLevel({
       roofAudio.update(delta, { onRoof: section === 'roof', steam: section === 'roof' ? ventSteam : 0, mode })
       roofSun.intensity = section === 'roof' ? ROOF_MOON_INTENSITY : 0
       roofSky.intensity = section === 'roof' ? ROOF_SKY_INTENSITY : 0
+      if (section !== 'roof' && windHudShown) {
+        windHudShown = false
+        hud.setWind?.(null)
+      }
 
       if (section === 'roof') {
-        // Slipstream streaks pulse with the gusts; SLOW calms them.
-        gustPhase += delta * (mode === 'SLOW' ? 0.16 : 1)
-        const gust = Math.pow(Math.max(0, Math.sin(gustPhase * 1.7)), 0.6)
-        roof.streaks.forEach((s) => {
-          s.material.opacity = 0.04 + gust * 0.2
+        // Wind runs on world time: SLOW drags the gust cycle out, FREEZE holds it.
+        const windRate = mode === 'FREEZE' ? 0 : mode === 'SLOW' ? 0.16 : 1
+        gustPhase += delta * windRate
+        sampleWind(gustPhase)
+        const gustForce = wind.strength * (mode === 'FREEZE' ? 0 : mode === 'SLOW' ? 0.3 : 1)
+
+        if (zipRide < 0 && !knockedOff && gustForce > 0) {
+          const brace = player.isCrouching() ? 0.3 : player.isAirborne() ? 1.35 : 1
+          pp.x += wind.side * GUST_CROSS * gustForce * brace * delta
+          pp.z -= GUST_HEAD * gustForce * brace * delta
+        }
+
+        // Slipstream streaks sweep past toward the rear, faster and brighter
+        // in a gust, and bend sideways with the crosswind. They hang in the
+        // air under FREEZE.
+        const STREAK_SPAN = 26
+        streakFlow += delta * windRate * (9 + 15 * wind.strength)
+        const drift = wind.side * wind.strength * 6
+        const lean = Math.atan2(-drift, STREAK_SPAN)
+        roof.streaks.forEach((s, k) => {
+          const life = fract(s.userData.seed + streakFlow / STREAK_SPAN)
+          s.position.set(
+            s.userData.lane + drift * (life - 0.5),
+            ROOF_Y + s.userData.height,
+            pp.z + 16 - life * STREAK_SPAN
+          )
+          s.rotation.y = lean
+          s.scale.z = 0.7 + wind.strength * 1.6
+          s.material.opacity = (0.05 + 0.4 * wind.strength) * Math.sin(life * Math.PI)
         })
 
-        // Falling through a gap or an opening.
-        if (pp.y < ROOF_Y - 1.0 && zipRide < 0) {
-          failSoft('You fell between the cars.', 'fell')
+        // Gauge arrow relative to the camera: 0 = blowing the way the camera
+        // faces, clockwise positive. Camera forward is (sin, cos), right is
+        // (-cos, sin), matching player movement.
+        const yaw = camera.getYaw?.() ?? 0
+        const windX = wind.side * GUST_CROSS
+        const windZ = -GUST_HEAD
+        const ahead = windX * Math.sin(yaw) + windZ * Math.cos(yaw)
+        const right = -windX * Math.cos(yaw) + windZ * Math.sin(yaw)
+        windHudShown = true
+        hud.setWind?.({
+          angle: Math.atan2(right, ahead),
+          strength: gustForce,
+          state: mode === 'FREEZE' ? 'still' : wind.strength > 0.6 ? 'gust' : wind.warning ? 'warning' : 'calm'
+        })
+
+        // Falling through a gap or an opening, off the side, or thrown off.
+        if (pp.y < ROOF_Y - ROOF_FALL_DEPTH && zipRide < 0) {
+          failSoft(knockedOff
+            ? 'A cargo crate knocked you off the train — FREEZE the pair while the gap is on your side.'
+            : Math.abs(pp.x) > ROOF_EDGE_X
+              ? 'You fell off the side of the train.'
+              : 'You fell between the cars.', 'fell')
         }
 
         for (const z of roofCheckpoints) {
@@ -3108,16 +3234,20 @@ export function createMovingHeistLevel({
         }
 
         for (const { pair, z } of roofCrates) {
-          if (Math.abs(pp.z - z) < ROOF_CRATE_D / 2 + 0.2 && pp.y < ROOF_Y + 1.1) {
-            for (const ox of [-0.8, 0.8]) {
-              if (Math.abs(pp.x - (pair.position.x + ox)) < ROOF_CRATE_W / 2 + 0.2) {
-                failSoft('A cargo crate ran you down — FREEZE the pair while the gap is on your side.')
-              }
+          if (knockedOff || Math.abs(pp.z - z) >= ROOF_CRATE_D / 2 + 0.2 || pp.y >= ROOF_Y + 1.1) continue
+          for (const ox of [-0.8, 0.8]) {
+            const crateX = pair.position.x + ox
+            if (Math.abs(pp.x - crateX) < ROOF_CRATE_W / 2 + 0.2) {
+              // Thrown away from the crate, which is always toward the open
+              // side of the deck, and swept back by the train's slipstream.
+              knockedOff = true
+              player.knockback(Math.sign(pp.x - crateX || 1) * 6.5, 4.5, -2.2)
+              break
             }
           }
         }
 
-        if (Math.abs(pp.z - VENT_Z) < 0.75 && ventSteam > 0.5) {
+        if (!knockedOff && Math.abs(pp.z - VENT_Z) < 0.75 && ventSteam > 0.5) {
           failSoft('The vents blasted you — FREEZE them while the hatches are shut.')
         }
 
@@ -3146,7 +3276,7 @@ export function createMovingHeistLevel({
           setBounds({ minX: pp.x, maxX: pp.x, minZ: z, maxZ: z })
           if (k >= 1) {
             zipRide = -1
-            setBounds(env.roofBounds)
+            setBounds(roofPlayBounds)
             player.setPose(new THREE.Vector3(ZIP_X - 0.15, ROOF_Y, zipTo), 0)
           }
         } else if (trolley.position.z !== zipFrom && pp.z < zipFrom) {
@@ -3169,6 +3299,7 @@ export function createMovingHeistLevel({
     },
 
     dispose() {
+      hud.setWind?.(null)
       post?.resetGrade()
       if (scene.onBeforeRender === cullBeforeRender) scene.onBeforeRender = previousBeforeRender
       if (scene.onAfterRender === cullAfterRender) scene.onAfterRender = previousAfterRender

@@ -43,15 +43,50 @@ test('every L3 tear passes through wall, panes, lining and roof, retaining floor
   } finally { disposeObject(env.root) }
 })
 
-test('retained storm panes use the scaled carriage clock through Freeze and reverse to the same texture pose', () => {
+test('L3 halves retained window bays, closes discarded bays and leaves broken panes open', () => {
   const env=createCarriageEnvironment({damaged:true})
+  env.root.updateMatrixWorld(true)
   try {
-    const pane=env.carriages.cargo.getObjectByName('wreck-window-glass-cargo')
-    env.update(0.5);pane.onBeforeRender()
-    const offset=pane.material.map.offset.x
-    env.update(0);pane.onBeforeRender();assert.equal(pane.material.map.offset.x,offset)
-    env.update(0.4);pane.onBeforeRender();assert.notEqual(pane.material.map.offset.x,offset)
-    env.update(-0.4);pane.onBeforeRender();assert.equal(pane.material.map.offset.x,offset)
+    for (const [key,car] of Object.entries(env.carriages)) {
+      const cut=WRECK_DAMAGE[key],span=env.spans[key],half=(span.maxZ-span.minZ)/2
+      const paneD=key==='cab'?1.48:2.49, zs=[]
+      if(key==='cab')zs.push(0.6)
+      else for(let z=-half+2.4;z<=half-2.4+0.01;z+=3.4)zs.push(z)
+      const bays=[]
+      for(const side of [-1,1])for(const z of zs) {
+        if(side===cut.side && z+paneD/2+0.1>cut.minZ && z-paneD/2-0.1<cut.maxZ)continue
+        bays.push({side,z})
+      }
+      const glass=car.getObjectByName(`wreck-window-glass-${key}`)
+      const shards=car.getObjectByName(`wreck-window-shards-${key}`)
+      const casing=car.getObjectByName(`wreck-window-casing-${key}`)
+      assert.equal(casing.count/2,Math.ceil(bays.length/2),`${key}: half, rounded up`)
+      assert.equal(glass.count+shards.count,casing.count/2)
+      assert.equal(glass.material.transparent,true)
+      assert.ok(glass.material.opacity<=0.2)
+      assert.equal(glass.material.depthWrite,false)
+      assert.equal(glass.material.map,null,'outside is the real scene')
+      assert.equal(glass.material.emissive.getHex(),0)
+      if(bays.length>2){assert.ok(glass.count>0);assert.ok(shards.count>0)}
+      const shell=[];car.traverse(n=>{if(n.userData.wreckShell)shell.push(n)})
+      bays.forEach(({side,z},i)=>{
+        const ray=new THREE.Raycaster(new THREE.Vector3(0,1.64,span.center+z),new THREE.Vector3(side,0,0),0,3)
+        const hits=ray.intersectObjects(shell,false)
+        if(i%2)assert.ok(hits.some(h=>h.object.name===`wall-piers-${key}`),`${key}: discarded bay filled`)
+        else assert.ok(hits.every(h=>h.object===glass || h.object.material.transparent),`${key}: no opaque backing across window: ${hits.map(h=>h.object.name)}`)
+      })
+      const matrix=new THREE.Matrix4(),position=new THREE.Vector3()
+      for(let i=0;i<shards.count;i++){
+        shards.getMatrixAt(i,matrix);position.setFromMatrixPosition(matrix)
+        const side=Math.sign(position.x)
+        const ray=new THREE.Raycaster(new THREE.Vector3(0,position.y,span.center+position.z),new THREE.Vector3(side,0,0),0,3)
+        assert.equal(ray.intersectObjects(shell,false).length,0,`${key}: physical gap at broken centre`)
+      }
+      const pose=glass.instanceMatrix.array.slice()
+      env.update(0.5);env.update(0);env.update(-0.5)
+      assert.deepEqual(glass.instanceMatrix.array,pose,'permanent glass damage stays static through time powers')
+      assert.equal(glass.parent,car);assert.equal(shards.parent,car)
+    }
   } finally {disposeObject(env.root)}
 })
 

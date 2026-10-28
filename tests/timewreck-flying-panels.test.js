@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
-import { createFlyingPanels } from '../src/levels/timewreck-flying-panels.js'
+import { createFlyingPanels, CARGO_BURSTS, cargoBurstPhase } from '../src/levels/timewreck-flying-panels.js'
+import { createPlayer } from '../src/entities/player.js'
 import { createTimeSystem } from '../src/systems/time-system.js'
 import { disposeObject } from '../src/core/dispose.js'
 
@@ -36,6 +37,8 @@ test('first two escape cars have six obstacles, later cars have eight; each laun
       h.panels.reset(); h.enter(key)
       const meshes = h.panels.group.children.filter(m => m.name.startsWith(`${key}-flying-brown-panel`))
       assert.equal(meshes.length, ['vault', 'convergence'].includes(key) ? 6 : 8, key)
+      // Cargo has its own rotated/timed reachable-route proof below.
+      if (key === 'cargo') continue
       const firstLaunches = new Map(), flightSizes = new Set()
       let previous = meshes.map(m => ({ visible: m.visible, position: m.position.clone() }))
       for (let t = 0; t < 40; t += 0.05) {
@@ -142,7 +145,7 @@ test('small fragments vary by carriage, move with time controls and never kill o
 })
 
 function poses(h) {
-  return h.panels.group.children.filter(m => !m.isInstancedMesh).map(m => ({
+  return h.panels.group.children.filter(m => m.isMesh && !m.isInstancedMesh).map(m => ({
     visible: m.visible, position: m.position.toArray(), scale: m.scale.toArray(), color: m.material.color.getHex(),
     opacity: m.material.opacity
   }))
@@ -190,7 +193,102 @@ test('randomized flights obey Slow, Freeze and disabled presentation', () => {
     h.tick(0.4, false)
     assert.deepEqual(poses(h), held)
     h.panels.reset()
-    assert.ok(h.panels.group.children.every(p => !p.visible))
+    assert.ok(h.panels.group.children.filter(p => p.isMesh).every(p => !p.visible))
     assert.equal(h.failures.length, 0)
   } finally { h.dispose() }
+})
+
+function cargoHarness(fps, seed = 12345) {
+  const root = new THREE.Group(), player = createPlayer(), unregisters = [], failures = [], cues = []
+  const time = createTimeSystem({scene:root,player})
+  const spans = {cargo:{minZ:-14,maxZ:14,center:0}}
+  player.setPose(new THREE.Vector3(0,0,CARGO_BURSTS.pad),Math.PI)
+  const panels = createFlyingPanels({root,spans,player,timeSystem:time,unregisters,seed,
+    fail:m=>failures.push(m),warn:m=>cues.push(m)})
+  let elapsed=0, frame=0
+  const tick=(seconds,keyboard={})=>{
+    for(let t=0;t<seconds-1e-9;) {
+      const dt=Math.min(Array.isArray(fps)?fps[frame++%fps.length]:1/fps,seconds-t)
+      time.update(dt); panels.update()
+      for(const mesh of panels.group.children) if(mesh.isMesh && !mesh.isInstancedMesh && mesh.visible &&
+        mesh.position.z>=-14 && mesh.position.y<2.3) assert.equal(mesh.material.opacity,1,'Cargo lethal floor-level wood stays opaque')
+      player.update(dt,{keyboard,cameraYaw:Math.PI})
+      t+=dt;elapsed+=dt
+    }
+    panels.update()
+  }
+  panels.update()
+  return {root,player,time,panels,failures,cues,tick,get elapsed(){return elapsed},
+    dispose(){unregisters.forEach(fn=>fn());time.dispose();disposeObject(root);disposeObject(player.mesh)}}
+}
+
+test('Cargo authored phases leave a full-cycle solid observation pad and landing; centre contact has evasive warning lead',()=>{
+  assert.deepEqual([0,1.2,2.1,3.3,4.5,5.4,8.4].map(cargoBurstPhase),
+    ['warning-right','burst-right','recovery','warning-left','burst-left','clear','warning-right'])
+  for(const seed of [1,12345,54321]) for(const z of [12.5,3.15,-4.2,-5]) {
+    const h=cargoHarness(30,seed)
+    try {h.player.setPose(new THREE.Vector3(0,0,z),Math.PI);h.tick(20);assert.equal(h.failures.length,0,`${seed}/${z}`)}
+    finally{h.dispose()}
+  }
+  const h=cargoHarness(144)
+  try {
+    h.player.setPose(new THREE.Vector3(0,0,10.4),Math.PI)
+    while(!h.failures.length && h.elapsed<2.1)h.tick(1/144)
+    assert.ok(h.failures.length>0,'passive centre occupancy is lethal inside the selected zone')
+    assert.ok(h.elapsed>=CARGO_BURSTS.warning)
+    assert.ok(CARGO_BURSTS.warning > 1.7/4 + 0.25 + 0.1,'walk evasive travel + reaction + a 100ms frame')
+    assert.equal(h.cues[0],'warning-right')
+  } finally {h.dispose()}
+})
+
+test('Cargo rotated sweeps permit a reachable right/left route, no random overlay, and a normal-energy gangway approach',()=>{
+  for(const fps of [30,60,144,[1/144,1/30,0.1,1/60]]) for(const seed of [1,12345,54321]) {
+    const h=cargoHarness(fps,seed)
+    try {
+      h.tick(0.25,{right:true,run:true})
+      h.tick(2.1/6.8,{forward:true,run:true})
+      h.tick(2.2-h.elapsed)
+      h.tick(0.5,{left:true,run:true})
+      h.tick(5.5-h.elapsed)
+      assert.equal(h.failures.length,0,`${fps}/${seed}: complete rotated sweeps leave the indicated lanes open`)
+      h.tick(0.25,{right:true,run:true})
+      h.tick(1.4/6.8,{forward:true,run:true})
+      assert.ok(h.player.mesh.position.z<9.1 && h.player.mesh.position.z>8.6,'centre again before the true void lip')
+      assert.equal(h.time.getEnergy(),100)
+    } finally {h.dispose()}
+  }
+})
+
+test('Cargo authored snapshots, Freeze contact, retry and registration cleanup retain the same poses',()=>{
+  const h=cargoHarness(60)
+  try {
+    h.tick(1.5)
+    const saved=poses(h)
+    h.tick(0.4);h.time.triggerRewind();h.tick(0.16)
+    poses(h).forEach((p,i)=>p.position.forEach((v,a)=>assert.ok(Math.abs(v-saved[i].position[a])<1e-6)))
+    h.time.triggerFreeze()
+    const mesh=h.root.getObjectByName('cargo-flying-brown-panel')
+    h.player.setPose(new THREE.Vector3(mesh.position.x,0,mesh.position.z),Math.PI)
+    h.tick(0.01)
+    assert.ok(h.failures.length>0,'a frozen visible burst remains lethal')
+    h.player.setPose(new THREE.Vector3(0,0,12.5),Math.PI)
+    h.panels.reset();h.time.resetForCheckpoint();h.panels.update()
+    assert.equal(h.panels.getCargoState().clock,0)
+    assert.equal(h.panels.getCargoState().stage,'warning-right')
+  } finally {h.dispose()}
+})
+
+test('Cargo late-cycle approach retains a protected stop and cues again on re-entry',()=>{
+  for(const delay of [0.1,1.3,2.4,3.4,4.6,5.6,8.5]) {
+    const h=cargoHarness(60)
+    try {
+      h.tick(0.4,{back:true,run:true})
+      h.tick(delay)
+      h.tick(0.4,{forward:true,run:true})
+      assert.equal(h.failures.length,0,'a late entry stops on real protected floor')
+      assert.ok(Math.abs(h.player.mesh.position.z-12.5)<1e-6)
+      h.tick(1)
+      assert.equal(h.failures.length,0,'occupancy is protected, not just the arrival frame')
+    } finally {h.dispose()}
+  }
 })
