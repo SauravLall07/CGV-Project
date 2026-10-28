@@ -292,11 +292,8 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       check(); h.time.setMode('NORMAL'); move('x', 0)
       stage = 'passenger'
       move('z', center(stage) + 8.4)
-      // Take the narrow right lane; the flying luggage makes the wall-side sprint lethal.
-      h.tick(0.14,{forward:true,run:true,right:true}); h.tick(0.76,{forward:true,run:true,jump:true})
-      h.time.triggerFreeze(); h.tick(0.3); h.tick(0.05,{left:true,run:true}); h.tick(1.6,{forward:true,run:true,jump:true})
-      check(); h.time.setMode('NORMAL')
-      move('z', h.scene.getObjectByName('emergency-brake').position.z + 1.5, {run:true})
+      passengerRoute(h, center(stage))
+      check()
       h.interactions.get('emergency-brake').onInteract()
       assert.equal(h.level.isCinematic,true)
       h.tick(1.49)
@@ -307,6 +304,62 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
   }
 })
 function pose(h, x, z, y = 0) { h.player.setPose(new THREE.Vector3(x, y, z), Math.PI) }
+
+// Real input only, including posture release before the separate jump press.
+function passengerRoute(h, c = h.center, tick = h.tick, freeze = () => h.time.triggerFreeze()) {
+  const move = (axis, target, keys = {}) => {
+    for (let i = 0; Math.abs(h.player.mesh.position[axis] - target) > 0.035; i++) {
+      assert.ok(i < 200, `passenger blocked: ${JSON.stringify(h.player.mesh.position)} -> ${axis} ${target}`)
+      const positive = h.player.mesh.position[axis] < target
+      const speed = keys.duck ? 1.68 : 6.8
+      tick(Math.min(0.1, Math.abs(h.player.mesh.position[axis] - target) / speed), {
+        run: true, ...keys, [axis === 'x' ? positive ? 'right' : 'left' : positive ? 'back' : 'forward']: true
+      })
+      assert.equal(h.respawn.isFailing(), false, JSON.stringify({pos:h.player.mesh.position,energy:h.time.getEnergy(),messages:h.messages.slice(-4)}))
+    }
+  }
+  move('x', 0.72)
+  move('z', c + 4.7)
+  assert.ok(h.messages.some(m => m.includes('Rack bolts')))
+  freeze()
+  const waveZ = h.scene.getObjectByName('time-wave').position.z
+  move('x', -0.65)
+  move('z', c + 2.8)
+  move('x', 0)
+  tick(0.22)
+  assert.equal(h.scene.getObjectByName('time-wave').position.z, waveZ)
+  move('z', c - 3.65)
+  assert.ok(h.player.mesh.position.y >= -0.1, 'solid collapse landing reached')
+  h.time.setMode('NORMAL')
+  move('z', c - 4.1)
+  assert.ok(h.messages.some(m => m.includes('duck the short brass beam')), 'exit instruction replaces the floor hint before duck contact')
+  move('z', c - 5.1, {duck:true})
+  // Toggle-mode release is its own edge; hold mode simply releases the key.
+  tick(0.01)
+  if (h.player.isCrouching()) tick(0.01, {duck:true})
+  tick(0.01)
+  move('z', c - 5.9)
+  tick(0.7, {forward:true,run:true,jump:true})
+  tick(0.02)
+  assert.ok(h.player.mesh.position.z < c - 7.5, 'jump clears the low rail')
+  assert.ok(h.player.mesh.position.y >= -0.1)
+  const brake = h.scene.getObjectByName('emergency-brake')
+  move('z', brake.position.z + 1.5)
+}
+
+test('Difficulty: real Passenger weave, duck release and rail jump fit minimum energy at fixed/mixed deltas', () => {
+  for (const mode of ['hold','toggle']) for (const fps of [30,60,144,[1/144,1/30,0.1,1/60]]) {
+    settings.set('crouchMode',mode)
+    const h=levelHarness('passenger',fps)
+    try {
+      h.time.resetForCheckpoint({...h.time.captureCheckpointState(),energy:0})
+      passengerRoute(h)
+      assert.equal(h.respawn.isFailing(),false)
+      assert.ok(h.time.getEnergy()>0)
+      console.log('Difficulty route',JSON.stringify({mode,fps,seconds:h.elapsed,energy:h.time.getEnergy(),gap:h.scene.getObjectByName('time-wave').position.z-h.player.mesh.position.z}))
+    } finally {h.dispose();settings.resetAll()}
+  }
+})
 
 test('N8/N9: each live event pauses, holds Freeze without taking control, and releases callbacks on restart/quit', () => {
   const oldRAF = globalThis.requestAnimationFrame
@@ -625,21 +678,10 @@ test('Passenger: warned rack, real separating floor, Freeze chase and controllab
   for (const fps of [30, 60, 144]) {
     const h = levelHarness('passenger', fps)
     try {
-      h.tick(0.1, { forward: true, run: true })
-      h.tick(0.14, { forward: true, run: true, right: true })
-      assert.ok(h.messages.some(m => m.includes('Rack bolts')))
-      h.tick(0.76, { forward: true, run: true, jump: true })
-      const wave = h.scene.getObjectByName('time-wave')
-      const waveZ = wave.position.z
-      h.time.triggerFreeze(); h.tick(0.3)
-      assert.equal(wave.position.z, waveZ)
-      h.tick(0.05, { left: true, run: true })
-      h.tick(1.6, { forward: true, run: true, jump: true })
+      passengerRoute(h)
       assert.ok(h.player.mesh.position.z < h.center - 3)
       assert.ok(h.player.mesh.position.y >= -0.1)
       assert.equal(h.respawn.isFailing(), false, JSON.stringify({fps, pos:h.player.mesh.position, messages:h.messages}))
-      h.time.setMode('NORMAL')
-      h.tick(1.1, { forward: true, run: true })
       const brake = h.scene.getObjectByName('emergency-brake')
       // Continue real movement to interaction range, then pull the actual callback.
       while (h.player.mesh.position.z > brake.position.z + 1.5 && !h.respawn.isFailing()) h.tick(0.1, { forward: true, run: true })
@@ -861,12 +903,7 @@ test('Passenger: minimum-energy carried entry and repeated checkpoint retries ca
           h.tick(0.05, { right: true, run: true })
           h.tick(0.05, { left: true, run: true }) // recenter before the narrow luggage clearance
         }
-        h.tick(0.1,{forward:true,run:true})
-        h.tick(0.14,{forward:true,run:true,right:true})
-        h.tick(0.76,{forward:true,run:true,jump:true})
-        h.time.triggerFreeze(); h.tick(0.3)
-        h.tick(0.05,{left:true,run:true})
-        h.tick(1.6,{forward:true,run:true,jump:true})
+        passengerRoute(h)
         assert.equal(h.respawn.isFailing(),false,JSON.stringify({fps,attempt,pos:h.player.mesh.position,energy:h.time.getEnergy(),messages:h.messages.slice(-3)}))
         assert.ok(h.player.mesh.position.z<h.center-3)
         assert.ok(h.player.mesh.position.y>=-0.1)
@@ -891,13 +928,13 @@ test('Passenger: minimum-energy carried entry and repeated checkpoint retries ca
 test('N6: rebound movement/Freeze controls navigate both seats and reach the brake from minimum energy', () => {
   const h = levelHarness('passenger')
   const target = new EventTarget(); globalThis.window = target
-  const codes = { forward: 'KeyI', right: 'KeyL', left: 'KeyJ', run: 'KeyO', freeze: 'KeyP', jump: 'KeyM' }
+  const codes = { forward: 'KeyI', right: 'KeyL', left: 'KeyJ', run: 'KeyO', freeze: 'KeyP', jump: 'KeyM', duck: 'KeyU' }
   for (const [action, code] of Object.entries(codes)) { settings.setBinding(action, 0, code); settings.setBinding(action, 1, null) }
   const keyboard = createKeyboardState()
   const key = (type, code) => { const e = new Event(type); Object.assign(e, { code, repeat: false }); target.dispatchEvent(e) }
   keyboard.onAction('freeze', () => h.time.triggerFreeze())
   const walk = (seconds, actions = []) => {
-    for (const action of ['forward', 'right', 'left', 'run', 'jump']) {
+    for (const action of ['forward', 'right', 'left', 'run', 'jump', 'duck']) {
       const down = actions.includes(action)
       if (down !== Boolean(keyboard.state[action])) key(down ? 'keydown' : 'keyup', codes[action])
     }
@@ -906,11 +943,10 @@ test('N6: rebound movement/Freeze controls navigate both seats and reach the bra
   }
   try {
     h.time.resetForCheckpoint({ ...h.time.captureCheckpointState(), energy: 0 })
-    walk(0.1, ['forward', 'run'])
-    walk(0.14, ['forward', 'right', 'run']); walk(0.76, ['forward', 'run', 'jump'])
-    key('keydown', 'KeyF'); assert.equal(h.time.getMode(), 'NORMAL')
-    key('keydown', codes.freeze); assert.equal(h.time.getMode(), 'FREEZE')
-    walk(0.3); walk(0.05, ['left', 'run']); walk(1.6, ['forward', 'run', 'jump'])
+    passengerRoute(h,h.center,(seconds,keys={})=>walk(seconds,Object.keys(keys).filter(k=>keys[k])),()=>{
+      key('keydown','KeyF');assert.equal(h.time.getMode(),'NORMAL')
+      key('keydown',codes.freeze);assert.equal(h.time.getMode(),'FREEZE')
+    })
     assert.ok(h.player.mesh.position.z < h.center - 3)
     h.time.setMode('NORMAL')
     const brake = h.scene.getObjectByName('emergency-brake')

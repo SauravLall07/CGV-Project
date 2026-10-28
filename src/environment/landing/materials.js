@@ -88,7 +88,7 @@ function clockCanvas() {
   ctx.strokeStyle = '#c4a56a'
   ctx.stroke()
 
-  const numerals = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
+  const numerals = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']
   ctx.fillStyle = '#2a2118'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
@@ -126,20 +126,29 @@ function glassMaterial(color, intensity) {
   })
 }
 
-export function createLandingMaterials() {
-  const stoneColor = ashlarCanvas(256)
-  const stoneNormal = normalFromCanvas(stoneColor, 2.2)
-  const stoneMap = canvasTexture(stoneColor, [1, 1], true)
-  const stoneNorm = canvasTexture(stoneNormal, [1, 1], false)
+export function createLandingDoorMaterials() {
+  return {
+    wood: new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 0.72, metalness: 0.08 }),
+    glass: glassMaterial(0xffb070, 0.42)
+  }
+}
 
-  const stone = new THREE.MeshStandardMaterial({
-    map: stoneMap,
-    normalMap: stoneNorm,
+// Shared by the exterior facade and Level 1's interior ashlar walls.
+export function createLandingStoneMaterial() {
+  const stoneColor = ashlarCanvas(256)
+  return new THREE.MeshStandardMaterial({
+    map: canvasTexture(stoneColor, [1, 1], true),
+    normalMap: canvasTexture(normalFromCanvas(stoneColor, 2.2), [1, 1], false),
     roughness: 0.78,
     metalness: 0.04
   })
+}
+
+export function createLandingMaterials() {
+  const stone = createLandingStoneMaterial()
   const stoneTrim = stone.clone()
   stoneTrim.roughness = 0.7
+  const door = createLandingDoorMaterials()
 
   const clockMap = canvasTexture(clockCanvas(), [1, 1], true)
 
@@ -157,7 +166,7 @@ export function createLandingMaterials() {
     stoneTrim,
     iron: new THREE.MeshStandardMaterial({ color: 0x1c1916, roughness: 0.42, metalness: 0.78 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.32, metalness: 0.86 }),
-    wood: new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 0.72, metalness: 0.08 }),
+    wood: door.wood,
     roof: new THREE.MeshStandardMaterial({ color: 0x243830, roughness: 0.48, metalness: 0.42 }),
     soffit: new THREE.MeshStandardMaterial({
       color: 0x3a2a18,
@@ -172,7 +181,7 @@ export function createLandingMaterials() {
       glassMaterial(0x100e0c, 0)
     ],
     archGlass: glassMaterial(0xc08048, 0.38),
-    entranceGlass: glassMaterial(0xffb070, 0.42),
+    entranceGlass: door.glass,
     clock: new THREE.MeshStandardMaterial({
       map: clockMap,
       emissiveMap: clockMap,

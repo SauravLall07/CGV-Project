@@ -11,7 +11,6 @@ import {
   carpetMaterial,
   metalMaterial,
   nightViewMaterial,
-  stormWindowMaterial,
   plasterMaterial,
   signMaterial,
   woodMaterial
@@ -807,8 +806,7 @@ function addBlownViewports(g, half, key, shared) {
   const wallMat = wallMaterialFor(key, half * 2, true)
   const cut = WRECK_DAMAGE[key]
   const runs = (side, a, b) => cut ? retainedWallRuns(key, side, a, b) : [[a,b]]
-  // Cab and door lights stay the smaller openings. Standard glass is ~27%
-  // larger in both directions (1.46 × 2.14 m). Piers stay about 0.9 m.
+  // Keep the existing opening sizes; alternate retained bays become solid wall.
   const cab = key === 'cab'
   const paneH = cab ? 0.92 : 1.66
   const paneD = cab ? 1.48 : 2.49
@@ -820,6 +818,23 @@ function addBlownViewports(g, half, key, shared) {
     zs.push(0.6)
   } else {
     for (let z = -half + 2.4; z <= half - 2.4 + 0.01; z += 3.4) zs.push(z)
+  }
+
+  const candidates = []
+  const salt = key.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
+  for (const s of [-1, 1]) {
+    zs.forEach((z, i) => {
+      if (cut && s === cut.side && z + paneD/2 + 0.1 > cut.minZ && z - paneD/2 - 0.1 < cut.maxZ) return
+      const h = Math.abs(Math.sin((salt + i * 19 + s * 11) * 12.9898) * 43758.5453) % 1
+      const kind = h < 0.48 ? 0 : h < 0.74 ? 1 : h < 0.9 ? 2 : 3
+      candidates.push({ s, z, kind, h })
+    })
+  }
+  const openings = candidates.filter((_, i) => i % 2 === 0)
+  // Each longer car gets both surviving glass and a genuinely broken pane.
+  if (openings.length > 1) {
+    if (!openings.some(open => open.kind >= 2)) openings.at(-1).kind = 2
+    if (!openings.some(open => open.kind < 2)) openings[0].kind = 0
   }
 
   const sillY = paneY - paneH / 2
@@ -849,7 +864,7 @@ function addBlownViewports(g, half, key, shared) {
   const piers = []
   for (const s of [-1, 1]) {
     let cursor = -half
-    for (const z of zs) {
+    for (const { z } of openings.filter(open => open.s === s)) {
       const a = z - paneD / 2
       const span = a - cursor
       if (span > 0.06) for (const [a,b] of runs(s,cursor,cursor+span))
@@ -876,28 +891,31 @@ function addBlownViewports(g, half, key, shared) {
     g.add(pierMesh)
   }
 
-  // Nested reveal: wood casing, brass bevel, dark seal, then glass set
-  // back in the opening. Damage is hashed per bay so cars do not repeat.
-  const openings = []
-  const salt = key.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
-  for (const s of [-1, 1]) {
-    zs.forEach((z, i) => {
-      if (cut && s === cut.side && z + paneD/2 + 0.1 > cut.minZ && z - paneD/2 - 0.1 < cut.maxZ) return
-      const h = Math.abs(Math.sin((salt + i * 19 + s * 11) * 12.9898) * 43758.5453) % 1
-      const kind = h < 0.48 ? 0 : h < 0.74 ? 1 : h < 0.9 ? 2 : 3
-      openings.push({ s, z, kind, h })
-    })
-  }
+  // The real sky/scenery remains visible through a single cheap glass layer.
   if (!openings.length) return
-  const glassMat = stormWindowMaterial({ seed: 11 + salt })
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x9cbec8, roughness: 0.18, metalness: 0.12,
+    transparent: true, opacity: 0.18, depthWrite: false,
+    side: THREE.DoubleSide, envMapIntensity: 0.7
+  })
   const sealMat = new THREE.MeshStandardMaterial({ color: 0x161412, roughness: 0.92, metalness: 0.04 })
   const crackMat = new THREE.MeshStandardMaterial({
     color: 0xc5d0d8, roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0.45, depthWrite: false
   })
   const n = openings.length
-  const glass = new THREE.InstancedMesh(new THREE.BoxGeometry(0.012, paneH * glassFillH, paneD * glassFillD), glassMat, n)
+  const glass = new THREE.InstancedMesh(new THREE.PlaneGeometry(paneD * glassFillD, paneH * glassFillH).rotateY(Math.PI / 2), glassMat, n)
   glass.name = `wreck-window-glass-${key}`
-  const phases = new Float32Array(n)
+  // Two attached corner shards leave the broken pane's centre physically open.
+  const shardGeometry = new THREE.BufferGeometry()
+  shardGeometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    0,-0.5,-0.5, 0,-0.28,-0.5, 0,-0.5,-0.12,
+    0,0.5,0.5, 0,0.24,0.5, 0,0.5,0.15
+  ], 3))
+  shardGeometry.scale(1, paneH * glassFillH, paneD * glassFillD)
+  shardGeometry.computeVertexNormals()
+  const shards = new THREE.InstancedMesh(shardGeometry, glassMat, n)
+  shards.name = `wreck-window-shards-${key}`
+  let glassI = 0, shardI = 0
   const woodTrim = wallMat.clone()
   const brassTrim = shared.brass.clone()
   applyBeadWear(woodTrim, 'wood')
@@ -931,7 +949,6 @@ function addBlownViewports(g, half, key, shared) {
   }
   openings.forEach((open, index) => {
     const { s, z, kind, h } = open
-    phases[index] = (h * 0.71 + (s < 0 ? 0.13 : 0.47) + index * 0.09) % 1
     const glassX = s * (WALL_X + 0.03)
     const sealX = s * (WALL_X - 0.005)
     const brassX = s * (WALL_X - 0.05)
@@ -939,12 +956,10 @@ function addBlownViewports(g, half, key, shared) {
     const corner = h > 0.6 ? 1 : -1
     dummy.rotation.set(0, 0, 0)
     dummy.scale.set(1, 1, 1)
-    // Kind 2 used to shrink the pane to 0.38 × 0.34 and drop one stile.
-    // That left a full wall opening with a small bright rectangle, which
-    // read as a different window size. Damage stays on the cracks and splinter.
     dummy.position.set(glassX, paneY, z)
     dummy.updateMatrix()
-    glass.setMatrixAt(index, dummy.matrix)
+    if (kind < 2) glass.setMatrixAt(glassI++, dummy.matrix)
+    else shards.setMatrixAt(shardI++, dummy.matrix)
 
     dummy.scale.set(1, 1, 1)
     dummy.rotation.set(0, 0, 0)
@@ -983,10 +998,10 @@ function addBlownViewports(g, half, key, shared) {
       dummy.rotation.set(0, 0, 0)
     }
 
-    if (kind === 1 || kind === 2) {
+    if (kind === 1) {
       for (const k of [0, 1]) {
         dummy.position.set(s * (WALL_X - 0.02), paneY + (k ? 0.08 : -0.05), z + (k ? 0.12 : -0.08))
-        dummy.rotation.set(0, 0, 0.4 + k * 0.7 + h)
+        dummy.rotation.set(0.4 + k * 0.7 + h, 0, 0)
         dummy.scale.set(1, 0.7 + h * 0.4, 1)
         dummy.updateMatrix()
         cracks.setMatrixAt(crackI++, dummy.matrix)
@@ -1015,16 +1030,9 @@ function addBlownViewports(g, half, key, shared) {
     hide()
     brassV.setMatrixAt(brassVI++, dummy.matrix)
   }
-  glass.geometry.setAttribute('aBayPhase', new THREE.InstancedBufferAttribute(phases, 1))
-  glass.onBeforeRender = () => {
-    const time = g.userData.wreckClock || 0
-    const scroll = (time * 0.062) % 1
-    if (glassMat.map) glassMat.map.offset.x = scroll
-    if (glassMat.emissiveMap) glassMat.emissiveMap.offset.x = scroll
-    const shader = glassMat.userData.stormShader
-    if (shader) shader.uniforms.uStormTime.value = time
-  }
-  for (const mesh of [glass, woodH, woodV, brassH, brassV, sealH, sealV, cracks, splinters]) {
+  glass.count = glassI
+  shards.count = shardI
+  for (const mesh of [glass, shards, woodH, woodV, brassH, brassV, sealH, sealV, cracks, splinters]) {
     mesh.instanceMatrix.needsUpdate = true
     noCam(mesh)
     mesh.userData.wreckShell = true
@@ -3543,16 +3551,23 @@ function buildRoof(spans, shared, fx) {
   lantern(-1, V0 + 1.0)
   lantern(1, zEnd - 0.6)
 
-  // Slipstream streaks — the level fades them with the gusts.
+  // Slipstream streaks — the level sweeps them past the player with the wind.
+  // Each keeps a fixed lane, height and phase; the level owns their motion.
   const streaks = []
-  const span = zEnd - zStart
-  for (let k = 0; k < 10; k++) {
+  const streakGeo = new THREE.BoxGeometry(0.014, 0.014, 2.4)
+  for (let k = 0; k < 28; k++) {
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffe2c0, transparent: true, opacity: 0.05, depthWrite: false
+      color: 0xdce8ff, transparent: true, opacity: 0, depthWrite: false
     })
-    const streak = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 2.2 + (k % 3)), mat)
-    streak.position.set(((k % 2) ? 1 : -1) * (0.8 + (k % 3) * 0.6), ROOF_Y + 0.4 + (k % 4) * 0.35, zStart + k * (span / 10))
+    const streak = new THREE.Mesh(streakGeo, mat)
+    const hash = (n) => { const v = Math.sin((k + 1) * n) * 43758.5453; return v - Math.floor(v) }
+    streak.userData.seed = hash(12.9898)
+    // Mostly over the deck, some out past the edges where the drop is.
+    streak.userData.lane = (hash(78.233) * 2 - 1) * 4.4
+    streak.userData.height = 0.15 + hash(37.719) * 2.3
+    streak.position.set(streak.userData.lane, ROOF_Y + streak.userData.height, zStart)
     streak.userData.noCameraCollision = true
+    streak.raycast = () => {}
     streaks.push(streak)
     group.add(streak)
   }
@@ -3700,11 +3715,12 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
   }
 
   // Base exposure so no corner falls to pure black between the point lights.
-  const ambient = new THREE.AmbientLight(damaged ? 0x343c48 : 0x5b5750, damaged ? 0.58 : 0.5)
+  // Raised so the cars with only one or two lamps still read under ACES.
+  const ambient = new THREE.AmbientLight(damaged ? 0x3c4552 : 0x5b5750, damaged ? 0.82 : 0.7)
   const hemi = new THREE.HemisphereLight(
     damaged ? 0x6a7e98 : 0x8a8272,
-    damaged ? 0x1e242c : 0x2a2620,
-    damaged ? 0.62 : 0.55
+    damaged ? 0x262d36 : 0x322d26,
+    damaged ? 0.85 : 0.75
   )
   root.add(ambient, hemi)
 

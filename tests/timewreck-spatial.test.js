@@ -95,7 +95,10 @@ test('N6: seat backs are real solids with a clear rightward then inward route', 
     assert.ok(h.player.mesh.position.z < c + 6, 'right end opens into rack clearance')
     h.pose('passenger', 2.1, 4.5); h.tick(0.5, { forward: true })
     assert.ok(h.player.mesh.position.z > c + 3.8, 'second shallow seat stops the outer line')
-    h.tick(0.5, { left: true }); h.tick(0.6, { forward: true })
-    assert.ok(h.player.mesh.position.z < c + 2, 'centre return leaves generous approach to the hole')
+    h.tick(0.7, { left: true }); h.tick(0.6, { forward: true })
+    assert.ok(h.player.mesh.position.x < -0.53, 'broad second seat requires a distinct left commitment')
+    assert.ok(h.player.mesh.position.z < c + 2, 'left bypass stays on solid approach')
+    h.tick(0.175, { right: true })
+    assert.ok(Math.abs(h.player.mesh.position.x) < 0.1, 'centre return before the original hole')
   } finally { h.dispose() }
 })

@@ -13,6 +13,7 @@ export function createWreckSpatial({ root, spans, player, obstacles }) {
     brass: new THREE.MeshStandardMaterial({ color: 0xc4a052, metalness: 0.8, roughness: 0.4 }),
     lining: new THREE.MeshStandardMaterial({ color: 0x542936, roughness: 0.9 })
   }
+  materials.beam = materials.brass
   const groups = []
   const pose = new THREE.Object3D()
   function carriage(key, build) {
@@ -57,6 +58,8 @@ export function createWreckSpatial({ root, spans, player, obstacles }) {
     for (const [mat, pieces] of batches) {
       const mesh = new THREE.Mesh(mergeGeometries(pieces, false), materials[mat])
       mesh.name = `${key}-spatial-${mat}`
+      // The thin duck beam must not pin the chase camera against the hat.
+      if (mat === 'beam') mesh.userData.noCameraCollision = true
       group.add(mesh); pieces.forEach(g => g.dispose())
     }
   }
@@ -109,13 +112,19 @@ export function createWreckSpatial({ root, spans, player, obstacles }) {
     }
   })
   carriage('passenger', box => {
-    // Shallow deflections preserve the established right-then-centre sprint.
+    // Reuse the second seat: its open left end asks for right, left, centre.
     // Broad wooden ends stay inside each visible solid, without sharp horns.
-    for (const [x, z, w] of [[-1.25, 7.5, 2.5], [1.95, 3.5, 1.1]]) {
+    for (const [x, z, w] of [[-1.25, 7.5, 2.5], [1.125, 3.5, 2.95]]) {
       box('wood', w, 1.2, 0.32, x, 0.6, z, undefined, true, true)
       box('lining', w - 0.12, 1.08, 0.34, x, 0.6, z, undefined, false, true)
       box('brass', w - 0.08, 0.045, 0.34, x, 1.18, z)
     }
+    // Short wall-supported duck beam, then a floor rail. Both are on original
+    // solid floor, with separate crouch exit/run-up and jump landing strips.
+    box('beam', 5.2, 0.16, 0.18, 0, 1.48, -4.7, undefined, true)
+    for (const x of [-2.48, 2.48]) box('teal', 0.2, 1.4, 0.18, x, 2.26, -4.7)
+    box('wood', 5.2, 0.24, 0.24, 0, 0.12, -7.1, undefined, true)
+    box('brass', 5.2, 0.025, 0.07, 0, 0.2275, -7.01)
     for (const z of [-4.3, -7]) for (const s of [-1, 1]) {
       box('wood', 0.38, 0.55, 1.1, s * 2.25, 0.275, z)
       box('lining', 0.32, 0.12, 1, s * 2.25, 0.61, z)

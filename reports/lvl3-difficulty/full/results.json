@@ -1,0 +1,299 @@
+{
+  "errors": [],
+  "events": [
+    {
+      "name": "01-protected-observation-third",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "02-protected-observation-first",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "03-right-burst",
+      "position": [
+        1.814239999999995,
+        0,
+        -4.765760000000004
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "04-clear-reposition",
+      "position": [
+        -1.8135600000000054,
+        0,
+        -4.765760000000004
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "05-left-burst",
+      "position": [
+        -1.8135600000000054,
+        0,
+        -4.765760000000004
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "06-repaired-gangway-landing",
+      "position": [
+        0.11287999999999161,
+        0.1,
+        -12.017960000000015
+      ],
+      "energy": 52.73600000000002,
+      "mode": "FREEZE",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "07-freight-exit",
+      "position": [
+        0.11287999999999385,
+        0.1,
+        -24.14303999999994
+      ],
+      "energy": 85.70610000000019,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "08-relay-ghost-expired-on-pad",
+      "position": [
+        0.112879999999996,
+        0.1,
+        -36.04371999999988
+      ],
+      "energy": 59.47324999999988,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "09-relay-latched-ghost-cancelled",
+      "position": [
+        -0.08751999999999784,
+        0.1,
+        -41.85907999999995
+      ],
+      "energy": 64.20030000000007,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "10-security-island",
+      "position": [
+        0.507528295356358,
+        0,
+        -56.61510989417872
+      ],
+      "energy": 47.43849999999997,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "name": "11-security-exit",
+      "position": [
+        -0.09287170464363612,
+        0,
+        -64.53213389417873
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 0,
+      "crouching": false
+    },
+    {
+      "passenger": {
+        "failed": false,
+        "events": [
+          {
+            "stage": 0,
+            "p": [
+              0.8142482953563746,
+              0,
+              -68.61349389417889
+            ],
+            "energy": 100
+          },
+          {
+            "stage": 1,
+            "p": [
+              1.0420482953563746,
+              0,
+              -72.35213389417892
+            ],
+            "energy": 100
+          },
+          {
+            "stage": 2,
+            "p": [
+              -0.7721917046435461,
+              0,
+              -72.35213389417892
+            ],
+            "energy": 92.06199999999997
+          },
+          {
+            "stage": 3,
+            "p": [
+              -0.998631704643566,
+              0,
+              -74.27857389417896
+            ],
+            "energy": 83.19719999999977
+          },
+          {
+            "stage": 4,
+            "p": [
+              0.02204829535647336,
+              0,
+              -74.61789389417889
+            ],
+            "energy": 77.59719999999975
+          },
+          {
+            "stage": 5,
+            "p": [
+              0.02204829535647336,
+              0,
+              -74.61789389417889
+            ],
+            "energy": 76.66759999999982
+          },
+          {
+            "stage": 6,
+            "p": [
+              0.022048295356474165,
+              0,
+              -80.73789389417895
+            ],
+            "energy": 50.99999999999987
+          },
+          {
+            "stage": 7,
+            "p": [
+              0.022048295356474214,
+              0,
+              -81.19213389417898
+            ],
+            "energy": 52.00199999999992
+          },
+          {
+            "stage": 8,
+            "p": [
+              0.02204829535647432,
+              0,
+              -82.11613389417899
+            ],
+            "energy": 60.50100000000001
+          },
+          {
+            "stage": 9,
+            "p": [
+              0.02204829535647443,
+              0,
+              -82.90969389417896
+            ],
+            "energy": 62.501999999999924
+          },
+          {
+            "stage": 10,
+            "p": [
+              0.022048295356474845,
+              0,
+              -86.08175789417892
+            ],
+            "energy": 71.99999999999989
+          }
+        ],
+        "p": [
+          0.02204829535647547,
+          0,
+          -91.06683789417889
+        ],
+        "minGap": 12.059973894178945,
+        "minEnergy": 50.99999999999987
+      }
+    },
+    {
+      "name": "passenger-brake-approach",
+      "position": [
+        0.02204829535647547,
+        0,
+        -91.06683789417889
+      ],
+      "energy": 85.49999999999986,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": -74.26229999999995,
+      "crouching": false
+    },
+    {
+      "name": "brake-into-ending",
+      "position": [
+        0,
+        0,
+        7.6
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "failed": false,
+      "level": "Ending",
+      "crouching": false
+    }
+  ]
+}

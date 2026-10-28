@@ -386,7 +386,9 @@ function createApproachCorridor() {
 
   // Brass pendants. Only some keep a real light (see boarding-lighting.js);
   // the rest glow and paint a pool on the floor.
-  for (let x = -48; x <= -8; x += 8) {
+  // Keep the first pendant at its adjusted position, and shift the second
+  // clear of the wall. Each pendant and its point light share an x coordinate.
+  for (const x of [-45.5, -37.5, -32, -24, -16, -8]) {
     pendantLamp(kit, k, at(x, ROOF_Y - 0.11, APPROACH_CENTER_Z), 1.45)
 
     const lamp = new THREE.PointLight(0xffc98a, 18, 11, 2)
@@ -905,11 +907,12 @@ export function createStationLighting() {
   sunlight.shadow.normalBias = 0.045
   sunlight.target.position.set(0, 0, 0)
 
-  // A little more sky fill than the old 0.32, so shadowed faces keep a
-  // shape. The ground stays near-black and the warm lamps still lead.
-  const sky = new THREE.HemisphereLight(0x2a4068, 0x0a090e, 0.48)
+  // Sky fill keeps shadowed faces shaped; the ambient floor stops the
+  // underground passages between lamps falling to black. The warm lamps
+  // still lead.
+  const sky = new THREE.HemisphereLight(0x2a4068, 0x0f0e14, 0.58)
   sky.name = 'station-sky'
-  const fill = new THREE.AmbientLight(0x10131c, 0.06)
+  const fill = new THREE.AmbientLight(0x1a2030, 0.18)
   fill.name = 'station-fill'
 
   // -------------------------------------------------------------
