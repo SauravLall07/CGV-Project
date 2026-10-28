@@ -491,12 +491,90 @@ function addWreckDoorLeaf(parent, shared, mats, { x = 0, y = DOOR_H / 2, z = 0, 
   return leaf
 }
 
+// Level 2's open doorway between two cars, dressed on this car's face of the
+// bulkhead: a wooden architrave with a brass bead, a lining through the
+// opening, a brass threshold, and — on the forward bulkhead — a pair of
+// glazed doors folded back against the wall with a plate over the door
+// naming the car beyond. Visual only; the colliders keep DOOR_W clear.
+const DOORWAY_TRIM = 0.09
+// Folded-back doors: how far open (just shy of flat against the wall) and
+// how far the hinge stands out from the opening.
+const DOOR_FOLD = Math.PI * 0.94
+const DOOR_HINGE_OUT = 0.03
+
+function addCarriageDoorway(group, z, shared, nextName) {
+  const inward = z > 0 ? -1 : 1
+  const face = z + inward * 0.07
+  const wood = woodMaterial({ repeat: [1, 2], light: 0x5a3418, dark: 0x2a160a })
+  const add = (parent, mesh, x, y, zz) => {
+    mesh.position.set(x, y, zz)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    noCam(mesh)
+    parent.add(mesh)
+    return mesh
+  }
+  const box = (w, h, d, material) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material)
+
+  // Architrave and bead round the opening, and a lining through the
+  // thickness of the bulkhead.
+  const outerH = DOOR_H + DOORWAY_TRIM
+  for (const s of [-1, 1]) {
+    add(group, box(DOORWAY_TRIM, outerH, 0.05, wood), s * (DOOR_W / 2 + DOORWAY_TRIM / 2), outerH / 2, face + inward * 0.025)
+    add(group, box(0.025, DOOR_H, 0.06, shared.brass), s * (DOOR_W / 2 + 0.012), DOOR_H / 2, face + inward * 0.03)
+    add(group, box(0.02, DOOR_H, 0.14, wood), s * (DOOR_W / 2 - 0.01), DOOR_H / 2, z)
+  }
+  add(group, box(DOOR_W + DOORWAY_TRIM * 2, DOORWAY_TRIM, 0.05, wood), 0, DOOR_H + DOORWAY_TRIM / 2, face + inward * 0.025)
+  add(group, box(DOOR_W, 0.025, 0.06, shared.brass), 0, DOOR_H - 0.012, face + inward * 0.03)
+  add(group, box(DOOR_W, 0.02, 0.14, wood), 0, DOOR_H - 0.01, z)
+  // Threshold plate, flush with the runner.
+  add(group, box(DOOR_W, 0.012, 0.3, shared.brass), 0, 0.006, z)
+
+  if (z <= 0) return
+
+  // Glazed doors folded back against this wall either side of the opening,
+  // standing just off it so they read as doors rather than panelling. Each
+  // hangs from a hinge on the jamb; closed, its leaf would span to the centre.
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x3a4a5a, emissive: 0x1a2430, emissiveIntensity: 0.6, roughness: 0.08, metalness: 0.3,
+    transparent: true, opacity: 0.55
+  })
+  const leafW = DOOR_W / 2 - 0.01
+  const leafH = DOOR_H - 0.04
+  const stile = 0.07
+  for (const s of [-1, 1]) {
+    const hinge = new THREE.Group()
+    hinge.name = 'carriage-door-leaf'
+    hinge.position.set(s * (DOOR_W / 2 + DOOR_HINGE_OUT), 0.02, face + inward * 0.06)
+    // Closed, the leaf runs from the hinge toward the centre (-s along X).
+    // Swinging it nearly flat folds it back over the wall beside the opening.
+    hinge.rotation.y = s * inward * DOOR_FOLD
+    group.add(hinge)
+    const cx = -s * leafW / 2
+    for (const e of [-1, 1]) add(hinge, box(stile, leafH, 0.045, wood), cx + e * (leafW / 2 - stile / 2), leafH / 2, 0)
+    for (const y of [stile / 2, leafH * 0.45, leafH - stile / 2]) add(hinge, box(leafW, stile, 0.045, wood), cx, y, 0)
+    // Lower panel, upper glazing, brass kick plate and pull handle.
+    add(hinge, box(leafW - stile * 2, leafH * 0.45 - stile, 0.03, wood), cx, leafH * 0.225 + stile / 4, 0)
+    add(hinge, box(leafW - stile * 2, leafH * 0.55 - stile * 1.5, 0.012, glass), cx, leafH * 0.725, 0)
+    add(hinge, box(leafW - 0.02, 0.16, 0.05, shared.brass), cx, 0.1, 0)
+    add(hinge, new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 8), shared.brass),
+      cx - s * (leafW / 2 - 0.12), leafH * 0.47, 0.04)
+  }
+
+  if (!nextName) return
+  // Name plate over the door, facing into this car.
+  add(group, box(1.06, 0.28, 0.02, shared.brass), 0, DOOR_H + 0.3, face + inward * 0.01)
+  const plate = add(group, box(1.0, 0.22, 0.02, signMaterial({ text: nextName, width: 512, height: 112 })),
+    0, DOOR_H + 0.3, face + inward * 0.03)
+  plate.rotation.y = inward > 0 ? 0 : Math.PI
+}
+
 // Two side panels and a lintel around a centred doorway, plus a brass surround.
 // `sealed` fills the doorway in with a solid plate — used at the two ends of
 // the train, where an open doorway would otherwise look straight out of the
 // train at the scrolling outdoor scenery.
 // When `damaged`, Level 3 uses teal/brass wreck-door styling (visual only).
-function addBulkhead(group, z, shared, sealed = false, damaged = false) {
+function addBulkhead(group, z, shared, sealed = false, damaged = false, nextName = null) {
   const sideW = (WALL_X * 2 - DOOR_W) / 2
   const panelMat = damaged
     ? liftAlbedo(woodMaterial({
@@ -522,10 +600,14 @@ function addBulkhead(group, z, shared, sealed = false, damaged = false) {
   if (damaged) lintel.userData.wreckOccluder = true
   group.add(lintel)
 
-  const surround = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W + 0.12, DOOR_H + 0.06, 0.05), shared.brass)
-  surround.name = damaged ? 'wreck-door-surround' : 'door-surround'
-  surround.position.set(0, DOOR_H / 2, z)
-  group.add(surround)
+  if (!damaged && !sealed) {
+    addCarriageDoorway(group, z, shared, nextName)
+  } else {
+    const surround = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W + 0.12, DOOR_H + 0.06, 0.05), shared.brass)
+    surround.name = damaged ? 'wreck-door-surround' : 'door-surround'
+    surround.position.set(0, DOOR_H / 2, z)
+    group.add(surround)
+  }
 
   // Warm overhead lamp cue on the lintel (emissive mesh — no new PointLight).
   if (damaged) {
@@ -571,7 +653,8 @@ function addBulkhead(group, z, shared, sealed = false, damaged = false) {
   }
 }
 
-function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeiling = true } = {}) {
+// `nextName`: the car ahead, for the plate over Level 2's forward door.
+function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeiling = true, nextName = null } = {}) {
   const g = new THREE.Group()
   g.name = `carriage-${key}`
   g.userData.type = key
@@ -766,7 +849,7 @@ function buildShell(key, length, shared, damaged, seals = {}, { ceiling: hasCeil
   }
 
   addBulkhead(g, -half, shared, Boolean(seals.min), damaged)
-  addBulkhead(g, half, shared, Boolean(seals.max), damaged)
+  addBulkhead(g, half, shared, Boolean(seals.max), damaged, nextName)
 
   return { group: g, half }
 }
@@ -3677,6 +3760,14 @@ function buildRoof(spans, shared, fx) {
 
 // Padding stands in for a body radius: player and guards collide as points.
 const COLLIDER_PAD = 0.2
+// Names on the plates over Level 2's forward doors.
+const CAR_NAMES = {
+  security: 'SECURITY',
+  relay: 'ROUTE CONTROL',
+  cargo: 'CARGO',
+  mechanical: 'MECHANICAL',
+  convergence: 'CONVERGENCE'
+}
 const COLLIDER_KINDS = new Set(['seat', 'trunk', 'relaybox', 'locker', 'crate', 'rack', 'wheel', 'luggage', 'cabinet'])
 
 function buildInteriorColliders(spans, layout) {
@@ -3745,7 +3836,8 @@ export function createCarriageEnvironment({ damaged = false } = {}) {
       min: (index === 0 || cfg.key === 'vault') && !damaged,
       max: index === layout.length - 1 || (cfg.key === 'convergence' && !damaged)
     }
-    const { group, half } = buildShell(cfg.key, cfg.length, shared, damaged, seals)
+    const nextName = damaged ? null : CAR_NAMES[layout[index + 1]?.key] ?? null
+    const { group, half } = buildShell(cfg.key, cfg.length, shared, damaged, seals, { nextName })
     const center = cursor + half
     group.position.z = center
     root.add(group)
