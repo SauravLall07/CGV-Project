@@ -3515,16 +3515,23 @@ function buildRoof(spans, shared, fx) {
   lantern(-1, V0 + 1.0)
   lantern(1, zEnd - 0.6)
 
-  // Slipstream streaks — the level fades them with the gusts.
+  // Slipstream streaks — the level sweeps them past the player with the wind.
+  // Each keeps a fixed lane, height and phase; the level owns their motion.
   const streaks = []
-  const span = zEnd - zStart
-  for (let k = 0; k < 10; k++) {
+  const streakGeo = new THREE.BoxGeometry(0.014, 0.014, 2.4)
+  for (let k = 0; k < 28; k++) {
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffe2c0, transparent: true, opacity: 0.05, depthWrite: false
+      color: 0xdce8ff, transparent: true, opacity: 0, depthWrite: false
     })
-    const streak = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 2.2 + (k % 3)), mat)
-    streak.position.set(((k % 2) ? 1 : -1) * (0.8 + (k % 3) * 0.6), ROOF_Y + 0.4 + (k % 4) * 0.35, zStart + k * (span / 10))
+    const streak = new THREE.Mesh(streakGeo, mat)
+    const hash = (n) => { const v = Math.sin((k + 1) * n) * 43758.5453; return v - Math.floor(v) }
+    streak.userData.seed = hash(12.9898)
+    // Mostly over the deck, some out past the edges where the drop is.
+    streak.userData.lane = (hash(78.233) * 2 - 1) * 4.4
+    streak.userData.height = 0.15 + hash(37.719) * 2.3
+    streak.position.set(streak.userData.lane, ROOF_Y + streak.userData.height, zStart)
     streak.userData.noCameraCollision = true
+    streak.raycast = () => {}
     streaks.push(streak)
     group.add(streak)
   }

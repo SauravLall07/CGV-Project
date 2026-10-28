@@ -2051,7 +2051,12 @@ export function createMovingHeistLevel({
   //      lowers while its plate is weighted — FREEZE, then GHOST.
   // --------------------------------------------------------------------------
   let gustPhase = 0
+  // Set when a crate throws the player off the roof; the fall check fails the
+  // run once they have dropped far enough to see it.
+  let knockedOff = false
   const ROOF_Y = CARRIAGE_ROOF_Y
+  // How far below the deck a fall runs before the death screen.
+  const ROOF_FALL_DEPTH = 2.8
   const F0 = spans.freight.minZ
   const V0 = spans.vault.minZ
   const roofZ = (f) => F0 + f
@@ -2073,6 +2078,52 @@ export function createMovingHeistLevel({
   ]
   const deckW = WALL_X * 2 + 0.3
   const roofWood = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.78, metalness: 0.04 })
+
+  // Nothing fences the deck: the player can walk (or be blown) off either
+  // side at any point. Bounds reach well past the edges, and beyond each edge
+  // is a ledge void that carries the player's stride out into the fall.
+  const ROOF_EDGE_X = deckW / 2 + 0.08
+  const roofPlayBounds = { ...env.roofBounds, minX: -8, maxX: 8 }
+  for (const s of [-1, 1]) {
+    roofVoids.push({
+      minX: s < 0 ? -99 : ROOF_EDGE_X,
+      maxX: s < 0 ? -ROOF_EDGE_X : 99,
+      minZ: roof.zStart - 2,
+      maxZ: roof.zEnd + 2,
+      keepMomentum: true
+    })
+  }
+
+  // Wind. Gusts run on a fixed cycle so they can be read and planned around:
+  // calm, a build-up the indicator warns about, the gust, then a fade. Each
+  // gust blows across the deck from one side toward the other edge, with a
+  // lighter headwind toward the rear. Crouching braces against it; in the air
+  // you catch more of it. SLOW calms it and FREEZE stills it.
+  const GUST_PERIOD = 7.5
+  const GUST_WARN = 2.4 // indicator warns from here
+  const GUST_BUILD = 3.6 // strength rises from here...
+  const GUST_PEAK = 4.8 // ...holds full from here...
+  const GUST_FADE = 6.2 // ...and fades back to calm from here
+  // A whole gust drifts an unbraced player ~2.1 m sideways: the middle of
+  // the deck rides it out, anywhere near an edge does not.
+  const GUST_CROSS = 0.8 // m/s across the deck at full strength
+  const GUST_HEAD = 0.3 // m/s toward the rear at full strength
+  const WIND_CALM = 0.08
+  const smooth = (k) => k * k * (3 - 2 * k)
+  const wind = { side: 1, strength: WIND_CALM, warning: false }
+  function sampleWind(clock) {
+    const n = Math.floor(clock / GUST_PERIOD)
+    const u = clock - n * GUST_PERIOD
+    // +1 blows toward +X. A per-gust hash, so the side can't be memorised.
+    wind.side = fract(Math.sin((n + 1) * 12.9898) * 43758.5453) < 0.5 ? -1 : 1
+    if (u < GUST_BUILD) wind.strength = WIND_CALM
+    else if (u < GUST_PEAK) wind.strength = WIND_CALM + (1 - WIND_CALM) * smooth((u - GUST_BUILD) / (GUST_PEAK - GUST_BUILD))
+    else if (u < GUST_FADE) wind.strength = 1
+    else wind.strength = 1 - (1 - WIND_CALM) * smooth((u - GUST_FADE) / (GUST_PERIOD - GUST_FADE))
+    wind.warning = u >= GUST_WARN && u < GUST_PEAK
+  }
+  let streakFlow = 0
+  let windHudShown = false
 
   function roofSupport() {
     const support = { minX: 0, maxX: -1, minZ: 0, maxZ: -1, y: ROOF_Y }
@@ -2350,7 +2401,7 @@ export function createMovingHeistLevel({
 
   function enterRoof() {
     section = 'roof'
-    setBounds(env.roofBounds)
+    setBounds(roofPlayBounds)
     useObstacles(roofObstacles)
 
     // The roof starts over Convergence and ends over the forward Vault car.
@@ -2362,10 +2413,12 @@ export function createMovingHeistLevel({
     camera.snap()
 
     gustPhase = 0
+    streakFlow = 0
     hud.setObjective('Cross the roof to the Vault drop hatch')
     hud.showBriefing?.([
       'You are outside. The roof runs across an open freight wagon to the Vault.',
-      'Watch your footing — the gaps between the cars are real, and so is the drop.'
+      'Watch your footing — the gaps between the cars are real, and so is the drop over the sides.',
+      'Crosswinds gust across the deck. Watch the wind gauge, and crouch to brace when one hits.'
     ])
   }
 
@@ -2520,6 +2573,8 @@ export function createMovingHeistLevel({
       destabT = 0
       failCooldown = 0
       gustPhase = 0
+      streakFlow = 0
+      knockedOff = false
       zipRide = -1
       drawbridgeLatched = saved.drawbridgeLatched
       drawbridgeDown = drawbridgeLatched ? 1 : 0
@@ -2609,7 +2664,7 @@ export function createMovingHeistLevel({
       switchDoor.latched = true
       exitDoor.latched = true
       section = 'roof'
-      setBounds(env.roofBounds)
+      setBounds(roofPlayBounds)
       useObstacles(roofObstacles)
       startPos = new THREE.Vector3(0, CARRIAGE_ROOF_Y, roof.zStart + 0.8)
       lastRoofCheckpointZ = startPos.z
@@ -2999,18 +3054,65 @@ export function createMovingHeistLevel({
 
       roofSun.intensity = section === 'roof' ? ROOF_MOON_INTENSITY : 0
       roofSky.intensity = section === 'roof' ? ROOF_SKY_INTENSITY : 0
+      if (section !== 'roof' && windHudShown) {
+        windHudShown = false
+        hud.setWind?.(null)
+      }
 
       if (section === 'roof') {
-        // Slipstream streaks pulse with the gusts; SLOW calms them.
-        gustPhase += delta * (mode === 'SLOW' ? 0.16 : 1)
-        const gust = Math.pow(Math.max(0, Math.sin(gustPhase * 1.7)), 0.6)
-        roof.streaks.forEach((s) => {
-          s.material.opacity = 0.04 + gust * 0.2
+        // Wind runs on world time: SLOW drags the gust cycle out, FREEZE holds it.
+        const windRate = mode === 'FREEZE' ? 0 : mode === 'SLOW' ? 0.16 : 1
+        gustPhase += delta * windRate
+        sampleWind(gustPhase)
+        const gustForce = wind.strength * (mode === 'FREEZE' ? 0 : mode === 'SLOW' ? 0.3 : 1)
+
+        if (zipRide < 0 && !knockedOff && gustForce > 0) {
+          const brace = player.isCrouching() ? 0.3 : player.isAirborne() ? 1.35 : 1
+          pp.x += wind.side * GUST_CROSS * gustForce * brace * delta
+          pp.z -= GUST_HEAD * gustForce * brace * delta
+        }
+
+        // Slipstream streaks sweep past toward the rear, faster and brighter
+        // in a gust, and bend sideways with the crosswind. They hang in the
+        // air under FREEZE.
+        const STREAK_SPAN = 26
+        streakFlow += delta * windRate * (9 + 15 * wind.strength)
+        const drift = wind.side * wind.strength * 6
+        const lean = Math.atan2(-drift, STREAK_SPAN)
+        roof.streaks.forEach((s, k) => {
+          const life = fract(s.userData.seed + streakFlow / STREAK_SPAN)
+          s.position.set(
+            s.userData.lane + drift * (life - 0.5),
+            ROOF_Y + s.userData.height,
+            pp.z + 16 - life * STREAK_SPAN
+          )
+          s.rotation.y = lean
+          s.scale.z = 0.7 + wind.strength * 1.6
+          s.material.opacity = (0.05 + 0.4 * wind.strength) * Math.sin(life * Math.PI)
         })
 
-        // Falling through a gap or an opening.
-        if (pp.y < ROOF_Y - 1.0 && zipRide < 0) {
-          failSoft('You fell between the cars.', 'fell')
+        // Gauge arrow relative to the camera: 0 = blowing the way the camera
+        // faces, clockwise positive. Camera forward is (sin, cos), right is
+        // (-cos, sin), matching player movement.
+        const yaw = camera.getYaw?.() ?? 0
+        const windX = wind.side * GUST_CROSS
+        const windZ = -GUST_HEAD
+        const ahead = windX * Math.sin(yaw) + windZ * Math.cos(yaw)
+        const right = -windX * Math.cos(yaw) + windZ * Math.sin(yaw)
+        windHudShown = true
+        hud.setWind?.({
+          angle: Math.atan2(right, ahead),
+          strength: gustForce,
+          state: mode === 'FREEZE' ? 'still' : wind.strength > 0.6 ? 'gust' : wind.warning ? 'warning' : 'calm'
+        })
+
+        // Falling through a gap or an opening, off the side, or thrown off.
+        if (pp.y < ROOF_Y - ROOF_FALL_DEPTH && zipRide < 0) {
+          failSoft(knockedOff
+            ? 'A cargo crate knocked you off the train — FREEZE the pair while the gap is on your side.'
+            : Math.abs(pp.x) > ROOF_EDGE_X
+              ? 'You fell off the side of the train.'
+              : 'You fell between the cars.', 'fell')
         }
 
         for (const z of roofCheckpoints) {
@@ -3021,16 +3123,20 @@ export function createMovingHeistLevel({
         }
 
         for (const { pair, z } of roofCrates) {
-          if (Math.abs(pp.z - z) < ROOF_CRATE_D / 2 + 0.2 && pp.y < ROOF_Y + 1.1) {
-            for (const ox of [-0.8, 0.8]) {
-              if (Math.abs(pp.x - (pair.position.x + ox)) < ROOF_CRATE_W / 2 + 0.2) {
-                failSoft('A cargo crate ran you down — FREEZE the pair while the gap is on your side.')
-              }
+          if (knockedOff || Math.abs(pp.z - z) >= ROOF_CRATE_D / 2 + 0.2 || pp.y >= ROOF_Y + 1.1) continue
+          for (const ox of [-0.8, 0.8]) {
+            const crateX = pair.position.x + ox
+            if (Math.abs(pp.x - crateX) < ROOF_CRATE_W / 2 + 0.2) {
+              // Thrown away from the crate, which is always toward the open
+              // side of the deck, and swept back by the train's slipstream.
+              knockedOff = true
+              player.knockback(Math.sign(pp.x - crateX || 1) * 6.5, 4.5, -2.2)
+              break
             }
           }
         }
 
-        if (Math.abs(pp.z - VENT_Z) < 0.75 && ventSteam > 0.5) {
+        if (!knockedOff && Math.abs(pp.z - VENT_Z) < 0.75 && ventSteam > 0.5) {
           failSoft('The vents blasted you — FREEZE them while the hatches are shut.')
         }
 
@@ -3057,7 +3163,7 @@ export function createMovingHeistLevel({
           setBounds({ minX: pp.x, maxX: pp.x, minZ: z, maxZ: z })
           if (k >= 1) {
             zipRide = -1
-            setBounds(env.roofBounds)
+            setBounds(roofPlayBounds)
             player.setPose(new THREE.Vector3(ZIP_X - 0.15, ROOF_Y, zipTo), 0)
           }
         } else if (trolley.position.z !== zipFrom && pp.z < zipFrom) {
@@ -3078,6 +3184,7 @@ export function createMovingHeistLevel({
     },
 
     dispose() {
+      hud.setWind?.(null)
       post?.resetGrade()
       if (scene.onBeforeRender === cullBeforeRender) scene.onBeforeRender = previousBeforeRender
       if (scene.onAfterRender === cullAfterRender) scene.onAfterRender = previousAfterRender

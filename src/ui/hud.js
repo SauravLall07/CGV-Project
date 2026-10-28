@@ -268,6 +268,95 @@ export function createHud() {
   suspicionTrack.appendChild(suspicionFill)
   suspicionContainer.append(suspicionLabelRow, suspicionTrack)
 
+  // Top-right wind gauge (Level 2 roof). The arrow shows where the wind is
+  // blowing relative to the camera; the bar is how hard it pushes right now.
+  const windContainer = document.createElement('div')
+  Object.assign(windContainer.style, {
+    position: 'absolute',
+    top: '76px',
+    right: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 14px',
+    background: 'rgba(15, 23, 42, 0.85)',
+    border: '1px solid rgba(148, 163, 184, 0.3)',
+    borderRadius: '6px',
+    backdropFilter: 'blur(6px)',
+    opacity: '0',
+    transform: 'translateY(-10px)',
+    transition: 'opacity 200ms ease, transform 200ms ease, border-color 200ms ease',
+    pointerEvents: 'none'
+  })
+
+  const windDial = document.createElement('div')
+  Object.assign(windDial.style, {
+    position: 'relative',
+    width: '44px',
+    height: '44px',
+    flex: '0 0 auto',
+    borderRadius: '50%',
+    border: '1px solid rgba(148, 163, 184, 0.35)',
+    background: 'radial-gradient(circle, rgba(148, 163, 184, 0.12), rgba(148, 163, 184, 0) 70%)'
+  })
+  // Fixed tick for the camera's forward direction.
+  const windTick = document.createElement('div')
+  Object.assign(windTick.style, {
+    position: 'absolute',
+    top: '2px',
+    left: '50%',
+    width: '2px',
+    height: '5px',
+    marginLeft: '-1px',
+    background: 'rgba(226, 232, 240, 0.55)'
+  })
+  const windArrow = document.createElement('div')
+  Object.assign(windArrow.style, {
+    position: 'absolute',
+    inset: '0',
+    transition: 'transform 140ms linear'
+  })
+  windArrow.innerHTML =
+    '<svg viewBox="0 0 44 44" width="44" height="44" aria-hidden="true">' +
+    '<path d="M22 6 L29 19 L24.5 18 L24.5 36 L19.5 36 L19.5 18 L15 19 Z" fill="currentColor"/></svg>'
+  windDial.append(windTick, windArrow)
+
+  const windInfo = document.createElement('div')
+  Object.assign(windInfo.style, { display: 'flex', flexDirection: 'column', gap: '4px' })
+  const windLabelRow = document.createElement('div')
+  Object.assign(windLabelRow.style, {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '10px',
+    width: '120px',
+    fontSize: '11px',
+    fontWeight: '700',
+    letterSpacing: '0.8px',
+    color: '#94a3b8'
+  })
+  const windLabel = document.createElement('span')
+  windLabel.textContent = 'WIND'
+  const windState = document.createElement('span')
+  windState.textContent = 'CALM'
+  windLabelRow.append(windLabel, windState)
+  const windTrack = document.createElement('div')
+  Object.assign(windTrack.style, {
+    width: '120px',
+    height: '6px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: '3px',
+    overflow: 'hidden'
+  })
+  const windFill = document.createElement('div')
+  Object.assign(windFill.style, {
+    height: '100%',
+    width: '0%',
+    transition: 'width 80ms ease-out'
+  })
+  windTrack.appendChild(windFill)
+  windInfo.append(windLabelRow, windTrack)
+  windContainer.append(windDial, windInfo)
+
   // Full-screen "caught" overlay — distinct from the small toast above:
   // covers the whole viewport so the freeze in respawn.js reads as a clear
   // beat rather than a message easy to miss mid-chase.
@@ -822,7 +911,7 @@ export function createHud() {
   })
   stats.textContent = '-- FPS'
 
-  root.append(objective, toast, briefing, suspicionContainer, timeDeck, runTimer, stats)
+  root.append(objective, toast, briefing, suspicionContainer, windContainer, timeDeck, runTimer, stats)
   document.body.appendChild(root)
 
   // Re-label the ability slots when the player rebinds a time ability.
@@ -997,6 +1086,45 @@ export function createHud() {
     }
   }
 
+  const WIND_STATES = {
+    calm: { text: 'CALM', color: '#94a3b8', border: 'rgba(148, 163, 184, 0.3)' },
+    warning: { text: 'GUST INCOMING', color: '#f59e0b', border: 'rgba(245, 158, 11, 0.6)' },
+    gust: { text: 'GUSTING', color: '#f97316', border: 'rgba(249, 115, 22, 0.7)' },
+    still: { text: 'STILL', color: '#67e8f9', border: 'rgba(103, 232, 249, 0.5)' }
+  }
+  let windArrowDeg = 0
+
+  // wind: { angle (radians, 0 = camera forward, clockwise), strength 0..1,
+  // state: calm | warning | gust | still }, or null to hide the gauge.
+  function setWind(wind) {
+    if (!wind) {
+      windContainer.style.opacity = '0'
+      windContainer.style.transform = 'translateY(-10px)'
+      return
+    }
+    windContainer.style.opacity = '1'
+    windContainer.style.transform = 'translateY(0)'
+
+    // Unwrap toward the previous angle so the CSS transition never spins the
+    // long way round when the camera turns through ±180°.
+    let deg = wind.angle * 180 / Math.PI
+    deg += Math.round((windArrowDeg - deg) / 360) * 360
+    windArrowDeg = deg
+    windArrow.style.transform = `rotate(${deg.toFixed(1)}deg) scale(${(0.7 + 0.3 * wind.strength).toFixed(2)})`
+
+    const look = WIND_STATES[wind.state] ?? WIND_STATES.calm
+    // The warning pulses so it is caught out of the corner of the eye.
+    const pulse = wind.state === 'warning' ? 0.55 + 0.45 * Math.abs(Math.sin(performance.now() / 160)) : 1
+    windState.textContent = look.text
+    windLabelRow.style.color = look.color
+    windArrow.style.color = look.color
+    windArrow.style.opacity = String((0.45 + 0.55 * Math.max(wind.strength, wind.state === 'warning' ? 1 : 0)) * pulse)
+    windContainer.style.borderColor = look.border
+    windFill.style.width = `${Math.round(wind.strength * 100)}%`
+    windFill.style.background = look.color
+    windFill.style.boxShadow = `0 0 8px ${look.color}`
+  }
+
   function updateTimeState({
     mode,
     energy,
@@ -1139,6 +1267,7 @@ export function createHud() {
     showBriefing,
     clearBriefing,
     setSuspicion,
+    setWind,
     updateTimeState,
     setChronoVisible,
     updateRunTimer,
