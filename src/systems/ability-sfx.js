@@ -81,11 +81,17 @@ function playShot(kind) {
   const source = ctx.createBufferSource()
   source.buffer = buffer
   source.loop = false
-  source.connect(out)
-  source.start()
-  source.onended = () => {
-    try { source.disconnect() } catch { /* already gone */ }
+  // Rewind is intentionally a little quieter than the other Chrono cues.
+  if (kind === 'REWIND') {
+    const rewindGain = ctx.createGain()
+    rewindGain.gain.value = 0.86
+    source.connect(rewindGain).connect(out)
+    source.onended = () => { try { source.disconnect(); rewindGain.disconnect() } catch {} }
+  } else {
+    source.connect(out)
+    source.onended = () => { try { source.disconnect() } catch {} }
   }
+  source.start()
 }
 
 export function playAbilitySfx(kind) {

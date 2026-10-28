@@ -4,6 +4,7 @@ import { getContext, getSfxGain } from '../core/audio.js'
 // the Level 2 Relay/Ghost carriage and respects the global SFX bus.
 const sources = {
   plate: new URL('../assets/audio/sfx/security/pressure-switch.mp3', import.meta.url),
+  wrong: new URL('../assets/audio/sfx/security/wrong-answer.mp3', import.meta.url),
   dial: new URL('../assets/audio/sfx/security/dial-switch.mp3', import.meta.url),
   slide: new URL('../assets/audio/sfx/security/door-slide.mp3', import.meta.url),
   whoosh: new URL('../assets/audio/sfx/security/door-whoosh.mp3', import.meta.url)
@@ -70,6 +71,7 @@ export function createGhostCarriagePuzzleAudio(player, carriage) {
     preload,
     playPlate: pos => play('plate', pos, 0.32),
     playDial: pos => play('dial', pos, 0.28),
+    playWrong: pos => play('wrong', pos, 0.32),
     playDoor: pos => { play('slide', pos, 0.48); play('whoosh', pos, 0.12, 0.60, 1.35) },
     dispose() {
       disposed = true
