@@ -55,6 +55,28 @@ test('wreck camera ignores decorative groups, holds brief clearances and still s
   }
 })
 
+test('chasing field remains two-sided while the follow camera stays on the player side', () => {
+  for (const fps of [30, 60, 144]) {
+    const { doc, restore } = installDocument()
+    const camera = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 100)
+    const view = createThirdPersonCamera(camera, doc.createElement('canvas'))
+    const player = new THREE.Group(), scene = new THREE.Scene()
+    const field = new THREE.Mesh(new THREE.PlaneGeometry(5, 3.5),
+      new THREE.MeshBasicMaterial({ color: 0xa855f7, side: THREE.DoubleSide, transparent: true, opacity: 0.6 }))
+    field.position.set(0, 1.75, 5.5); scene.add(field)
+    try {
+      view.setYaw(Math.PI); view.setPitch(0)
+      for (let i = 0; i < fps; i++) {
+        field.position.z = 5.5 - i / fps * 5
+        scene.updateMatrixWorld(true)
+        view.update(1 / fps, player, scene, { stabilizeCollision: true })
+        assert.ok(camera.position.z < field.position.z,
+          `field/camera ${fps}/${i}: ${field.position.z}/${camera.position.z}`)
+      }
+    } finally { view.dispose(); field.geometry.dispose(); field.material.dispose(); restore() }
+  }
+})
+
 test('Skip control: native button focus, single activation, hide and disposal discard handlers', () => {
   const {doc,restore} = installDocument()
   try {

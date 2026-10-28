@@ -278,7 +278,7 @@ export function createTimewreckLevel({
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
 
   let failCooldown = 0
-  const LEVEL_OBJECTIVE = 'The Chrono Core is tearing the train apart — escape to the locomotive'
+  const LEVEL_OBJECTIVE = 'Stay ahead of the purple time wave — escape to the locomotive'
   const COLLAPSE_HINT = `Freeze the marked floor with ${bindingLabel(settings.getBinding('freeze'))}, then sprint across its centre`
   const COLLAPSE_HINT_S = 4.6
   let collapseHintHoldUntil = -1
@@ -2448,7 +2448,7 @@ export function createTimewreckLevel({
   }
 
   // ============================================================
-  // FINAL SEQUENCE — Core depletion, the sprint, the brake
+  // PURSUING TIME WAVE — full escape, then the final sprint and brake
   // ============================================================
   const waveMat = createChronoFieldMaterial({
     baseColor: 0x2a0a3a, glowColor: 0xa855f7, opacity: 0.6, doubleSided: true, depthWrite: false
@@ -2456,8 +2456,8 @@ export function createTimewreckLevel({
   const wave = new THREE.Mesh(new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2, CARRIAGE_CEILING_Y), waveMat)
   wave.name = 'time-wave'
   wave.position.y = CARRIAGE_CEILING_Y / 2
-  wave.visible = false
-  wave.userData.noCameraCollision = true
+  wave.rotation.y = Math.PI // Face the escape route so Fresnel leaves the purple bands visible.
+  // Keep the follow camera on the player's side of the visible field.
   root.add(wave)
   const waveLight = new THREE.PointLight(0xa855f7, 0, 8, 2)
   waveLight.position.y = 1.4
@@ -2569,15 +2569,38 @@ export function createTimewreckLevel({
 
   const DEPLETE_Z = spans.passenger.maxZ - 1.8
   const WAVE_SPEED = 6.2 // below the actual 6.8 m/s sprint
+  const PURSUIT_SPEED = 5.5
+  const FIRST_CARRIAGE_SPEED = 4.5
+  const SECOND_CARRIAGE_SPEED = 5
   const WAVE_LEAD = 12
+  // Start inside the Vault, just beyond the default third-person camera.
+  const PUZZLE_WAVE_LEAD = 5.5
+  const initialZ = ['convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger'].includes(startCarriage)
+    ? spans[startCarriage].maxZ - (startCarriage === 'mechanical' ? 2.5 : 1.5) : spans.vault.center + 3
   const sprintObjective = () => `Sprint to the locomotive (${bindingLabel(settings.getBinding('run'))}) — pull the emergency brake!`
 
   let depleted = false
-  let waveZ = 0
+  let waveZ = initialZ + PUZZLE_WAVE_LEAD
+  wave.position.z = waveZ
+  waveLight.position.z = waveZ
+  waveLight.intensity = 12
   let braking = false
   let brakeComplete = false
   let disposed = false
   let brakeT = 0
+  unregisters.push(timeSystem.register(wave, {
+    onUpdate(scaledDelta) {
+      if (depleted || braking || brakeComplete || respawn.isFailing()) return
+      let speed = PURSUIT_SPEED
+      if (player.mesh.position.z >= spans.vault.minZ) speed = FIRST_CARRIAGE_SPEED
+      else if (player.mesh.position.z >= spans.convergence.minZ) speed = SECOND_CARRIAGE_SPEED
+      waveZ -= speed * scaledDelta
+    },
+    getSnapshot: () => ({ waveZ }),
+    restoreSnapshot(s) {
+      if (!depleted && !braking && !brakeComplete && !respawn.isFailing()) waveZ = s.waveZ
+    }
+  }))
   function brakeMotionScale() {
     return brakeComplete ? 0 : braking ? Math.max(0, 1 - brakeT / BRAKE_HANDOFF_SECONDS) : 1
   }
@@ -2779,7 +2802,7 @@ export function createTimewreckLevel({
   const retiredWreck = createWreckRetirement(retiredVisuals)
 
   // Capture the collapse at each checkpoint, then restore moving hazards to a
-  // predictable phase. The final checkpoint also puts the pursuing wave far
+  // predictable phase. Every checkpoint also puts the pursuing wave far
   // enough behind the player for repeated deaths to remain recoverable.
   function captureCheckpointRestore(checkpointZ) {
     const saved = {
@@ -2919,25 +2942,23 @@ export function createTimewreckLevel({
       luggageMat.emissive.setHex(0x1a1008)
       luggageMat.emissiveIntensity = 0.08
 
-      waveZ = depleted ? checkpointZ + WAVE_LEAD : 0
+      waveZ = checkpointZ + (depleted ? WAVE_LEAD : PUZZLE_WAVE_LEAD)
       wave.position.z = waveZ
       wave.scale.set(1, 1, 1)
-      wave.visible = depleted
+      wave.visible = true
       waveLight.position.z = waveZ
-      waveLight.intensity = depleted ? 12 : 0
+      waveLight.intensity = 12
       retiredWreck.apply(saved.retired)
     }
   }
 
-  const initialZ = ['convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger'].includes(startCarriage)
-    ? spans[startCarriage].maxZ - (startCarriage === 'mechanical' ? 2.5 : 1.5) : spans.vault.center + 3
   const visibility = createWreckVisibility({ root, carriages, spans,
     wallX: WRECK_WALL_X, ceilingY: CARRIAGE_CEILING_Y,
     enabled: () => !disposed && !braking })
   const removeVisibility = installWreckVisibility(scene, visibility)
   return {
     getVisibilityStats: visibility.getStats,
-    objective: 'The Chrono Core is tearing the train apart — escape to the locomotive',
+    objective: LEVEL_OBJECTIVE,
     checkpoint: {
       position: new THREE.Vector3(0, 0, initialZ),
       yaw: Math.PI,
@@ -3112,8 +3133,8 @@ export function createTimewreckLevel({
       collapseChronoMat.customUniforms.uIntensity.value = collapseLive
         ? (mode === 'FREEZE' ? 1.25 + freezePulse : 0.55 + 0.14 * Math.sin(elapsed * 2.4))
         : 0.34
-      if (!finaleFreeze) waveMat.customUniforms.uTime.value += delta
-      waveMat.customUniforms.uMode.value = finaleFreeze ? 2 : 3
+      waveMat.customUniforms.uTime.value += depleted ? (finaleFreeze ? 0 : delta) : envDt
+      waveMat.customUniforms.uMode.value = mode === 'FREEZE' ? 2 : 3
       const resumeWave = resumeFlashT >= 0 ? Math.max(0, 1 - resumeFlashT / 0.4) * 0.7 : 0
       waveMat.customUniforms.uIntensity.value = depleted
         ? (finaleFreeze ? 1.55 + Math.sin(elapsed * 2.2) * 0.12 : 1.12 + Math.sin(elapsed * 5.5) * 0.12) + resumeWave
@@ -3443,11 +3464,10 @@ export function createTimewreckLevel({
       }
 
       // --- FINAL SEQUENCE: depletion, then the sprint ----------------------
-      if (!depleted && pp.z < DEPLETE_Z) {
+      if (!depleted && pp.z < DEPLETE_Z && !respawn.isFailing()) {
         depleted = true
         timeSystem.setAbilityAvailability({ SLOW: false, REWIND: false, GHOST: false })
         lastCheckpointZ = -Infinity // no further checkpoints past here
-        waveZ = DEPLETE_Z + WAVE_LEAD
         wave.visible = true
         respawn.setCheckpoint(new THREE.Vector3(0, 0, DEPLETE_Z), Math.PI, {
           restore: captureCheckpointRestore(DEPLETE_Z)
@@ -3456,10 +3476,10 @@ export function createTimewreckLevel({
         hud.setObjective(sprintObjective())
       }
 
-      if (depleted) {
-        // Freeze is the one ability left, and it is what holds time off you.
+      if (!brakeComplete && !respawn.isFailing()) {
+        // The registered clock drives puzzle pursuit; the finale uses sprint speed.
         const holding = mode === 'FREEZE'
-        if (!holding && !respawn.isFailing()) waveZ -= WAVE_SPEED * delta
+        if (depleted && !holding) waveZ -= WAVE_SPEED * delta
         wave.position.z = waveZ
         waveLight.position.z = finaleFreeze ? THREE.MathUtils.lerp(waveZ, pp.z, 0.32) : waveZ
         waveLight.distance = finaleFreeze ? 22 : 8
@@ -3470,7 +3490,6 @@ export function createTimewreckLevel({
 
         if (waveZ <= pp.z + 0.35 && failCooldown <= 0) {
           failSoft('Time caught up with you!')
-          waveZ = DEPLETE_Z + WAVE_LEAD
         }
       }
 
