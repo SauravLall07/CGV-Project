@@ -49,10 +49,17 @@ const BOARDING_CAMERA_POSITION = new THREE.Vector3(-2.8, 2.6, 35.5)
 const BOARDING_CAMERA_LOOK = new THREE.Vector3(5.8, 1.5, 45.5)
 const BOARDING_CAMERA_MOVE_SECONDS = 1.0
 const BOARDING_PLATFORM_ANCHOR = new THREE.Vector3(3.8, 0, 43.2)
-const PLATFORM_CHECKPOINTS = [
-  { threshold: -6, position: new THREE.Vector3(-1.3, 0, -5.7) },
-  { threshold: 18, position: new THREE.Vector3(-1.3, 0, 19.2) }
-]
+// Final Level 1 checkpoint: the safe start of the open train platform,
+// immediately beyond the station's upper approach/junction. Never superseded
+// by checkpoints deeper along the exposed platform.
+const FINAL_PLATFORM_CHECKPOINT = {
+  threshold: -21.5,
+  // Respawn clear of the junction wall and the first luggage stack. The
+  // checkpoint still activates at the entrance, but the camera now has room
+  // behind the player and faces the long platform in the +Z direction.
+  position: new THREE.Vector3(2.4, 0, -22.3),
+  yaw: 0
+}
 
 // Level 1 — "The Boarding". The complete stealth infiltration level:
 // - Deterministic guard patrol AI (concourse, column perimeter, boarding sentry)
@@ -813,7 +820,7 @@ export function createBoardingLevel({
     console.assert(table.every(row => row.result === 'correct'), 'Cover core fails sheltered-side LOS test')
     // These checkpoints promise safety at respawn, with guards reset to their
     // initial positions/facings, rather than permanent immunity during patrol.
-    for (const checkpoint of PLATFORM_CHECKPOINTS) {
+    for (const checkpoint of [FINAL_PLATFORM_CHECKPOINT]) {
       let safe = true
       for (const guard of stealth.getGuards()) for (const height of [0.72, 1.2]) {
         eye.copy(guard.group.position); eye.y += 1.55
@@ -894,7 +901,7 @@ export function createBoardingLevel({
     }
     const reachable = flood(playerRadius), reachableWithSpare = flood(probeRadius)
     const destinations = [{ name: 'boarding spot', x: 4.1, z: 43.2 },
-      ...PLATFORM_CHECKPOINTS.map((checkpoint, i) => ({ name: `checkpoint-${i + 1}`, x: checkpoint.position.x, z: checkpoint.position.z }))]
+      { name: 'final-platform-checkpoint', x: FINAL_PLATFORM_CHECKPOINT.position.x, z: FINAL_PLATFORM_CHECKPOINT.position.z }]
     for (const point of destinations) {
       console.assert(reachable(point), 'Route blocked:', point)
       console.assert(reachableWithSpare(point), 'Route lacks 0.15 m spare clearance:', point)
@@ -1044,7 +1051,6 @@ export function createBoardingLevel({
   ]
   let zoneIndex = -1
   let platformCheckpointActive = false
-  let platformCheckpointIndex = -1
 
   // The level manager needs an initial respawn position before any checkpoint
   // has been reached. Once the player reaches the old spawn/junction, this is
@@ -1364,13 +1370,12 @@ export function createBoardingLevel({
           if (hud) hud.showToast(zoneNames[zoneIndex], 2200)
           hud?.setObjective('Time the patrols and reach the last carriage — Force the door')
         }
-        const checkpointIndex = p.z >= PLATFORM_CHECKPOINTS[1].threshold ? 1 : p.z >= PLATFORM_CHECKPOINTS[0].threshold ? 0 : -1
-        if (checkpointIndex > platformCheckpointIndex) {
-          platformCheckpointIndex = checkpointIndex
+        if (!platformCheckpointActive && bridgePassage.isComplete() && p.z >= FINAL_PLATFORM_CHECKPOINT.threshold) {
           platformCheckpointActive = true
-          const checkpoint = PLATFORM_CHECKPOINTS[checkpointIndex]
-          respawn.setCheckpoint(checkpoint.position, 0, { restore: resetPlatformGuards })
-          hud?.showToast(`Checkpoint ${checkpointIndex + 1} reached — luggage shelter`, 2400)
+          respawn.setCheckpoint(FINAL_PLATFORM_CHECKPOINT.position.clone(), FINAL_PLATFORM_CHECKPOINT.yaw, {
+            restore: resetPlatformGuards
+          })
+          hud?.showToast?.('Final checkpoint reached — train platform', 2400)
         }
       }
 
