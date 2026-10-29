@@ -155,6 +155,7 @@ const playerView = createPlayerView({
 // Browsers keep the AudioContext suspended until a user gesture. The title
 // menu overlay sits on top of the canvas, so NEW GAME / SETTINGS have to
 // unlock it as well as the canvas click that later grabs pointer lock.
+const WELCOME_ON_TRAIN_URL = new URL('./assets/audio/story/welcomeOnTrain.mp3', import.meta.url)
 const LEVEL_TRACKS = {
   Boarding: { file: '../assets/audio/music/level1-constance.mp3', loop: true },
   MovingHeist: { file: '../assets/audio/music/level2-mistake-the-getaway.mp3', loop: true },
@@ -164,6 +165,19 @@ const LEVEL_TRACKS = {
 }
 
 let musicSystem = null
+let welcomeOnTrainAudio = null
+let welcomeOnTrainRun = -1
+
+function playWelcomeOnTrain() {
+  if (welcomeOnTrainRun === storyRun) return
+  welcomeOnTrainRun = storyRun
+  welcomeOnTrainAudio?.dispose()
+  const audio = new LevelMusicPlayer(WELCOME_ON_TRAIN_URL)
+  welcomeOnTrainAudio = audio
+  audio.playWhenReady({ loop: false, volume: 1 }).catch((error) => {
+    console.warn('[main] Train welcome audio unavailable', error)
+  })
+}
 
 function ensureGameplayDrone() {
   if (musicSystem) return musicSystem
@@ -335,6 +349,7 @@ const levelManager = createLevelManager({
   timeSystem,
   loadingScreen: levelLoadingScreen,
   onEnter: (state) => {
+    if (state === 'MovingHeist') playWelcomeOnTrain()
     if (gameStarted && !storyPlayer?.active && !awaitingIntro) playMusicForState(state)
     // A level rebuild creates fresh Object3D instances. Phase 2 of the Model
     // Workshop remaps its stable scene keys here so saved dev-layout overrides
@@ -351,6 +366,8 @@ const levelManager = createLevelManager({
     }))
   },
   onLeave: () => {
+    welcomeOnTrainAudio?.dispose()
+    welcomeOnTrainAudio = null
     stopLevelMusic()
     releaseIdleLevel3Transition()
   },
