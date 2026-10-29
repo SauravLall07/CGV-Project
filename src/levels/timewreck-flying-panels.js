@@ -35,7 +35,8 @@ function randomSource(seed) {
 
 // The brown hull panels recur in every car, from the Vault through the cab.
 export function createFlyingPanels({ root, spans, player, timeSystem, unregisters, fail,
-  warn, onLethalFlight, seed = Math.floor(Math.random() * 4294967296) }) {
+  warn, onLethalFlight, onCargoRockNearby,
+  seed = Math.floor(Math.random() * 4294967296) }) {
   const group = new THREE.Group()
   group.name = 'wreck-flying-panels'
   root.add(group)
@@ -55,6 +56,7 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
     group.add(mesh)
     return { mesh, span, key, id, index, clock: -1, checkedCycle: -1,
       delay: index === 0 ? 0 : index * 0.65 + random() * 0.3,
+      rockSoundCycle: -1,
       period: WARNING + (span.maxZ - span.minZ + RUN_IN * 2) / 4.5 + RECOVERY }
   }))
   const collision = createDebrisCollision(player, panels.map(p => p.mesh))
@@ -213,6 +215,7 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
       if (!enabled) return
       panels.forEach((p, i) => {
         p.clock = clocks[i]
+        p.rockSoundCycle = -1
         p.soundedCycle = Math.floor(Math.max(0, p.clock) / (p.key === 'cargo' && p.index < 4 ? CARGO_BURSTS.period : p.period))
         apply(p)
       })
@@ -235,6 +238,25 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
       }
       applyScraps()
       applySignal()
+      // Rock-fall audio belongs to the four large moving Cargo blocks, NOT
+      // the Vault debris. Test after their current poses have been updated.
+      // Retry while the block is moving: an early out-of-range attempt must
+      // not consume its one-shot sound for this burst.
+      if (timeSystem.getMode() !== 'REWIND' && onCargoRockNearby) {
+        const listener = player.mesh.position
+        if (listener.z >= spans.cargo.minZ && listener.z <= spans.cargo.maxZ) {
+          for (const panel of cargo) {
+            if (panel.index >= 4 || !panel.mesh.visible || panel.clock < 0) continue
+            const second = panel.index >= 2
+            const cycle = Math.floor(panel.clock / CARGO_BURSTS.period)
+            const phase = panel.clock % CARGO_BURSTS.period - (second ? CARGO_BURSTS.second : 0)
+            const moving = phase >= CARGO_BURSTS.warning &&
+              phase < CARGO_BURSTS.warning + CARGO_BURSTS.active
+            if (!moving || panel.rockSoundCycle === cycle) continue
+            if (onCargoRockNearby(panel.mesh.position, listener)) panel.rockSoundCycle = cycle
+          }
+        }
+      }
       const stage = cargoBurstPhase(cargo[0].clock)
       const cue = `${Math.floor(cargo[0].clock / CARGO_BURSTS.period)}:${stage}`
       const near = z >= cargoCenter + 8.6 && z <= spans.cargo.maxZ
