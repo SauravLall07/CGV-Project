@@ -1,0 +1,171 @@
+{
+  "errors": [],
+  "events": [
+    {
+      "name": "01-protected-observation-third",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "view": "third",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 20.871580000000005,
+      "crouching": false
+    },
+    {
+      "name": "02-protected-observation-first",
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "view": "first",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 20.52506500000001,
+      "crouching": false
+    },
+    {
+      "name": "03-right-burst",
+      "position": [
+        1.9257599999999806,
+        0,
+        -4.767120000000007
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "view": "first",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 15.292500000000015,
+      "crouching": false
+    },
+    {
+      "name": "04-clear-reposition",
+      "position": [
+        -1.8986799999999897,
+        0,
+        -4.767120000000007
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "view": "third",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 13.819145000000015,
+      "crouching": false
+    },
+    {
+      "name": "05-left-burst",
+      "position": [
+        -1.8986799999999897,
+        0,
+        -4.767120000000007
+      ],
+      "energy": 100,
+      "mode": "NORMAL",
+      "view": "third",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 12.443355000000004,
+      "crouching": false
+    },
+    {
+      "name": "06-repaired-gangway-landing",
+      "position": [
+        0.027759999999932266,
+        0.1,
+        -12.132880000000073
+      ],
+      "energy": 49.27759999999956,
+      "mode": "FREEZE",
+      "view": "third",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 11.685000000000002,
+      "crouching": false
+    },
+    {
+      "name": "07-freight-exit",
+      "position": [
+        0.027759999999933782,
+        0.1,
+        -24.524760000000068
+      ],
+      "energy": 87.11660000000019,
+      "mode": "NORMAL",
+      "view": "third",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": 4.200926989347711,
+      "crouching": false
+    },
+    {
+      "name": "08-relay-ghost-expired-on-pad",
+      "position": [
+        0.02775999999993517,
+        0.1,
+        -36.084760000000095
+      ],
+      "energy": 63.42485000000008,
+      "mode": "NORMAL",
+      "view": "third",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": -13.457778441554032,
+      "crouching": false
+    },
+    {
+      "name": "09-relay-latched-ghost-cancelled",
+      "position": [
+        -0.17224000000006479,
+        0.1,
+        -41.9830400000001
+      ],
+      "energy": 66.69890000000008,
+      "mode": "NORMAL",
+      "view": "third",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": -16.881413953645424,
+      "crouching": false
+    },
+    {
+      "name": "10-security-island",
+      "position": [
+        0.5356430283395897,
+        0,
+        -56.67644526565689
+      ],
+      "energy": 51.836999999999875,
+      "mode": "NORMAL",
+      "view": "third",
+      "failed": false,
+      "level": "Timewreck",
+      "wave": -22.654433746817727,
+      "crouching": false
+    },
+    {
+      "name": "failure",
+      "position": [
+        0.9356430283395895,
+        -0.8699317000000014,
+        -63.75752594827125
+      ],
+      "energy": 44.0555999999996,
+      "mode": "FREEZE",
+      "view": "third",
+      "failed": true,
+      "level": "Timewreck",
+      "wave": -29.599732017362076,
+      "crouching": false
+    }
+  ],
+  "failure": "blocked movement {\"reached\":false,\"p\":[0.9356430283395895,-0.8699317000000014,-63.75752594827125],\"failed\":true} -> -64.4"
+}

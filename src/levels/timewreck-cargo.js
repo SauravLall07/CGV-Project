@@ -39,18 +39,21 @@ export function createCargoGangwayState() {
 export function cargoLoopPose(clock, out = {}) {
   const phase = ((clock % 9) + 9) % 9
   out.door = 1
+  // The trunk cycles independently so it drops while the bulkhead is open too.
+  const trunkPhase = ((clock % 3.2) + 3.2) % 3.2
   out.beam = 0
+  if (trunkPhase >= 0.6 && trunkPhase < 0.95) out.beam = ((trunkPhase - 0.6) / 0.35) ** 2
+  else if (trunkPhase >= 0.95 && trunkPhase < 2.55) out.beam = 1
+  else if (trunkPhase >= 2.55) out.beam = 1 - (trunkPhase - 2.55) / 0.65
   out.colour = 0x10b981
   if (phase >= 2.5 && phase < 3.7) {
     out.door = 1 - (phase - 2.5) / 1.2
     out.colour = 0xf59e0b
   } else if (phase >= 3.7 && phase < 7.5) {
     out.door = 0
-    out.beam = Math.max(0, Math.min(1, phase - 5))
     out.colour = 0xef4444
   } else if (phase >= 7.5) {
     out.door = (phase - 7.5) / 1.5
-    out.beam = 1 - out.door
     out.colour = 0xa855f7
   }
   return out

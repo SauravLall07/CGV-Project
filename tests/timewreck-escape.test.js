@@ -67,6 +67,126 @@ function levelHarness(start = 'mechanical', fps = 60) {
   return { hud, setProbe(fn) { probe = fn }, get elapsed() { return elapsed }, get skipFinale() { return skipFinale }, get advanced() { return advanced }, scene, player, time, respawn, level, center, layout, interactions, tick, dispose, messages }
 }
 
+test('L3 wave pursues from every carriage start before depletion', () => {
+  for (const start of ['vault', 'convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger']) {
+    const h = levelHarness(start)
+    try {
+      const wave = h.scene.getObjectByName('time-wave')
+      const z = wave.position.z
+      assert.equal(wave.visible, true, start)
+      assert.equal(z - h.player.mesh.position.z, 5.5, start)
+      assert.equal(wave.material.side, THREE.DoubleSide, 'retain the original field in both views')
+      const front = new THREE.Vector3(0, 0, 1).applyQuaternion(wave.quaternion)
+      assert.ok(front.dot(h.player.mesh.position.clone().sub(wave.position).normalize()) > 0.8,
+        'player sees the purple front face, not a fully lit back-face Fresnel wash')
+      assert.notEqual(wave.userData.noCameraCollision, true, 'camera stays ahead of the field instead of hiding its back face')
+      if (start === 'vault') {
+        const vault = h.level.getCarriageVolumes().find(v => v.key === 'vault')
+        assert.ok(z <= vault.maxZ - 0.5, 'opening field is inside the first carriage, ahead of its rear wall')
+      }
+      h.tick(0.2)
+      const speed = start === 'vault' ? 3.6 : start === 'convergence' ? 4 : 4.4
+      assert.ok(Math.abs(z - wave.position.z - speed * 0.2) < 1e-6, start)
+      assert.equal(h.respawn.isFailing(), false, start)
+      assert.equal(h.time.getAbilityAvailability().REWIND, true, start)
+    } finally { h.dispose() }
+  }
+})
+
+test('L3 wave steps up through the first two carriages and restores normal pursuit afterward', () => {
+  const h = levelHarness('vault')
+  try {
+    const wave = h.scene.getObjectByName('time-wave')
+    const volumes = h.level.getCarriageVolumes()
+    const exitZ = volumes.find(v => v.key === 'vault').minZ
+    const initial = wave.position.z
+    h.tick(0.1)
+    assert.ok(Math.abs(initial - wave.position.z - 0.36) < 1e-6)
+    h.player.setPose(new THREE.Vector3(0, 0, exitZ - 0.1), Math.PI)
+    const beforeExit = wave.position.z
+    h.tick(0.1)
+    assert.ok(Math.abs(beforeExit - wave.position.z - 0.4) < 1e-6)
+    h.player.setPose(new THREE.Vector3(0, 0, volumes.find(v => v.key === 'mechanical').maxZ - 2.5), Math.PI)
+    const beforeThird = wave.position.z
+    h.tick(0.1)
+    assert.ok(Math.abs(beforeThird - wave.position.z - 0.44) < 1e-6)
+    assert.equal(h.respawn.isFailing(), false)
+  } finally { h.dispose() }
+})
+
+test('L3 wave maintains its chase speed while stopped, walking and farther ahead', () => {
+  for (const fps of [30, 60, 144, [1/144, 1/30, 0.1, 1/60]]) {
+    const h = levelHarness('convergence', fps)
+    try {
+      const wave = h.scene.getObjectByName('time-wave')
+      const measure = keys => {
+        const before = wave.position.z
+        h.tick(0.2, keys)
+        assert.ok(Math.abs(before - wave.position.z - 0.8) < 1e-6)
+      }
+      measure({})
+      measure({ forward: true })
+      h.time.triggerFreeze(); h.tick(0.4, { forward: true, run: true })
+      h.time.setMode('NORMAL')
+      measure({})
+      assert.equal(h.respawn.isFailing(), false)
+    } finally { h.dispose() }
+  }
+})
+
+test('L3 constant-speed wave respects Slow, Freeze, snapshot Rewind and repeated caught/checkpoint recovery', () => {
+  for (const fps of [30, 60, 144, [1/144, 1/30, 0.1, 1/60]]) {
+    const h = levelHarness('convergence', fps)
+    try {
+      const wave = h.scene.getObjectByName('time-wave')
+      const start = wave.position.z
+      h.tick(0.2)
+      assert.ok(Math.abs(start - wave.position.z - 0.8) < 1e-6)
+      const normal = wave.position.z
+      h.time.triggerSlow(); h.tick(0.2)
+      assert.ok(Math.abs(normal - wave.position.z - 0.16) < 1e-6)
+      const slowed = wave.position.z
+      const clock = wave.material.customUniforms.uTime.value
+      h.time.triggerFreeze(); h.tick(0.1)
+      assert.equal(wave.position.z, slowed)
+      assert.equal(wave.material.customUniforms.uTime.value, clock)
+      h.time.triggerRewind(); h.tick(0.1)
+      assert.ok(wave.position.z > slowed + 0.05, 'rewinds real recorded pursuit')
+      h.time.setMode('NORMAL')
+      for (let attempt = 0; attempt < 3; attempt++) {
+        h.tick(1.5)
+        assert.equal(h.respawn.isFailing(), true, 'observation floor is no refuge from time')
+        assert.ok(h.messages.includes('Time caught up with you!'))
+        const caught = wave.position.z
+        h.tick(1)
+        assert.equal(wave.position.z, caught, 'no wave advance or teleport during failure')
+        h.respawn.cancel(); h.respawn.respawn()
+        assert.equal(wave.position.z - h.player.mesh.position.z, 5.5)
+        assert.equal(h.time.getMode(), 'NORMAL')
+        assert.ok(h.time.getEnergy() >= 50)
+        h.time.triggerRewind(); h.tick(0.1)
+        assert.ok(wave.position.z >= h.player.mesh.position.z + 5.5 - 4 * 0.1 - 1e-6, 'retry history contains the restored wave')
+        h.time.setMode('NORMAL')
+      }
+    } finally { h.dispose() }
+  }
+})
+
+test('L3 depletion preserves the existing wave and final chase speed without teleporting it', () => {
+  const h = levelHarness('passenger')
+  try {
+    const wave = h.scene.getObjectByName('time-wave')
+    h.tick(0.1, { forward: true, run: true })
+    const before = wave.position.z
+    h.level.update(0)
+    assert.equal(h.time.getAbilityAvailability().REWIND, false)
+    assert.equal(h.scene.getObjectByName('time-wave'), wave)
+    assert.equal(wave.position.z, before)
+    h.tick(0.1)
+    assert.ok(Math.abs(before - wave.position.z - 0.5) < 1e-6)
+  } finally { h.dispose() }
+})
+
 test('L3 atmosphere holds through ordinary Freeze and resumes without jumping to wall-clock time', () => {
   const h = levelHarness('mechanical')
   try {
@@ -133,7 +253,7 @@ test('N7: live approach/depleted repair, three falls/retries, Mechanical checkpo
       while (h.time.getMode() === 'FREEZE') h.tick(0.02)
       assert.ok(h.time.getEnergy() < 1)
       assert.equal(h.respawn.isFailing(), false)
-      h.tick(26)
+      h.tick(12) // Exhaust the ten-second history while staying ahead of the faster wave.
       h.time.triggerRewind()
       for (let i = 0; Math.abs(hinge.rotation.x) > 0.01; i++) { assert.ok(i < 150); h.tick(0.02) }
       h.time.triggerFreeze(); h.tick(1.4, { forward: true }); h.tick(0.05)
@@ -258,8 +378,10 @@ test('Integration: continuous Vault-to-brake routes preserve both forks and solv
       h.time.triggerRewind(); h.tick(0.55); h.time.triggerFreeze()
       move('z', center(stage) + 3.15, {run:true})
       recharge()
-      waitUntil(() => h.scene.getObjectByName('cargo-loop-door').position.y > 3.49)
-      h.time.triggerFreeze(); move('z', center(stage) - 3, {run:true})
+      waitUntil(() => h.scene.getObjectByName('cargo-loop-door').position.y > 3.49 &&
+        h.scene.getObjectByName('cargo-loop-trunk').position.y < 0.19)
+      h.time.triggerFreeze(); move('z', center(stage) - 0.75, {run:true})
+      h.tick(0.65, {forward:true,run:true,jump:true}); check()
       h.time.setMode('NORMAL')
       move('z', center(stage) - 5)
       recharge()
@@ -401,16 +523,15 @@ test('N8/N9: each live event pauses, holds Freeze without taking control, and re
   } finally { globalThis.requestAnimationFrame = oldRAF }
 })
 
-test('N9: caught recovery and game-over restart during every vignette restore progress and reject stale callbacks', () => {
+test('N9: caught recovery during every vignette restores progress, rejects stale callbacks, and never game-overs', () => {
   const oldRAF = globalThis.requestAnimationFrame, oldTimeout = globalThis.setTimeout, oldClear = globalThis.clearTimeout
   try {
     for (const spec of WRECK_VIGNETTES) {
-      const frames = [], timers = new Map(); let id = 0, gameOvers = 0
-      globalThis.requestAnimationFrame = cb => frames.push(cb)
+      const timers = new Map(); let id = 0, gameOvers = 0
+      globalThis.requestAnimationFrame = () => 0
       globalThis.setTimeout = cb => { timers.set(++id, cb); return id }
       globalThis.clearTimeout = key => timers.delete(key)
       const h = levelHarness(spec.key)
-      let manager
       try {
         pose(h, 0, h.center + spec.triggerNear - 0.1); h.tick(0.3)
         const event = h.scene.getObjectByName(`${spec.key}-background-vignette`)
@@ -423,26 +544,19 @@ test('N9: caught recovery and game-over restart during every vignette restore pr
         assert.equal(event.position.x, spec.x, 'actual checkpoint restores the saved initial event phase')
         h.time.triggerFreeze(); const restored = event.position.clone(); h.tick(0.1)
         assert.ok(event.position.equals(restored), 'history reset must not replace checkpoint geometry')
-        manager = createLevelManager({ scene: h.scene, player: h.player, hud: h.hud, timeSystem: h.time,
-          respawn: h.respawn, camera: { snap() {} }, loadingScreen: { show() {}, hide() {} },
-          interaction: { register: () => () => {}, registerBlocker: () => () => {}, setEnabled() {} },
-          levels: [{ state: 'Timewreck', create: ctx => createTimewreckLevel({ debrisSeed: 12345, ...ctx, startCarriage: spec.key }) }] })
-        manager.adopt('Timewreck', h.level)
-        h.respawn.resetLives(1)
-        h.respawn.setGameOverHandler(() => { gameOvers++; manager.restart() })
+        // Lives are unlimited: a registered game-over handler must never fire,
+        // and the same level instance must survive repeated deaths.
+        h.respawn.setGameOverHandler(() => { gameOvers++ })
         pose(h, 0, h.center + spec.triggerNear - 0.1)
         h.time.setMode('NORMAL'); h.tick(0.2)
-        h.respawn.fail('final life during vignette')
-        const staleGameOver = [...timers.values()].at(-1)
-        staleGameOver()
-        for (let n = 0; frames.length; n++) { assert.ok(n < 10); frames.shift()() }
-        staleGameOver(); staleCaught()
-        assert.equal(gameOvers, 1)
-        const fresh = h.scene.getObjectByName(`${spec.key}-background-vignette`)
-        assert.notEqual(fresh, event)
-        assert.equal(fresh.position.x, spec.x)
+        h.respawn.fail('another death during vignette')
+        ;[...timers.values()].at(-1)?.()
+        staleCaught()
+        assert.equal(gameOvers, 0, 'death never triggers game-over / Level 1 rebuild')
+        assert.equal(h.scene.getObjectByName(`${spec.key}-background-vignette`), event)
+        assert.equal(event.position.x, spec.x)
         assert.equal(h.respawn.isFailing(), false)
-      } finally { manager?.dispose(); if (!manager) h.level.dispose(); h.respawn.dispose(); h.time.dispose() }
+      } finally { h.level.dispose(); h.respawn.dispose(); h.time.dispose() }
     }
   } finally {
     globalThis.requestAnimationFrame = oldRAF; globalThis.setTimeout = oldTimeout; globalThis.clearTimeout = oldClear
@@ -454,6 +568,8 @@ test('N4: threshold blocks walking, permits a modest jump and leaves both fork e
     const h = levelHarness('convergence', fps)
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
+        // Replay the threshold from upstream, rather than behind the saved checkpoint's wave.
+        h.respawn.setCheckpoint(h.level.checkpoint.position, Math.PI, h.level.checkpoint)
         h.respawn.cancel(); h.respawn.respawn()
         pose(h, 0.65, h.center + 15.2)
         h.tick(0.5, { forward: true })

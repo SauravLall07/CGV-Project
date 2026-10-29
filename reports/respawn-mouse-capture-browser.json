@@ -1,0 +1,41 @@
+{
+  "errors": [],
+  "checks": [
+    {
+      "mode": "third",
+      "caught": {
+        "state": "CAUGHT",
+        "locked": true
+      },
+      "before": {
+        "state": "PLAYING",
+        "locked": true,
+        "yaw": 0
+      },
+      "after": {
+        "locked": true,
+        "yaw": -0.125
+      }
+    },
+    {
+      "mode": "first",
+      "caught": {
+        "state": "CAUGHT",
+        "locked": true
+      },
+      "before": {
+        "state": "PLAYING",
+        "locked": true,
+        "yaw": 0
+      },
+      "after": {
+        "locked": true,
+        "yaw": -0.125
+      }
+    }
+  ],
+  "pause": {
+    "state": "PAUSED",
+    "locked": false
+  }
+}

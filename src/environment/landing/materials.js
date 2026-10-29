@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { brickMaterial, signMaterial } from '../textures.js'
+import { brickMaterial } from '../textures.js'
+import vaneCentralSignUrl from '../../assets/textures/landing/vane-central-sign.jpg?url'
 
 // One material per surface. Static architecture is merged onto these, and the
 // repeated bays instance them, so the facade is a handful of draws.
@@ -151,6 +152,27 @@ export function createLandingMaterials() {
   const door = createLandingDoorMaterials()
 
   const clockMap = canvasTexture(clockCanvas(), [1, 1], true)
+  const signMap = new THREE.TextureLoader().load(vaneCentralSignUrl)
+  signMap.colorSpace = THREE.SRGBColorSpace
+  signMap.generateMipmaps = true
+  signMap.minFilter = THREE.LinearMipmapLinearFilter
+  const sign = new THREE.MeshStandardMaterial({
+    map: signMap,
+    emissiveMap: signMap,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.55,
+    roughness: 0.5,
+    metalness: 0.2
+  })
+  // The renderer is first available at draw time. Both maps share the texture,
+  // which the normal landing material cleanup disposes once.
+  sign.onBeforeRender = (renderer) => {
+    const anisotropy = renderer.capabilities?.getMaxAnisotropy?.() ?? 1
+    if (signMap.anisotropy !== anisotropy) {
+      signMap.anisotropy = anisotropy
+      signMap.needsUpdate = true
+    }
+  }
 
   return {
     brickTile: BRICK_TILE,
@@ -203,14 +225,7 @@ export function createLandingMaterials() {
     })(),
     shrub: new THREE.MeshStandardMaterial({ color: 0x243328, roughness: 0.92 }),
     crate: new THREE.MeshStandardMaterial({ color: 0x6a4630, roughness: 0.84 }),
-    sign: signMaterial({
-      text: 'CHRONO EXPRESS',
-      background: 0x121610,
-      foreground: 0xe6c56a,
-      width: 1024,
-      height: 160,
-      emissiveIntensity: 0.55
-    }),
+    sign,
     lantern: glassMaterial(0xffd7a2, 2.6)
   }
 }

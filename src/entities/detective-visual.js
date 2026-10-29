@@ -12,6 +12,11 @@ const PRESS_FADE_OUT = 0.2
 const PICKUP_SPEED = 1.3
 const PICKUP_FADE_OUT = 0.25
 const PULL_RETURN_SPEED = 1.5
+// Pushing the trolley: forward lean of the upper spine (rad) standing and
+// while it rolls, and how far out to the side the elbows bend.
+const PUSH_LEAN = 0.12
+const PUSH_LEAN_MOVING = 0.24
+const PUSH_ELBOW_OUT = 0.6
 // The crouch transitions last ~0.3s once sped up, so a full CROSSFADE would
 // hide them; they fade in and out faster.
 const CROUCH_FADE = 0.12
@@ -549,6 +554,112 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
   let pointElapsed = null
   let pointApplied = false
+
+  // Pushing the service trolley. There is no Mixamo push clip, so the legs
+  // walk (slowed to pushing pace) and the upper body is posed on top: a lean
+  // into the bar, and each arm solved with two-bone IK so the hands land on
+  // the grip points the player passes in (player-local, +X = left).
+  const pushArms = ['Left', 'Right'].map((side) => ({
+    side,
+    arm: idleFbx.getObjectByName(`mixamorig${side}Arm`),
+    fore: idleFbx.getObjectByName(`mixamorig${side}ForeArm`),
+    hand: idleFbx.getObjectByName(`mixamorig${side}Hand`),
+    grip: new THREE.Vector3()
+  }))
+  const canPush = pushArms.every((limb) => limb.arm && limb.fore && limb.hand)
+  const pushSpine = idleFbx.getObjectByName('mixamorigSpine1') ?? idleFbx.getObjectByName('mixamorigSpine')
+  const pushBones = [pushSpine, ...pushArms.flatMap((limb) => [limb.arm, limb.fore])].filter(Boolean)
+  const pushBase = pushBones.map(() => new THREE.Quaternion())
+  let pushInput = null
+  let pushWeight = 0
+  let pushApplied = false
+  const ik = {
+    shoulder: new THREE.Vector3(), elbow: new THREE.Vector3(), wrist: new THREE.Vector3(),
+    target: new THREE.Vector3(), dir: new THREE.Vector3(), bend: new THREE.Vector3(),
+    from: new THREE.Vector3(), to: new THREE.Vector3(), axis: new THREE.Vector3(),
+    world: new THREE.Quaternion(), parent: new THREE.Quaternion(), turn: new THREE.Quaternion(),
+    solved: new THREE.Quaternion()
+  }
+
+  // Applies a world-space rotation to a bone, keeping its parent where it is.
+  function turnBone(bone, rotation) {
+    bone.getWorldQuaternion(ik.world)
+    bone.parent.getWorldQuaternion(ik.parent).invert()
+    bone.quaternion.copy(ik.parent).multiply(rotation).multiply(ik.world)
+    bone.updateWorldMatrix(false, true)
+  }
+
+  // Turns `bone` so the direction from it to `child` points at `goal`, then
+  // blends that toward the animated pose by `weight`.
+  function aimBone(bone, child, goal, weight, base) {
+    bone.getWorldPosition(ik.from)
+    child.getWorldPosition(ik.to)
+    ik.to.sub(ik.from).normalize()
+    ik.axis.copy(goal).sub(ik.from).normalize()
+    turnBone(bone, ik.turn.setFromUnitVectors(ik.to, ik.axis))
+    ik.solved.copy(bone.quaternion)
+    bone.quaternion.copy(base).slerp(ik.solved, weight)
+    bone.updateWorldMatrix(false, true)
+  }
+
+  function restorePushBase() {
+    if (!pushApplied) return
+    pushBones.forEach((bone, i) => bone.quaternion.copy(pushBase[i]))
+    pushApplied = false
+  }
+
+  function applyPush(delta) {
+    pushWeight += ((pushInput ? 1 : 0) - pushWeight) * Math.min(1, delta * 10)
+    if (pushWeight < 0.002) {
+      pushWeight = 0
+      return
+    }
+    const body = info.wrapper.parent
+    if (!canPush || !body) return
+    if (pushInput) {
+      pushArms[0].grip.copy(pushInput.handles.left)
+      pushArms[1].grip.copy(pushInput.handles.right)
+    }
+    pushBones.forEach((bone, i) => pushBase[i].copy(bone.quaternion))
+    pushApplied = true
+    body.updateWorldMatrix(true, true)
+
+    // Lean into the bar, more while moving it.
+    if (pushSpine) {
+      ik.axis.set(1, 0, 0).transformDirection(body.matrixWorld)
+      const lean = (pushInput?.speed > 0.1 ? PUSH_LEAN_MOVING : PUSH_LEAN) * pushWeight
+      turnBone(pushSpine, ik.turn.setFromAxisAngle(ik.axis, lean))
+    }
+
+    pushArms.forEach((limb, i) => {
+      const armBase = pushBase[pushBones.indexOf(limb.arm)]
+      const foreBase = pushBase[pushBones.indexOf(limb.fore)]
+      limb.arm.getWorldPosition(ik.shoulder)
+      limb.fore.getWorldPosition(ik.elbow)
+      limb.hand.getWorldPosition(ik.wrist)
+      const upper = ik.shoulder.distanceTo(ik.elbow)
+      const lower = ik.elbow.distanceTo(ik.wrist)
+      body.localToWorld(ik.target.copy(limb.grip))
+
+      // Elbow placed in the plane through the shoulder and the target that
+      // contains the pole (down and out to that side), at the angle the two
+      // bone lengths need to reach.
+      ik.dir.copy(ik.target).sub(ik.shoulder)
+      const reach = THREE.MathUtils.clamp(ik.dir.length(), Math.abs(upper - lower) + 1e-3, upper + lower - 1e-3)
+      ik.dir.normalize()
+      ik.bend.set(i === 0 ? PUSH_ELBOW_OUT : -PUSH_ELBOW_OUT, -1, -0.3).transformDirection(body.matrixWorld)
+      ik.bend.addScaledVector(ik.dir, -ik.bend.dot(ik.dir)).normalize()
+      const cos = THREE.MathUtils.clamp((upper * upper + reach * reach - lower * lower) / (2 * upper * reach), -1, 1)
+      ik.elbow.copy(ik.shoulder)
+        .addScaledVector(ik.dir, upper * cos)
+        .addScaledVector(ik.bend, upper * Math.sqrt(1 - cos * cos))
+      ik.target.copy(ik.shoulder).addScaledVector(ik.dir, reach)
+
+      aimBone(limb.arm, limb.fore, ik.elbow, pushWeight, armBase)
+      aimBone(limb.fore, limb.hand, ik.target, pushWeight, foreBase)
+    })
+  }
+
   let pulling = null
   let pickingUp = null
   function logPickup(event) {
@@ -772,7 +883,9 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
   }
 
   // Returns why the crouch sub-state may have changed, for the log.
-  function updateLocomotion({ moving, airborne, crouching, jumpStarted }) {
+  // `push`: { handles: { left, right }, speed } while holding the trolley.
+  function updateLocomotion({ moving, airborne, crouching, jumpStarted, push = null }) {
+    pushInput = canPush && push && !airborne ? push : null
     if (scriptedWalking) return 'scripted walk'
     const crouchStarted = crouching && !wasCrouching
     const crouchEnded = !crouching && wasCrouching
@@ -789,6 +902,20 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     if (throwing) {
       wanted = crouching ? crouchLoop(moving) : standLoop(moving)
       return 'throwing'
+    }
+
+    // Pushing walks rather than runs, at whatever pace the trolley allows.
+    if (pushInput) {
+      airborneJump = null
+      casting = false
+      crouchTransition = null
+      if (crouching) wanted = crouchLoop(moving)
+      else if (moving && actions.walk) {
+        wanted = 'walk'
+        actions.walk.setEffectiveTimeScale(push.speed / (walkTravel?.speed > 0.01 ? walkTravel.speed : 1.4))
+      } else wanted = 'idle'
+      fadeTo(wanted, CROSSFADE)
+      return 'pushing'
     }
 
     if (jumpStarted) {
@@ -943,6 +1070,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     // Restore last frame's base even when idle tracks have not changed; the
     // main mixer may otherwise skip writing a constant property this frame.
     restorePointBase()
+    restorePushBase()
     if (throwing?.cancelled) cancelThrow()
     const activeThrow = throwing
     mixer.update(delta)
@@ -957,6 +1085,7 @@ export async function loadDetectiveVisual(assets, { crouchSpeed = 0, crouchSettl
     }
     syncJumpIdleTimeScale()
     updatePoint(delta)
+    applyPush(delta)
     mixerFrames += 1
     if (import.meta.env?.DEV && (mixerFrames === 1 || mixerFrames % 60 === 0)) {
       const w = (name) => (actions[name]?.getEffectiveWeight() ?? 0).toFixed(2)

@@ -73,6 +73,64 @@ export function passengerBooths(half) {
   for (let z = -half + 3.0; z <= half - 1.6; z += 3.0) booths.push(z)
   return booths
 }
+
+// Level 2 porter's station: some booth bays give way to other uses. `booth`
+// indexes passengerBooths(); `s` is the wall side.
+//  - luggage: stacked trunks on the booth's footprint, cover in the same way.
+//  - lounge:  no furniture at all. Most of the conductor's beat is open floor
+//             wall to wall, to get round him, with walls to push the trolley
+//             against so he turns his back on the aisle. Booths stay at
+//             either end of the car as cover.
+//  - cabinet: a louvred wardrobe the player can shut themselves inside. He
+//             walks past it on every lap.
+export const PASSENGER_STOWAGE = [
+  { kind: 'luggage', booth: 1, s: -1 },
+  { kind: 'lounge', booth: 2, s: -1 },
+  { kind: 'lounge', booth: 2, s: 1 },
+  { kind: 'lounge', booth: 3, s: -1 },
+  { kind: 'lounge', booth: 3, s: 1 },
+  { kind: 'lounge', booth: 4, s: -1 },
+  { kind: 'cabinet', booth: 4, s: 1 }
+]
+
+export function passengerStowageAt(booth, s) {
+  return PASSENGER_STOWAGE.find((bay) => bay.booth === booth && bay.s === s)?.kind ?? null
+}
+
+// Where a booth's benches end, measured from its centre along the car.
+const BOOTH_OUTER_HALF = BOOTH_BENCH_OFFSET + SEAT_BACK_DEPTH / 2 + (SEAT_DEPTH + SEAT_BACK_DEPTH) / 2
+const BOOTH_SPACING = 3.0
+
+// The lounge's open floor along each wall, local Z: one run per side for each
+// stretch of consecutive lounge bays, from the bench backs (or trunks) behind
+// it to those in front. Runs, not bays, so a trolley can slide along a wall
+// from one bay into the next.
+export function passengerLoungeRuns(half) {
+  const booths = passengerBooths(half)
+  const edge = BOOTH_SPACING - BOOTH_OUTER_HALF
+  const runs = []
+  for (const s of [-1, 1]) {
+    let run = null
+    booths.forEach((z, booth) => {
+      if (passengerStowageAt(booth, s) !== 'lounge') {
+        run = null
+        return
+      }
+      if (run) run.maxZ = z + edge
+      else runs.push(run = { s, minZ: z - edge, maxZ: z + edge })
+    })
+  }
+  return runs
+}
+
+// Cabinet carcass, local to the Passenger car: the front faces the aisle at
+// |x| = frontX, the back stands clear of the curtains.
+export const LUGGAGE_CABINET = { frontX: SEAT_INNER_X + 0.04, backX: WALL_X - 0.2, halfZ: 0.85, height: 2.25 }
+
+export function passengerCabinetLocal(half) {
+  const { booth, s } = PASSENGER_STOWAGE.find((bay) => bay.kind === 'cabinet')
+  return { ...LUGGAGE_CABINET, s, z: passengerBooths(half)[booth] }
+}
 export const CAB_LENGTH = 8
 
 // key, interior length (m). Order is the concept doc's progression.
@@ -255,17 +313,25 @@ export function localInteriorBoxes(key, half, wallX = WALL_X, damaged = false) {
     const outer = wallX - 0.08
     const halfX = (outer - SEAT_INNER_X) / 2
     const halfZ = (SEAT_DEPTH + SEAT_BACK_DEPTH) / 2
-    for (const zc of passengerBooths(half)) {
+    passengerBooths(half).forEach((zc, booth) => {
       for (const s of [-1, 1]) {
+        const stowage = passengerStowageAt(booth, s)
+        if (stowage === 'lounge') continue
+        if (stowage === 'cabinet') {
+          const { frontX, backX, halfZ: cabinetHalfZ } = LUGGAGE_CABINET
+          boxes.push(box('cabinet', s * (frontX + backX) / 2, zc, (backX - frontX) / 2, cabinetHalfZ))
+          continue
+        }
+        const kind = stowage === 'luggage' ? 'luggage' : 'seat'
         // Seat bases centre on the bench line; each back is on the booth's
         // outer end, so the footprint shifts outward by half a back.
         for (const dir of [-1, 1]) {
           const cz = zc + dir * (BOOTH_BENCH_OFFSET + SEAT_BACK_DEPTH / 2)
-          boxes.push(box('seat', s * (SEAT_INNER_X + halfX), cz, halfX, halfZ))
+          boxes.push(box(kind, s * (SEAT_INNER_X + halfX), cz, halfX, halfZ))
         }
-        boxes.push(box('seat', s * (wallX - BOOTH_TABLE.inset), zc, BOOTH_TABLE.halfX, BOOTH_TABLE.halfZ))
+        boxes.push(box(kind, s * (wallX - BOOTH_TABLE.inset), zc, BOOTH_TABLE.halfX, BOOTH_TABLE.halfZ))
       }
-    }
+    })
   } else if (key === 'security' && !damaged) {
     for (const z of windowBayZs(half)) {
       for (const s of [-1, 1]) boxes.push(box('trunk', s * (wallX - 0.45), z, 0.375, 0.5))
