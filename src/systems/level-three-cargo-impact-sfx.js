@@ -27,9 +27,11 @@ async function load(name) {
 }
 export function createCargoImpactAudio() {
   let paused = false
+  let disposed = false
+  const sources = new Set()
   const last = new Map()
   function play(name, position, listener, volume, radius, cooldown = 0.25, carriage = null) {
-    if (paused) return false
+    if (paused || disposed) return false
     // Restrict cargo rocks to their carriage even when another carriage is nearby.
     if (carriage && (!listener || listener.z < carriage.minZ || listener.z > carriage.maxZ)) return false
     const ctx = getContext(), bus = getSfxGain()
@@ -40,13 +42,14 @@ export function createCargoImpactAudio() {
     if (now - (last.get(name) ?? -Infinity) < cooldown) return false
     last.set(name, now)
     void load(name).then(buffer => {
-      if (!buffer || paused || ctx.state !== 'running') return
+      if (!buffer || paused || disposed || ctx.state !== 'running') return
       if (carriage && (!listener || listener.z < carriage.minZ || listener.z > carriage.maxZ)) return
       const source = ctx.createBufferSource(), gain = ctx.createGain()
       source.buffer = buffer
       gain.gain.value = volume * Math.pow(Math.max(0, 1 - distance / radius), 1.4)
       source.connect(gain).connect(bus)
-      source.onended = () => { source.disconnect(); gain.disconnect() }
+      sources.add(source)
+      source.onended = () => { sources.delete(source); source.disconnect(); gain.disconnect() }
       source.start()
     })
     return true
@@ -60,6 +63,16 @@ export function createCargoImpactAudio() {
     swing(position, listener) { play('whoosh', position, listener, 1.65, 17, 0.48) },
     setPaused(value) { paused = !!value },
     reset() { last.clear() },
-    dispose() { paused = true; last.clear() }
+    dispose() {
+      disposed = true
+      paused = true
+      last.clear()
+      for (const source of sources) {
+        source.onended = null
+        try { source.stop() } catch {}
+        source.disconnect()
+      }
+      sources.clear()
+    }
   }
 }

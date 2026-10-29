@@ -11,6 +11,7 @@ let context = null
 let master = null
 let musicBus = null
 let sfxBus = null
+let sfxSuppressed = false
 
 function effectiveMasterVolume() {
   if (settings.get('mute')) return 0
@@ -20,7 +21,7 @@ function effectiveMasterVolume() {
 
 function applyMixVolumes() {
   if (musicBus) musicBus.gain.value = settings.get('musicVolume') ?? 1
-  if (sfxBus) sfxBus.gain.value = settings.get('sfxVolume') ?? 1
+  if (sfxBus) sfxBus.gain.value = sfxSuppressed ? 0 : (settings.get('sfxVolume') ?? 1)
 }
 
 function applyMasterVolume() {
@@ -58,6 +59,13 @@ export function getMusicGain() {
 
 export function getSfxGain() {
   return sfxBus
+}
+
+// Silence gameplay effects during transitions or on the title screen.
+// Do not modify the user's saved SFX setting or the separate music bus.
+export function setSfxSuppressed(value) {
+  sfxSuppressed = !!value
+  applyMixVolumes()
 }
 
 export function setMasterVolume(v) {
