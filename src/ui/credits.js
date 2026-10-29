@@ -127,6 +127,102 @@ function buildRollContent() {
     line('"WelcomeToStation" by Molly (freetts.org) — CC0'),
   ])
 
+  // Level 1 attribution audit (2026-10-29). Credits are grouped by source.
+  // Pixabay sounds may be edited/trimmed for gameplay; author names follow
+  // the original downloaded filenames or verified source listings.
+  addBlock(roll, [
+    label('Level 1 — Guard Voices'),
+    line('VoiceBosch — THE ALERTED NPC (Male) Audio Pack'),
+    line('Hey; What’s That?; Who’s There?; I Think Someone’s Here; He’s Here; You’re Dead; You’re Not Leaving Here Alive'),
+    line('voicebosch.itch.io/the-alerted-npc-male-audio-pack', { dim: true, size: '13px' }),
+    line('Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0)', { dim: true, size: '13px' }),
+    spacer(8),
+    line('VoiceBosch — NPC GUARDS (Warning Phrases) Audio Pack'),
+    line('Track 41: All Trespassers Will Be Neutralized (station announcement)'),
+    line('voicebosch.itch.io/npc-guards-warning-phrases-audio-pack', { dim: true, size: '13px' }),
+    line('Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0)', { dim: true, size: '13px' }),
+    spacer(8),
+    line('Guard grunt — freesound_community / Pixabay: Angry Grunt (103204)'),
+    line('Gameplay copies are converted or edited from original recordings.', { dim: true, size: '13px' })
+  ])
+
+  addBlock(roll, [
+    label('Level 1 — Movement & Interaction SFX'),
+    line('Footsteps — freesound_community, Concrete Footsteps 1 (6265) / Pixabay'),
+    line('Jump — freesound_community, Jumps (65494) / Pixabay'),
+    line('Landing — u_qqkrn9bn55, JumpLanding (398256) / Pixabay'),
+    line('Panting — u_jt2rhdzi3j, Man Panting Softly (401018) / Pixabay'),
+    line('Station entrance door — DRAGON-STUDIO, Open Door Stock SFX (454246) / Pixabay'),
+    line('Metal door opening — Universfield, Opening Metal Door (199581) / Pixabay'),
+    line('Distractor metallic contact — freesound_community, MetalClang (63232) / Pixabay')
+  ])
+
+  addBlock(roll, [
+    label('Level 1 — Puzzles & Security SFX'),
+    line('Puzzle 1 switch — SoundReality, Light Switch (156813) / Pixabay'),
+    line('Puzzle 2 pressure plates — freesound_community, Breaker Switch (45684) / Pixabay'),
+    line('Puzzle 3 tile turns — newagesoup via freesound_community, MECH-KEYBOARD-02 (102918) / Pixabay'),
+    line('Laser ambience — PureAudioNinja via freesound_community, Electricity Ambience 2 (31877) / Pixabay'),
+    line('Laser contact — yodguard, Short Energy Beam Shot 3 (482517) / Pixabay'),
+    line('Puzzle door whoosh — SoundReality, Whoosh Large Sub (384631) / Pixabay'),
+    line('Puzzle door sliding — Heavy Metal Sliding #1 (original creator/source unverified)'),
+    line('Incorrect puzzle answer — Universfield, Wrong Answer Beep (149895) / Pixabay'),
+    line('Camera capture alarm — freesound_community, Security Alarm (80493) / Pixabay')
+  ])
+
+  addBlock(roll, [
+    label('Level 1 — Station & Train SFX'),
+    line('Station ambience — freesound_community, Ambi Empty Train Station (57614) / Pixabay'),
+    line('Train door opening — chrysalyn, Train Automatic Door Opening (608392) / Pixabay'),
+    line('Forced train door — DRAGON-STUDIO, Groaning Metal (511322) / Pixabay'),
+    line('Train departing — phoenix_connection_brazil, Train 1 (99265) / Pixabay'),
+    line('Additional door and security mechanisms — synthesized in-game where no recording is used'),
+    spacer(8),
+    line('Pixabay Content License — pixabay.com/service/license-summary/', { dim: true, size: '13px' }),
+    line('Sound recordings may be trimmed, mixed, filtered or converted for gameplay.', { dim: true, size: '13px' })
+  ])
+
+  addBlock(roll, [
+    label('Level 2 — Sound Effects'),
+    line('Chrono Core charge — Sci-Fi Weapon Charging 01 by Tim_Verberne via freesound_community (Pixabay #96645)'),
+    line('Core structural creak — Creaking by DRAGON-STUDIO (Pixabay #401724)'),
+    line('Core explosion — Explosion FX by SoundReality (Pixabay #343683)'),
+    line('Metal door opening/closing — Universfield, Opening Metal Door (199581) / Pixabay; edited and reversed variants (credited in Level 1)'),
+    line('Mechanical door slam — Metal Slam 5 by floraphonic (Pixabay #189786)'),
+    line('Interface pickup click — reuses Level 1 Puzzle 3 MECH-KEYBOARD-02 (102918); credited above'),
+    line('Rooftop wind — Wind Blowing SFX 07 by DRAGON-STUDIO (Pixabay #423677)'),
+    line('Roof zipline — Zipper Unzip 3 (Slow) by freesound_community (Pixabay #93379)'),
+    line('Breach alarm — Security Alarm by freesound_community (Pixabay #80493)'),
+    line('Breach voice — VoiceBosch, Security Breach Detected (voice pack; not Pixabay)'),
+    line('Moving obstacles — Chalk Slide Short by DishantBabariya (Pixabay #516557)'),
+    line('Steam hazards — Steam Hissing 2 by DRAGON-STUDIO (Pixabay #386162)'),
+    line('Moving train — Train Running Sound by freesound_gamestudio (Pixabay #384968)'),
+    line('Interface warp — Warp Magic 4 by yodguard (Pixabay #382391)'),
+    spacer(8),
+    line('Pixabay recordings: Pixabay Content License; some files trimmed, processed or reversed.', { dim: true, size: '13px' }),
+  ])
+
+  addBlock(roll, [
+    label('Level 3 — Sound Effects'),
+    line('Brake pressure release — Depressurization of the Brakes of a Train by freesound_community (Pixabay #106983)'),
+    line('Brake screech — Train Braking Sound by Alex_Jauk (Pixabay #180113)'),
+    line('Short electric cue — Electric Whoosh 01 by DavidDumaisAudio (Pixabay #204487)'),
+    line('Electric death — Lightning Spell by DRAGON-STUDIO (Pixabay #386163)'),
+    line('Ending explosion — Metal Design Explosion by muzaproduction (Pixabay #13491)'),
+    line('Ending horn — Train by kauasilbershlachparodes (Pixabay #493986)'),
+    line('Flying debris whoosh — Epic Whoosh by DRAGON-STUDIO (Pixabay #478371)'),
+    line('Falling blocks — Heavy Rock Rolling by DRAGON-STUDIO (Pixabay #515254)'),
+    line('Rolling luggage — Rolling Office Chair by freesound_community (Pixabay #33190)'),
+    line('Wood impact — Wooden Thud Mono by freesound_community (Pixabay #6244)'),
+    spacer(8),
+    line('Pixabay recordings: Pixabay Content License; some files trimmed, processed or reversed.', { dim: true, size: '13px' }),
+  ])
+
+  addBlock(roll, [
+    label('Level 2 — Additional Source Notes'),
+    line('Security breach announcement — VoiceBosch; verify the specific voice-pack listing and applicable terms.'),
+  ])
+
   addBlock(roll, [
     label('3D Models & Animations'),
     line('"Character (Type Detective)" by LokitoBlu (Sketchfab)'),

@@ -5,6 +5,7 @@ const sounds = {
   charge: new URL('../assets/audio/sfx/level3/electric-charge.mp3', import.meta.url),
   slam: new URL('../assets/audio/sfx/level2/metal-slam.mp3', import.meta.url),
   plate: new URL('../assets/audio/sfx/security/pressure-switch.mp3', import.meta.url),
+  relayDoor: new URL('../assets/audio/sfx/level2/metal-door-open.mp3', import.meta.url),
   shock: new URL('../assets/audio/sfx/level3/electric-death.mp3', import.meta.url)
 }
 const buffers = new Map()
@@ -64,9 +65,9 @@ export function createSecondCarriageAudio() {
   }
   function shot(key, volume, position, listener, radius = 14) {
     const ctx = getContext(), bus = getSfxGain(), buffer = buffers.get(key)
-    if (disposed || paused || !ctx || !bus || ctx.state !== 'running' || !buffer) return
+    if (disposed || paused || !ctx || !bus || ctx.state !== 'running' || !buffer) return false
     const distance = position && listener ? position.distanceTo(listener) : 0
-    if (distance >= radius) return
+    if (distance >= radius) return false
     const src = ctx.createBufferSource(), gain = ctx.createGain()
     src.buffer = buffer
     gain.gain.value = volume * Math.pow(Math.max(0,1-distance/radius),1.3)
@@ -74,6 +75,7 @@ export function createSecondCarriageAudio() {
     shots.add(src)
     src.onended = () => { shots.delete(src); src.disconnect(); gain.disconnect() }
     src.start()
+    return true
   }
   function rolling(key, object, delta, listener, allowed = true) {
     if (!object) return
@@ -100,9 +102,11 @@ export function createSecondCarriageAudio() {
   return {
     preload,
     rolling,
-    charge(position,listener) { shot('charge',0.26,position,listener,13) },
-    slam(position,listener) { shot('slam',0.48,position,listener,18) },
-    connectorOpen(position,listener) { shot('plate',0.42,position,listener,13) },
+    charge(position,listener) { return shot('charge',0.26,position,listener,13) },
+    slam(position,listener) { shot('slam',0.85,position,listener,18) },
+    connectorOpen(position,listener) { return shot('plate',0.42,position,listener,13) },
+    relayPlate(position,listener) { return shot('plate',0.48,position,listener,11) },
+    relayDoorOpen(position,listener) { return shot('relayDoor',0.58,position,listener,15) },
     electricDeath() { shot('shock',0.62,null,null) },
     reset() { positions.clear?.(); for(const v of active.values()) v.gain.gain.value=0 },
     setPaused(value) { paused=!!value; if(paused) for(const v of active.values()) v.gain.gain.value=0 },

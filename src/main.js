@@ -10,7 +10,7 @@ import { createAssetLoader } from './core/assets.js'
 import { createLoadingTasks } from './core/loading-tasks.js'
 import { createLevelManager } from './core/level-manager.js'
 import { resolveInputState } from './core/input-state.js'
-import { initAudio, resumeAudio, getContext } from './core/audio.js'
+import { initAudio, resumeAudio, getContext, setSfxSuppressed } from './core/audio.js'
 import { preloadAbilitySfx } from './systems/ability-sfx.js'
 import { createPlayer } from './entities/player.js'
 import { preloadPoliceVisual } from './entities/police-visual.js'
@@ -113,9 +113,9 @@ const loadingScreen = createLoadingScreen(assets, { tasks: startupTasks })
 // so the level manager's loading overlay is suppressed for that one build.
 let quietLevelLoad = false
 const levelLoadingScreen = {
-  show() { if (!quietLevelLoad) loadingScreen.show() },
-  hide() { loadingScreen.hide() },
-  setError() { quietLevelLoad = false; loadingScreen.show(); loadingScreen.setError?.() }
+  show() { if (!quietLevelLoad) { setSfxSuppressed(true); loadingScreen.show() } },
+  hide() { loadingScreen.hide(); if (gameStarted) setSfxSuppressed(false) },
+  setError() { quietLevelLoad = false; setSfxSuppressed(true); loadingScreen.show(); loadingScreen.setError?.() }
 }
 
 // The player persists across levels; the level manager repositions it to
@@ -217,6 +217,7 @@ function playMusicForState(state) {
 }
 
 async function playMenuMusic() {
+  setSfxSuppressed(true)
   if (import.meta.env?.DEV) console.log('playMenuMusic called')
   await startLevelMusic(loadTrack('../assets/audio/music/menu-theme.mp3'), { loop: true })
   if (import.meta.env?.DEV) console.log('playMenuMusic: startLevelMusic() resolved')
@@ -360,7 +361,7 @@ const levelManager = createLevelManager({
     // Workshop remaps its stable scene keys here so saved dev-layout overrides
     // are reapplied before the loading overlay hands control back to the player.
     modelEditor?.sceneChanged?.()
-    if (state === 'Complete') showCompleteCredits()
+    if (state === 'Complete') { setSfxSuppressed(true); showCompleteCredits() }
     else if (state === 'Ending') hud.setVisible(false)
     else if (!awaitingIntro) {
       timeSystem.warmGhost(renderer, camera)
@@ -814,6 +815,7 @@ function startGame() {
     return
   }
   if (gameStarted) return
+  setSfxSuppressed(false)
   newGameClickedAt = performance.now()
   firstHiddenSystemsPending = true
   firstPlayableFramePending = false
@@ -1010,6 +1012,7 @@ function startDevLevel3Cutscene() {
 // without a page refresh.
 async function quitToTitle() {
   if (titleReturnPromise) return titleReturnPromise
+  setSfxSuppressed(true)
   storyRun++
   awaitingIntro = false
   storyPlayer?.cancel()
@@ -1072,6 +1075,7 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
     requestAnimationFrame(() => {
       startupTasks.complete('presentation')
       loadingScreen.hide()
+      setSfxSuppressed(true)
       titleBackdrop.show()
       menu.show()
       startupPrepared = true

@@ -5,7 +5,6 @@ import { createEndingTrack } from '../environment/ending-track.js'
 import { PLATE_CAMERA_POSITION, PLATE_CAMERA_TARGET, PLATE_CAMERA_FOV, PLATE_CAMERA_ASPECT } from '../shaders/ending-plate.js'
 import { createCinematicSkip } from '../ui/cinematic-skip.js'
 import { createEndingAudio } from '../systems/ending-audio.js'
-import { brakeIntensity } from '../environment/ending-sparks.js'
 import { createEndingCore, CORE_FLIGHT_SECONDS } from '../environment/ending-core.js'
 import { EXPLOSION_GROW, EXPLOSION_SECONDS } from '../shaders/ending-explosion.js'
 import { DOOR_MOTION_SECONDS, RIM_INTENSITY } from '../environment/ending-door.js'
@@ -426,12 +425,12 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     if(phase==='cutB') selectShot(1)
     if(phase==='cutC') {selectShot(2);worldAlign.visible=true;core.root.visible=true;player.mesh.visible=true}
     if(phase==='salute') {selectShot(1);core.reset();player.mesh.visible=true;sampleAnimation('salute',0)}
+    if(phase==='braking') audio.braking?.()
     if(phase==='doorOpen') {placeDetective();audio.door?.()}
     if(phase==='holdCore') {
       player.cancelScriptedWalk?.();player.mesh.position.copy(threshold)
     }
-    if(phase==='throw') audio.throw?.()
-    if(phase==='explosion') {core.update(0,-1,0);audio.impact?.()}
+    if(phase==='explosion') {core.update(0,-1,0);audio.explosion?.()}
     if(phase==='impactHold') {
       core.explosion.update(EXPLOSION_SECONDS)
     }
@@ -484,7 +483,7 @@ export function createEndingLevel({ scene, player, camera, renderCamera, hud, be
     }
     const speed = phase === 'approach' ? TRAIN_SPEED : phase === 'braking' ? TRAIN_SPEED * (1 - phaseTime / BRAKE) : 0
     train.update(START_CENTER_Z - distance, distance, brakingProgress, settleTime, delta, speed)
-    audio.update(brakingProgress, brakeIntensity(brakingProgress), delta)
+    audio.update(brakingProgress, 0, delta)
     if(phase==='doorOpen') train.door.setOpen(Math.min(1,phaseTime/DOOR_MOTION_SECONDS))
     if(phaseIndex>PHASES.indexOf('doorOpen')) train.door.setOpen(1)
     updateDetective(phase,phaseTime,delta)
