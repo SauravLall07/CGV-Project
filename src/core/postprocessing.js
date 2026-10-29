@@ -115,11 +115,12 @@ export function createPostProcessing(renderer) {
   outputPass.uniforms.uSaturation = { value: 1.06 }
   outputPass.uniforms.uWarmth = { value: 0.04 }
   outputPass.uniforms.uLift = { value: 0.022 }
-  const defaultGrade = { vignette: 0.26, saturation: 1.06, warmth: 0.04 }
-  function setGrade({ vignette = defaultGrade.vignette, saturation = defaultGrade.saturation, warmth = defaultGrade.warmth } = {}) {
+  const defaultGrade = { vignette: 0.26, saturation: 1.06, warmth: 0.04, lift: 0.022 }
+  function setGrade({ vignette = defaultGrade.vignette, saturation = defaultGrade.saturation, warmth = defaultGrade.warmth, lift = defaultGrade.lift } = {}) {
     outputPass.uniforms.uVignette.value = vignette
     outputPass.uniforms.uSaturation.value = saturation
     outputPass.uniforms.uWarmth.value = warmth
+    outputPass.uniforms.uLift.value = lift
   }
   outputPass.material.fragmentShader = FINAL_FRAGMENT
   outputPass.material.depthTest = false
