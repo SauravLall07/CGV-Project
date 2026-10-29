@@ -2553,7 +2553,7 @@ export function createTimewreckLevel({
   // PURSUING TIME WAVE — full escape, then the final sprint and brake
   // ============================================================
   // Temporarily disable the pursuing purple time wave without altering other hazards.
-  const ENABLE_TIME_WAVE = false
+  const ENABLE_TIME_WAVE = true
   const waveMat = createChronoFieldMaterial({
     baseColor: 0x2a0a3a, glowColor: 0xa855f7, opacity: 0.6, doubleSided: true, depthWrite: false
   })
@@ -3743,6 +3743,8 @@ export function createTimewreckLevel({
           : 13 + Math.sin(elapsed * 9) * 3 + resumeWarm * 10
 
         if (ENABLE_TIME_WAVE && waveZ <= pp.z + 0.35 && failCooldown <= 0) {
+          // Reuse the same hit effect as the damaged security lasers.
+          levelThreeSfx.laserHit()
           failSoft('Time caught up with you!')
         }
       }
