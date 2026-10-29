@@ -78,6 +78,7 @@ export function createLevelThreeSfx() {
       const ctx = getContext()
       if (!ctx || paused || disposed || distance > 12 || speed < 0.1) return
       // Multiple lethal panels can arrive together; keep the mix bounded.
+      if (!buffers.has('whoosh')) { void load('whoosh'); return }
       if (ctx.currentTime - lastWhoosh < 0.13) return
       lastWhoosh = ctx.currentTime
       const falloff = Math.max(0, 1 - distance / 12)

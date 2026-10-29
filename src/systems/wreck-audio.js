@@ -62,12 +62,12 @@ export function createWreckAudio({ context = getContext, output = getSfxGain } =
         let seed = 7143
         for (let i=0;i<data.length;i++) { seed=(Math.imul(seed,1664525)+1013904223)>>>0; data[i]=seed/2147483648-1 }
         source.buffer = buffer; source.loop = true
-        filter.type = 'lowpass'; filter.frequency.value = 380
+        filter.type = 'lowpass'; filter.frequency.value = 650
         gain.gain.value = 0
         source.connect(filter).connect(gain).connect(bus); source.start()
         wind = {source,gain,filter}; voices.add(wind)
       }
-      wind.gain.gain.setTargetAtTime(stasis ? 0.0003 : 0.012*Math.min(1,amount), ctx.currentTime, 0.12)
+      wind.gain.gain.setTargetAtTime(stasis ? 0.0003 : 0.17*Math.min(1,amount), ctx.currentTime, 0.12)
     },
     debris(kind) {
       const ctx = connect()

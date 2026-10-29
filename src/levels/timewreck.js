@@ -24,6 +24,8 @@ import { createSecurityCrossing } from './timewreck-security.js'
 import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
 import { createLevelThreeSfx } from '../systems/level-three-sfx.js'
+import { createSecondCarriageAudio, playElectricDeathSfx, preloadElectricDeathSfx } from '../systems/level-three-carriage-sfx.js'
+import { createLevelOneMovementSfx } from '../systems/player-interaction-sfx.js'
 import { createWreckHazardAudio } from '../systems/wreck-hazard-audio.js'
 import { createExpansionHazards } from './timewreck-expansion-hazards.js'
 import { createDebrisCollision } from './timewreck-debris.js'
@@ -274,6 +276,11 @@ export function createTimewreckLevel({
   const unregisters = []
   const wreckAudio = createWreckAudio()
   const levelThreeSfx = createLevelThreeSfx()
+  const movementAudio = createLevelOneMovementSfx(player)
+  const shutterImpactPosition = new THREE.Vector3()
+  const secondCarriageAudio = createSecondCarriageAudio()
+  void secondCarriageAudio.preload()
+  void preloadElectricDeathSfx()
   const hazardAudio = createWreckHazardAudio()
   unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds }
@@ -297,6 +304,7 @@ export function createTimewreckLevel({
   function failSoft(message, reason = 'caught') {
     if (failCooldown > 0) return false
     failCooldown = 1.3
+    if (reason === 'electric') playElectricDeathSfx()
     respawn.fail(reason)
     if (message) showLevelToast(message, 1900)
     return true
@@ -1007,6 +1015,9 @@ export function createTimewreckLevel({
       const dangerous = phase < surge.danger
       const warning = !dangerous && phase > surge.period - SURGE_WARN
       const mode = dangerous ? 'danger' : warning ? 'warn' : 'safe'
+      // Trigger as the visible electric charge begins, not after the discharge.
+      if (warning && surge.lastAudioMode !== 'warn' && playerPos) secondCarriageAudio.charge(surge.group.position, playerPos)
+      surge.lastAudioMode = mode
       const flickerHz = dangerous ? 16 : warning ? 24 : 6
       const seed = Math.floor(Math.abs(surgeT) * flickerHz + surge.offset * 10)
       if (seed !== surge.boltSeed || mode !== surge.boltMode) {
@@ -1065,7 +1076,7 @@ export function createTimewreckLevel({
       const inSlice = Math.abs(playerPos.z - surge.z) <= SURGE_HIT_HALF_Z
       const inWidth = playerPos.x < 0.78 && playerPos.x > -2.6
       if (overlapsBody && inSlice && inWidth) {
-        failSoft('An electrical surge caught you!')
+        failSoft('An electrical surge caught you!', 'electric')
       }
     }
   }
@@ -1424,6 +1435,10 @@ export function createTimewreckLevel({
     restoreSnapshot: (s) => { ramT = s.ramT; applyRams() }
   }))
 
+  // One switch click when the inter-car connector begins folding open.
+  // Re-arm only after it has closed again (including when time is rewound).
+  let previousConnectorAngle = 0
+  const connectorClickPosition = new THREE.Vector3(0, 0.3, spans.convergence.minZ)
   const connector = createWreckConnector({ root, spans, player, timeSystem, unregisters,
     warn() {
       wreckAudio.snap()
@@ -2777,8 +2792,11 @@ export function createTimewreckLevel({
   const expansionHazards = createExpansionHazards({ root, spans, player, timeSystem, unregisters,
     fail: message => failSoft(message), audio: hazardAudio,
     warn: kind => {
-      wreckAudio.warning()
-      if (kind === 'freight') showLevelToast(`Freight straps creaking! Wait for the case to swing aside; ${bindingLabel(settings.getBinding('slow'))} Slow or ${bindingLabel(settings.getBinding('freeze'))} Freeze can hold a clear route.`, 4500)
+      // Steam already has its own hiss: do not play the generic pre-burst warning sound.
+      if (kind === 'freight') {
+        wreckAudio.warning()
+        showLevelToast(`Freight straps creaking! Wait for the case to swing aside; ${bindingLabel(settings.getBinding('slow'))} Slow or ${bindingLabel(settings.getBinding('freeze'))} Freeze can hold a clear route.`, 4500)
+      }
     } })
 
   const flyingPanels = createFlyingPanels({ root, spans, player, timeSystem, unregisters,
@@ -2884,6 +2902,7 @@ export function createTimewreckLevel({
       loopT = 0
       applyLoop()
       connector.reset()
+      previousConnectorAngle = 0
       cargoGangway.state.reset()
       cargoGangway.apply()
       securityCrossing.reset()
@@ -2992,9 +3011,10 @@ export function createTimewreckLevel({
     getCarriageVolumes: () => listCarriageVolumes(spans).filter(v =>
       v.minZ < bounds.maxZ && carriages[v.key].visible),
     get isCinematic() { return braking },
-    setPresentationPaused(value) { wreckAudio.setPaused(value); hazardAudio.setPaused(value); levelThreeSfx.setPaused(value); feedback.setPaused(value) },
+    setPresentationPaused(value) { secondCarriageAudio.setPaused(value); wreckAudio.setPaused(value); hazardAudio.setPaused(value); levelThreeSfx.setPaused(value); feedback.setPaused(value) },
 
     update(delta) {
+      movementAudio.update(delta)
       // Recover temporary render visibility even if a prior render was aborted.
       visibility.afterRender()
       const mode = timeSystem.getMode()
@@ -3031,6 +3051,30 @@ export function createTimewreckLevel({
         : mode === 'FREEZE' ? 0
           : resumeBoost * (mode === 'SLOW' ? 0.2 : 1) *
             (1 + stormProgress * STORM_PROGRESS.exteriorSpeedBoost)
+      // Each luggage assembly has one rolling emitter, measured after its time-scaled update.
+      for (let i=0; i<runawayCarts.length; i++) secondCarriageAudio.rolling(`cart-${i}`, runawayCarts[i].group, delta, player.mesh.position,
+        player.mesh.position.z >= spans.convergence.minZ && player.mesh.position.z <= spans.convergence.maxZ)
+      for (let i=0; i<rams.length; i++) secondCarriageAudio.rolling(`trunk-${i}`, rams[i].head, delta, player.mesh.position,
+        player.mesh.position.z >= spans.mechanical.minZ && player.mesh.position.z <= spans.mechanical.maxZ)
+      // Both the sheltered and Mechanical-carriage shutters share the same
+      // metal-slam recording and volume. Trigger only at actual bottom contact.
+      for (const name of ['convergence-rewind-shutter', 'mechanical-rewind-shutter']) {
+        const shutter = root.getObjectByName(name)
+        const panel = shutter?.children[0]
+        const y = panel?.position.y
+        if (!Number.isFinite(y)) continue
+        const data = shutter.userData
+        // The moving shutter has a 3.85 -> 1.25 travel. A restored or
+        // rewound shutter rearms only after it has lifted away from the stop.
+        if (y > 1.4) data._audioImpactArmed = true
+        if (data._audioImpactArmed && y <= 1.27 &&
+            Number.isFinite(data._audioPreviousY) && data._audioPreviousY > y + 0.0001) {
+          data._audioImpactArmed = false
+          panel.getWorldPosition(shutterImpactPosition)
+          secondCarriageAudio.slam(shutterImpactPosition, player.mesh.position)
+        }
+        data._audioPreviousY = y
+      }
       levelThreeSfx.update({
         laserDistance: Math.min(...vaultGates.map(g => Math.abs(player.mesh.position.z - g.z))),
         moving: !braking && !brakeComplete,
@@ -3042,7 +3086,9 @@ export function createTimewreckLevel({
         const localZ = player.mesh.position.z-span.center
         if (localZ>damage.minZ && localZ<damage.maxZ) { exposure=1; break }
       }
-      wreckAudio.exposure(brakeComplete ? 0 : exposure, mode === 'FREEZE')
+      // Wind is strongest in the second (Convergence) carriage only.
+      const inSecond = player.mesh.position.z >= spans.convergence.minZ && player.mesh.position.z <= spans.convergence.maxZ
+      wreckAudio.exposure(brakeComplete ? 0 : inSecond ? Math.min(1,exposure + 0.65) : exposure, mode === 'FREEZE')
       outdoorEnv.update(envDt)
       stormSky.update(envDt)
       wreckExterior.update(delta, exteriorScale)
@@ -3096,20 +3142,29 @@ export function createTimewreckLevel({
       passengerRack.update()
       expansionHazards.update(!braking && !respawn.isFailing())
       connector.update(!braking && !respawn.isFailing())
+      const connectorAngle = connector.angle
+      if (connectorAngle > 0.025 && previousConnectorAngle <= 0.025) {
+        secondCarriageAudio.connectorOpen(connectorClickPosition, player.mesh.position)
+      }
+      previousConnectorAngle = connectorAngle
       feedback.update(!braking && !brakeComplete && !respawn.isFailing())
       flyingPanels.update(!braking && !brakeComplete && !respawn.isFailing())
       // All airborne passenger debris (including the smaller decorative
       // splinters) may produce a passing whoosh. Each fragment triggers at most
       // once per flight; the sound controller limits overlapping voices.
       if (!braking && !brakeComplete && mode !== 'REWIND') {
-        for (const c of [...chunks, ...burstDebris]) {
-          if (!c.mesh.visible || c.whooshPlayed || !c.body) continue
-          const velocity = c.body.velocity
-          const speed = Math.hypot(velocity.x, velocity.y, velocity.z)
-          const distance = c.mesh.position.distanceTo(pp)
-          if (speed > 2 && distance < 10) {
-            c.whooshPlayed = true
-            levelThreeSfx.lethalFlight(distance, speed)
+        for (const debrisSet of [chunks, burstDebris]) {
+          for (const c of debrisSet) {
+            if (!c.mesh.visible || c.whooshPlayed || !c.body) continue
+            const velocity = c.body.velocity
+            const speed = Math.hypot(velocity.x, velocity.y, velocity.z)
+            const distance = c.mesh.position.distanceTo(pp)
+            // Include decorative fragments and luggage; each flying piece
+            // requests a single positional whoosh as it approaches the player.
+            if (speed > 1.5 && distance < 12) {
+              c.whooshPlayed = true
+              levelThreeSfx.lethalFlight(distance, speed)
+            }
           }
         }
       }
@@ -3548,6 +3603,8 @@ export function createTimewreckLevel({
       for (let i = slabSupports.length - 1; i >= 0; i--) if (connector.supports.includes(slabSupports[i])) slabSupports.splice(i, 1)
       const connectorVoidIndex = gapVoids.indexOf(connector.gap)
       if (connectorVoidIndex >= 0) gapVoids.splice(connectorVoidIndex, 1)
+      movementAudio.dispose()
+      secondCarriageAudio.dispose()
       wreckAudio.dispose()
       levelThreeSfx.dispose()
       hazardAudio.dispose()
