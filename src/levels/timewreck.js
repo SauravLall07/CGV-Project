@@ -23,6 +23,7 @@ import { createWreckFeedback } from './timewreck-feedback.js'
 import { createSecurityCrossing } from './timewreck-security.js'
 import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
+import { createTrainBrakingSfx } from '../systems/level-three-train-braking-sfx.js'
 import { createLevelThreeSfx } from '../systems/level-three-sfx.js'
 import { createSecondCarriageAudio, playElectricDeathSfx, preloadElectricDeathSfx } from '../systems/level-three-carriage-sfx.js'
 import { createFreezeFloorAudio } from '../systems/level-three-freeze-floor-sfx.js'
@@ -70,8 +71,8 @@ import {
 
 const MODE_INT = { NORMAL: 0, SLOW: 1, FREEZE: 2, REWIND: 3 }
 const NIGHT_COLOR = new THREE.Color(0x0d1218)
-const BRAKE_HANDOFF_SECONDS = 1
-const BRAKE_FADE_SECONDS = 0.5
+const BRAKE_HANDOFF_SECONDS = 9.65
+const BRAKE_FADE_SECONDS = 0.7
 const FINALE_FREEZE_COLOR = new THREE.Color(0x1a3358)
 const FOG_COOL = new THREE.Color(0x172a44)
 const FOG_STORM = new THREE.Color(0x20263c)
@@ -278,6 +279,8 @@ export function createTimewreckLevel({
 
   const unregisters = []
   const wreckAudio = createWreckAudio()
+  const trainBrakingAudio = createTrainBrakingSfx()
+  void trainBrakingAudio.preload()
   const levelThreeSfx = createLevelThreeSfx()
   const movementAudio = createLevelOneMovementSfx(player)
   const cargoImpactAudio = createCargoImpactAudio()
@@ -2755,7 +2758,10 @@ export function createTimewreckLevel({
     onInteract: () => {
       if (disposed || braking || brakeComplete || !depleted || Math.abs(player.mesh.position.z - brake.position.z) > 2.5) return
       braking = true
-      wreckAudio.brake()
+      // Stop the old procedural wind/rumble/braking oscillator before the
+      // recorded pressure-release and wheel screech take over the finale.
+      wreckAudio.reset()
+      trainBrakingAudio.play()
       timeSystem.setMode('NORMAL')
       timeSystem.resetGhost()
       beginCinematic?.()
@@ -2767,13 +2773,14 @@ export function createTimewreckLevel({
       Object.assign(brakeVeil.style, { position: 'fixed', inset: '0', background: '#000',
         zIndex: '60', opacity: '0', pointerEvents: 'none' })
       document.body.appendChild(brakeVeil)
-      hud.showCinematicSkip?.(finishBraking)
+      // The brake sequence is deliberately unskippable until both recordings finish.
     }
   }))
 
   function finishBraking() {
     if (disposed || !braking || brakeComplete) return
     brakeComplete = true
+    trainBrakingAudio.dispose()
     feedback.stop()
     braking = false
     wreckAudio.reset()
@@ -3199,7 +3206,8 @@ export function createTimewreckLevel({
         moving: !braking && !brakeComplete,
         frozen: mode === 'FREEZE', stopped: brakeComplete
       })
-      wreckAudio.update(!brakeComplete, finaleFreeze, braking ? brakeT : null)
+      // Never create the procedural sawtooth brake buzz during the recorded finale.
+      if (!braking) wreckAudio.update(!brakeComplete, finaleFreeze)
       let exposure = 0.18
       for (const {span,damage} of damageSpans) {
         const localZ = player.mesh.position.z-span.center
@@ -3207,7 +3215,7 @@ export function createTimewreckLevel({
       }
       // Wind is strongest in the second (Convergence) carriage only.
       const inSecond = player.mesh.position.z >= spans.convergence.minZ && player.mesh.position.z <= spans.convergence.maxZ
-      wreckAudio.exposure(brakeComplete ? 0 : inSecond ? Math.min(1,exposure + 0.65) : exposure, mode === 'FREEZE')
+      if (!braking) wreckAudio.exposure(brakeComplete ? 0 : inSecond ? Math.min(1,exposure + 0.65) : exposure, mode === 'FREEZE')
       outdoorEnv.update(envDt)
       stormSky.update(envDt)
       wreckExterior.update(delta, exteriorScale)
@@ -3469,10 +3477,13 @@ export function createTimewreckLevel({
       // The Ending owns the exterior stop; retain only the lever and hand-off.
       retiredWreck.apply(retiredWreck.active)
       if (braking) {
-        brakeT += delta
+        // Do not start the stop animation clock before the audio actually begins.
+        // Once the recordings finish, fade out and hand off to the ending.
+        if (trainBrakingAudio.started || trainBrakingAudio.failed) brakeT += delta
         lever.rotation.x = -0.4 + Math.min(1, brakeT / 0.4) * 1.1
         brakeVeil.style.opacity = String(THREE.MathUtils.clamp((brakeT - BRAKE_HANDOFF_SECONDS) / BRAKE_FADE_SECONDS, 0, 1))
-        if (brakeT >= BRAKE_HANDOFF_SECONDS + BRAKE_FADE_SECONDS - 1e-9) {
+        if (brakeT >= BRAKE_HANDOFF_SECONDS + BRAKE_FADE_SECONDS - 1e-9 &&
+          (trainBrakingAudio.completed || trainBrakingAudio.failed)) {
           finishBraking()
         }
         lightPool.update(pp, delta)
@@ -3755,6 +3766,7 @@ export function createTimewreckLevel({
       secondCarriageAudio.dispose()
       freezeFloorAudio.dispose()
       passengerHazardAudio.dispose()
+      trainBrakingAudio.dispose()
       wreckAudio.dispose()
       levelThreeSfx.dispose()
       hazardAudio.dispose()
