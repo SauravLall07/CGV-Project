@@ -113,7 +113,7 @@ function createMaterials() {
     runner: carpetMaterial({ repeat: [1, 1], seed: 38, base: 0x6a1a22, accent: 0xa07a3a }),
     brick: textured(drawGlazedBrick, 'glazed-brick', [1, 1], { roughness: 0.38, metalness: 0.02 }, 2.2),
     tile: textured(drawGreenTile, 'green-tile', [1, 1], { roughness: 0.22, metalness: 0.04 }, 2.6),
-    concrete: textured(drawConcrete, 'concrete', [1, 1], { roughness: 1, roughnessMap: concreteRough, metalness: 0.05 }, 1.4),
+    concrete: textured(drawConcrete, 'concrete', [1, 1], { roughness: 1, roughnessMap: concreteRough, metalness: 0 }, 0.25),
     // Paint, metal, wood.
     green: standard({ color: 0x1d3a2a, roughness: 0.45, metalness: 0.15 }),
     greenDark: standard({ color: 0x12241a, roughness: 0.5, metalness: 0.2 }),

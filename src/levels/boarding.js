@@ -37,7 +37,10 @@ import { CENTER_Z, FACADE_X, LANDING_FIGURE, PLAZA } from '../environment/landin
 import { createZoneVisibility } from './boarding-zones.js'
 import { capRegionLights } from './boarding-lighting.js'
 import { resetKitMaterials } from '../environment/level1-kit/kit-materials.js'
+import { LevelMusicPlayer } from '../systems/level-music.js'
 
+const WELCOME_STATION_URL = new URL('../assets/audio/story/welcomeStation.mp3', import.meta.url)
+const TRAIN_DEPARTURE_TIME_URL = new URL('../assets/audio/story/trainDepartureTime.mp3', import.meta.url)
 const BOARDING_HOLD_SECONDS = 5
 const BOARDING_RETURN_TIMEOUT = 2
 const BOARDING_OPEN_SECONDS = 0.6
@@ -83,8 +86,11 @@ export function createBoardingLevel({
   timeSystem,
   advance,
   beginCinematic,
-  renderer
+  renderer,
+  post
 }) {
+  // Warmth comes from fixtures, not an additive veil over every shadow.
+  post?.setGrade({ warmth: 0, lift: 0.008 })
   // Level 1 is pure stealth. The Chrono Interface has not been stolen yet, so
   // all temporal abilities are genuinely unavailable and the Chrono HUD stays hidden.
   timeSystem?.setMode?.('NORMAL')
@@ -207,6 +213,7 @@ export function createBoardingLevel({
   const skyFill = lights.find((node) => node.name === 'station-sky')
   const ambientFill = lights.find((node) => node.name === 'station-fill')
   const FORECOURT_FILL = { sky: 0.48, ambient: 0.06, environment: 0.4 }
+  const INTERIOR_FILL = { sky: 0.85, ambient: 0.35 }
 
   const nightFog = new THREE.Fog(0x121022, 40, 240)
   const plazaFog = new THREE.FogExp2(0x05060c, 0.023)
@@ -270,6 +277,11 @@ export function createBoardingLevel({
     if (import.meta.env?.DEV && isBoardingCinematic) logBoarding('zone', zone.name)
     if (zone.name !== 'plaza') ensureSkyEnvironment()
     const onPlatform = zone.name === 'platform'
+    const indoors = zone.name !== 'plaza' && !zone.outdoor
+    // Neutral bounce reveals surfaces without raising the whole frame's blacks.
+    skyFill?.color.setHex(indoors ? 0xb8c8dd : 0x2a4068)
+    skyFill?.groundColor.setHex(indoors ? 0x76717a : 0x0f0e14)
+    ambientFill?.color.setHex(indoors ? 0xa8b4c4 : 0x1a2030)
     // Leaving the platform restores the established look immediately, including
     // direct dev teleports to the forecourt. Entry blends over one real second.
     sky.setPreset(onPlatform ? 'boarding-platform' : 'boarding', onPlatform ? 1 : 0)
@@ -297,8 +309,6 @@ export function createBoardingLevel({
     // platform's regions, sky, fog and lighting while the actor walks inside.
     if (isBoardingCinematic) viewer = BOARDING_PLATFORM_ANCHOR
     const onPlaza = viewer.x > 6 && viewer.x < 36 && viewer.z > -10 && viewer.z < 48
-    if (skyFill) skyFill.intensity = onPlaza ? 0.1 : FORECOURT_FILL.sky
-    if (ambientFill) ambientFill.intensity = onPlaza ? 0.01 : FORECOURT_FILL.ambient
     scene.environmentIntensity = onPlaza ? 0.06 : FORECOURT_FILL.environment
     scene.fog = onPlaza ? plazaFog : nightFog
     outdoorEnv.setFog(onPlaza ? PLAZA_SHADER_FOG : NIGHT_SHADER_FOG)
@@ -307,6 +317,9 @@ export function createBoardingLevel({
     // box on the same frame, which switches the zone before the fade-in.
     setOutsideHidden(onPlaza)
     zones.update(viewer)
+    const fill = !onPlaza && !zones.zone?.outdoor ? INTERIOR_FILL : FORECOURT_FILL
+    if (skyFill) skyFill.intensity = onPlaza ? 0.1 : fill.sky
+    if (ambientFill) ambientFill.intensity = onPlaza ? 0.01 : fill.ambient
     if (zones.zone?.name === 'platform') {
       platformFog.color = sky.horizonColor
       scene.fog = platformFog
@@ -1246,13 +1259,24 @@ export function createBoardingLevel({
   let enteredStation = false
   let enteringStation = false
   let enterFade = null
+  let welcomeStationRequested = false
+  const welcomeStationAudio = new LevelMusicPlayer(WELCOME_STATION_URL)
+  const trainDepartureTimeAudio = new LevelMusicPlayer(TRAIN_DEPARTURE_TIME_URL)
   const FADE_SECONDS = 0.6
 
   function arriveInside() {
     movementSounds.reset()
     warmTrain()
     enteredStation = true
-    playStationAnnouncement()
+    if (!welcomeStationRequested) {
+      // Set the guard before fetch/decode so repeated entry events cannot
+      // restart the line. The shared context is unlocked by the first gesture;
+      // Web Audio keeps a source queued if that context is still suspended.
+      welcomeStationRequested = true
+      welcomeStationAudio.playWhenReady({ loop: false, volume: 1 }).catch((error) => {
+        console.warn('[boarding] Station welcome audio unavailable', error)
+      })
+    }
     player.setPose(passage1CheckpointPos, Math.PI / 2)
     camera?.setYaw?.(Math.PI / 2)
     camera?.setPitch?.(0.25)
@@ -1402,6 +1426,9 @@ export function createBoardingLevel({
         passage4CheckpointActive = true
         respawn.setCheckpoint(passage4CheckpointPos, Math.PI / 2)
         hud?.showToast?.('Checkpoint reached — Passageway 4 approach', 2200)
+        trainDepartureTimeAudio.playWhenReady({ loop: false, volume: 1 }).catch((error) => {
+          console.warn('[boarding] Train departure audio unavailable', error)
+        })
       }
 
       // The old west-wing progression also runs west -> east, so X alone is no
@@ -1501,6 +1528,7 @@ export function createBoardingLevel({
     },
 
     dispose() {
+      post?.resetGrade()
       boardingOverlayObserver?.disconnect()
       player.setCinematicView(null)
       player.cancelScriptedWalk()
@@ -1510,9 +1538,11 @@ export function createBoardingLevel({
       unregisterStationBlocker()
       unregisterTrainBlocker()
       unregisterApproachTerminal()
-    unregisterEastWingTerminal()
+      unregisterEastWingTerminal()
       unregisterBoarding()
       unregisterDoor()
+      welcomeStationAudio.dispose()
+      trainDepartureTimeAudio.dispose()
       veil.remove()
       tutorialPassage.dispose()
       guardPassage.dispose()

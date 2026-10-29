@@ -22,12 +22,10 @@ const BRIGHTNESS_VERSION = 2
 // here is all it takes for it to appear in the UI. There is no `apply` hook —
 // consumers subscribe() and read the value they care about.
 
-// Keep the established 0.4 minimum, and make the established 2.2 maximum the
-// new 100% reference. The extended range reaches twice that exposure at 200%;
-// ACES still rolls off highlights in the existing final output path.
+// 100% is the authored exposure; 200% reaches the original maximum.
 const MIN_BRIGHTNESS_EXPOSURE = 0.4
-const REFERENCE_BRIGHTNESS_EXPOSURE = 2.2
-const MAX_BRIGHTNESS_EXPOSURE = 4.4
+const REFERENCE_BRIGHTNESS_EXPOSURE = 1.15
+const MAX_BRIGHTNESS_EXPOSURE = 2.2
 
 export function brightnessToExposure(percentage) {
   const value = Math.min(200, Math.max(0, percentage))
@@ -40,15 +38,18 @@ export function brightnessToExposure(percentage) {
 }
 
 function legacyExposureToBrightness(exposure) {
-  const value = Math.min(REFERENCE_BRIGHTNESS_EXPOSURE, Math.max(MIN_BRIGHTNESS_EXPOSURE, exposure))
-  return ((value - MIN_BRIGHTNESS_EXPOSURE) / (REFERENCE_BRIGHTNESS_EXPOSURE - MIN_BRIGHTNESS_EXPOSURE)) * 100
+  const value = Math.min(MAX_BRIGHTNESS_EXPOSURE, Math.max(MIN_BRIGHTNESS_EXPOSURE, exposure))
+  if (value <= REFERENCE_BRIGHTNESS_EXPOSURE) {
+    return ((value - MIN_BRIGHTNESS_EXPOSURE) / (REFERENCE_BRIGHTNESS_EXPOSURE - MIN_BRIGHTNESS_EXPOSURE)) * 100
+  }
+  return 100 + ((value - REFERENCE_BRIGHTNESS_EXPOSURE) / (MAX_BRIGHTNESS_EXPOSURE - REFERENCE_BRIGHTNESS_EXPOSURE)) * 100
 }
 
 export const OPTION_DEFS = [
   {
     id: 'brightness',
     label: 'Brightness',
-    hint: 'Tone-mapping exposure.',
+    hint: '100% is the calibrated brightness. Raise it for a darker display.',
     group: 'Display',
     type: 'slider',
     min: 0,
