@@ -237,14 +237,16 @@ function buildRollContent() {
     line('Character animations from Adobe Mixamo (mixamo.com)')
   ])
 
-  // --- PLACEHOLDER: team credits ---
-  // Replace the lines below with names and roles before shipping.
-  // Deferred at the user's request (2026-10-15): keep this placeholder until
-  // the team supplies exact display names and contribution roles. Trailer and
-  // hosted-game URLs also await confirmation; do not infer them from Git authors.
+  // --- Team credits ---
   addBlock(roll, [
     label('Cast & Crew'),
-    line('[ Placeholder: add team names and roles here ]', { italic: true, dim: true })
+    line('Development Team'),
+    line('Saurav Lall'),
+    line('Nayan Makanjee'),
+    line('Hemesh Parshotam'),
+    line('Jai Parbhoo'),
+    line('Roko Vidjak'),
+    line('Ayesha Ally')
   ])
 
   // --- PLACEHOLDER: third-party assets ---
