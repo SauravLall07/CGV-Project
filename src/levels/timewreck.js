@@ -855,6 +855,34 @@ export function createTimewreckLevel({
   // Only the direct aisle is electrified; the brass partition shields maintenance.
   electricalSurges[0].group.scale.x = 0.59
   electricalSurges[0].group.position.x = -0.72
+  // Final brake-room approach: a separate, full-aisle electrical bar.
+  // Use the same visible bolt meshes, warning cadence and charge cue as Convergence.
+  const brakeApproachSurge = createElectricalSurge(spans.passenger.minZ + 2.1, 1, 1.25, 3.6, 2.05)
+  brakeApproachSurge.group.name = 'brake-approach-electrical-bar'
+  brakeApproachSurge.finalBar = true
+  // A substantial visible beam makes the final electrical barrier readable
+  // even when the procedural lightning is between flicker frames.
+  // The bar is cosmetic: collision and audio still use the original surge.
+  const finalBarMat = new THREE.MeshBasicMaterial({
+    color: 0x9befff, transparent: true, opacity: 0.08,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  })
+  const finalBarGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xc084fc, transparent: true, opacity: 0.02,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  })
+  const finalBarArc = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 4.35, 12), finalBarMat)
+  finalBarArc.rotation.z = Math.PI / 2
+  finalBarArc.position.y = 1.18
+  finalBarArc.frustumCulled = false
+  const finalBarGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 4.35, 12), finalBarGlowMat)
+  finalBarGlow.rotation.z = Math.PI / 2
+  finalBarGlow.position.y = 1.18
+  finalBarGlow.frustumCulled = false
+  brakeApproachSurge.group.add(finalBarGlow, finalBarArc)
+  brakeApproachSurge.finalBarMat = finalBarMat
+  brakeApproachSurge.finalBarGlowMat = finalBarGlowMat
+  electricalSurges.push(brakeApproachSurge)
 
   // Runaway service carts — open Convergence floor past the fork (well after surge ~center+4).
   // Four staggered dashes from the walls: +X, −X, and both diagonals (covers all directions).
@@ -1032,6 +1060,11 @@ export function createTimewreckLevel({
         updateSurgeSparks(surge, seed, dangerous || warning, dangerous)
       }
       const pulse = Math.abs(Math.sin(surgeT * (dangerous ? 22 : warning ? 34 : 8) + surge.offset))
+      if (surge.finalBarMat) {
+        surge.finalBarMat.color.setHex(dangerous ? 0xe9d5ff : 0x67e8f9)
+        surge.finalBarMat.opacity = dangerous ? 0.8 + pulse * 0.18 : warning ? 0.22 + pulse * 0.27 : 0.035
+        surge.finalBarGlowMat.opacity = dangerous ? 0.27 + pulse * 0.18 : warning ? 0.08 + pulse * 0.1 : 0.012
+      }
       const crackle = Math.abs(Math.sin(surgeT * 47 + surge.offset * 3))
       // Visual identity only: violet danger vs ice-cyan warn (timing unchanged).
       if (dangerous) {
@@ -1081,7 +1114,9 @@ export function createTimewreckLevel({
       if (!dangerous || !playerPos) continue
       const overlapsBody = playerPos.y < 1.67 && playerPos.y + 1.85 > 0.43
       const inSlice = Math.abs(playerPos.z - surge.z) <= SURGE_HIT_HALF_Z
-      const inWidth = playerPos.x < 0.78 && playerPos.x > -2.6
+      const inWidth = surge.finalBar
+        ? Math.abs(playerPos.x) < 2.45
+        : playerPos.x < 0.78 && playerPos.x > -2.6
       if (overlapsBody && inSlice && inWidth) {
         failSoft('An electrical surge caught you!', 'electric')
       }
@@ -2863,7 +2898,7 @@ export function createTimewreckLevel({
     loopRing,loopRingHalo,loopRingLight,securityCrossing.group,walkwayGlow,
     root.getObjectByName('cargo-burst-signals'),
     blastDoors,releasePlatform,manualCatch,slamSparks.points,expansionHazards.group,
-    ...electricalSurges.map(s=>s.group),...runawayCarts.map(c=>c.group),
+    ...electricalSurges.filter(s=>!s.finalBar).map(s=>s.group),...runawayCarts.map(c=>c.group),
     debrisGroup,debrisLaunchLight,debrisSafePad,...debrisTrails,
     ...spatial.groups.filter(g=>!g.name.startsWith('passenger')),
     // These two cars have no detachment choreography. Retire them at the
@@ -3208,7 +3243,6 @@ export function createTimewreckLevel({
       // Returning / respawning to a higher Z re-enables the same paths.
       const HAZARD_PAD = 10
       const vaultActive = pp.z > spans.vault.minZ - HAZARD_PAD
-      const surgeActive = pp.z > spans.convergence.minZ - HAZARD_PAD
       const blastActive = pp.z > doorZ - HAZARD_PAD
       const mechHazardActive = pp.z > spans.mechanical.minZ - HAZARD_PAD
         && pp.z < spans.mechanical.maxZ + HAZARD_PAD
@@ -3224,6 +3258,9 @@ export function createTimewreckLevel({
 
       wreckRoutes.update()
       passengerRack.update()
+      if (!braking && !brakeComplete && !respawn.isFailing() && passengerRack.isCrushingPlayer()) {
+        failSoft('Crushed by the falling luggage rack!', 'debris')
+      }
       expansionHazards.update(!braking && !respawn.isFailing())
       // Sound the actual swinging freight BOX (not the vertical wooden trunk).
       // Outward travel past 0.70 rad arms the next inward pass. Crossing
@@ -3279,7 +3316,12 @@ export function createTimewreckLevel({
       }
       if (vaultActive && !braking) updateVaultGates(envDt, pp)
       if (vaultActive && !braking && !respawn.isFailing()) updateFlyingDebris(pp)
-      if (surgeActive) updateElectricalSurges(envDt, pp)
+      // Keep both electrical hazards cycling even when the player is far away.
+      // The phase clock also drives their visible charge/discharge effects; gating
+      // this update by player proximity freezes the remote barrier visually.
+      // Audio remains distance-attenuated and collision checks use the actual
+      // player position inside updateElectricalSurges.
+      updateElectricalSurges(envDt, pp)
       if (!braking && !respawn.isFailing()) updateRunawayCart(pp)
       if (blastActive) updateBlastDoors(delta, pp)
       const modeInt = MODE_INT[mode] ?? 0

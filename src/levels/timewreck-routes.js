@@ -138,9 +138,14 @@ export function createPassengerRack({ root, span, player, timeSystem, unregister
   const block = { minX: -2.55, maxX: 0.45, minZ: z - 0.55, maxZ: z + 0.55, enabled: false }
   obstacles.push(block)
   let clock = -1
+  let lastFallY = rack.position.y
+  let descending = false
   function apply() {
     const fall = THREE.MathUtils.clamp((clock - 0.9) / 0.65, 0, 1)
-    rack.position.y = 2.65 - fall * 2.5
+    const nextY = 2.65 - fall * 2.5
+    descending = nextY < lastFallY - 0.0001
+    rack.position.y = nextY
+    lastFallY = nextY
     rack.rotation.z = 0
     block.enabled = fall > 0.32
   }
@@ -149,9 +154,19 @@ export function createPassengerRack({ root, span, player, timeSystem, unregister
     onUpdate(dt) { if (clock >= 0) clock = Math.min(1.55, clock + dt); apply() },
     getSnapshot: () => ({ clock }), restoreSnapshot(s) { clock = s.clock; apply() }
   }))
-  return { update() {
+  return {
+    isCrushingPlayer() {
+      if (!descending || clock < 0) return false
+      const p = player.mesh.position
+      // Footprint of the rack; kill only when the falling rack intersects the body.
+      return p.x > -2.55 && p.x < 0.45 &&
+        Math.abs(p.z - z) < 0.58 &&
+        rack.position.y - 0.1 < p.y + 1.75 &&
+        rack.position.y + 0.1 > p.y
+    },
+    update() {
     if (clock < 0 && player.mesh.position.z < z + 3.3 && player.mesh.position.z > z) {
       clock = 0; warn()
     }
-  }, reset() { clock = -1; apply() } }
+  }, reset() { clock = -1; descending = false; apply(); descending = false } }
 }
