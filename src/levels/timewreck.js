@@ -25,6 +25,8 @@ import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
 import { createLevelThreeSfx } from '../systems/level-three-sfx.js'
 import { createSecondCarriageAudio, playElectricDeathSfx, preloadElectricDeathSfx } from '../systems/level-three-carriage-sfx.js'
+import { createFreezeFloorAudio } from '../systems/level-three-freeze-floor-sfx.js'
+import { createPassengerHazardAudio } from '../systems/level-three-passenger-hazard-sfx.js'
 import { createLevelOneMovementSfx } from '../systems/player-interaction-sfx.js'
 import { createCargoImpactAudio } from '../systems/level-three-cargo-impact-sfx.js'
 import { createWreckHazardAudio } from '../systems/wreck-hazard-audio.js'
@@ -1214,6 +1216,9 @@ export function createTimewreckLevel({
     doorZ, catchZ, brass: blastSteel })
   let relayHeld = false
   let relayEchoRemaining = 0
+  // Audio follows the actual weight state and movement, never an independent timer.
+  let previousRelayHeld = false
+  const relayDoorSoundPosition = new THREE.Vector3(0, 1.35, doorZ)
   const blastObstacles = [
     { minX: -INTERIOR_HALF_WIDTH, maxX: -1.1, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
     { minX: 1.1, maxX: INTERIOR_HALF_WIDTH, minZ: doorZ - 0.48, maxZ: doorZ + 0.48 },
@@ -1252,6 +1257,7 @@ export function createTimewreckLevel({
           Math.hypot(player.mesh.position.x - 0.8, player.mesh.position.z - catchZ) > 1.6) return
       // The manual catch can recover an expired echo after the player crosses.
       relayLatched = true
+      if (relayOpen <= 0.001) secondCarriageAudio.relayDoorOpen(relayDoorSoundPosition, player.mesh.position)
       relayOpen = 1
       applyRelay()
       lastCheckpointZ = Math.min(lastCheckpointZ, catchZ)
@@ -1269,13 +1275,19 @@ export function createTimewreckLevel({
     const echoOnRelease = ghost.isOccupying(releasePos, 0.56)
     const held = playerOnRelease || echoOnRelease
     relayHeld = held
+    if (held && !previousRelayHeld) secondCarriageAudio.relayPlate(releasePos, playerPos)
+    previousRelayHeld = held
     relayEchoRemaining = echoOnRelease && !playerOnRelease ? ghost.getRemainingSeconds() : 0
     const target = relayLatched || held ? 1 : 0
     // A closing door waits at its current pose while a body clears the seam.
     // It never opens a shut door merely because someone approaches it.
     const inSeam = Math.abs(playerPos.z - doorZ) < 0.55
+    const beforeOpening = relayOpen
     if (target || !inSeam) {
       relayOpen = THREE.MathUtils.clamp(relayOpen + (target ? dt / 0.4 : -dt / 0.45), 0, 1)
+    }
+    if (beforeOpening <= 0.001 && relayOpen > beforeOpening + 0.001) {
+      secondCarriageAudio.relayDoorOpen(relayDoorSoundPosition, playerPos)
     }
     releaseDeck.position.y = held ? -0.015 : 0
     applyRelay()
@@ -1718,6 +1730,8 @@ export function createTimewreckLevel({
   const securityCrossing = createSecurityCrossing({ root, carriage: carriages.security,
     span: spans.security, halfWidth: WRECK_WALL_X })
   const { minZ: gapMinZ, maxZ: gapMaxZ } = securityCrossing.layout
+  const freezeFloorAudio = createFreezeFloorAudio(securityCrossing.group, spans.security)
+  void freezeFloorAudio.preload()
   const slabMat = securityCrossing.material
   const slabSupports = [...spatial.supports, ...connector.supports, ...cargoGangway.supports]
   const gapVoids = [connector.gap, cargoGap, ...securityCrossing.layout.holes]
@@ -2805,9 +2819,18 @@ export function createTimewreckLevel({
 
   const passengerRack = createPassengerRack({ root, span: spans.passenger, player, timeSystem, unregisters, obstacles: blastObstacles,
     warn: () => {
-      wreckAudio.warning()
       showLevelToast('Rack bolts snapping! Keep RIGHT of the rack, LEFT of the broad seat, then CENTRE for the floor crossing.', 3200)
     } })
+
+  // Register the sound only after the rack actually exists in the scene.
+  // One rack mesh controls the entire falling assembly's impact.
+  const passengerHazardAudio = createPassengerHazardAudio({
+    rack: root.getObjectByName('passenger-falling-rack')?.children?.find(child => child.isMesh && child.position.y > 2),
+    pieces: collapsePieces.map(piece => piece.mesh),
+    span: spans.passenger,
+    floorCentreZ: (collapseMinZ + collapseMaxZ) / 2
+  })
+  void passengerHazardAudio.preload()
 
   const expansionHazards = createExpansionHazards({ root, spans, player, timeSystem, unregisters,
     fail: message => failSoft(message), audio: hazardAudio,
@@ -2903,6 +2926,7 @@ export function createTimewreckLevel({
       relayLatched = saved.relayLatched
       relayOpen = relayLatched ? 1 : 0
       relayHeld = false
+      previousRelayHeld = false
       relayEchoRemaining = 0
       releaseDeck.position.y = 0
       applyRelay()
@@ -2930,6 +2954,8 @@ export function createTimewreckLevel({
       cargoGangway.state.reset()
       cargoGangway.apply()
       securityCrossing.reset()
+      freezeFloorAudio.reset()
+      passengerHazardAudio.reset()
       slabSettle = 0
       slabSupports.length = 0
       slabSupports.push(...spatial.supports, ...connector.supports, ...cargoGangway.supports, ...securityCrossing.supports)
@@ -3038,7 +3064,7 @@ export function createTimewreckLevel({
     getCarriageVolumes: () => listCarriageVolumes(spans).filter(v =>
       v.minZ < bounds.maxZ && carriages[v.key].visible),
     get isCinematic() { return braking },
-    setPresentationPaused(value) { cargoImpactAudio.setPaused(value); secondCarriageAudio.setPaused(value); wreckAudio.setPaused(value); hazardAudio.setPaused(value); levelThreeSfx.setPaused(value); feedback.setPaused(value) },
+    setPresentationPaused(value) { freezeFloorAudio.setPaused(value); passengerHazardAudio.setPaused(value); cargoImpactAudio.setPaused(value); secondCarriageAudio.setPaused(value); wreckAudio.setPaused(value); hazardAudio.setPaused(value); levelThreeSfx.setPaused(value); feedback.setPaused(value) },
 
     update(delta) {
       movementAudio.update(delta)
@@ -3544,6 +3570,7 @@ export function createTimewreckLevel({
       const frozen = mode === 'FREEZE'
       securityCrossing.update(delta, frozen)
       slabSettle = securityCrossing.settle
+      freezeFloorAudio.update(delta, player.mesh.position, slabSettle)
       slabSupports.length = 0
       slabSupports.push(...spatial.supports, ...connector.supports, ...cargoGangway.supports, ...securityCrossing.supports)
       // Test actual falling rather than killing every non-Freeze body in a Z
@@ -3561,6 +3588,7 @@ export function createTimewreckLevel({
       const nearCollapse = pp.z > collapseMinZ - HAZARD_PAD && pp.z < collapseMaxZ + HAZARD_PAD
       const collapseFxLive = collapseLive && (nearCollapse || collapseMotionNeedsUpdate(frozen))
       if (collapseFxLive) applyCollapseMotion()
+      passengerHazardAudio.update(delta, pp, { collapseLive, collapseSettle })
       collapseGlow.intensity = collapseFxLive
         ? (frozen ? 8 : 2.4 + Math.sin(elapsed * 3.2) * 0.4)
         : 0
@@ -3683,6 +3711,8 @@ export function createTimewreckLevel({
       movementAudio.dispose()
       cargoImpactAudio.dispose()
       secondCarriageAudio.dispose()
+      freezeFloorAudio.dispose()
+      passengerHazardAudio.dispose()
       wreckAudio.dispose()
       levelThreeSfx.dispose()
       hazardAudio.dispose()

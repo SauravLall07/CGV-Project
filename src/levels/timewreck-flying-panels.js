@@ -183,7 +183,18 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
     panel.mesh.position.set(panel.x, panel.y, z)
     // Trigger once at the start of actual lethal motion, never for decorative
     // instanced scraps, warning poses, stationary objects or rewind snapshots.
-    if (phase >= WARNING && phase < WARNING + panel.duration &&
+    // Relay carriage: defer the whoosh until a moving panel is actually close.
+    // Earlier carriages retain their existing launch cues.
+    if (panel.key === 'relay' && phase >= WARNING && phase < WARNING + panel.duration &&
+        panel.soundedCycle !== cycle && timeSystem.getMode() !== 'REWIND') {
+      const pp = player.mesh.position
+      const distance = Math.hypot(pp.x - panel.x, pp.y - panel.y, pp.z - z)
+      if (distance < 9 && pp.z >= panel.span.minZ && pp.z <= panel.span.maxZ) {
+        panel.soundedCycle = cycle
+        onLethalFlight?.(distance, panel.speed)
+      }
+    }
+    if (panel.key !== 'relay' && phase >= WARNING && phase < WARNING + panel.duration &&
         panel.soundedCycle !== cycle && timeSystem.getMode() !== 'REWIND') {
       panel.soundedCycle = cycle
       const pp = player.mesh.position
