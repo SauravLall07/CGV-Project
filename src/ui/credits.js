@@ -120,7 +120,11 @@ function buildRollContent() {
     line('"Freeze Sound Effect FX" by antonsoederberg (Freesound.org) — CC0'),
     line('"Quick Zoom Slow Down" by bevibeldesign (Freesound.org) — CC0'),
     line('"Vinyl Rewind" by tasmanianpower (Freesound.org) — CC0'),
-    line('"Ghost Noise" by whiprealgood (Freesound.org) — CC0')
+    line('"Ghost Noise" by whiprealgood (Freesound.org) — CC0'),
+    line('"intercom in" by bevibeldesign (Freesound.org) — CC0'),
+    line('"WelcomeAboardTrain" by Molly (freetts.org) — CC0'),
+    line('"TrainDepart" by Leah (freetts.org) — CC0'),
+    line('"WelcomeToStation" by Molly (freetts.org) — CC0'),
   ])
 
   addBlock(roll, [

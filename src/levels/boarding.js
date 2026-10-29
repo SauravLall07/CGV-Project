@@ -34,7 +34,10 @@ import { CENTER_Z, FACADE_X, LANDING_FIGURE, PLAZA } from '../environment/landin
 import { createZoneVisibility } from './boarding-zones.js'
 import { capRegionLights } from './boarding-lighting.js'
 import { resetKitMaterials } from '../environment/level1-kit/kit-materials.js'
+import { LevelMusicPlayer } from '../systems/level-music.js'
 
+const WELCOME_STATION_URL = new URL('../assets/audio/story/welcomeStation.mp3', import.meta.url)
+const TRAIN_DEPARTURE_TIME_URL = new URL('../assets/audio/story/trainDepartureTime.mp3', import.meta.url)
 const BOARDING_HOLD_SECONDS = 5
 const BOARDING_RETURN_TIMEOUT = 2
 const BOARDING_OPEN_SECONDS = 0.6
@@ -1179,11 +1182,23 @@ export function createBoardingLevel({
   let enteredStation = false
   let enteringStation = false
   let enterFade = null
+  let welcomeStationRequested = false
+  const welcomeStationAudio = new LevelMusicPlayer(WELCOME_STATION_URL)
+  const trainDepartureTimeAudio = new LevelMusicPlayer(TRAIN_DEPARTURE_TIME_URL)
   const FADE_SECONDS = 0.6
 
   function arriveInside() {
     warmTrain()
     enteredStation = true
+    if (!welcomeStationRequested) {
+      // Set the guard before fetch/decode so repeated entry events cannot
+      // restart the line. The shared context is unlocked by the first gesture;
+      // Web Audio keeps a source queued if that context is still suspended.
+      welcomeStationRequested = true
+      welcomeStationAudio.playWhenReady({ loop: false, volume: 1 }).catch((error) => {
+        console.warn('[boarding] Station welcome audio unavailable', error)
+      })
+    }
     player.setPose(passage1CheckpointPos, Math.PI / 2)
     camera?.setYaw?.(Math.PI / 2)
     camera?.setPitch?.(0.25)
@@ -1330,6 +1345,9 @@ export function createBoardingLevel({
         passage4CheckpointActive = true
         respawn.setCheckpoint(passage4CheckpointPos, Math.PI / 2)
         hud?.showToast?.('Checkpoint reached — Passageway 4 approach', 2200)
+        trainDepartureTimeAudio.playWhenReady({ loop: false, volume: 1 }).catch((error) => {
+          console.warn('[boarding] Train departure audio unavailable', error)
+        })
       }
 
       // The old west-wing progression also runs west -> east, so X alone is no
@@ -1437,6 +1455,8 @@ export function createBoardingLevel({
       unregisterApproachTerminal()
       unregisterBoarding()
       unregisterDoor()
+      welcomeStationAudio.dispose()
+      trainDepartureTimeAudio.dispose()
       veil.remove()
       tutorialPassage.dispose()
       guardPassage.dispose()
