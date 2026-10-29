@@ -78,6 +78,8 @@ function random(seed) {
 
 function css(color, shade = 1, alpha = 1) {
   const c = new THREE.Color(color)
+  // Canvas stores sRGB bytes; writing linear values here darkens the map twice.
+  c.getRGB(c, THREE.SRGBColorSpace)
   const r = Math.min(255, Math.max(0, c.r * shade * 255)) | 0
   const g = Math.min(255, Math.max(0, c.g * shade * 255)) | 0
   const b = Math.min(255, Math.max(0, c.b * shade * 255)) | 0
@@ -310,7 +312,7 @@ export function drawGreenTile() {
 }
 
 // Damp concrete. The colour map darkens where it is wet; the matching
-// roughness map is near zero in the same puddles.
+// roughness map stays matte enough to avoid mirror-like highlight rings.
 function concreteBase(wet) {
   const size = 512
   const canvas = makeCanvas(size)
@@ -326,8 +328,8 @@ function concreteBase(wet) {
     const y = pr() * size
     const r = 30 + pr() * 90
     const grad = ctx.createRadialGradient(x, y, r * 0.2, x, y, r)
-    grad.addColorStop(0, wet ? 'rgba(20,20,20,0.95)' : 'rgba(18,16,14,0.45)')
-    grad.addColorStop(1, wet ? 'rgba(20,20,20,0)' : 'rgba(18,16,14,0)')
+    grad.addColorStop(0, wet ? 'rgba(160,160,160,0.95)' : 'rgba(18,16,14,0.45)')
+    grad.addColorStop(1, wet ? 'rgba(160,160,160,0)' : 'rgba(18,16,14,0)')
     ctx.fillStyle = grad
     ctx.beginPath()
     ctx.ellipse(x, y, r, r * (0.5 + pr() * 0.5), pr() * Math.PI, 0, Math.PI * 2)

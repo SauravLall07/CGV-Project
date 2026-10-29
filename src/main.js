@@ -386,7 +386,7 @@ const levelManager = createLevelManager({
   levels: [
     { state: 'Boarding', load: async () => {
       await loadBoardingAssets()
-      return ctx => createBoardingLevel({ ...ctx, renderCamera: camera })
+      return ctx => createBoardingLevel({ ...ctx, renderCamera: camera, post })
     } },
     // Level 2's Core ending calls advance(); it now plays the Level 2 → 3
     // story beat, which builds Level 3 itself while panel 1 plays.
@@ -585,7 +585,7 @@ async function buildTitleBackdrop() {
   boardingFilesReady = loadBoardingAssets()
   await Promise.all([introReady, charactersReady, boardingFilesReady, prefetchBoardingMusic()])
   preparedBoarding = createBoardingLevel({ scene, interaction, assets, hud, player,
-    camera: playerView, renderCamera: camera, respawn, timeSystem, renderer,
+    camera: playerView, renderCamera: camera, respawn, timeSystem, renderer, post,
     advance: () => levelManager.advance(), beginCinematic() { respawn.cancel(); syncInputState() } })
   const checkpoint = preparedBoarding.checkpoint
   player.setPose(checkpoint.position, checkpoint.yaw)

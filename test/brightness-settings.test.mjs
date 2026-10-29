@@ -29,17 +29,17 @@ async function loadSettings(payload) {
 test('brightness percentages map to the recalibrated exposure points', () => {
   const expected = [
     [0, 0.4],
-    [50, 1.3],
-    [100, 2.2],
-    [150, 3.3],
-    [200, 4.4]
+    [50, 0.775],
+    [100, 1.15],
+    [150, 1.675],
+    [200, 2.2]
   ]
   for (const [percentage, exposure] of expected) {
     assert.ok(Math.abs(brightnessToExposure(percentage) - exposure) < 1e-12,
       `${percentage}% should map to ${exposure} exposure`)
   }
   assert.equal(brightnessToExposure(-10), 0.4)
-  assert.equal(brightnessToExposure(210), 4.4)
+  assert.equal(brightnessToExposure(210), 2.2)
 })
 
 test('brightness UI uses the displayed zero-to-two-hundred percent scale', () => {
@@ -53,16 +53,16 @@ test('brightness UI uses the displayed zero-to-two-hundred percent scale', () =>
   assert.equal(definition.format(200), '200%')
 })
 
-test('legacy maximum save migrates to 100% without changing exposure', async () => {
+test('legacy maximum save migrates to 200% without changing exposure', async () => {
   const { settings, storage } = await loadSettings({
     options: { brightness: 2.2 },
     bindings: {},
     bindingsVersion: 2
   })
-  assert.equal(settings.get('brightness'), 100)
+  assert.equal(settings.get('brightness'), 200)
   assert.equal(brightnessToExposure(settings.get('brightness')), 2.2)
   assert.equal(storage.read().brightnessVersion, 2)
-  assert.equal(storage.read().options.brightness, 100)
+  assert.equal(storage.read().options.brightness, 200)
 })
 
 test('legacy default save retains its exact existing exposure', async () => {
@@ -87,10 +87,31 @@ test('current saves keep their percentages and persist extended values', async (
   assert.equal(storage.read().brightnessVersion, 2)
 })
 
-test('reset restores the new 100% reference', async () => {
+test('reset restores the calibrated 100% reference', async () => {
   const { settings } = await loadSettings(null)
   settings.set('brightness', 0)
   settings.resetOptions()
   assert.equal(settings.get('brightness'), 100)
-  assert.equal(brightnessToExposure(settings.get('brightness')), 2.2)
+  assert.equal(brightnessToExposure(settings.get('brightness')), 1.15)
+})
+
+
+test('legacy exposures across both segments survive migration and reload', async () => {
+  for (const exposure of [0.4, 0.775, 1.15, 1.675, 2.2]) {
+    const migrated = await loadSettings({ options: { brightness: exposure } })
+    assert.ok(Math.abs(brightnessToExposure(migrated.settings.get('brightness')) - exposure) < 1e-12)
+    const reloaded = await loadSettings(migrated.storage.read())
+    assert.equal(reloaded.settings.get('brightness'), migrated.settings.get('brightness'))
+  }
+})
+
+test('saved percentages use the corrected curve without resetting other preferences', async () => {
+  const { settings } = await loadSettings({
+    brightnessVersion: 2,
+    options: { brightness: 78, bloom: false, shadowQuality: 'off' }
+  })
+  assert.equal(settings.get('brightness'), 78)
+  assert.ok(Math.abs(brightnessToExposure(78) - 0.985) < 1e-12)
+  assert.equal(settings.get('bloom'), false)
+  assert.equal(settings.get('shadowQuality'), 'off')
 })
