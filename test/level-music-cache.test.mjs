@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { initAudio, getContext, getMasterGain } from '../src/core/audio.js'
+import { initAudio, getContext, getMasterGain, getAudioBus } from '../src/core/audio.js'
 import { settings } from '../src/core/settings.js'
 import { LevelMusicPlayer, startLevelMusic, stopLevelMusic, getMusicCacheInfo } from '../src/systems/level-music.js'
 
@@ -180,7 +180,8 @@ test('one-shot music retains loop/volume and master mute routing through complet
   assert.equal(source.loop, false)
   assert.equal(source.starts, 1)
   assert.equal(source.destination.gain.value, 0.4)
-  assert.equal(source.destination.destination, master)
+  assert.equal(source.destination.destination, getAudioBus('music'))
+  assert.equal(getAudioBus('music').destination.destination, master)
   settings.set('mute', true); assert.equal(master.gain.value, 0)
   settings.set('masterVolume', 0.23); assert.equal(master.gain.value, 0)
   settings.set('mute', false); assert.equal(master.gain.value, 0.23)

@@ -947,6 +947,9 @@ export function createPlayer() {
     isCrouching: () => crouching,
     isRunning: () => running,
     isAirborne: () => airborne,
-    isMoving: () => moving
+    isMoving: () => moving,
+    getFootstepCycle: () => visual
+      ? visual.getFootstepCycle()
+      : { mode: 'procedural', phase: ((stridePhase / (2 * Math.PI)) % 1 + 1) % 1 }
   }
 }

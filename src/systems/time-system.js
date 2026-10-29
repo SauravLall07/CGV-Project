@@ -598,9 +598,9 @@ export function createTimeSystem({ scene, player, hud, onTimeScale }) {
     resetForCheckpoint,
     captureCheckpointState,
 
-    triggerSlow: () => setMode(TIME_MODES.SLOW),
-    triggerFreeze: () => setMode(TIME_MODES.FREEZE),
-    triggerRewind: () => setMode(TIME_MODES.REWIND),
+    triggerSlow,
+    triggerFreeze,
+    triggerRewind,
     triggerGhost,
     resetGhost,
     getMode: () => mode,

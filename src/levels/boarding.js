@@ -1,4 +1,6 @@
+import { preloadGuardTrainSfx, playStationAnnouncement, playTrainDoorSfx, playTrainDepartureSfx, startTrainDoorEffortSfx, stopTrainDoorEffortSfx, updateStationAmbience, disposeGuardTrainSfx } from '../systems/level-one-guard-train-sfx.js'
 import * as THREE from 'three'
+import { playLaserGateButtonSfx } from '../systems/level-one-security-sfx.js'
 import {
   createStationBlockout,
   createStationLighting,
@@ -26,6 +28,7 @@ import { createGuardPassage } from '../environment/passageways/passage-guards.js
 import { createBridgePassage } from '../environment/passageways/passage-bridge.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { createDistractionSystem } from '../systems/distraction.js'
+import { createLevelOneMovementSfx, playStationEntranceSfx, playDistractorImpactSfx } from '../systems/player-interaction-sfx.js'
 import { disposeObject } from '../core/dispose.js'
 import { createLightPool, POINT_LIGHT_POOL_SIZE, TORCH_SPOT_POOL_SIZE } from '../core/light-pool.js'
 import { createLandingScene } from '../environment/landing/index.js'
@@ -131,6 +134,8 @@ export function createBoardingLevel({
   station.add(cameraWalls)
   // East of the rails, outside the walkable bounds. Not a child of `station`,
   // so it is not an interaction blocker and guards do not treat it as cover.
+  const movementSounds = createLevelOneMovementSfx(player)
+  preloadGuardTrainSfx()
   const landing = createLandingScene()
   landing.town.visible = false
   const landingPointLights = []
@@ -520,7 +525,8 @@ export function createBoardingLevel({
       bridgePassage.isComplete() &&
       player?.mesh?.position?.y > -0.55 &&
       !bridgePassage.isInsidePassage()
-    )
+    ),
+    onImpact: playDistractorImpactSfx
   })
 
   const stationPickupUnregisters = []
@@ -676,6 +682,7 @@ export function createBoardingLevel({
       onInteract: () => {
         if (isApproachGridDisabled) return
 
+        playLaserGateButtonSfx()
         isApproachGridDisabled = true
 
         approachLaserGrid.setActive(false)
@@ -697,6 +704,61 @@ export function createBoardingLevel({
       }
     }
   )
+
+  // Another bypass in the room EAST of the original West Wing grid.
+  // The first grid, button and all of the tutorial passage are left unchanged.
+  // The existing east doorway is at APPROACH_GATE_X[2] (-18).
+  const eastWingLaserGrid = stealth.addLaserGrid({
+    position: new THREE.Vector3(APPROACH_GATE_X[2], 0, -25.725),
+    width: 2.15,
+    height: 2.2,
+    beamCount: 4,
+    rotationY: Math.PI / 2
+  })
+
+  // Place the second control in the room between the two grids, before the
+  // east doorway. Match the existing terminal's proportions and light cues.
+  const eastWingTerminal = new THREE.Group()
+  eastWingTerminal.name = 'east-wing-security-terminal'
+  // Mount on the exposed south wall alongside the security-hall guard patrol.
+  // Its route runs from (-27, -26) to (-20, -23), bringing the guard within
+  // roughly 1.5 m of the terminal at the eastern end of its patrol.
+  // The player must approach the button in the open instead of from luggage cover.
+  eastWingTerminal.position.set(-21.8, 1.35, -22.03)
+  eastWingTerminal.rotation.y = Math.PI / 2
+
+  const eastWingTermBox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.35, 0.55, 0.22),
+    approachTermBox.material
+  )
+  eastWingTerminal.add(eastWingTermBox)
+  const eastWingScreenMat = approachTermScreenMat.clone()
+  const eastWingScreen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.04, 0.28, 0.16),
+    eastWingScreenMat
+  )
+  eastWingScreen.position.set(0.18, 0.05, 0)
+  eastWingTerminal.add(eastWingScreen)
+  const eastWingLight = new THREE.PointLight(0xef4444, 3, 3)
+  eastWingLight.position.set(0.3, 0.05, 0)
+  eastWingTerminal.add(eastWingLight)
+  station.add(eastWingTerminal)
+
+  let isEastWingGridDisabled = false
+  const unregisterEastWingTerminal = interaction.register(eastWingTerminal, {
+    prompt: 'Deactivate East Wing Laser Grid',
+    onInteract: () => {
+      if (isEastWingGridDisabled) return
+      playLaserGateButtonSfx()
+      isEastWingGridDisabled = true
+      eastWingLaserGrid.setActive(false)
+      eastWingScreenMat.color.setHex(0x10b981)
+      eastWingScreenMat.emissive.setHex(0x059669)
+      eastWingLight.color.setHex(0x10b981)
+      interaction.flashPrompt('East Wing Security Grid Deactivated!')
+      hud?.showToast?.('East Wing laser grid offline — passage clear', 2200)
+    }
+  })
 
   // Wing Zone C — Security Hall (medium-hard)
   stealth.addGuard({
@@ -1027,12 +1089,17 @@ export function createBoardingLevel({
         !player.isAirborne() && Math.abs(p.y) < 0.15 &&
         p.x >= 3.8 && Math.abs(p.z - boardingTarget.z) <= 0.6
     },
-    onHoldStart: () => player.startInteractionPull?.(boardingDoor),
+    onHoldStart: () => {
+      startTrainDoorEffortSfx()
+      player.startInteractionPull?.(boardingDoor)
+    },
     onHoldCancel: ({ reset }) => {
+      stopTrainDoorEffortSfx()
       if (reset) player.resetInteractionAnimation?.()
       else player.returnInteractionPull?.()
     },
     onHoldComplete: () => {
+      stopTrainDoorEffortSfx()
       if (isBoardingCinematic || respawn.isFailing()) return
       isBoardingCinematic = true
       // Boarding is committed: remove the large yellow patrol overlays from
@@ -1198,6 +1265,7 @@ export function createBoardingLevel({
   const FADE_SECONDS = 0.6
 
   function arriveInside() {
+    movementSounds.reset()
     warmTrain()
     enteredStation = true
     if (!welcomeStationRequested) {
@@ -1244,6 +1312,7 @@ export function createBoardingLevel({
     range: 2.7,
     onInteract() {
       if (enteredStation || enterFade) return
+      playStationEntranceSfx()
       enteringStation = true
       enterFade = { t: 0, phase: 'out' }
       beginCinematic?.()
@@ -1328,6 +1397,8 @@ export function createBoardingLevel({
     },
 
     update(delta) {
+      movementSounds.update(delta)
+      updateStationAmbience(player.mesh.position, enteredStation && !isBoardingCinematic)
       updateDoorFade(delta)
       applyForecourtFill(player.mesh.position)
       sky.update(delta, timeSystem)
@@ -1391,6 +1462,7 @@ export function createBoardingLevel({
             restore: () => stealth.reset()
           })
           if (hud) hud.showToast('Checkpoint reached — station concourse infiltrated', 2400)
+          playStationAnnouncement()
         }
       }
       const p = player.mesh.position
@@ -1416,6 +1488,7 @@ export function createBoardingLevel({
         if (boardingPhase === 'returning' && (!boardingReturn || boardingReturn.finished || cinematicTimer >= BOARDING_RETURN_TIMEOUT)) {
           player.resetInteractionAnimation?.()
           openDoor()
+          playTrainDoorSfx()
           beginBoardingPhase('opening')
         } else if (boardingPhase === 'opening' && cinematicTimer >= BOARDING_OPEN_SECONDS && getDoorOpenFraction() >= 0.8) {
           startBoardingWalk()
@@ -1432,6 +1505,7 @@ export function createBoardingLevel({
           beginBoardingPhase('pause')
         } else if (boardingPhase === 'pause' && cinematicTimer >= BOARDING_PAUSE_SECONDS) {
           beginBoardingPhase('departing')
+          playTrainDepartureSfx()
         } else if (boardingPhase === 'departing') {
           const t = Math.min(cinematicTimer, BOARDING_DEPART_SECONDS)
           train.position.z = departureStartZ - 0.5 * BOARDING_ACCELERATION * t * t
@@ -1464,6 +1538,7 @@ export function createBoardingLevel({
       unregisterStationBlocker()
       unregisterTrainBlocker()
       unregisterApproachTerminal()
+      unregisterEastWingTerminal()
       unregisterBoarding()
       unregisterDoor()
       welcomeStationAudio.dispose()
@@ -1473,6 +1548,8 @@ export function createBoardingLevel({
       guardPassage.dispose()
       bridgePassage.dispose()
       stationPickupUnregisters.forEach((unregister) => unregister())
+      movementSounds.dispose()
+      disposeGuardTrainSfx()
       stationDistraction.dispose()
       stealth.dispose()
       outdoorEnv.dispose()

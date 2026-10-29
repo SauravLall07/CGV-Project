@@ -23,6 +23,9 @@ import { createWreckFeedback } from './timewreck-feedback.js'
 import { createSecurityCrossing } from './timewreck-security.js'
 import { createRelayFeedback } from './timewreck-relay-feedback.js'
 import { createWreckAudio } from '../systems/wreck-audio.js'
+import { createLevelThreeSfx } from '../systems/level-three-sfx.js'
+import { createSecondCarriageAudio, playElectricDeathSfx, preloadElectricDeathSfx } from '../systems/level-three-carriage-sfx.js'
+import { createLevelOneMovementSfx } from '../systems/player-interaction-sfx.js'
 import { createWreckHazardAudio } from '../systems/wreck-hazard-audio.js'
 import { createExpansionHazards } from './timewreck-expansion-hazards.js'
 import { createDebrisCollision } from './timewreck-debris.js'
@@ -272,13 +275,19 @@ export function createTimewreckLevel({
 
   const unregisters = []
   const wreckAudio = createWreckAudio()
+  const levelThreeSfx = createLevelThreeSfx()
+  const movementAudio = createLevelOneMovementSfx(player)
+  const shutterImpactPosition = new THREE.Vector3()
+  const secondCarriageAudio = createSecondCarriageAudio()
+  void secondCarriageAudio.preload()
+  void preloadElectricDeathSfx()
   const hazardAudio = createWreckHazardAudio()
   unregisters.push(interaction.registerBlocker(root))
   const bounds = { ...env.interiorBounds }
   const addProp = (obj, z, x = 0, y = 0) => { obj.position.set(x, y, z); root.add(obj); return obj }
 
   let failCooldown = 0
-  const LEVEL_OBJECTIVE = 'Stay ahead of the purple time wave — escape to the locomotive'
+  const LEVEL_OBJECTIVE = 'Escape the wreck and reach the locomotive'
   const COLLAPSE_HINT = `Freeze the marked floor with ${bindingLabel(settings.getBinding('freeze'))}, then sprint across its centre`
   const COLLAPSE_HINT_S = 4.6
   let collapseHintHoldUntil = -1
@@ -295,6 +304,7 @@ export function createTimewreckLevel({
   function failSoft(message, reason = 'caught') {
     if (failCooldown > 0) return false
     failCooldown = 1.3
+    if (reason === 'electric') playElectricDeathSfx()
     respawn.fail(reason)
     if (message) showLevelToast(message, 1900)
     return true
@@ -420,6 +430,7 @@ export function createTimewreckLevel({
         const inSlice = Math.abs(playerPos.z - gate.z) <= VAULT_HIT_HALF_Z
         const inWidth = Math.abs(playerPos.x) <= VAULT_BEAM_LENGTH / 2
         if (overlapsBody && inSlice && inWidth) {
+          levelThreeSfx.laserHit()
           failSoft('A damaged security laser caught you!', 'laser')
         }
       }
@@ -445,6 +456,7 @@ export function createTimewreckLevel({
   const DEBRIS_HALF_Z = 0.28
   const DEBRIS_FLY_Y = 1.05
   let debrisClock = 0
+  let lastVaultDebrisCycle = -1
   const debrisWood = new THREE.MeshStandardMaterial({
     color: 0x6a4528, roughness: 0.82, metalness: 0.05, emissive: 0x2a180c, emissiveIntensity: 0.12
   })
@@ -555,6 +567,14 @@ export function createTimewreckLevel({
 
   function updateFlyingDebris(playerPos) {
     applyFlyingDebris()
+    const flightCycle = Math.floor(Math.max(0, debrisClock) / DEBRIS_PERIOD)
+    if (playerPos && debrisPhase().mode === 'move' &&
+        lastVaultDebrisCycle !== flightCycle && timeSystem.getMode() !== 'REWIND') {
+      lastVaultDebrisCycle = flightCycle
+      levelThreeSfx.lethalFlight(Math.hypot(playerPos.x - debrisGroup.position.x,
+        playerPos.y - debrisGroup.position.y, playerPos.z - DEBRIS_Z),
+        (DEBRIS_END_X - DEBRIS_PARK_X) / DEBRIS_MOVE)
+    }
     if (!playerPos) return
     if (debrisPhase().mode !== 'move') return
     const cx = debrisGroup.position.x
@@ -578,6 +598,7 @@ export function createTimewreckLevel({
     getSnapshot: () => ({ debrisClock }),
     restoreSnapshot(s) {
       debrisClock = s.debrisClock ?? 0
+      lastVaultDebrisCycle = Math.floor(Math.max(0, debrisClock) / DEBRIS_PERIOD)
       applyFlyingDebris()
     }
   }))
@@ -994,6 +1015,9 @@ export function createTimewreckLevel({
       const dangerous = phase < surge.danger
       const warning = !dangerous && phase > surge.period - SURGE_WARN
       const mode = dangerous ? 'danger' : warning ? 'warn' : 'safe'
+      // Trigger as the visible electric charge begins, not after the discharge.
+      if (warning && surge.lastAudioMode !== 'warn' && playerPos) secondCarriageAudio.charge(surge.group.position, playerPos)
+      surge.lastAudioMode = mode
       const flickerHz = dangerous ? 16 : warning ? 24 : 6
       const seed = Math.floor(Math.abs(surgeT) * flickerHz + surge.offset * 10)
       if (seed !== surge.boltSeed || mode !== surge.boltMode) {
@@ -1052,7 +1076,7 @@ export function createTimewreckLevel({
       const inSlice = Math.abs(playerPos.z - surge.z) <= SURGE_HIT_HALF_Z
       const inWidth = playerPos.x < 0.78 && playerPos.x > -2.6
       if (overlapsBody && inSlice && inWidth) {
-        failSoft('An electrical surge caught you!')
+        failSoft('An electrical surge caught you!', 'electric')
       }
     }
   }
@@ -1411,6 +1435,10 @@ export function createTimewreckLevel({
     restoreSnapshot: (s) => { ramT = s.ramT; applyRams() }
   }))
 
+  // One switch click when the inter-car connector begins folding open.
+  // Re-arm only after it has closed again (including when time is rewound).
+  let previousConnectorAngle = 0
+  const connectorClickPosition = new THREE.Vector3(0, 0.3, spans.convergence.minZ)
   const connector = createWreckConnector({ root, spans, player, timeSystem, unregisters,
     warn() {
       wreckAudio.snap()
@@ -2092,6 +2120,7 @@ export function createTimewreckLevel({
   ]
 
   function respawnChunk(c) {
+    c.whooshPlayed = false
     passengerDebris?.reset(c.mesh)
     const s = ++chunkSeed
     c.x = skew(s + 11) * (INTERIOR_HALF_WIDTH * 0.78)
@@ -2398,6 +2427,7 @@ export function createTimewreckLevel({
     failBurstT = 0
     failBurstSettled = false
     burstDebris.forEach((c, i) => {
+      c.whooshPlayed = false
       passengerDebris.reset(c.mesh)
       c.mesh.visible = true
       c.body.wakeUp()
@@ -2450,11 +2480,14 @@ export function createTimewreckLevel({
   // ============================================================
   // PURSUING TIME WAVE — full escape, then the final sprint and brake
   // ============================================================
+  // Temporarily disable the pursuing purple time wave without altering other hazards.
+  const ENABLE_TIME_WAVE = false
   const waveMat = createChronoFieldMaterial({
     baseColor: 0x2a0a3a, glowColor: 0xa855f7, opacity: 0.6, doubleSided: true, depthWrite: false
   })
   const wave = new THREE.Mesh(new THREE.PlaneGeometry(INTERIOR_HALF_WIDTH * 2, CARRIAGE_CEILING_Y), waveMat)
   wave.name = 'time-wave'
+  wave.visible = ENABLE_TIME_WAVE
   wave.position.y = CARRIAGE_CEILING_Y / 2
   wave.rotation.y = Math.PI // Face the escape route so Fresnel leaves the purple bands visible.
   // Keep the follow camera on the player's side of the visible field.
@@ -2577,20 +2610,20 @@ export function createTimewreckLevel({
   const PUZZLE_WAVE_LEAD = 5.5
   const initialZ = ['convergence', 'mechanical', 'cargo', 'relay', 'security', 'passenger'].includes(startCarriage)
     ? spans[startCarriage].maxZ - (startCarriage === 'mechanical' ? 2.5 : 1.5) : spans.vault.center + 3
-  const sprintObjective = () => `Sprint to the locomotive (${bindingLabel(settings.getBinding('run'))}) — pull the emergency brake!`
+  const sprintObjective = () => `Reach the locomotive (${bindingLabel(settings.getBinding('run'))}) — pull the emergency brake!`
 
   let depleted = false
   let waveZ = initialZ + PUZZLE_WAVE_LEAD
   wave.position.z = waveZ
   waveLight.position.z = waveZ
-  waveLight.intensity = 12
+  waveLight.intensity = ENABLE_TIME_WAVE ? 12 : 0
   let braking = false
   let brakeComplete = false
   let disposed = false
   let brakeT = 0
   unregisters.push(timeSystem.register(wave, {
     onUpdate(scaledDelta) {
-      if (depleted || braking || brakeComplete || respawn.isFailing()) return
+      if (!ENABLE_TIME_WAVE || depleted || braking || brakeComplete || respawn.isFailing()) return
       let speed = PURSUIT_SPEED
       if (player.mesh.position.z >= spans.vault.minZ) speed = FIRST_CARRIAGE_SPEED
       else if (player.mesh.position.z >= spans.convergence.minZ) speed = SECOND_CARRIAGE_SPEED
@@ -2675,6 +2708,7 @@ export function createTimewreckLevel({
     feedback.stop()
     braking = false
     wreckAudio.reset()
+    levelThreeSfx.reset()
     hazardAudio.reset()
     hud.hideCinematicSkip?.()
     root.rotation.z = 0
@@ -2758,11 +2792,15 @@ export function createTimewreckLevel({
   const expansionHazards = createExpansionHazards({ root, spans, player, timeSystem, unregisters,
     fail: message => failSoft(message), audio: hazardAudio,
     warn: kind => {
-      wreckAudio.warning()
-      if (kind === 'freight') showLevelToast(`Freight straps creaking! Wait for the case to swing aside; ${bindingLabel(settings.getBinding('slow'))} Slow or ${bindingLabel(settings.getBinding('freeze'))} Freeze can hold a clear route.`, 4500)
+      // Steam already has its own hiss: do not play the generic pre-burst warning sound.
+      if (kind === 'freight') {
+        wreckAudio.warning()
+        showLevelToast(`Freight straps creaking! Wait for the case to swing aside; ${bindingLabel(settings.getBinding('slow'))} Slow or ${bindingLabel(settings.getBinding('freeze'))} Freeze can hold a clear route.`, 4500)
+      }
     } })
 
   const flyingPanels = createFlyingPanels({ root, spans, player, timeSystem, unregisters,
+    onLethalFlight: (distance, speed) => levelThreeSfx.lethalFlight(distance, speed),
     warn: stage => {
       wreckAudio.warning()
       showLevelToast(`Loose roof panels! ${stage.endsWith('right') ? 'RIGHT' : 'LEFT'} lane open. Flat brass arm = recovery. Observe behind the floor bar; frozen panels still kill.`, 2400)
@@ -2864,6 +2902,7 @@ export function createTimewreckLevel({
       loopT = 0
       applyLoop()
       connector.reset()
+      previousConnectorAngle = 0
       cargoGangway.state.reset()
       cargoGangway.apply()
       securityCrossing.reset()
@@ -2891,6 +2930,7 @@ export function createTimewreckLevel({
       failCooldown = 0
       braking = false
       wreckAudio.reset()
+      levelThreeSfx.reset()
       hazardAudio.reset()
       expansionHazards.reset()
       flyingPanels.reset()
@@ -2945,9 +2985,9 @@ export function createTimewreckLevel({
       waveZ = checkpointZ + (depleted ? WAVE_LEAD : PUZZLE_WAVE_LEAD)
       wave.position.z = waveZ
       wave.scale.set(1, 1, 1)
-      wave.visible = true
+      wave.visible = ENABLE_TIME_WAVE
       waveLight.position.z = waveZ
-      waveLight.intensity = 12
+      waveLight.intensity = ENABLE_TIME_WAVE ? 12 : 0
       retiredWreck.apply(saved.retired)
     }
   }
@@ -2971,9 +3011,10 @@ export function createTimewreckLevel({
     getCarriageVolumes: () => listCarriageVolumes(spans).filter(v =>
       v.minZ < bounds.maxZ && carriages[v.key].visible),
     get isCinematic() { return braking },
-    setPresentationPaused(value) { wreckAudio.setPaused(value); hazardAudio.setPaused(value); feedback.setPaused(value) },
+    setPresentationPaused(value) { secondCarriageAudio.setPaused(value); wreckAudio.setPaused(value); hazardAudio.setPaused(value); levelThreeSfx.setPaused(value); feedback.setPaused(value) },
 
     update(delta) {
+      movementAudio.update(delta)
       // Recover temporary render visibility even if a prior render was aborted.
       visibility.afterRender()
       const mode = timeSystem.getMode()
@@ -3010,13 +3051,44 @@ export function createTimewreckLevel({
         : mode === 'FREEZE' ? 0
           : resumeBoost * (mode === 'SLOW' ? 0.2 : 1) *
             (1 + stormProgress * STORM_PROGRESS.exteriorSpeedBoost)
-      wreckAudio.update(depleted && !brakeComplete, finaleFreeze, braking ? brakeT : null)
+      // Each luggage assembly has one rolling emitter, measured after its time-scaled update.
+      for (let i=0; i<runawayCarts.length; i++) secondCarriageAudio.rolling(`cart-${i}`, runawayCarts[i].group, delta, player.mesh.position,
+        player.mesh.position.z >= spans.convergence.minZ && player.mesh.position.z <= spans.convergence.maxZ)
+      for (let i=0; i<rams.length; i++) secondCarriageAudio.rolling(`trunk-${i}`, rams[i].head, delta, player.mesh.position,
+        player.mesh.position.z >= spans.mechanical.minZ && player.mesh.position.z <= spans.mechanical.maxZ)
+      // Both the sheltered and Mechanical-carriage shutters share the same
+      // metal-slam recording and volume. Trigger only at actual bottom contact.
+      for (const name of ['convergence-rewind-shutter', 'mechanical-rewind-shutter']) {
+        const shutter = root.getObjectByName(name)
+        const panel = shutter?.children[0]
+        const y = panel?.position.y
+        if (!Number.isFinite(y)) continue
+        const data = shutter.userData
+        // The moving shutter has a 3.85 -> 1.25 travel. A restored or
+        // rewound shutter rearms only after it has lifted away from the stop.
+        if (y > 1.4) data._audioImpactArmed = true
+        if (data._audioImpactArmed && y <= 1.27 &&
+            Number.isFinite(data._audioPreviousY) && data._audioPreviousY > y + 0.0001) {
+          data._audioImpactArmed = false
+          panel.getWorldPosition(shutterImpactPosition)
+          secondCarriageAudio.slam(shutterImpactPosition, player.mesh.position)
+        }
+        data._audioPreviousY = y
+      }
+      levelThreeSfx.update({
+        laserDistance: Math.min(...vaultGates.map(g => Math.abs(player.mesh.position.z - g.z))),
+        moving: !braking && !brakeComplete,
+        frozen: mode === 'FREEZE', stopped: brakeComplete
+      })
+      wreckAudio.update(!brakeComplete, finaleFreeze, braking ? brakeT : null)
       let exposure = 0.18
       for (const {span,damage} of damageSpans) {
         const localZ = player.mesh.position.z-span.center
         if (localZ>damage.minZ && localZ<damage.maxZ) { exposure=1; break }
       }
-      wreckAudio.exposure(brakeComplete ? 0 : exposure, mode === 'FREEZE')
+      // Wind is strongest in the second (Convergence) carriage only.
+      const inSecond = player.mesh.position.z >= spans.convergence.minZ && player.mesh.position.z <= spans.convergence.maxZ
+      wreckAudio.exposure(brakeComplete ? 0 : inSecond ? Math.min(1,exposure + 0.65) : exposure, mode === 'FREEZE')
       outdoorEnv.update(envDt)
       stormSky.update(envDt)
       wreckExterior.update(delta, exteriorScale)
@@ -3070,8 +3142,32 @@ export function createTimewreckLevel({
       passengerRack.update()
       expansionHazards.update(!braking && !respawn.isFailing())
       connector.update(!braking && !respawn.isFailing())
+      const connectorAngle = connector.angle
+      if (connectorAngle > 0.025 && previousConnectorAngle <= 0.025) {
+        secondCarriageAudio.connectorOpen(connectorClickPosition, player.mesh.position)
+      }
+      previousConnectorAngle = connectorAngle
       feedback.update(!braking && !brakeComplete && !respawn.isFailing())
       flyingPanels.update(!braking && !brakeComplete && !respawn.isFailing())
+      // All airborne passenger debris (including the smaller decorative
+      // splinters) may produce a passing whoosh. Each fragment triggers at most
+      // once per flight; the sound controller limits overlapping voices.
+      if (!braking && !brakeComplete && mode !== 'REWIND') {
+        for (const debrisSet of [chunks, burstDebris]) {
+          for (const c of debrisSet) {
+            if (!c.mesh.visible || c.whooshPlayed || !c.body) continue
+            const velocity = c.body.velocity
+            const speed = Math.hypot(velocity.x, velocity.y, velocity.z)
+            const distance = c.mesh.position.distanceTo(pp)
+            // Include decorative fragments and luggage; each flying piece
+            // requests a single positional whoosh as it approaches the player.
+            if (speed > 1.5 && distance < 12) {
+              c.whooshPlayed = true
+              levelThreeSfx.lethalFlight(distance, speed)
+            }
+          }
+        }
+      }
       if (passengerDebris.update(!braking && !brakeComplete && !respawn.isFailing())) {
         failSoft('Struck by flying wreckage! Dodge the large panels and luggage, or Slow/Freeze them before crossing.', 'debris')
       }
@@ -3139,7 +3235,7 @@ export function createTimewreckLevel({
       waveMat.customUniforms.uIntensity.value = depleted
         ? (finaleFreeze ? 1.55 + Math.sin(elapsed * 2.2) * 0.12 : 1.12 + Math.sin(elapsed * 5.5) * 0.12) + resumeWave
         : 1.0
-      waveMat.customUniforms.uOpacity.value = finaleFreeze ? 0.92 : 0.6
+      waveMat.customUniforms.uOpacity.value = ENABLE_TIME_WAVE ? (finaleFreeze ? 0.92 : 0.6) : 0
       wave.scale.set(finaleFreeze ? 1.14 : 1, finaleFreeze ? 1.18 : 1, 1)
       walkwayGlow.intensity = walkwayActive
         ? slabSettle * (mode === 'FREEZE' ? 5.5 : 2.4)
@@ -3329,7 +3425,7 @@ export function createTimewreckLevel({
       hint('security-island', pp.z, spans.security.center + 0.8,
         `Safe island: release Freeze and recharge; assess the right-hand path. ${bindingLabel(settings.getBinding('freeze'))} settles it. Paired brass bars mark takeoff and landing: ${bindingLabel(settings.getBinding('run'))} + ${bindingLabel(settings.getBinding('jump'))} across the break.`, 6000)
       hint('passenger', pp.z, spans.passenger.maxZ,
-        `Keep right of the falling rack, clear of the luggage by the wall. Large wreckage is lethal: ${bindingLabel(settings.getBinding('jump'))} jump low panels. ${bindingLabel(settings.getBinding('freeze'))} holds debris AND the wave; frozen wreckage still kills on contact.`, 6500)
+        `Keep right of the falling rack, clear of the luggage by the wall. Large wreckage is lethal: ${bindingLabel(settings.getBinding('jump'))} jump low panels. ${bindingLabel(settings.getBinding('freeze'))} holds debris; frozen wreckage still kills on contact.`, 6500)
       if (pp.z < collapseMinZ - 0.25 && !braking && !brakeComplete && !hintsShown.has('passenger-exit')) {
         // The floor instruction has served its purpose once the player lands.
         collapseHintHoldUntil = -1
@@ -3468,27 +3564,27 @@ export function createTimewreckLevel({
         depleted = true
         timeSystem.setAbilityAvailability({ SLOW: false, REWIND: false, GHOST: false })
         lastCheckpointZ = -Infinity // no further checkpoints past here
-        wave.visible = true
+        wave.visible = ENABLE_TIME_WAVE
         respawn.setCheckpoint(new THREE.Vector3(0, 0, DEPLETE_Z), Math.PI, {
           restore: captureCheckpointRestore(DEPLETE_Z)
         })
-        showLevelToast('CHRONO CORE DEPLETED — only FREEZE remains. RUN!', 3800)
+        showLevelToast('CHRONO CORE DEPLETED — only FREEZE remains. Reach the locomotive!', 3800)
         hud.setObjective(sprintObjective())
       }
 
       if (!brakeComplete && !respawn.isFailing()) {
         // The registered clock drives puzzle pursuit; the finale uses sprint speed.
         const holding = mode === 'FREEZE'
-        if (depleted && !holding) waveZ -= WAVE_SPEED * delta
+        if (ENABLE_TIME_WAVE && depleted && !holding) waveZ -= WAVE_SPEED * delta
         wave.position.z = waveZ
         waveLight.position.z = finaleFreeze ? THREE.MathUtils.lerp(waveZ, pp.z, 0.32) : waveZ
         waveLight.distance = finaleFreeze ? 22 : 8
         waveLight.color.setHex(finaleFreeze ? 0xbfdbfe : 0xa855f7)
-        waveLight.intensity = finaleFreeze
+        waveLight.intensity = !ENABLE_TIME_WAVE ? 0 : finaleFreeze
           ? 26 + Math.sin(elapsed * 2.3) * 2
           : 13 + Math.sin(elapsed * 9) * 3 + resumeWarm * 10
 
-        if (waveZ <= pp.z + 0.35 && failCooldown <= 0) {
+        if (ENABLE_TIME_WAVE && waveZ <= pp.z + 0.35 && failCooldown <= 0) {
           failSoft('Time caught up with you!')
         }
       }
@@ -3507,7 +3603,10 @@ export function createTimewreckLevel({
       for (let i = slabSupports.length - 1; i >= 0; i--) if (connector.supports.includes(slabSupports[i])) slabSupports.splice(i, 1)
       const connectorVoidIndex = gapVoids.indexOf(connector.gap)
       if (connectorVoidIndex >= 0) gapVoids.splice(connectorVoidIndex, 1)
+      movementAudio.dispose()
+      secondCarriageAudio.dispose()
       wreckAudio.dispose()
+      levelThreeSfx.dispose()
       hazardAudio.dispose()
       removeVisibility()
       hud.hideCinematicSkip?.()

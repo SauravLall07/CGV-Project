@@ -1,3 +1,4 @@
+import { stopCameraAlarmSfx } from './level-one-security-sfx.js'
 import * as THREE from 'three'
 
 // Shared checkpoint / death system.
@@ -47,6 +48,7 @@ export function createRespawnSystem({
   }
 
   function respawn() {
+    stopCameraAlarmSfx()
     if (!checkpoint) return false
 
     // Move the player out of the hazard first. Level-owned cleanup is allowed
@@ -91,6 +93,7 @@ export function createRespawnSystem({
   }
 
   function cancel() {
+    stopCameraAlarmSfx()
     invalidateTimer()
 
     failing = false
@@ -123,6 +126,7 @@ export function createRespawnSystem({
 
     failTimer = null
 
+    stopCameraAlarmSfx()
     const reason = failReason
 
     if (!respawn()) {

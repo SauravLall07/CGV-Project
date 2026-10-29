@@ -34,6 +34,12 @@ import { createSkyDome } from '../environment/sky-dome.js'
 import { createChronoFieldMaterial } from '../shaders/chrono-field.js'
 import { createStealthSystem } from '../systems/stealth.js'
 import { signMaterial } from '../environment/textures.js'
+import { createLevelOneMovementSfx } from '../systems/player-interaction-sfx.js'
+import { createLevelTwoAudio } from '../systems/level-two-sfx.js'
+import { createGhostCarriagePuzzleAudio } from '../systems/level-two-ghost-puzzle-sfx.js'
+import { createMovingHazardSfx } from '../systems/level-two-moving-hazard-sfx.js'
+import { createRoofSfx } from '../systems/level-two-roof-sfx.js'
+import { createCoreFinaleSfx } from '../systems/level-two-core-finale-sfx.js'
 import { createSteamPuffs, fract, puffSeed, puffFade } from '../environment/steam.js'
 
 // Level 2 — "The Moving Heist".
@@ -344,6 +350,12 @@ export function createMovingHeistLevel({
   let sceneryFrom = 1
   let sceneryEaseTime = 0.3
   const { root, spans, roof } = env
+  const movementAudio = createLevelOneMovementSfx(player)
+  const carriageAudio = createLevelTwoAudio(player, spans)
+  const hazardAudio = createMovingHazardSfx(player, spans)
+  const roofAudio = createRoofSfx(player, { start: spans.convergence.maxZ, end: spans.vault.minZ })
+  const coreFinaleAudio = createCoreFinaleSfx()
+  void coreFinaleAudio.preload()
 
   scene.add(sky.mesh, outdoorEnv.group, root)
   // Night sky. Fog matches the horizon so the hills don't drop to black
@@ -527,6 +539,7 @@ export function createMovingHeistLevel({
   function unlockAbility(id, toastText) {
     if (abilityState[id]) return
     abilityState[id] = true
+    if (toastText) carriageAudio.pickup()
     timeSystem?.setAbilityAvailability?.(abilityState)
     hud?.setChronoVisible?.(true)
     if (toastText) hud?.showToast?.(toastText, 3000)
@@ -1119,6 +1132,7 @@ export function createMovingHeistLevel({
     }
   }
   applySteam()
+  for (const bank of steamBanks) carriageAudio.addSteam(new THREE.Vector3(0, 1.1, bank.z))
   unregisters.push(registerHazard(steamGroup, {
     onUpdate(scaledDelta) {
       steamT += scaledDelta
@@ -1185,10 +1199,14 @@ export function createMovingHeistLevel({
   const relayStepOf = []
   relaySequence.forEach((relay, step) => { relayStepOf[relay] = step })
 
+  const ghostPuzzleAudio = createGhostCarriagePuzzleAudio(player, spans.relay)
   const relayInput = []
   let relayLogged = false
   let relaySolved = false
   let routeEngaged = 0 // eased 0..1 while the operator platform is weighted
+  let routeEverEngaged = false
+  let previousPlatformHeld = false
+  let doorSoundStarted = false
   let routeReadT = 0 // seconds spent reading the turned board up close
   const ROUTE_READ_SECONDS = 1.0
   const ROUTE_READ_RANGE = 4.5
@@ -1412,7 +1430,9 @@ export function createMovingHeistLevel({
           return
         }
         if (relayInput.includes(i)) return
+        ghostPuzzleAudio.playDial(g.position)
         if (relaySequence[relayInput.length] !== i) {
+          ghostPuzzleAudio.playWrong(g.position)
           relayInput.length = 0
           hud.showToast('ROUTING REJECTED — the levers spring back. Start again from I.', 2400)
           return
@@ -1678,6 +1698,9 @@ export function createMovingHeistLevel({
       load.position.x = dwell(tri(t + phase * period, period)) * CRATE_TRAVEL
     })
     hangingCrates.push({ load, z })
+    hazardAudio.registerSlide(load, z >= spans.convergence.minZ ? 'convergence' : 'cargo', {
+      referenceSpeed: 6.4 * CRATE_TRAVEL / period, baseRate: 0.92
+    })
   }
 
   // --- 2. Sliding luggage stack ----------------------------------------------
@@ -1716,6 +1739,9 @@ export function createMovingHeistLevel({
       stack.position.x = dwell(tri(t + phase * period, period)) * STACK_TRAVEL
     })
     luggageStacks.push({ stack, z })
+    hazardAudio.registerSlide(stack, 'cargo', {
+      referenceSpeed: 6.4 * STACK_TRAVEL / period, baseRate: 0.76
+    })
   }
 
   // --- 3. Drop gate ------------------------------------------------------------
@@ -1743,6 +1769,7 @@ export function createMovingHeistLevel({
       gate.position.y = entry.bottom + GATE_H / 2
     })
     dropGates.push(entry)
+    hazardAudio.registerSlam(gate, 'cargo', { volume: 0.22 })
   }
 
   // --- 4. Rotating barrier panels ----------------------------------------------
@@ -1762,7 +1789,10 @@ export function createMovingHeistLevel({
       pair.leaves.push({ side, pivot })
     }
     const group = new THREE.Group() // time-system handle for the pair
+    // One audio emitter for both hinged leaves, at the actual doorway.
+    group.position.set(0, 1.2, z)
     root.add(group)
+    hazardAudio.registerSwingDoor(group, () => pair.angle, 'cargo', { volume: 0.45, radius: 11 })
     registerCargoHazard(group, (t) => {
       // 0 = open against the pillar, PI/2 = closed across the aisle.
       pair.angle = Math.PI / 2 * (0.5 - 0.5 * Math.cos(t / period * Math.PI * 2))
@@ -1818,6 +1848,9 @@ export function createMovingHeistLevel({
   }
   floorPlatform.position.z = pitZ
   root.add(floorPlatform)
+  hazardAudio.registerSlide(floorPlatform, 'cargo', {
+    volume: 0.16, referenceSpeed: 4 * PLATFORM_TRAVEL / 3.4, baseRate: 0.84
+  })
   registerCargoHazard(floorPlatform, (t) => {
     floorPlatform.position.x = tri(t + 0.5 * 3.4, 3.4) * PLATFORM_TRAVEL
   })
@@ -1990,6 +2023,9 @@ export function createMovingHeistLevel({
       }
     })
     railCrates.push({ machine, box })
+    hazardAudio.registerSlide(load, 'mechanical', {
+      referenceSpeed: RAIL_CRATE_PARK_X / duration, baseRate: 1.02
+    })
     return machine
   }
 
@@ -2034,6 +2070,15 @@ export function createMovingHeistLevel({
       apply(p) { platform.position.x = MECH_PLATFORM_PARK_X * p }
     })
     mechPlatforms.push({ machine, platform, z, halfZ: pit.halfZ })
+    // Every retracting floor deck (both Rewind and Convergence wells) has
+    // one audible sliding mechanism, tied to the platform group's real motion.
+    // Use a stronger mix than loose cargo so it is noticeable before the drop.
+    hazardAudio.registerSlide(platform, toWorld === mechZ ? 'mechanical' : 'convergence', {
+      referenceSpeed: Math.abs(MECH_PLATFORM_PARK_X) / duration,
+      baseRate: 0.95,
+      volume: 0.26,
+      radius: 12
+    })
     return machine
   }
 
@@ -2059,6 +2104,12 @@ export function createMovingHeistLevel({
       }
     })
     slideDoors.push({ machine, box })
+    hazardAudio.registerDoor(door, 'mechanical', { volume: 0.18 })
+    // One solid metal thud when this single sliding door reaches its closed stop.
+    // Sample the actual door position so the impact follows Normal and Rewind
+    // movement and rearms only after the door opens again.
+    hazardAudio.registerClosingThud(door, () => Math.abs(door.position.x), 'mechanical',
+      { volume: 0.24, radius: 11 })
     return machine
   }
 
@@ -2069,6 +2120,7 @@ export function createMovingHeistLevel({
     const z = mechZ(localZ)
     const handle = new THREE.Group()
     handle.name = 'mechanical-wall-panels'
+    handle.position.set(0, SLIDE_DOOR_H / 2, z)
     root.add(handle)
     const leaves = [-1, 1].map((side) => {
       const leaf = makeCrestPanel(WALL_PANEL_W, SLIDE_DOOR_H, 0.1)
@@ -2087,6 +2139,13 @@ export function createMovingHeistLevel({
       }
     })
     wallPanelPairs.push({ machine, leaves })
+    leaves.forEach(({ side, leaf }) => hazardAudio.registerDoor(leaf, 'mechanical', { volume: 0.11, openingSign: side }))
+    // One impact for both leaves: the closing edges meet at the centre.
+    // Sample their actual positions after hazard/time updates (including rewind).
+    hazardAudio.registerClosingThud(handle, () =>
+      Math.max(0, leaves[1].leaf.position.x - WALL_PANEL_W / 2 -
+        (leaves[0].leaf.position.x + WALL_PANEL_W / 2)), 'mechanical',
+    { volume: 0.24, radius: 11 })
     return machine
   }
 
@@ -2101,40 +2160,14 @@ export function createMovingHeistLevel({
   addSlideDoor(12.4, [5.6, 13.5], 0.5, 0.6)
 
   const { hatchCover, ladder } = env.parts.convergence
-  let hatchBroken = false
-  let hatchRepaired = false
-  let hatchOpen = 1
-
-  // Start the hatch visually open. It slams shut as the player approaches;
-  // Rewind restores the earlier open state from the time-system snapshot buffer.
+  // Roof access is no longer a Rewind puzzle. Keep the hatch visibly open.
+  let hatchRepaired = true // Retained for existing checkpoint save compatibility.
   hatchCover.position.x = -1.15
-  unregisters.push(registerHazard(hatchCover, {
-    recordWhen: () => hatchBroken && hatchOpen > 0,
-    onUpdate(scaledDelta, timeScale) {
-      if (timeScale > 0 && hatchBroken) hatchOpen = Math.max(0, hatchOpen - scaledDelta * 2.8)
-      hatchCover.position.x = -1.15 * hatchOpen
-    },
-    getSnapshot: () => ({ hatchBroken, hatchOpen }),
-    restoreSnapshot: (s) => {
-      if (hatchBroken && !s.hatchBroken) hatchRepaired = true
-      hatchBroken = s.hatchBroken
-      hatchOpen = s.hatchOpen
-      hatchCover.position.x = -1.15 * hatchOpen
-    }
-  }))
 
   unregisters.push(interaction.register(ladder, {
-    prompt: 'Climb to the carriage roof',
+    prompt: 'Climb to roof',
     isEligible: () => section === 'interior',
     onInteract: () => {
-      if (!exitDoor.latched) {
-        interaction.flashPrompt('The Convergence exit door is still locked.')
-        return
-      }
-      if (hatchOpen < 0.65) {
-        interaction.flashPrompt('The hatch motor failed shut — REWIND it to the open state.')
-        return
-      }
       enterRoof()
     }
   }))
@@ -2210,6 +2243,7 @@ export function createMovingHeistLevel({
       }
     })()))
     cageGates.push(entry)
+    hazardAudio.registerSlam(cage, 'convergence', { volume: 0.18 })
   }
 
   // --- Switch station (Ghost) --------------------------------------------------
@@ -2281,6 +2315,7 @@ export function createMovingHeistLevel({
       }
     }
     door.apply()
+    leaves.forEach(({ side, leaf }) => hazardAudio.registerDoor(leaf, 'convergence', { volume: 0.14, openingSign: side }))
     return door
   }
 
@@ -2288,6 +2323,7 @@ export function createMovingHeistLevel({
   addCageGate(-16.0, 1.3, 0)
   addHangingCrate(-11.5, 1.4, 0, convZ)
   addRewindPlatform(CONV_PITS[0], [-9.5, -5.7], 0.1, 0.6, convZ)
+  const convergencePlateAudio = createGhostCarriagePuzzleAudio(player, spans.convergence)
   const switchOne = addSwitchStation(1, -1, -3.7)
   const switchTwo = addSwitchStation(2, 1, 1.5)
   const switchDoor = addCrestDoubleDoor(3.6)
@@ -2418,6 +2454,7 @@ export function createMovingHeistLevel({
     }
     panel.position.set(0, ROOF_Y, roofZ((a + b) / 2))
     root.add(panel)
+    hazardAudio.registerSlide(panel, 'roof', { axis: 'x', volume: 0.22, radius: 11, referenceSpeed: 2.5, baseRate: 0.9 })
     const outline = makeOutline(boards)
     const support = roofSupport()
     const parkedX = -(deckW + 0.6)
@@ -2462,6 +2499,7 @@ export function createMovingHeistLevel({
     registerCargoHazard(pair, (t) => {
       pair.position.x = dwell(tri(t + phase * period, period)) * 0.8
     })
+    hazardAudio.registerSlide(pair, 'roof', { axis: 'x', volume: 0.19, radius: 10, referenceSpeed: 1.6, baseRate: 0.85 })
     roofCrates.push({ pair, z })
   }
   addRoofCrates(9.0, 1.1, 0)
@@ -2486,6 +2524,7 @@ export function createMovingHeistLevel({
       }
       section.position.set(0, ROOF_Y, (z0 + z1) / 2)
       root.add(section)
+      roofAudio.watchFalling(section, () => section.position.y, 0.25)
       const outline = makeOutline(planks)
       const support = roofSupport()
       // Both sections arm on the approach, so the player sees the bridge go
@@ -2530,6 +2569,8 @@ export function createMovingHeistLevel({
     vents.add(steam.mesh)
     vents.position.set(0, ROOF_Y, VENT_Z)
     root.add(vents)
+    roofAudio.setSteamSource(vents.position)
+    const dummy = new THREE.Object3D()
     registerCargoHazard(vents, (t) => {
       const u = ((t / VENT_PERIOD) % 1 + 1) % 1
       // Down, lids lifting (warning wisps), full blast, lids closing.
@@ -2565,6 +2606,7 @@ export function createMovingHeistLevel({
   const zipFrom = roofZ(ROOF_RUN.openings[2][0] - 0.45)
   const zipTo = roofZ(ROOF_RUN.openings[2][1] + 0.6)
   const leverPad = new THREE.Vector3(-1.8, ROOF_Y + 0.03, roofZ(20.3))
+  let previousLeverHeld = false
   unregisters.push(timeSystem.registerGhostPad(leverPad, 0.56))
   const leverBase = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 1.0), darkIron)
   leverBase.position.set(leverPad.x, ROOF_Y + 0.03, leverPad.z)
@@ -2622,6 +2664,7 @@ export function createMovingHeistLevel({
   // --- 6. Final drawbridge (Freeze, then Ghost) -------------------------------
   addRoofCrates(28.2, 1.1, 0.5)
   const bridgePlatePos = new THREE.Vector3(1.8, ROOF_Y + 0.03, roofZ(30.3))
+  let previousBridgePlateHeld = false
   unregisters.push(timeSystem.registerGhostPad(bridgePlatePos, 0.56))
   const bridgePlateBase = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 1.0), darkIron)
   bridgePlateBase.position.set(bridgePlatePos.x, ROOF_Y + 0.03, bridgePlatePos.z)
@@ -2647,6 +2690,7 @@ export function createMovingHeistLevel({
   drawbridge.position.set(0, ROOF_Y, gapFrom - 0.15)
   root.add(drawbridge)
   const drawbridgeSupport = roofSupport()
+  roofAudio.watchSlidingRotation(drawbridge, () => drawbridge.rotation.x, 0.18)
   let drawbridgeDown = 0
   let drawbridgeLatched = false
 
@@ -2677,6 +2721,9 @@ export function createMovingHeistLevel({
     camera.setYaw?.(0)
     camera.snap()
 
+    // Start roof wind on the ladder transition itself, before the next frame.
+    roofAudio.update(0, { onRoof: true, steam: 0, mode: timeSystem?.getMode?.() ?? 'NORMAL' })
+
     gustPhase = 0
     streakFlow = 0
     hud.setObjective('Cross the roof to the Vault drop hatch')
@@ -2696,13 +2743,28 @@ export function createMovingHeistLevel({
         return
       }
       zipRide = 0
+      roofAudio.playZipline(zipHandle.position)
     }
   }))
 
   unregisters.push(interaction.register(roof.dropHatch, {
-    prompt: 'Drop into the forward Vault car',
-    isEligible: () => section === 'roof',
-    onInteract: () => enterVault()
+    prompt: 'Force the Vault hatch open',
+    holdSeconds: 5,
+    isEligible: () => section === 'roof' && zipRide < 0,
+    onHoldStart: () => {
+      player.startInteractionPull?.(roof.dropHatch)
+      roofAudio.startHatchHold()
+    },
+    onHoldCancel: ({ reset } = {}) => {
+      roofAudio.stopHatchHold()
+      if (reset) player.resetInteractionAnimation?.()
+      else player.returnInteractionPull?.()
+    },
+    onHoldComplete: () => {
+      roofAudio.stopHatchHold()
+      player.returnInteractionPull?.(true)
+      enterVault()
+    }
   }))
 
   // --------------------------------------------------------------------------
@@ -2723,7 +2785,9 @@ export function createMovingHeistLevel({
     onInteract: () => {
       if (taken) return
       taken = true
+      core.visible = true // Keep the Core present throughout the charge-up.
       beginCinematic?.()
+      coreFinaleAudio.start()
       interaction.flashPrompt('Chrono Core secured!')
       hud.setObjective('TEMPORAL CONTAINMENT LOST — the train is destabilising')
     }
@@ -2816,11 +2880,14 @@ export function createMovingHeistLevel({
       relaySolved = saved.relaySolved
       relayInput.splice(0, relayInput.length, ...saved.relayInput)
       routeEngaged = 0
+      previousPlatformHeld = false
+      doorSoundStarted = relaySolved
       routeReadT = 0
       boardReveal = relayLogged ? 1 : 0
       relayGateOpen = relaySolved ? 1 : 0
       applyRouteDoor()
-      hatchRepaired = saved.hatchRepaired
+      hatchRepaired = true
+      hatchCover.position.x = -1.15
       switchDoor.latched = saved.switchDoorLatched
       exitDoor.latched = saved.exitDoorLatched
       for (const door of [switchDoor, exitDoor]) {
@@ -2829,7 +2896,9 @@ export function createMovingHeistLevel({
       }
       rearmTimers.hatch = 0
       taken = false
+      core.visible = true // Respawns restore the Core before another attempt.
       destabT = 0
+      coreFinaleAudio.reset()
       failCooldown = 0
       gustPhase = 0
       streakFlow = 0
@@ -2895,6 +2964,7 @@ export function createMovingHeistLevel({
       relaySolved = true
       boardReveal = 1
       relayGateOpen = 1
+      doorSoundStarted = true
       applyRouteDoor()
     }
     if (done('cargo')) {
@@ -2963,6 +3033,11 @@ export function createMovingHeistLevel({
       sceneryMultiplier = sceneryFrom + (sceneryTarget - sceneryFrom) * sceneryEase
       outdoorEnv.update(delta * sceneryMultiplier)
       env.update(delta)
+      movementAudio.update(delta)
+      ghostPuzzleAudio.preload()
+      convergencePlateAudio.preload()
+      carriageAudio.update(delta, targetSceneryMultiplier, scanBeam.getWorldPosition(new THREE.Vector3()), { scanT, slideX: scanBeam.position.x, banks: steamBanks })
+      hazardAudio.update(delta)
       if (section === 'interior') updatePorterStation(delta)
       corridorStealth.update(delta)
       lightPool.update(player.mesh.position, delta)
@@ -3006,6 +3081,8 @@ export function createMovingHeistLevel({
       const platformHeld =
         ghost.isOccupying(platformPos, 0.56) ||
         playerOnPad(platformPos, 0.56)
+      if (platformHeld && !previousPlatformHeld) ghostPuzzleAudio.playPlate(platformPos)
+      previousPlatformHeld = platformHeld
       routeEngaged += ((platformHeld ? 1 : 0) - routeEngaged) * Math.min(1, delta * 4)
       platformPlate.position.y = platformHeld ? 0.075 : 0.1
       platformLever.rotation.x = -0.7 + routeEngaged * 1.4
@@ -3049,6 +3126,11 @@ export function createMovingHeistLevel({
       }
       gearGauge.userData.needle.rotation.z = 1.1 - routeEngaged * 1.7
 
+      // Sound starts on the first opening frame, never on repeated updates.
+      if (relaySolved && !doorSoundStarted && relayGateOpen < 0.999) {
+        doorSoundStarted = true
+        ghostPuzzleAudio.playDoor(new THREE.Vector3(0, 1.2, relayGateZ))
+      }
       // Front door slides apart once the route is set.
       relayGateOpen += ((relaySolved ? 1 : 0) - relayGateOpen) * Math.min(1, delta * 3)
       applyRouteDoor()
@@ -3086,13 +3168,28 @@ export function createMovingHeistLevel({
       }
       // Removing the Core is the Level 2 ending, not the emergency brake.
       if (taken) {
-        destabT += delta
-        root.rotation.z = Math.sin(destabT * 7) * 0.012 * Math.min(2, destabT)
-        root.position.y = Math.sin(destabT * 11) * 0.012 * Math.min(1, destabT)
-        if (destabT > 2.6) {
+        // Audio is authoritative: charge plays in full, then the creaking,
+        // then the explosion. Only the explosion shakes the train.
+        const finale = coreFinaleAudio.update(delta)
+        // The Core vanishes at the exact charge -> creak transition, not on pickup.
+        // Leave the separate vault dais intact.
+        if (finale.phase === 'creak' || finale.phase === 'explosion' || finale.finished) {
+          core.visible = false
+        }
+        if (finale.shaking) {
+          destabT += delta
+          const ramp = Math.min(1, destabT / 0.22)
+          root.rotation.z = (Math.sin(destabT * 23) * 0.025 + Math.sin(destabT * 39) * 0.012) * ramp
+          root.position.y = (Math.sin(destabT * 31) * 0.045 + Math.sin(destabT * 47) * 0.016) * ramp
+        } else {
+          root.rotation.z = 0
+          root.position.y = 0
+        }
+        if (finale.finished) {
           taken = false
           root.rotation.z = 0
           root.position.y = 0
+          coreFinaleAudio.reset()
           advance()
         }
         return
@@ -3183,21 +3280,6 @@ export function createMovingHeistLevel({
           }
         }
 
-        // Mechanical obstacle 3: the hatch motor fails shut near the ladder.
-        // This one is the car's only exit, so its failsafe matters most.
-        if (
-          hatchOpen < 0.99 &&
-          readyToRearm('hatch', pp.z < spans.convergence.maxZ - 5.0, delta)
-        ) {
-          hatchOpen = 1
-          hatchBroken = false
-          hatchCover.position.x = -1.15
-        }
-        if (
-          mode !== 'REWIND' && mode !== 'FREEZE' &&
-          !hatchRepaired && !hatchBroken && pp.z > spans.convergence.maxZ - 4.0
-        ) hatchBroken = true
-
         // Convergence cage gates: only a raised cage is safe to be inside.
         for (const { z, bottom } of cageGates) {
           if (Math.abs(pp.z - z) < CAGE_DEPTH / 2 + 0.1 && bottom < topY + 0.05) {
@@ -3208,8 +3290,14 @@ export function createMovingHeistLevel({
         // Twin switches latch their door once both are weighted together.
         const stationHeld = (station) =>
           ghost.isOccupying(station.pos, 0.56) || playerOnPad(station.pos, 0.56)
-        switchOne.update(stationHeld(switchOne))
-        switchTwo.update(stationHeld(switchTwo))
+        // One breaker-switch cue per activation edge, including when a Ghost
+        // occupies either plate. No repeating sound while it remains held.
+        const firstHeld = stationHeld(switchOne)
+        const secondHeld = stationHeld(switchTwo)
+        if (firstHeld && !switchOne.held) convergencePlateAudio.playPlate(switchOne.pos)
+        if (secondHeld && !switchTwo.held) convergencePlateAudio.playPlate(switchTwo.pos)
+        switchOne.update(firstHeld)
+        switchTwo.update(secondHeld)
         exitSwitch.update(stationHeld(exitSwitch))
         if ((switchOne.held || switchTwo.held) && !switchDoor.latched && !switchHintShown) {
           switchHintShown = true
@@ -3235,6 +3323,7 @@ export function createMovingHeistLevel({
         }
       }
 
+      roofAudio.update(delta, { onRoof: section === 'roof', steam: section === 'roof' ? ventSteam : 0, mode })
       roofSun.intensity = section === 'roof' ? ROOF_MOON_INTENSITY : 0
       roofSky.intensity = section === 'roof' ? ROOF_SKY_INTENSITY : 0
       if (section !== 'roof' && windHudShown) {
@@ -3326,6 +3415,8 @@ export function createMovingHeistLevel({
         // Zipline: the brake only releases while the lever plate is weighted.
         const leverHeld =
           ghost.isOccupying(leverPad, 0.56) || playerOnPad(leverPad, 0.56)
+        if (leverHeld && !previousLeverHeld) roofAudio.playPlate(leverPad)
+        previousLeverHeld = leverHeld
         leverPlate.position.y = leverHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
         releaseLever.rotation.x = leverHeld ? 0.9 : -0.3
         zipLampMat.color.setHex(leverHeld ? 0x7ee08a : 0xffb454)
@@ -3357,6 +3448,8 @@ export function createMovingHeistLevel({
         // the player is across.
         const plateHeld =
           ghost.isOccupying(bridgePlatePos, 0.56) || playerOnPad(bridgePlatePos, 0.56)
+        if (plateHeld && !previousBridgePlateHeld) roofAudio.playPlate(bridgePlatePos)
+        previousBridgePlateHeld = plateHeld
         bridgePlate.position.y = plateHeld ? ROOF_Y + 0.055 : ROOF_Y + 0.08
         if (!drawbridgeLatched && pp.z > V0 + 0.6 && pp.y > ROOF_Y - 0.2) drawbridgeLatched = true
         const bridgeTarget = plateHeld || drawbridgeLatched ? 1 : 0
@@ -3383,6 +3476,13 @@ export function createMovingHeistLevel({
       scene.remove(passengerFill)
       passengerFill.dispose()
       corridorStealth.dispose()
+      movementAudio.dispose()
+      carriageAudio.dispose()
+      hazardAudio.dispose()
+      roofAudio.dispose()
+      coreFinaleAudio.dispose()
+      ghostPuzzleAudio.dispose()
+      convergencePlateAudio.dispose()
       scene.remove(sky.mesh, outdoorEnv.group, root)
       disposeObject(root)
     }

@@ -1,4 +1,4 @@
-import { getContext, getMasterGain } from '../core/audio.js'
+import { getContext, getMusicGain } from '../core/audio.js'
 
 // Sampled level music, separate from the procedural drone in music-system.js.
 // Tracks live under src/assets/audio/music/ and are resolved with
@@ -119,10 +119,16 @@ export class LevelMusicPlayer {
     this.stop()
 
     const ctx = getContext()
-    const master = getMasterGain()
+    const master = getMusicGain()
 
     this.gain = ctx.createGain()
-    this.gain.gain.value = volume
+    // Level 3 needs a quieter mix than Levels 1 and 2.
+    // This is a per-track cap; the Music and Master sliders still apply normally.
+    const trackName = String(this.url)
+    const trackScale = trackName.includes('level3-final-count') ? 0.06 :
+      (trackName.includes('level1-constance') ||
+       trackName.includes('level2-mistake-the-getaway')) ? 0.1 : 1
+    this.gain.gain.value = volume * trackScale
     this.gain.connect(master)
 
     this.source = ctx.createBufferSource()

@@ -35,7 +35,7 @@ function randomSource(seed) {
 
 // The brown hull panels recur in every car, from the Vault through the cab.
 export function createFlyingPanels({ root, spans, player, timeSystem, unregisters, fail,
-  warn, seed = Math.floor(Math.random() * 4294967296) }) {
+  warn, onLethalFlight, seed = Math.floor(Math.random() * 4294967296) }) {
   const group = new THREE.Group()
   group.name = 'wreck-flying-panels'
   root.add(group)
@@ -88,6 +88,14 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
     const u = THREE.MathUtils.clamp((t - CARGO_BURSTS.warning) / CARGO_BURSTS.active, 0, 1)
     mesh.visible = clock >= 0 && t >= 0 && t < CARGO_BURSTS.warning + CARGO_BURSTS.active
     mesh.scale.set(0.9, 0.55, 0.75)
+    const burstCycle = Math.floor(Math.max(0, clock) / CARGO_BURSTS.period)
+    if (t >= CARGO_BURSTS.warning && t < CARGO_BURSTS.warning + CARGO_BURSTS.active &&
+        panel.soundedCycle !== burstCycle && timeSystem.getMode() !== 'REWIND') {
+      panel.soundedCycle = burstCycle
+      const pp = player.mesh.position
+      onLethalFlight?.(Math.hypot(pp.x, pp.y - 1.5, pp.z - (cargoCenter + CARGO_BURSTS.start)),
+        (CARGO_BURSTS.end - CARGO_BURSTS.start) / CARGO_BURSTS.active)
+    }
     mesh.position.set(index % 2 ? (second ? 1.05 : -1.05) : 0,
       u < 0.25 ? 2.7 - u / 0.25 * 1.6 : u > 0.7 ? 1.1 + (u - 0.7) / 0.3 * 2.6 : 1.1,
       cargoCenter + CARGO_BURSTS.start + (CARGO_BURSTS.end - CARGO_BURSTS.start) * u)
@@ -171,6 +179,15 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
     const z = panel.startZ + travel * panel.speed
     panel.mesh.visible = elapsed >= 0 && phase < WARNING + panel.duration
     panel.mesh.position.set(panel.x, panel.y, z)
+    // Trigger once at the start of actual lethal motion, never for decorative
+    // instanced scraps, warning poses, stationary objects or rewind snapshots.
+    if (phase >= WARNING && phase < WARNING + panel.duration &&
+        panel.soundedCycle !== cycle && timeSystem.getMode() !== 'REWIND') {
+      panel.soundedCycle = cycle
+      const pp = player.mesh.position
+      const distance = Math.hypot(pp.x - panel.x, pp.y - panel.y, pp.z - z)
+      onLethalFlight?.(distance, panel.speed)
+    }
     if (panel.key === 'cargo') panel.mesh.position.y += Math.max(0, (z - panel.endZ + 2) / 2) * 3
     // Cargo's shortened flights terminate overhead against the retained hull;
     // keep them opaque while rising rather than fading lethal floor-level wood.
@@ -194,7 +211,11 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
     getSnapshot: () => panels.map(p => p.clock),
     restoreSnapshot(clocks) {
       if (!enabled) return
-      panels.forEach((p, i) => { p.clock = clocks[i]; apply(p) })
+      panels.forEach((p, i) => {
+        p.clock = clocks[i]
+        p.soundedCycle = Math.floor(Math.max(0, p.clock) / (p.key === 'cargo' && p.index < 4 ? CARGO_BURSTS.period : p.period))
+        apply(p)
+      })
       applyScraps()
       applySignal()
       lastCue = ''
@@ -227,7 +248,7 @@ export function createFlyingPanels({ root, spans, player, timeSystem, unregister
   }
 
   function reset() {
-    for (const panel of panels) { panel.clock = -1; panel.checkedCycle = -1; apply(panel) }
+    for (const panel of panels) { panel.clock = -1; panel.checkedCycle = -1; panel.soundedCycle = -1; apply(panel) }
     applyScraps()
     collision.reset()
     lastCue = ''

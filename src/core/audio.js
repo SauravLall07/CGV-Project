@@ -9,11 +9,18 @@ import { settings } from '../core/settings.js'
 
 let context = null
 let master = null
+let musicBus = null
+let sfxBus = null
 
 function effectiveMasterVolume() {
   if (settings.get('mute')) return 0
   const value = settings.get('masterVolume')
   return typeof value === 'number' && Number.isFinite(value) ? value : 0.5
+}
+
+function applyMixVolumes() {
+  if (musicBus) musicBus.gain.value = settings.get('musicVolume') ?? 1
+  if (sfxBus) sfxBus.gain.value = settings.get('sfxVolume') ?? 1
 }
 
 function applyMasterVolume() {
@@ -29,6 +36,11 @@ export function initAudio() {
   master = context.createGain()
   applyMasterVolume()
   master.connect(context.destination)
+  musicBus = context.createGain()
+  sfxBus = context.createGain()
+  musicBus.connect(master)
+  sfxBus.connect(master)
+  applyMixVolumes()
   console.log('Audio context created, state: ' + context.state)
 }
 
@@ -40,15 +52,31 @@ export function getMasterGain() {
   return master
 }
 
+export function getMusicGain() {
+  return musicBus
+}
+
+export function getSfxGain() {
+  return sfxBus
+}
+
+export function setMasterVolume(v) {
+  if (!master) return
+  master.gain.value = v
+}
+
 settings.subscribe((_values, changed) => {
   if (
     changed !== undefined &&
     changed !== 'masterVolume' &&
     changed !== 'mute' &&
+    changed !== 'musicVolume' &&
+    changed !== 'sfxVolume' &&
     changed !== 'options' &&
     changed !== 'all'
   ) return
   applyMasterVolume()
+  applyMixVolumes()
 })
 
 export function resumeAudio() {

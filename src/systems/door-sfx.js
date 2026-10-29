@@ -1,4 +1,4 @@
-import { getContext, getMasterGain } from '../core/audio.js'
+import { getContext, getSfxGain } from '../core/audio.js'
 
 // Heavy security door opening, synthesised so it needs no asset: a bolt
 // clunk, three ratchet clicks, then a short filtered grind while the slab
@@ -33,7 +33,7 @@ function burst(ctx, out, { at, duration, frequency, q = 1, gain, type = 'lowpass
 
 export function playDoorOpen(volume = 0.5) {
   const ctx = getContext()
-  const master = getMasterGain()
+  const master = getSfxGain()
   if (!ctx || !master || ctx.state !== 'running') return
   const out = ctx.createGain()
   out.gain.value = volume

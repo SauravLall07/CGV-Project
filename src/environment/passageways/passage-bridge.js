@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { preloadSecuritySfx, setSecurityListenerPosition, playRelayTileSfx } from '../../systems/level-one-security-sfx.js'
 import { getKitMaterials } from '../level1-kit/kit-materials.js'
 import { retile } from '../level1-kit/kit-props.js'
 import { dressWalls } from '../level1-kit/wall-dressing.js'
@@ -813,6 +814,7 @@ function createCircuitRoutingPuzzle({ group, colliders, interaction, hud, door, 
           },
           onInteract: () => {
             if (solved) return
+            playRelayTileSfx()
             tile.rotation = (tile.rotation + 1) % 4
             tile.group.rotation.y = -tile.rotation * Math.PI / 2
             evaluate()
@@ -1531,6 +1533,8 @@ export function createBridgePassage({ scene, interaction, hud, player, respawn, 
   }
 
   function update(delta) {
+    preloadSecuritySfx()
+    setSecurityListenerPosition(player?.mesh?.position)
     vent.update()
     const p = player?.mesh?.position
     if (vent.hasCleared(p)) bridgeEntered = true
